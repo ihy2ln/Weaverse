@@ -46,8 +46,13 @@ android {
                 "proguard-rules.pro",
             )
             val keystorePath = System.getenv("KEYSTORE_PATH")
-            if (!keystorePath.isNullOrBlank()) {
-                signingConfig = signingConfigs.getByName("release")
+            // Always assign a signingConfig so `assembleRelease` produces a signed,
+            // installable APK even with no keystore configured — falls back to the
+            // debug key rather than leaving the release build type unsigned.
+            signingConfig = if (!keystorePath.isNullOrBlank()) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
             }
         }
         debug {
