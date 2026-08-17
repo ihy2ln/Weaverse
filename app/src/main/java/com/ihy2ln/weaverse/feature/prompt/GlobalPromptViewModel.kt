@@ -126,6 +126,13 @@ class GlobalPromptViewModel @Inject constructor(
         _uiState.update { it.copy(kind = null, isStreaming = false) }
     }
 
+    /** Switches Manual/Generative mode without resetting the text already typed. */
+    fun setKind(kind: PromptEntryKind) {
+        _uiState.update {
+            if (it.kind == null || it.kind == kind) it else it.copy(kind = kind)
+        }
+    }
+
     fun onTextChange(value: String) {
         _uiState.update { it.copy(text = value, errorMessage = "", statusMessage = "") }
     }
