@@ -203,6 +203,7 @@ object DefaultAiGuides {
         PromptFolderEntity("folder-continue", "Continue", "continue", isSystem = true),
         PromptFolderEntity("folder-expand", "Expand", "expand", isSystem = true),
         PromptFolderEntity("folder-roleplay", "Roleplay", "roleplay", isSystem = true),
+        PromptFolderEntity("folder-components", "Prompt Components", PromptComponentType, isSystem = true),
         PromptFolderEntity("folder-custom", "Custom", "custom", isSystem = false),
     )
 
@@ -213,7 +214,52 @@ object DefaultAiGuides {
             name = "Scene Beat",
             type = "scene_beat",
             description = "Pantser-style dungeon master: write the beat as a movie scene, then stop.",
-            instructionsJson = instructionsJson(sceneBeatProse),
+            instructionsJson = messagesJson(
+                system(
+                    """
+                    You are an Pantser style Dungeon Master that will create scenes in a movie show not tell way.
+
+                    $styleRules
+
+                    {include("Weaverse/AdditionalInstructions")}
+
+                    $stopEarlyRules
+                    - Use codex entries WAHM, WAHB, WAHO, WAH-MEN, GR, GKOM, WAH
+                    """.trimIndent(),
+                ),
+                user(
+                    """
+                    {include("Weaverse/Personas")}
+
+                    {include("Weaverse/Codex")}
+
+                    {#if storySoFar}
+                    The story so far:
+                    {storySoFar}
+                    {#endif}
+                    """.trimIndent(),
+                ),
+                ai(
+                    """
+                    {#if and(isStartOfText, pov.character is pov.character(scene.previous))}
+                    {lastWords(scene.fullText(scene.previous), 650)}
+                    {#endif}
+                    {textBefore}
+                    """.trimIndent(),
+                ),
+                user(
+                    """
+                    Write {input("Words")} words that continue the story, using the following instructions:
+                    <instructions>
+                    {pov}
+
+                    {message}
+                    </instructions>
+
+                    {include("Weaverse/AdditionalContext")}
+                    """.trimIndent(),
+                ),
+            ),
             advancedJson = advancedJson(
                 bias = "show-dont-tell",
                 guidance = "Never conclude the scene. Never foreshadow. Stop when the beat is done.",
@@ -227,7 +273,37 @@ object DefaultAiGuides {
             name = "Summarizer",
             type = "summarize",
             description = "Summarize story so far as lived scene, not a recap list.",
-            instructionsJson = instructionsJson(summarizerProse),
+            instructionsJson = messagesJson(
+                system(
+                    """
+                    You are an expert novel summarizer.
+                    You are an expert movie script writer.
+
+                    $styleRules
+
+                    {include("Weaverse/AdditionalInstructions")}
+
+                    $stopEarlyRules
+                    - Use codex entries WAHM, WAHB, WAHO, WAH-MEN, GR, GKOM, WAH
+                    """.trimIndent(),
+                ),
+                user(
+                    """
+                    {include("Weaverse/Personas")}
+
+                    {#if pov}
+                    <scenePointOfView>
+                    This scene is written in {pov.type} point of view{#if pov.character} from the perspective of {pov.character}{#endif}.
+                    </scenePointOfView>
+                    {#endif}
+
+                    Text to summarize:
+                    <scene>
+                    {removeWhitespace(scene.fullText)}
+                    </scene>
+                    """.trimIndent(),
+                ),
+            ),
             advancedJson = advancedJson(
                 bias = "active-past",
                 guidance = "Past tense, General English. Show the events; do not invent an ending.",
@@ -241,7 +317,24 @@ object DefaultAiGuides {
             name = "Workshop Chat",
             type = "workshop_chat",
             description = "Workshop partner for the current book, series, and Codex.",
-            instructionsJson = instructionsJson(workshopChatProse),
+            instructionsJson = messagesJson(
+                system(
+                    """
+                    You are an expert movie script writer.
+
+                    $styleRules
+
+                    {include("Weaverse/AdditionalInstructions")}
+
+                    $stopEarlyRules
+                    For the author, today is {date.today} and they are working on their story "{book.title}".
+
+                    {include("Weaverse/Chat/DefaultContext")}
+                    {include("Weaverse/Chat/DefaultInstructions")}
+                    - Use codex entries WAHM, WAHB, WAHO, WAH-MEN, GR, GKOM, WAH
+                    """.trimIndent(),
+                ),
+            ),
             advancedJson = advancedJson(
                 bias = "script-workshop",
                 guidance = "Use series description and attached Codex. Answer in Markdown.",
@@ -341,7 +434,46 @@ object DefaultAiGuides {
             name = "Scene Text Replacer",
             type = "replace",
             description = "Rewrite the selected passage in place. Return only the edited text.",
-            instructionsJson = instructionsJson(sceneReplacerProse),
+            instructionsJson = messagesJson(
+                system(
+                    """
+                    You are an expert prose editor.
+                    You are an expert movie script writer.
+
+                    $styleRules
+
+                    {include("Weaverse/AdditionalInstructions")}
+
+                    $stopEarlyRules
+                    Only return the edited text, nothing else.
+                    - Use codex entries WAHM, WAHB, WAHO, WAH-MEN, GR, GKOM, WAH
+                    """.trimIndent(),
+                ),
+                user(
+                    """
+                    {include("Weaverse/Personas")}
+
+                    {pov}
+
+                    {#if hasTextBefore}
+                    For contextual information, refer to surrounding words in the scene, DO NOT REPEAT THEM:
+                    <textBefore>
+                    {wordsBefore(200)}
+                    </textBefore>
+                    {#endif}
+                    {#if hasTextAfter}
+                    <textAfter>
+                    {wordsAfter(200)}
+                    </textAfter>
+                    {#endif}
+
+                    Text to edit:
+                    <selection>
+                    {message}
+                    </selection>
+                    """.trimIndent(),
+                ),
+            ),
             advancedJson = advancedJson(
                 bias = "edit-in-place",
                 guidance = "Only return the edited text. Do not conclude the scene or add foreshadowing.",
@@ -366,12 +498,80 @@ object DefaultAiGuides {
             isSystem = true,
             createdAt = now,
         ),
+        PromptEntity(
+            id = "component-additional-context",
+            folderId = "folder-components",
+            name = "AdditionalContext",
+            type = PromptComponentType,
+            description = "Extra context appended after the writing instructions — yours to fill in.",
+            instructionsJson = messagesJson(system("")),
+            isSystem = true,
+            createdAt = now,
+        ),
+        PromptEntity(
+            id = "component-additional-instructions",
+            folderId = "folder-components",
+            name = "AdditionalInstructions",
+            type = PromptComponentType,
+            description = "Extra style rules folded into every prompt that includes it — yours to fill in.",
+            instructionsJson = messagesJson(system("")),
+            isSystem = true,
+            createdAt = now,
+        ),
+        PromptEntity(
+            id = "component-chat-default-context",
+            folderId = "folder-components",
+            name = "Chat/DefaultContext",
+            type = PromptComponentType,
+            description = "Series title/description block used by Workshop Chat.",
+            instructionsJson = messagesJson(
+                system(
+                    """
+                    The author is currently working on a series called "{series.title}".
+
+                    Here is the description of the series:
+                    <seriesDescription>
+                    {series.description}
+                    </seriesDescription>
+                    """.trimIndent(),
+                ),
+            ),
+            isSystem = true,
+            createdAt = now,
+        ),
+        PromptEntity(
+            id = "component-chat-default-instructions",
+            folderId = "folder-components",
+            name = "Chat/DefaultInstructions",
+            type = PromptComponentType,
+            description = "Codex + formatting instructions used by Workshop Chat.",
+            instructionsJson = messagesJson(
+                system(
+                    """
+                    Take into account the attached Codex (characters, locations, items, lore). Prefer entries aliased WAHM, WAHB, WAHO, WAH-MEN, GR, GKOM, WAH when they match the scene.
+
+                    {include("Weaverse/Codex")}
+
+                    Always write your answer in Markdown format, don't use HTML tags to format the response.
+                    Use General English spelling and grammar.
+                    """.trimIndent(),
+                ),
+            ),
+            isSystem = true,
+            createdAt = now,
+        ),
     )
 
     fun instructionsJson(vararg paragraphs: String): String =
         buildJsonArray {
             paragraphs.map { it.trim() }.filter { it.isNotEmpty() }.forEach { add(JsonPrimitive(it)) }
         }.toString()
+
+    fun system(content: String) = PromptMessage(PromptRole.System.name.lowercase(), content.trim())
+    fun user(content: String) = PromptMessage(PromptRole.User.name.lowercase(), content.trim())
+    fun ai(content: String) = PromptMessage(PromptRole.Ai.name.lowercase(), content.trim())
+
+    fun messagesJson(vararg messages: PromptMessage): String = encodePromptMessages(messages.toList())
 
     fun advancedJson(bias: String, guidance: String): String =
         buildJsonObject {

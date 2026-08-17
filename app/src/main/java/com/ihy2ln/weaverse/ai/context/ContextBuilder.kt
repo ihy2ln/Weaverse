@@ -21,6 +21,8 @@ data class AssembledPrompt(
     val usedEntries: List<ContextChip>,
     val tokenBreakdown: List<TokenBreakdown>,
     val droppedEntryIds: List<String> = emptyList(),
+    /** The same `[[Name]]\nbody` codex text folded into [systemBlocks], exposed separately for `{include("Weaverse/Codex")}`. */
+    val codexBlock: String = "",
 )
 
 data class ContextBuildRequest(
@@ -54,9 +56,10 @@ class ContextBuilder {
             ContextChip(it.id, it.name, it.colorHex, autoDetected = it.id !in request.manualIncludeIds)
         }
 
+        val codexBlock = merged.joinToString("\n\n") { "[[${it.name}]]\n${it.plainText}" }
         val systemBlocks = listOfNotNull(
             "You are a creative writing assistant.",
-            merged.joinToString("\n\n") { "[[${it.name}]]\n${it.plainText}" }.takeIf { it.isNotBlank() },
+            codexBlock.takeIf { it.isNotBlank() },
         )
 
         val budget = request.maxContextTokens - request.reserveResponseTokens
@@ -83,6 +86,7 @@ class ContextBuilder {
                 TokenBreakdown("user", estimateTokens(request.userMessage)),
             ),
             droppedEntryIds = dropped,
+            codexBlock = codexBlock,
         )
     }
 

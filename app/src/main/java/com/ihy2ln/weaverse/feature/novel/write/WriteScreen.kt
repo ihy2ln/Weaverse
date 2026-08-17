@@ -159,6 +159,12 @@ fun WriteScreen(
                         softWrap = false,
                         modifier = Modifier.weight(1f),
                     )
+                    InkTextButton(
+                        label = if (state.isSummarizing) "Summarizing…" else "Summarize",
+                        onClick = viewModel::summarizeScene,
+                        enabled = !state.isSummarizing,
+                        compact = true,
+                    )
                     Box {
                         InkTextButton(
                             label = "Media",

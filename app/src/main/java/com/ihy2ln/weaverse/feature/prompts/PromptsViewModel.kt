@@ -2,6 +2,10 @@ package com.ihy2ln.weaverse.feature.prompts
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ihy2ln.weaverse.ai.prompt.PromptMessage
+import com.ihy2ln.weaverse.ai.prompt.PromptRole
+import com.ihy2ln.weaverse.ai.prompt.decodePromptMessages
+import com.ihy2ln.weaverse.ai.prompt.encodePromptMessages
 import com.ihy2ln.weaverse.data.db.entities.PromptEntity
 import com.ihy2ln.weaverse.data.db.entities.PromptFolderEntity
 import com.ihy2ln.weaverse.data.repo.PromptRepository
@@ -16,12 +20,11 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.util.UUID
 import javax.inject.Inject
 
 enum class PromptEditorTab { General, Instructions, Advanced, Description }
@@ -32,6 +35,13 @@ data class PromptFolderGroup(
     val expanded: Boolean = true,
 )
 
+/** One message box in the Instructions tab — [localId] is a stable Compose key, not persisted. */
+data class PromptMessageUi(
+    val localId: String,
+    val role: String,
+    val content: String,
+)
+
 data class PromptsUiState(
     val folders: List<PromptFolderGroup> = emptyList(),
     val selectedId: String? = null,
@@ -39,7 +49,8 @@ data class PromptsUiState(
     val name: String = "",
     val type: String = "scene_beat",
     val description: String = "",
-    val instructionsText: String = "",
+    val messages: List<PromptMessageUi> = emptyList(),
+    val isDefault: Boolean = false,
     val bias: String = "",
     val guidance: String = "",
     val newFolderName: String = "",
@@ -94,13 +105,17 @@ class PromptsViewModel @Inject constructor(
     private fun applyPrompt(prompt: PromptEntity?) {
         if (prompt == null) return
         val advanced = parseAdvanced(prompt.advancedJson)
+        val messages = decodePromptMessages(prompt.instructionsJson)
+            .ifEmpty { listOf(PromptMessage(PromptRole.System.name.lowercase(), "")) }
+            .map { PromptMessageUi(UUID.randomUUID().toString(), it.role, it.content) }
         _uiState.update {
             it.copy(
                 selectedId = prompt.id,
                 name = prompt.name,
                 type = prompt.type,
                 description = prompt.description,
-                instructionsText = parseInstructions(prompt.instructionsJson),
+                messages = messages,
+                isDefault = prompt.isDefault,
                 bias = advanced.first,
                 guidance = advanced.second,
             )
@@ -111,10 +126,33 @@ class PromptsViewModel @Inject constructor(
     fun onName(value: String) = _uiState.update { it.copy(name = value) }
     fun onType(value: String) = _uiState.update { it.copy(type = value) }
     fun onDescription(value: String) = _uiState.update { it.copy(description = value) }
-    fun onInstructions(value: String) = _uiState.update { it.copy(instructionsText = value) }
+    fun onIsDefault(value: Boolean) = _uiState.update { it.copy(isDefault = value) }
     fun onBias(value: String) = _uiState.update { it.copy(bias = value) }
     fun onGuidance(value: String) = _uiState.update { it.copy(guidance = value) }
     fun onNewFolderName(value: String) = _uiState.update { it.copy(newFolderName = value) }
+
+    fun onMessageContent(localId: String, value: String) = _uiState.update { state ->
+        state.copy(messages = state.messages.map { if (it.localId == localId) it.copy(content = value) else it })
+    }
+
+    fun onMessageRole(localId: String, role: PromptRole) = _uiState.update { state ->
+        state.copy(
+            messages = state.messages.map {
+                if (it.localId == localId) it.copy(role = role.name.lowercase()) else it
+            },
+        )
+    }
+
+    fun addMessage(role: PromptRole = PromptRole.User) = _uiState.update { state ->
+        state.copy(
+            messages = state.messages + PromptMessageUi(UUID.randomUUID().toString(), role.name.lowercase(), ""),
+        )
+    }
+
+    fun removeMessage(localId: String) = _uiState.update { state ->
+        val remaining = state.messages.filter { it.localId != localId }
+        state.copy(messages = remaining.ifEmpty { listOf(PromptMessageUi(UUID.randomUUID().toString(), "system", "")) })
+    }
 
     fun toggleFolder(folderId: String) {
         collapsedFolders.update { current ->
@@ -172,9 +210,12 @@ class PromptsViewModel @Inject constructor(
                 name = state.name,
                 type = state.type,
                 description = state.description,
-                instructionsJson = encodeInstructions(state.instructionsText),
+                instructionsJson = encodePromptMessages(
+                    state.messages.map { PromptMessage(it.role, it.content) },
+                ),
                 advancedJson = encodeAdvanced(state.bias, state.guidance),
                 isSystem = existing?.isSystem == true,
+                isDefault = state.isDefault,
                 createdAt = existing?.createdAt ?: System.currentTimeMillis(),
             )
             promptRepository.upsert(entity)
@@ -185,17 +226,6 @@ class PromptsViewModel @Inject constructor(
                 )
             }
         }
-    }
-
-    private fun parseInstructions(raw: String): String = runCatching {
-        json.parseToJsonElement(raw).jsonArray.joinToString("\n\n") {
-            it.jsonPrimitive.contentOrNull.orEmpty()
-        }
-    }.getOrDefault(raw)
-
-    private fun encodeInstructions(text: String): String {
-        val parts = text.split(Regex("\\n\\s*\\n")).map { it.trim() }.filter { it.isNotEmpty() }
-        return buildJsonArray { parts.forEach { add(JsonPrimitive(it)) } }.toString()
     }
 
     private fun parseAdvanced(raw: String): Pair<String, String> = runCatching {

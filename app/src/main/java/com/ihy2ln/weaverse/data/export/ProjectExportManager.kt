@@ -558,10 +558,10 @@ private fun ChatMessageDto.toEntity() = ChatMessageEntity(
 private fun PromptFolderEntity.toDto() = PromptFolderDto(id, name, type, isSystem)
 private fun PromptFolderDto.toEntity() = PromptFolderEntity(id, name, type, isSystem)
 private fun PromptEntity.toDto() = PromptDto(
-    id, folderId, name, type, description, instructionsJson, advancedJson, isSystem, createdAt,
+    id, folderId, name, type, description, instructionsJson, advancedJson, isSystem, isDefault, createdAt,
 )
 private fun PromptDto.toEntity() = PromptEntity(
-    id, folderId, name, type, description, instructionsJson, advancedJson, isSystem, createdAt,
+    id, folderId, name, type, description, instructionsJson, advancedJson, isSystem, isDefault, createdAt,
 )
 private fun RpCharacterEntity.toDto() = RpCharacterDto(
     id, name, avatarMediaId, description, personality, scenario, firstMes, mesExample, creatorNotes,

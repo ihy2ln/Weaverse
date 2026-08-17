@@ -9,9 +9,9 @@ import com.ihy2ln.weaverse.ai.context.AssembledPrompt
 import com.ihy2ln.weaverse.ai.context.ContextBuilder
 import com.ihy2ln.weaverse.ai.context.ContextBuildRequest
 import com.ihy2ln.weaverse.ai.context.ContextChip
-import com.ihy2ln.weaverse.ai.prompt.DefaultAiGuides
-import com.ihy2ln.weaverse.ai.prompt.PromptTokenContext
-import com.ihy2ln.weaverse.ai.prompt.PromptTokens
+import com.ihy2ln.weaverse.ai.prompt.PromptComponents
+import com.ihy2ln.weaverse.ai.prompt.PromptRenderContext
+import com.ihy2ln.weaverse.ai.prompt.PromptRenderer
 import com.ihy2ln.weaverse.data.repo.PromptRepository
 import com.ihy2ln.weaverse.core.text.Document
 import com.ihy2ln.weaverse.core.text.documentFromJson
@@ -30,9 +30,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonPrimitive
 import javax.inject.Inject
 
 data class ChatMessageUi(
@@ -261,23 +258,6 @@ class WorkshopChatViewModel @Inject constructor(
             val entries = db.codexDao().getAllEntries()
             val book = db.bookDao().getById(bookId)
             val series = book?.seriesId?.let { id -> db.seriesDao().observeById(id).first() }
-            val tokens = PromptTokenContext(
-                tense = book?.tense?.ifBlank { "past tense" } ?: "past tense",
-                bookTitle = book?.title.orEmpty(),
-                seriesTitle = series?.title.orEmpty(),
-                seriesDescription = listOfNotNull(
-                    series?.description?.takeIf { it.isNotBlank() },
-                    series?.premise?.takeIf { it.isNotBlank() },
-                ).joinToString("\n"),
-            )
-            val workshop = promptRepository.observeByType("workshop_chat").first().firstOrNull()
-            val workshopProse = workshop?.let { entity ->
-                runCatching {
-                    kotlinx.serialization.json.Json.parseToJsonElement(entity.instructionsJson)
-                        .jsonArray
-                        .joinToString("\n\n") { it.jsonPrimitive.contentOrNull.orEmpty() }
-                }.getOrDefault(DefaultAiGuides.workshopChatProse)
-            } ?: DefaultAiGuides.workshopChatProse
             val assembled = contextBuilder.build(
                 entries,
                 ContextBuildRequest(
@@ -287,8 +267,22 @@ class WorkshopChatViewModel @Inject constructor(
                     manualExcludeIds = excludedEntryIds,
                 ),
             )
+            val renderCtx = PromptRenderContext(
+                novelTense = book?.tense?.ifBlank { "past tense" } ?: "past tense",
+                novelTitle = book?.title.orEmpty(),
+                seriesTitle = series?.title.orEmpty(),
+                seriesDescription = listOfNotNull(
+                    series?.description?.takeIf { it.isNotBlank() },
+                    series?.premise?.takeIf { it.isNotBlank() },
+                ).joinToString("\n"),
+                message = input,
+                componentBlocks = PromptComponents.build(promptRepository, assembled.codexBlock, book),
+            )
+            val workshop = promptRepository.observeByType("workshop_chat").first()
+                .let { prompts -> prompts.firstOrNull { it.isDefault } ?: prompts.firstOrNull() }
+            val workshopSystemText = PromptRenderer.render(workshop, renderCtx).systemText
             val withWorkshop = AssembledPrompt(
-                systemBlocks = listOf(PromptTokens.apply(workshopProse, tokens)) + assembled.systemBlocks,
+                systemBlocks = listOfNotNull(workshopSystemText.takeIf { it.isNotBlank() }),
                 messages = assembled.messages,
                 usedEntries = assembled.usedEntries,
                 tokenBreakdown = assembled.tokenBreakdown,

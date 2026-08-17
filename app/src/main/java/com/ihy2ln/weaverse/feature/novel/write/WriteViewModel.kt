@@ -7,6 +7,9 @@ import androidx.lifecycle.viewModelScope
 import com.ihy2ln.weaverse.ai.AIChunk
 import com.ihy2ln.weaverse.ai.AIError
 import com.ihy2ln.weaverse.ai.AiGenerationService
+import com.ihy2ln.weaverse.ai.prompt.PromptComponents
+import com.ihy2ln.weaverse.ai.prompt.PromptRenderContext
+import com.ihy2ln.weaverse.ai.prompt.PromptRenderer
 import com.ihy2ln.weaverse.ai.prompt.PromptTokenContext
 import com.ihy2ln.weaverse.ai.prompt.PromptTokens
 import com.ihy2ln.weaverse.ai.context.AssembledPrompt
@@ -64,7 +67,6 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import android.util.Base64
@@ -129,6 +131,7 @@ data class WriteUiState(
     val canUndo: Boolean = false,
     val canRedo: Boolean = false,
     val statusMessage: String = "",
+    val isSummarizing: Boolean = false,
     val showColorPicker: Boolean = false,
     val pendingCodexEntryId: String? = null,
     /** Codex names and aliases highlighted inside the scene-beat prompt. */
@@ -143,6 +146,10 @@ data class WriteUiState(
 private data class LibraryPromptBundle(
     val promptId: String?,
     val systemInstructions: String,
+    /** Resolved User/AI turns before the final instruction turn — real multi-message structure. */
+    val historyMessages: List<Pair<String, String>> = emptyList(),
+    /** The resolved final User turn, when the prompt is multi-message (replaces the hand-built beat text). */
+    val finalUserMessage: String? = null,
 )
 
 @HiltViewModel
@@ -295,7 +302,7 @@ class WriteViewModel @Inject constructor(
             return
         }
         viewModelScope.launch {
-            val library = libraryPromptBundle("scene_beat")
+            val library = libraryPromptBundle("scene_beat", PromptRenderContext())
             _uiState.update {
                 it.copy(
                     aiOverlay = AiOverlayState(
@@ -730,7 +737,7 @@ class WriteViewModel @Inject constructor(
         val sceneText = Document(_uiState.value.blocks).plainText()
         val selected = selectedText().ifBlank { sceneText }
         viewModelScope.launch {
-            val library = libraryPromptBundle(commandId)
+            val library = libraryPromptBundle(commandId, PromptRenderContext())
             val replaceInPlace = sel.hasSelection && block != null
             _uiState.update {
                 it.copy(
@@ -852,7 +859,7 @@ class WriteViewModel @Inject constructor(
                             blocks[index] = Paragraph(blocks[index].id, listOf(Span("")))
                         }
                     }
-                    val library = libraryPromptBundle(command.id)
+                    val library = libraryPromptBundle(command.id, PromptRenderContext())
                     _uiState.update {
                         it.copy(
                             aiOverlay = AiOverlayState(
@@ -979,9 +986,27 @@ class WriteViewModel @Inject constructor(
                 }
                 return@launch
             }
-            val fresh = libraryPromptBundle(commandForPrompt).let { bundle ->
+            val sceneText = Document(_uiState.value.blocks).plainText()
+            val scene = loadedScene
+            val entries = db.codexDao().observeEntries(bookId).first()
+            val assembled = contextBuilder.build(
+                entries,
+                ContextBuildRequest(
+                    scanText = sceneText + " " + overlay.prompt + " " + (scene?.pov.orEmpty()),
+                    userMessage = overlay.prompt,
+                ),
+            )
+            val renderCtx = buildPromptRenderContext(
+                sceneText = sceneText,
+                scene = scene,
+                entries = entries,
+                codexBlock = assembled.codexBlock,
+                message = overlay.prompt,
+                outputWords = overlay.outputWords,
+            )
+            val fresh = libraryPromptBundle(commandForPrompt, renderCtx).let { bundle ->
                 if (bundle.systemInstructions.isBlank() && hasImage) {
-                    libraryPromptBundle("scene_beat")
+                    libraryPromptBundle("scene_beat", renderCtx)
                 } else {
                     bundle
                 }
@@ -1000,18 +1025,16 @@ class WriteViewModel @Inject constructor(
                     ),
                 )
             }
-            val sceneText = Document(_uiState.value.blocks).plainText()
-            val scene = loadedScene
-            val entries = db.codexDao().observeEntries(bookId).first()
-            val assembled = contextBuilder.build(
-                entries,
-                ContextBuildRequest(
-                    scanText = sceneText + " " + activeOverlay.prompt + " " + (scene?.pov.orEmpty()),
-                    userMessage = activeOverlay.prompt,
-                ),
-            )
+            // When the active prompt is multi-message (real User/AI turns from PromptRenderer), the codex
+            // block already arrived via {include("Weaverse/Codex")} in one of those turns — skip the
+            // duplicate legacy codex injection from ContextBuilder and keep just the baseline framing line.
+            val usingMultiMessagePrompt = fresh.historyMessages.isNotEmpty() || fresh.finalUserMessage != null
             val systemBlocks = buildList {
-                addAll(assembled.systemBlocks)
+                if (usingMultiMessagePrompt) {
+                    add("You are a creative writing assistant.")
+                } else {
+                    addAll(assembled.systemBlocks)
+                }
                 val povBlock = buildPovSystemBlock(scene, entries)
                 if (povBlock.isNotBlank()) add(povBlock)
                 if (activeOverlay.systemInstructions.isNotBlank()) {
@@ -1025,7 +1048,7 @@ class WriteViewModel @Inject constructor(
                 }
             }
             val maxTokens = (activeOverlay.outputWords * 1.4).toInt().coerceIn(64, 8192)
-            val userMessage = buildUserMessage(activeOverlay, sceneText, hasImage)
+            val userMessage = fresh.finalUserMessage ?: buildUserMessage(activeOverlay, sceneText, hasImage)
             val imageAttachments = if (hasImage) {
                 listOfNotNull(loadImageAttachment(activeOverlay.imagePath!!))
             } else {
@@ -1038,7 +1061,7 @@ class WriteViewModel @Inject constructor(
                     userMessage = userMessage,
                     assembled = AssembledPrompt(
                         systemBlocks = systemBlocks,
-                        messages = emptyList(),
+                        messages = fresh.historyMessages,
                         usedEntries = assembled.usedEntries,
                         tokenBreakdown = assembled.tokenBreakdown,
                     ),
@@ -1086,6 +1109,65 @@ class WriteViewModel @Inject constructor(
                         usageLog = usageLog,
                     ),
                 )
+            }
+        }
+    }
+
+    /** Runs the Scene Summarizations prompt against the current scene and saves the result into its summary. */
+    fun summarizeScene() {
+        val scene = loadedScene ?: return
+        if (_uiState.value.isSummarizing) return
+        viewModelScope.launch {
+            if (!aiGeneration.hasApiKey()) {
+                _uiState.update { it.copy(statusMessage = AIError.NoApiKey().message.orEmpty()) }
+                return@launch
+            }
+            val sceneText = Document(_uiState.value.blocks).plainText()
+            if (sceneText.isBlank()) {
+                _uiState.update { it.copy(statusMessage = "Nothing to summarize yet") }
+                return@launch
+            }
+            _uiState.update { it.copy(isSummarizing = true, statusMessage = "Summarizing…") }
+            val entries = db.codexDao().observeEntries(bookId).first()
+            val assembled = contextBuilder.build(
+                entries,
+                ContextBuildRequest(scanText = sceneText, userMessage = ""),
+            )
+            val renderCtx = buildPromptRenderContext(
+                sceneText = sceneText,
+                scene = scene,
+                entries = entries,
+                codexBlock = assembled.codexBlock,
+            )
+            val fresh = libraryPromptBundle("summarize", renderCtx)
+            runCatching {
+                aiGeneration.complete(
+                    userMessage = fresh.finalUserMessage ?: "Summarize the scene above in a few sentences.",
+                    assembled = AssembledPrompt(
+                        systemBlocks = listOf(fresh.systemInstructions),
+                        messages = fresh.historyMessages,
+                        usedEntries = assembled.usedEntries,
+                        tokenBreakdown = assembled.tokenBreakdown,
+                    ),
+                    maxTokens = 400,
+                )
+            }.onSuccess { result ->
+                val summary = result.text.trim()
+                val updated = scene.copy(summary = summary, updatedAt = System.currentTimeMillis())
+                manuscriptRepository.saveScene(updated)
+                loadedScene = updated
+                _uiState.update { it.copy(isSummarizing = false, statusMessage = "Scene summarized") }
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(
+                        isSummarizing = false,
+                        statusMessage = when (err) {
+                            is AIError.HttpFailure -> "HTTP ${err.statusCode}: ${err.message}"
+                            is AIError -> err.message.orEmpty()
+                            else -> err.message ?: err.toString()
+                        },
+                    )
+                }
             }
         }
     }
@@ -1203,68 +1285,79 @@ class WriteViewModel @Inject constructor(
         else -> "Continue the scene."
     }
 
-    private suspend fun libraryPromptBundle(commandId: String): LibraryPromptBundle {
+    private suspend fun libraryPromptBundle(commandId: String, renderCtx: PromptRenderContext): LibraryPromptBundle {
         val type = when (commandId) {
             "extend" -> "expand"
             else -> commandId
         }
         val prompts = promptRepository.observeByType(type).first()
             .ifEmpty { promptRepository.observeByType(commandId).first() }
-        val prompt = prompts.firstOrNull()
+        val prompt = prompts.firstOrNull { it.isDefault } ?: prompts.firstOrNull()
+        if (prompt == null) {
+            return LibraryPromptBundle(
+                promptId = null,
+                systemInstructions = PromptTokens.apply(defaultPromptFor(commandId), tokenContext(renderCtx)),
+            )
+        }
+        val rendered = PromptRenderer.render(prompt, renderCtx)
+        val advanced = runCatching { json.parseToJsonElement(prompt.advancedJson).jsonObject }.getOrNull()
+        val guidance = advanced?.get("guidance")?.jsonPrimitive?.contentOrNull.orEmpty()
+        val bias = advanced?.get("bias")?.jsonPrimitive?.contentOrNull.orEmpty()
+        val systemInstructions = buildString {
+            append(rendered.systemText.ifBlank { prompt.description })
+            if (guidance.isNotBlank()) append("\n\nGuidance: ").append(guidance)
+            if (bias.isNotBlank()) append("\n\nBias: ").append(bias)
+        }
+        val lastTurn = rendered.messages.lastOrNull()
+        val endsInUserTurn = lastTurn?.first == "user"
         return LibraryPromptBundle(
-            promptId = prompt?.id,
-            systemInstructions = formatPromptInstructions(prompt, commandId, tokenContext()),
+            promptId = prompt.id,
+            systemInstructions = systemInstructions,
+            historyMessages = if (endsInUserTurn) rendered.messages.dropLast(1) else rendered.messages,
+            finalUserMessage = if (endsInUserTurn) lastTurn?.second else null,
         )
     }
 
-    private suspend fun tokenContext(): PromptTokenContext {
+    /** Builds the full templating context for [libraryPromptBundle] — book/series/POV/codex/components. */
+    private suspend fun buildPromptRenderContext(
+        sceneText: String,
+        scene: SceneEntity?,
+        entries: List<com.ihy2ln.weaverse.data.db.entities.CodexEntryEntity>,
+        codexBlock: String,
+        message: String = "",
+        outputWords: Int = 200,
+    ): PromptRenderContext {
         val book = db.bookDao().getById(bookId)
         val series = book?.seriesId?.let { id -> db.seriesDao().observeById(id).first() }
-        return PromptTokenContext(
-            tense = book?.tense?.ifBlank { "past tense" } ?: "past tense",
-            bookTitle = book?.title.orEmpty(),
+        val povCharacter = scene?.povCharacterId
+            ?.let { id -> entries.firstOrNull { it.id == id }?.name }
+            .orEmpty()
+        val componentBlocks = PromptComponents.build(promptRepository, codexBlock, book)
+        return PromptRenderContext(
+            novelTense = book?.tense?.ifBlank { "past tense" } ?: "past tense",
+            novelTitle = book?.title.orEmpty(),
             seriesTitle = series?.title.orEmpty(),
             seriesDescription = listOfNotNull(
                 series?.description?.takeIf { it.isNotBlank() },
                 series?.premise?.takeIf { it.isNotBlank() },
             ).joinToString("\n"),
+            pov = scene?.pov.orEmpty(),
+            povType = scene?.pov.orEmpty(),
+            povCharacter = povCharacter,
+            sceneFullTextCurrent = sceneText,
+            textBefore = sceneText,
+            message = message,
+            outputWords = outputWords,
+            componentBlocks = componentBlocks,
         )
     }
 
-    private fun formatPromptInstructions(
-        prompt: PromptEntity?,
-        commandId: String,
-        tokens: PromptTokenContext,
-    ): String {
-        if (prompt == null) return PromptTokens.apply(defaultPromptFor(commandId), tokens)
-        val instructions = runCatching {
-            json.parseToJsonElement(prompt.instructionsJson).jsonArray
-                .mapNotNull { it.jsonPrimitive.contentOrNull }
-                .filter { it.isNotBlank() }
-                .joinToString("\n\n")
-        }.getOrDefault("")
-        val advanced = runCatching {
-            json.parseToJsonElement(prompt.advancedJson).jsonObject
-        }.getOrNull()
-        val guidance = advanced?.get("guidance")?.jsonPrimitive?.contentOrNull.orEmpty()
-        val bias = advanced?.get("bias")?.jsonPrimitive?.contentOrNull.orEmpty()
-        val built = buildString {
-            append(prompt.description.ifBlank { defaultPromptFor(commandId) })
-            if (instructions.isNotBlank()) {
-                append("\n\nInstructions:\n")
-                append(instructions)
-            }
-            if (guidance.isNotBlank()) {
-                append("\n\nGuidance: ")
-                append(guidance)
-            }
-            if (bias.isNotBlank()) {
-                append("\n\nBias: ")
-                append(bias)
-            }
-        }
-        return PromptTokens.apply(built, tokens)
-    }
+    private fun tokenContext(ctx: PromptRenderContext): PromptTokenContext = PromptTokenContext(
+        tense = ctx.novelTense,
+        bookTitle = ctx.novelTitle,
+        seriesTitle = ctx.seriesTitle,
+        seriesDescription = ctx.seriesDescription,
+    )
 
     private fun buildPovSystemBlock(
         scene: SceneEntity?,

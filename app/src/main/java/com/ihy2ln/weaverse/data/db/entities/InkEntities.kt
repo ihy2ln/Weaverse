@@ -270,9 +270,12 @@ data class PromptEntity(
     val name: String,
     val type: String,
     val description: String = "",
+    /** JSON-encoded List<PromptMessage> (role + content per message box). */
     val instructionsJson: String = "[]",
     val advancedJson: String = "{}",
     val isSystem: Boolean = false,
+    /** Whether this is the active prompt for its type when more than one exists. */
+    val isDefault: Boolean = false,
     val createdAt: Long,
 )
 

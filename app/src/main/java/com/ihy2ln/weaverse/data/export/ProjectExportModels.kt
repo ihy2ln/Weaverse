@@ -201,6 +201,7 @@ data class PromptDto(
     val instructionsJson: String = "[]",
     val advancedJson: String = "{}",
     val isSystem: Boolean = false,
+    val isDefault: Boolean = false,
     val createdAt: Long = 0,
 )
 

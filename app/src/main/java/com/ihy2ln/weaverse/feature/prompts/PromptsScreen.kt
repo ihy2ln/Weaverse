@@ -1,6 +1,7 @@
 package com.ihy2ln.weaverse.feature.prompts
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,11 +11,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -28,11 +33,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.ihy2ln.weaverse.ai.prompt.PromptRole
 import com.ihy2ln.weaverse.core.ui.components.InkConfirmButton
 import com.ihy2ln.weaverse.core.ui.components.InkSegmentedPill
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
@@ -183,6 +191,7 @@ private fun PromptEditorPane(
     modifier: Modifier = Modifier,
 ) {
     val tokens = inkTokens()
+    val clipboard = LocalClipboardManager.current
     Column(
         modifier = modifier
             .padding(InkSpacing.md)
@@ -236,14 +245,36 @@ private fun PromptEditorPane(
                     label = { Text("Type (scene_beat / summarize / replace / workshop_chat)") },
                     singleLine = true,
                 )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = InkSpacing.md)
+                        .clickable { viewModel.onIsDefault(!state.isDefault) },
+                ) {
+                    Checkbox(checked = state.isDefault, onCheckedChange = viewModel::onIsDefault)
+                    Text("Default for this type", color = tokens.primaryText)
+                }
             }
             PromptEditorTab.Instructions -> {
-                VoiceToTextField(
-                    value = state.instructionsText,
-                    onValueChange = viewModel::onInstructions,
-                    label = "System message — guiding prose for the model",
-                    minLines = 14,
+                Text(
+                    "Each prompt needs at least one System message. Add User / AI messages for " +
+                        "multi-turn structure — an AI message primes the model's own reply style.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = tokens.secondaryText,
+                    modifier = Modifier.padding(bottom = InkSpacing.sm),
                 )
+                state.messages.forEach { message ->
+                    PromptMessageEditor(
+                        message = message,
+                        onRoleChange = { role -> viewModel.onMessageRole(message.localId, role) },
+                        onContentChange = { viewModel.onMessageContent(message.localId, it) },
+                        onCopy = { clipboard.setText(AnnotatedString(message.content)) },
+                        onRemove = { viewModel.removeMessage(message.localId) },
+                        modifier = Modifier.padding(bottom = InkSpacing.sm),
+                    )
+                }
+                InkTextButton(label = "+ Add message", onClick = { viewModel.addMessage() })
             }
             PromptEditorTab.Advanced -> {
                 VoiceToTextField(
@@ -269,5 +300,45 @@ private fun PromptEditorPane(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun PromptMessageEditor(
+    message: PromptMessageUi,
+    onRoleChange: (PromptRole) -> Unit,
+    onContentChange: (String) -> Unit,
+    onCopy: () -> Unit,
+    onRemove: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tokens = inkTokens()
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .border(1.dp, tokens.hairline, RoundedCornerShape(InkSpacing.radiusSm))
+            .padding(InkSpacing.sm),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            InkSegmentedPill(
+                options = PromptRole.entries.map { SegmentedOption(it.name.lowercase(), it.name) },
+                selectedId = message.role,
+                onSelect = { id -> onRoleChange(PromptRole.entries.first { role -> role.name.lowercase() == id }) },
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = onCopy) {
+                Icon(Icons.Default.ContentCopy, contentDescription = "Copy message", tint = tokens.secondaryText)
+            }
+            IconButton(onClick = onRemove) {
+                Icon(Icons.Default.Close, contentDescription = "Remove message", tint = tokens.secondaryText)
+            }
+        }
+        VoiceToTextField(
+            value = message.content,
+            onValueChange = onContentChange,
+            label = "",
+            minLines = 6,
+            modifier = Modifier.padding(top = InkSpacing.xs),
+        )
     }
 }

@@ -24,7 +24,9 @@ class DefaultAiGuidesTest {
         assertTrue(prompts.any { it.id == "prompt-summarize" && it.instructionsJson.contains("summarizer") })
         assertTrue(prompts.any { it.id == "prompt-replace" && it.name == "Scene Text Replacer" })
         assertTrue(prompts.any { it.id == "prompt-workshop-chat" && it.instructionsJson.contains("{book.title}") })
-        prompts.forEach { prompt ->
+        // Prompt Components (AdditionalContext/AdditionalInstructions) are deliberately seeded empty —
+        // they're the user's own customization stubs, not guiding prose.
+        prompts.filter { it.type != PromptComponentType }.forEach { prompt ->
             assertTrue(prompt.instructionsJson.length > 80, "${prompt.name} should have prose")
             assertTrue(prompt.description.isNotBlank())
         }

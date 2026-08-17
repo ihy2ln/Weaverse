@@ -56,7 +56,7 @@ import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
         PromptEntity::class,
         AiProfileEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 @TypeConverters(InkTypeConverters::class)
