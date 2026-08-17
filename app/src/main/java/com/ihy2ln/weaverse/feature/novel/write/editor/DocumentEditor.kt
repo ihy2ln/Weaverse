@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import com.ihy2ln.weaverse.core.text.Block
+import com.ihy2ln.weaverse.core.text.CodexMentionTarget
 import com.ihy2ln.weaverse.core.text.MediaBlock
 import com.ihy2ln.weaverse.core.text.MediaStackBlock
 import com.ihy2ln.weaverse.core.text.Paragraph
@@ -84,6 +85,8 @@ fun DocumentEditor(
     sceneBeatResultIndex: Int? = null,
     generatingSceneBeatIndex: Int? = null,
     codexNames: List<String> = emptyList(),
+    codexMentionTargets: List<CodexMentionTarget> = emptyList(),
+    onMentionClick: (String) -> Unit = {},
     onContinuationSubmit: (String) -> Unit = {},
     showInlineWritingPrompt: Boolean = false,
     showSceneBeatCard: Boolean = false,
@@ -111,6 +114,8 @@ fun DocumentEditor(
                             onShowEditPopup(if (show) index else null)
                         },
                         showPromptPlaceholder = showInlineWritingPrompt,
+                        codexMentionTargets = codexMentionTargets,
+                        onMentionClick = onMentionClick,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = InkSpacing.xs),

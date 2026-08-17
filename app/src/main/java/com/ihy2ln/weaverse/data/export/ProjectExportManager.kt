@@ -533,11 +533,13 @@ private fun CodexCategoryDto.toEntity() = CodexCategoryEntity(
 )
 private fun CodexEntryEntity.toDto() = CodexEntryDto(
     id, categoryId, scopeType, scopeId, name, aliasesJson, docJson, plainText, colorHex,
-    alwaysInclude, disabled, imageMediaId, isAiGenerated, createdAt, updatedAt,
+    alwaysInclude, disabled, imageMediaId, isAiGenerated, trackMentions, caseSensitiveMatching,
+    createdAt, updatedAt,
 )
 private fun CodexEntryDto.toEntity() = CodexEntryEntity(
     id, categoryId, scopeType, scopeId, name, aliasesJson, docJson, plainText, colorHex,
-    alwaysInclude, disabled, imageMediaId, isAiGenerated, createdAt, updatedAt,
+    alwaysInclude, disabled, imageMediaId, isAiGenerated, trackMentions, caseSensitiveMatching,
+    createdAt, updatedAt,
 )
 private fun SnippetEntity.toDto() = SnippetDto(id, scopeType, scopeId, title, body, category, pinned, createdAt)
 private fun SnippetDto.toEntity() = SnippetEntity(id, scopeType, scopeId, title, body, category, pinned, createdAt)

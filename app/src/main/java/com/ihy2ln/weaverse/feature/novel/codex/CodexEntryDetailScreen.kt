@@ -4,6 +4,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,6 +16,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -24,6 +28,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ihy2ln.weaverse.core.ui.components.AudioMediaPlayer
 import com.ihy2ln.weaverse.core.ui.components.InkConfirmButton
@@ -71,13 +77,31 @@ fun CodexEntryDetailScreen(
     }
 
     val contentPad = adaptiveContentPadding()
+    val clipboard = LocalClipboardManager.current
     Column(modifier = Modifier.fillMaxSize()) {
-        InkToolbar(
-            title = state.name.ifBlank { "Codex" },
-            subtitle = "Entry detail",
-            canGoBack = true,
-            onBack = onBack,
-        )
+        Box {
+            InkToolbar(
+                title = state.name.ifBlank { "Codex" },
+                subtitle = "Entry detail",
+                canGoBack = true,
+                onBack = onBack,
+                onSettings = { viewModel.onShowSettingsMenuChange(true) },
+            )
+            CodexEntrySettingsMenu(
+                expanded = state.showSettingsMenu,
+                trackMentions = state.trackMentions,
+                caseSensitiveMatching = state.caseSensitiveMatching,
+                onDismiss = { viewModel.onShowSettingsMenuChange(false) },
+                onCopy = {
+                    clipboard.setText(AnnotatedString("${state.name}\n\n${state.plainText}"))
+                },
+                onPaste = {
+                    clipboard.getText()?.text?.let(viewModel::onPaste)
+                },
+                onTrackMentionsChange = viewModel::onTrackMentions,
+                onCaseSensitiveMatchingChange = viewModel::onCaseSensitiveMatching,
+            )
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -89,6 +113,13 @@ fun CodexEntryDetailScreen(
                 onValueChange = viewModel::onName,
                 label = "Name",
                 singleLine = true,
+            )
+            VoiceToTextField(
+                value = state.aliasesText,
+                onValueChange = viewModel::onAliasesText,
+                label = "Aliases / nicknames (comma separated)",
+                singleLine = true,
+                modifier = Modifier.padding(top = InkSpacing.sm),
             )
             VoiceToTextField(
                 value = state.plainText,
@@ -174,5 +205,42 @@ fun CodexEntryDetailScreen(
             )
             Spacer(modifier = Modifier.height(AlwaysScrollEndPadding))
         }
+    }
+}
+
+@Composable
+private fun CodexEntrySettingsMenu(
+    expanded: Boolean,
+    trackMentions: Boolean,
+    caseSensitiveMatching: Boolean,
+    onDismiss: () -> Unit,
+    onCopy: () -> Unit,
+    onPaste: () -> Unit,
+    onTrackMentionsChange: (Boolean) -> Unit,
+    onCaseSensitiveMatchingChange: (Boolean) -> Unit,
+) {
+    val labelColor = MaterialTheme.colorScheme.onSurface
+    val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        DropdownMenuItem(text = { Text("Copy entry", color = labelColor) }, onClick = { onCopy(); onDismiss() })
+        DropdownMenuItem(text = { Text("Paste into text", color = labelColor) }, onClick = { onPaste(); onDismiss() })
+        HorizontalDivider(modifier = Modifier.padding(vertical = InkSpacing.xs))
+        Text(
+            "Tracking / matching",
+            style = MaterialTheme.typography.labelSmall,
+            color = mutedColor,
+            modifier = Modifier.padding(horizontal = InkSpacing.md, vertical = InkSpacing.xs),
+        )
+        DropdownMenuItem(
+            text = { Text("Track this entry by name/alias", color = labelColor) },
+            trailingIcon = { Checkbox(checked = trackMentions, onCheckedChange = null) },
+            onClick = { onTrackMentionsChange(!trackMentions) },
+        )
+        DropdownMenuItem(
+            text = { Text("Case-sensitive matching", color = if (trackMentions) labelColor else labelColor.copy(alpha = 0.38f)) },
+            trailingIcon = { Checkbox(checked = caseSensitiveMatching, onCheckedChange = null, enabled = trackMentions) },
+            onClick = { if (trackMentions) onCaseSensitiveMatchingChange(!caseSensitiveMatching) },
+            enabled = trackMentions,
+        )
     }
 }

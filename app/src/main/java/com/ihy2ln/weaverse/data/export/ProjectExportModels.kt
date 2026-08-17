@@ -140,6 +140,8 @@ data class CodexEntryDto(
     val disabled: Boolean = false,
     val imageMediaId: String? = null,
     val isAiGenerated: Boolean = false,
+    val trackMentions: Boolean = true,
+    val caseSensitiveMatching: Boolean = false,
     val createdAt: Long = 0,
     val updatedAt: Long = 0,
 )

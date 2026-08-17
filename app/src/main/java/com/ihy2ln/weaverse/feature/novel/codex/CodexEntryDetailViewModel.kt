@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ihy2ln.weaverse.core.media.CodexMediaIds
 import com.ihy2ln.weaverse.core.media.MediaRepository
+import com.ihy2ln.weaverse.core.text.decodeAliases
 import com.ihy2ln.weaverse.data.db.entities.CodexEntryEntity
 import com.ihy2ln.weaverse.data.repo.CodexRepository
 import com.ihy2ln.weaverse.feature.shell.WorkspaceHistory
@@ -27,12 +28,16 @@ data class CodexEntryDetailUiState(
     val id: String = "",
     val name: String = "",
     val plainText: String = "",
+    val aliasesText: String = "",
     val alwaysInclude: Boolean = false,
+    val trackMentions: Boolean = true,
+    val caseSensitiveMatching: Boolean = false,
     val media: List<CodexMediaItem> = emptyList(),
     val mediaPickRequestId: Long = 0L,
     val audioPickRequestId: Long = 0L,
     val saved: Boolean = false,
     val statusMessage: String = "",
+    val showSettingsMenu: Boolean = false,
 )
 
 @HiltViewModel
@@ -58,7 +63,10 @@ class CodexEntryDetailViewModel @Inject constructor(
                         id = entry.id,
                         name = entry.name,
                         plainText = entry.plainText,
+                        aliasesText = decodeAliases(entry.aliasesJson).joinToString(", "),
                         alwaysInclude = entry.alwaysInclude,
+                        trackMentions = entry.trackMentions,
+                        caseSensitiveMatching = entry.caseSensitiveMatching,
                         media = resolveMedia(mediaIds),
                     )
                 }
@@ -68,7 +76,25 @@ class CodexEntryDetailViewModel @Inject constructor(
 
     fun onName(value: String) = _uiState.update { it.copy(name = value, saved = false) }
     fun onBody(value: String) = _uiState.update { it.copy(plainText = value, saved = false) }
+    fun onAliasesText(value: String) = _uiState.update { it.copy(aliasesText = value, saved = false) }
     fun onAlwaysInclude(value: Boolean) = _uiState.update { it.copy(alwaysInclude = value, saved = false) }
+    fun onTrackMentions(value: Boolean) = _uiState.update { it.copy(trackMentions = value, saved = false) }
+    fun onCaseSensitiveMatching(value: Boolean) =
+        _uiState.update { it.copy(caseSensitiveMatching = value, saved = false) }
+
+    fun onShowSettingsMenuChange(show: Boolean) = _uiState.update { it.copy(showSettingsMenu = show) }
+
+    /** Body text to insert when the caller pastes clipboard content in. */
+    fun onPaste(clipboardText: String) {
+        if (clipboardText.isBlank()) return
+        _uiState.update {
+            val separator = if (it.plainText.isBlank() || it.plainText.endsWith("\n")) "" else "\n"
+            it.copy(plainText = it.plainText + separator + clipboardText, saved = false)
+        }
+    }
+
+    private fun aliasesList(): List<String> =
+        _uiState.value.aliasesText.split(",").map { it.trim() }.filter { it.isNotBlank() }
 
     fun requestMediaPick() {
         _uiState.update { it.copy(mediaPickRequestId = it.mediaPickRequestId + 1) }
@@ -134,7 +160,10 @@ class CodexEntryDetailViewModel @Inject constructor(
                 id = state.id,
                 name = state.name,
                 plainText = state.plainText,
+                aliases = aliasesList(),
                 alwaysInclude = state.alwaysInclude,
+                trackMentions = state.trackMentions,
+                caseSensitiveMatching = state.caseSensitiveMatching,
                 imageMediaId = CodexMediaIds.encode(mediaIds),
                 clearImageMediaId = mediaIds.isEmpty(),
             )
@@ -156,7 +185,10 @@ class CodexEntryDetailViewModel @Inject constructor(
             it.copy(
                 name = entity.name,
                 plainText = entity.plainText,
+                aliasesText = decodeAliases(entity.aliasesJson).joinToString(", "),
                 alwaysInclude = entity.alwaysInclude,
+                trackMentions = entity.trackMentions,
+                caseSensitiveMatching = entity.caseSensitiveMatching,
                 media = resolveMedia(mediaIds),
                 saved = true,
             )

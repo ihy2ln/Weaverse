@@ -267,6 +267,8 @@ fun WriteScreen(
                     ?.takeIf { it.commandId == "scene_beat" && it.isStreaming }
                     ?.insertAfterIndex,
                 codexNames = state.codexNames,
+                codexMentionTargets = state.codexMentionTargets,
+                onMentionClick = onOpenCodexEntry,
                 onContinuationSubmit = viewModel::insertContinuation,
                 showInlineWritingPrompt = state.showInlineWritingPrompt,
                 showSceneBeatCard = state.showSceneBeatCard,

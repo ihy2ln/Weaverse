@@ -107,6 +107,10 @@ data class CodexEntryEntity(
     val disabled: Boolean = false,
     val imageMediaId: String? = null,
     val isAiGenerated: Boolean = false,
+    /** Whether name/alias mentions of this entry are auto-highlighted as links and auto-detected for AI context. */
+    val trackMentions: Boolean = true,
+    /** When true, mention matching requires exact case instead of case-insensitive. */
+    val caseSensitiveMatching: Boolean = false,
     val createdAt: Long,
     val updatedAt: Long,
 )

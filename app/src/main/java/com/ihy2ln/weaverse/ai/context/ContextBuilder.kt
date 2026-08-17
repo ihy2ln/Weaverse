@@ -1,5 +1,6 @@
 package com.ihy2ln.weaverse.ai.context
 
+import com.ihy2ln.weaverse.core.text.decodeAliases
 import com.ihy2ln.weaverse.data.db.entities.CodexEntryEntity
 
 data class ContextChip(
@@ -36,10 +37,14 @@ class ContextBuilder {
         entries: List<CodexEntryEntity>,
         request: ContextBuildRequest,
     ): AssembledPrompt {
-        val scanLower = (request.scanText + " " + request.userMessage).lowercase()
+        val scanText = request.scanText + " " + request.userMessage
+        val scanLower = scanText.lowercase()
         val detected = entries.filter { entry ->
             !entry.disabled &&
-                (entry.alwaysInclude || entry.name.lowercase() in scanLower || matchesAliases(entry, scanLower))
+                (
+                    entry.alwaysInclude ||
+                        (entry.trackMentions && matchesNameOrAliases(entry, scanText, scanLower))
+                    )
         }.filter { it.id !in request.manualExcludeIds }
 
         val manual = entries.filter { it.id in request.manualIncludeIds && it.id !in request.manualExcludeIds }
@@ -81,12 +86,12 @@ class ContextBuilder {
         )
     }
 
-    private fun matchesAliases(entry: CodexEntryEntity, scanLower: String): Boolean {
-        return entry.aliasesJson.contains("\"") && entry.aliasesJson
-            .substringAfter("[").substringBefore("]")
-            .split(",")
-            .map { it.trim().removeSurrounding("\"").lowercase() }
-            .any { it.isNotBlank() && it in scanLower }
+    private fun matchesNameOrAliases(entry: CodexEntryEntity, scanText: String, scanLower: String): Boolean {
+        val terms = listOf(entry.name) + decodeAliases(entry.aliasesJson)
+        return terms.any { term ->
+            if (term.isBlank()) return@any false
+            if (entry.caseSensitiveMatching) term in scanText else term.lowercase() in scanLower
+        }
     }
 
     private fun estimateTokens(text: String): Int = (text.length / 4).coerceAtLeast(1)

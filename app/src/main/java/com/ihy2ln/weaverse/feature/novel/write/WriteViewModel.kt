@@ -133,6 +133,8 @@ data class WriteUiState(
     val pendingCodexEntryId: String? = null,
     /** Codex names and aliases highlighted inside the scene-beat prompt. */
     val codexNames: List<String> = emptyList(),
+    /** Codex entries eligible for hyperlinking in the manuscript editor. */
+    val codexMentionTargets: List<com.ihy2ln.weaverse.core.text.CodexMentionTarget> = emptyList(),
     val showInlineWritingPrompt: Boolean = false,
     val showSceneBeatCard: Boolean = false,
     val showContinuationBox: Boolean = false,
@@ -202,7 +204,18 @@ class WriteViewModel @Inject constructor(
                     .map { it.trim() }
                     .filter { it.length >= 2 }
                     .distinct()
-                _uiState.update { it.copy(codexNames = names) }
+                val mentionTargets = entries
+                    .filter { !it.disabled && it.trackMentions }
+                    .map { entry ->
+                        com.ihy2ln.weaverse.core.text.CodexMentionTarget(
+                            entryId = entry.id,
+                            name = entry.name,
+                            aliases = com.ihy2ln.weaverse.core.text.decodeAliases(entry.aliasesJson),
+                            caseSensitive = entry.caseSensitiveMatching,
+                        )
+                    }
+                    .filter { it.name.trim().length >= 2 }
+                _uiState.update { it.copy(codexNames = names, codexMentionTargets = mentionTargets) }
             }
         }
     }

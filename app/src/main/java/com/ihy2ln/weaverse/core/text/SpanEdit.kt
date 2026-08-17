@@ -13,10 +13,20 @@ fun List<Span>.plainText(): String = joinToString("") { it.text }
 
 fun Paragraph.plainText(): String = spans.plainText()
 
-fun List<Span>.toAnnotatedString(fallbackColor: Color = Color.Unspecified): AnnotatedString =
+/** Tag used to find codex-link taps via [AnnotatedString.getStringAnnotations]. */
+const val CodexMentionTag: String = "codex_mention"
+
+fun List<Span>.toAnnotatedString(
+    fallbackColor: Color = Color.Unspecified,
+    mentions: List<CodexMention> = emptyList(),
+    linkColor: Color = Color.Unspecified,
+): AnnotatedString =
     buildAnnotatedString {
+        var offset = 0
         forEach { span ->
             val color = span.colorHex?.let { parseHexColor(it, fallbackColor) } ?: fallbackColor
+            val spanStart = offset
+            val spanEnd = offset + span.text.length
             withStyle(
                 SpanStyle(
                     fontWeight = if (Mark.Bold in span.marks) FontWeight.Bold else FontWeight.Normal,
@@ -26,6 +36,20 @@ fun List<Span>.toAnnotatedString(fallbackColor: Color = Color.Unspecified): Anno
             ) {
                 append(span.text)
             }
+            mentions.filter { it.start < spanEnd && it.end > spanStart }.forEach { mention ->
+                val start = maxOf(mention.start, spanStart)
+                val end = minOf(mention.end, spanEnd)
+                addStyle(
+                    SpanStyle(
+                        color = if (linkColor != Color.Unspecified) linkColor else color,
+                        textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
+                    ),
+                    start,
+                    end,
+                )
+                addStringAnnotation(CodexMentionTag, mention.entryId, start, end)
+            }
+            offset = spanEnd
         }
     }
 

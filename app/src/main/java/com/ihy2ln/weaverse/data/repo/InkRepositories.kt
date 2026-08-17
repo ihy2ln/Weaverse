@@ -315,7 +315,10 @@ class CodexRepository @Inject constructor(
         id: String,
         name: String,
         plainText: String,
+        aliases: List<String>? = null,
         alwaysInclude: Boolean? = null,
+        trackMentions: Boolean? = null,
+        caseSensitiveMatching: Boolean? = null,
         imageMediaId: String? = null,
         clearImageMediaId: Boolean = false,
     ) {
@@ -326,7 +329,10 @@ class CodexRepository @Inject constructor(
                 name = name,
                 docJson = doc.toJson(),
                 plainText = plainText,
+                aliasesJson = aliases?.let { com.ihy2ln.weaverse.core.text.encodeAliases(it) } ?: current.aliasesJson,
                 alwaysInclude = alwaysInclude ?: current.alwaysInclude,
+                trackMentions = trackMentions ?: current.trackMentions,
+                caseSensitiveMatching = caseSensitiveMatching ?: current.caseSensitiveMatching,
                 imageMediaId = when {
                     clearImageMediaId -> null
                     imageMediaId != null -> imageMediaId
@@ -336,6 +342,7 @@ class CodexRepository @Inject constructor(
             ),
         )
     }
+
 
     suspend fun setEntryMediaIds(id: String, mediaIds: List<String>) {
         val current = db.codexDao().observeEntry(id).first() ?: return
