@@ -88,7 +88,7 @@ fun GlobalPromptOverlay(
     val placeholder = when (kind) {
         PromptEntryKind.Manual -> "Write ideas / brainstorm (no AI)…"
         PromptEntryKind.Ai -> "Describe the beat…"
-        null -> "Continue…  / AI · \\ manual"
+        null -> "Insert text"
     }
     val acceptDescription = if (kind == PromptEntryKind.Ai) "Generate" else "Accept"
     val canSubmit = state.text.isNotBlank() || state.imagePath != null
@@ -139,27 +139,6 @@ fun GlobalPromptOverlay(
                 InkTextButton(label = "−", onClick = viewModel::dismiss, compact = true)
             }
         }
-        if (expanded) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = InkSpacing.xxs),
-                horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
-            ) {
-                InkModeCapsule(
-                    label = "Man",
-                    onClick = { viewModel.setKind(PromptEntryKind.Manual) },
-                    selected = kind == PromptEntryKind.Manual,
-                    enabled = !state.isStreaming,
-                )
-                InkModeCapsule(
-                    label = "Gen",
-                    onClick = { viewModel.setKind(PromptEntryKind.Ai) },
-                    selected = kind == PromptEntryKind.Ai,
-                    enabled = !state.isStreaming,
-                )
-            }
-        }
         VoiceToTextField(
             value = state.text,
             onValueChange = viewModel::onTextChange,
@@ -201,6 +180,25 @@ fun GlobalPromptOverlay(
                     enabled = !state.isStreaming,
                 )
             }
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = InkSpacing.xxs),
+            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+        ) {
+            InkModeCapsule(
+                label = "Man",
+                onClick = { viewModel.setKind(PromptEntryKind.Manual) },
+                selected = kind == PromptEntryKind.Manual,
+                enabled = !state.isStreaming,
+            )
+            InkModeCapsule(
+                label = "Gen",
+                onClick = { viewModel.setKind(PromptEntryKind.Ai) },
+                selected = kind == PromptEntryKind.Ai,
+                enabled = !state.isStreaming,
+            )
         }
         Row(
             modifier = Modifier

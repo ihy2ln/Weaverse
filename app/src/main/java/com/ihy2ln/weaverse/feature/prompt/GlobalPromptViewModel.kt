@@ -126,10 +126,17 @@ class GlobalPromptViewModel @Inject constructor(
         _uiState.update { it.copy(kind = null, isStreaming = false) }
     }
 
-    /** Switches Manual/Generative mode without resetting the text already typed. */
+    /**
+     * Selects Manual/Generative mode. Opens the prompt window fresh if it wasn't
+     * already expanded; otherwise switches mode in place, keeping the typed text.
+     */
     fun setKind(kind: PromptEntryKind) {
-        _uiState.update {
-            if (it.kind == null || it.kind == kind) it else it.copy(kind = kind)
+        val current = _uiState.value.kind
+        if (current == kind) return
+        if (current == null) {
+            open(kind)
+        } else {
+            _uiState.update { it.copy(kind = kind) }
         }
     }
 
