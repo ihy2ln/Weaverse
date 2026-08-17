@@ -1,0 +1,178 @@
+package com.ihy2ln.weaverse.feature.novel.codex
+
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.ihy2ln.weaverse.core.ui.components.AudioMediaPlayer
+import com.ihy2ln.weaverse.core.ui.components.InkConfirmButton
+import com.ihy2ln.weaverse.core.ui.components.InkDeleteButton
+import com.ihy2ln.weaverse.core.ui.components.InkOutlinedButton
+import com.ihy2ln.weaverse.core.ui.components.InkTextButton
+import com.ihy2ln.weaverse.core.ui.components.InkToolbar
+import com.ihy2ln.weaverse.core.ui.components.VoiceToTextField
+import com.ihy2ln.weaverse.core.ui.components.ZoomableMedia
+import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
+import com.ihy2ln.weaverse.core.ui.util.AlwaysScrollEndPadding
+import com.ihy2ln.weaverse.core.ui.util.adaptiveContentPadding
+
+@Composable
+fun CodexEntryDetailScreen(
+    entryId: String,
+    onBack: () -> Unit,
+    viewModel: CodexEntryDetailViewModel = hiltViewModel(),
+) {
+    LaunchedEffect(entryId) { viewModel.load(entryId) }
+    val state by viewModel.uiState.collectAsState()
+
+    val mediaPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia(),
+    ) { uris ->
+        if (uris.isNotEmpty()) viewModel.importMedia(uris)
+    }
+
+    val audioPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris ->
+        if (uris.isNotEmpty()) viewModel.importMedia(uris)
+    }
+
+    LaunchedEffect(state.mediaPickRequestId) {
+        if (state.mediaPickRequestId > 0L) {
+            mediaPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+        }
+    }
+
+    LaunchedEffect(state.audioPickRequestId) {
+        if (state.audioPickRequestId > 0L) {
+            audioPicker.launch(arrayOf("audio/*", "audio/mpeg", "audio/wav", "audio/x-wav"))
+        }
+    }
+
+    val contentPad = adaptiveContentPadding()
+    Column(modifier = Modifier.fillMaxSize()) {
+        InkToolbar(
+            title = state.name.ifBlank { "Codex" },
+            subtitle = "Entry detail",
+            canGoBack = true,
+            onBack = onBack,
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(contentPad),
+        ) {
+            VoiceToTextField(
+                value = state.name,
+                onValueChange = viewModel::onName,
+                label = "Name",
+                singleLine = true,
+            )
+            VoiceToTextField(
+                value = state.plainText,
+                onValueChange = viewModel::onBody,
+                label = "Entry text",
+                minLines = 6,
+                modifier = Modifier.padding(top = InkSpacing.md),
+            )
+            Text(
+                "Pictures, videos & audio",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(top = InkSpacing.lg, bottom = InkSpacing.sm),
+            )
+            Row(modifier = Modifier.fillMaxWidth()) {
+                InkOutlinedButton(
+                    label = "Add media",
+                    onClick = viewModel::requestMediaPick,
+                    modifier = Modifier.weight(1f),
+                )
+                InkOutlinedButton(
+                    label = "Add audio",
+                    onClick = viewModel::requestAudioPick,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = InkSpacing.sm),
+                )
+            }
+            state.media.forEach { item ->
+                Column(modifier = Modifier.padding(top = InkSpacing.sm)) {
+                    if (item.isAudio) {
+                        AudioMediaPlayer(path = item.path, label = "Audio")
+                    } else {
+                        ZoomableMedia(
+                            path = item.path,
+                            isVideo = item.isVideo,
+                            contentDescription = "Codex media",
+                            contentScale = ContentScale.Fit,
+                        )
+                    }
+                    InkDeleteButton(
+                        itemName = "this media",
+                        onConfirmedDelete = { viewModel.removeMedia(item.id) },
+                    )
+                }
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = InkSpacing.md)
+                    .clickable { viewModel.onAlwaysInclude(!state.alwaysInclude) },
+            ) {
+                Checkbox(
+                    checked = state.alwaysInclude,
+                    onCheckedChange = viewModel::onAlwaysInclude,
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = MaterialTheme.colorScheme.primary,
+                        checkmarkColor = MaterialTheme.colorScheme.onPrimary,
+                        uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                )
+                Text(
+                    "Always include in context",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
+            if (state.statusMessage.isNotBlank()) {
+                Text(
+                    state.statusMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = InkSpacing.sm),
+                )
+            }
+            InkConfirmButton(
+                onClick = viewModel::save,
+                label = if (state.saved) "Saved" else "Save",
+                contentDescription = if (state.saved) "Saved" else "Save entry",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = InkSpacing.lg),
+            )
+            Spacer(modifier = Modifier.height(AlwaysScrollEndPadding))
+        }
+    }
+}

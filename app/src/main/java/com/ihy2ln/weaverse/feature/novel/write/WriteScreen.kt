@@ -1,200 +1,433 @@
 package com.ihy2ln.weaverse.feature.novel.write
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.GridView
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.Redo
-import androidx.compose.material.icons.filled.Undo
-import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.ihy2ln.weaverse.core.media.rememberMediaPickerActions
-import com.ihy2ln.weaverse.core.media.ui.MediaGridCreatorDialog
-import com.ihy2ln.weaverse.core.text.MediaBlock
-import com.ihy2ln.weaverse.core.text.MediaGrid
-import com.ihy2ln.weaverse.core.text.MediaKind
-import com.ihy2ln.weaverse.core.text.toDocument
-import com.ihy2ln.weaverse.core.text.wordCount
-import com.ihy2ln.weaverse.core.ui.EmptyState
-import com.ihy2ln.weaverse.core.ui.IconToolbarRow
-import com.ihy2ln.weaverse.core.ui.SaveStatusIndicator
-import com.ihy2ln.weaverse.core.ui.Spacing
-import com.ihy2ln.weaverse.core.ui.ToolbarAction
-import com.ihy2ln.weaverse.core.util.newId
-import com.ihy2ln.weaverse.data.db.entity.MediaType
-import com.ihy2ln.weaverse.data.db.entity.SceneEntity
-import com.ihy2ln.weaverse.feature.novel.codex.CodexEntryEditorSheet
-import com.ihy2ln.weaverse.feature.novel.codex.CodexViewModel
-import com.ihy2ln.weaverse.feature.novel.write.editor.BlockEditor
-import com.ihy2ln.weaverse.feature.novel.write.editor.EditorState
-import com.ihy2ln.weaverse.feature.novel.write.editor.rememberAutosaveStatus
-import kotlinx.coroutines.launch
+import com.ihy2ln.weaverse.core.text.Mark
+import com.ihy2ln.weaverse.core.ui.components.EditTextAction
+import com.ihy2ln.weaverse.core.ui.components.EditTextPopupConfig
+import com.ihy2ln.weaverse.core.ui.components.InkConfirmButton
+import com.ihy2ln.weaverse.core.ui.components.InkFilledButton
+import com.ihy2ln.weaverse.core.ui.components.InkModeCapsule
+import com.ihy2ln.weaverse.core.ui.components.InkTextButton
+import com.ihy2ln.weaverse.core.ui.components.TextColorPickerDialog
+import com.ihy2ln.weaverse.core.ui.components.VoiceToTextField
+import com.ihy2ln.weaverse.core.ui.components.rememberSpeechToText
+import com.ihy2ln.weaverse.core.ui.components.toSpanHex
+import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
+import com.ihy2ln.weaverse.core.ui.theme.inkTokens
+import com.ihy2ln.weaverse.core.ui.util.adaptiveContentPadding
+import com.ihy2ln.weaverse.feature.novel.write.editor.DocumentEditor
+import com.ihy2ln.weaverse.feature.novel.write.editor.SlashCommandOverlay
+import com.ihy2ln.weaverse.feature.novel.write.editor.defaultSlashCommands
 
-/**
- * Write screen (spec §6/§9): scene picker + block editor + autosave. A fresh
- * [EditorState] is created per scene id (Phase 5's own contract — see its
- * KDoc), so switching scenes always loads that scene's own undo/redo history
- * rather than sharing one across scenes.
- *
- * Revision 02 §6's `/` command palette and AI overlay window live inside
- * [BlockEditor]/`ParagraphBlockView`/`SceneBeatBlockView` (rev02-07), driven
- * by [WriteViewModel]'s `generateSceneBeat`/[WriteViewModel.bookCodexEntries]/
- * [WriteViewModel.showSceneBeats]/[WriteViewModel.slashOverlayOpacity] — still
- * no separate AI "scope selector"/margin gutter surface (spec §9's other,
- * distinct ask). Documented in BUILD_NOTES.md.
- */
 @Composable
 fun WriteScreen(
-    modifier: Modifier = Modifier,
-    initialSceneId: String? = null,
+    sceneId: String = "scene-1",
+    jumpKind: String = "Scene",
+    onOpenCodexEntry: (String) -> Unit = {},
     viewModel: WriteViewModel = hiltViewModel(),
-    codexViewModel: CodexViewModel = hiltViewModel(),
 ) {
-    val scenes by viewModel.scenes.collectAsState()
-    val scene by viewModel.currentScene.collectAsState()
-    val scope = rememberCoroutineScope()
-    var openCodexEntryId by remember { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(initialSceneId) {
-        initialSceneId?.let { viewModel.selectScene(it) }
+    val state by viewModel.uiState.collectAsState()
+    val tokens = inkTokens()
+    val clipboard = LocalClipboardManager.current
+    val startDictate = rememberSpeechToText { spoken ->
+        viewModel.pasteIntoSelection(spoken)
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
-        val currentSceneValue = scene
-        if (currentSceneValue == null) {
-            EmptyState(
-                icon = Icons.Filled.Image,
-                title = "No scenes yet",
-                subtitle = "Create a scene from the Plan tab to start writing.",
-                modifier = Modifier.fillMaxSize(),
-            )
-            return@Column
-        }
+    LaunchedEffect(sceneId, jumpKind) { viewModel.loadScene(sceneId, jumpKind) }
 
-        val editorState = remember(currentSceneValue.id) {
-            EditorState(initialDocument = currentSceneValue.docJson.toDocument())
+    val imagePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia(),
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            viewModel.importImages(uris)
+        } else {
+            viewModel.cancelImagePick()
         }
-        val codexEntries by viewModel.bookCodexEntries.collectAsState()
-        val showSceneBeats by viewModel.showSceneBeats.collectAsState()
-        val saveStatus = rememberAutosaveStatus(
-            document = editorState.document,
-            onSave = { document -> viewModel.saveDocument(currentSceneValue.id, document) },
+    }
+
+    val audioPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            viewModel.importImages(uris)
+        } else {
+            viewModel.cancelImagePick()
+        }
+    }
+
+    val beatImagePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri != null) viewModel.attachBeatImage(uri)
+    }
+
+    LaunchedEffect(state.pickImageRequestId) {
+        if (state.pickImageRequestId > 0L && state.pickImageBlockIndex != null) {
+            imagePicker.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
+            )
+        }
+    }
+
+    LaunchedEffect(state.pickAudioRequestId) {
+        if (state.pickAudioRequestId > 0L && state.pickImageBlockIndex != null) {
+            audioPicker.launch(arrayOf("audio/*", "audio/mpeg", "audio/wav", "audio/x-wav"))
+        }
+    }
+
+    LaunchedEffect(state.aiOverlay?.pickBeatImageRequestId) {
+        val req = state.aiOverlay?.pickBeatImageRequestId ?: 0L
+        if (req > 0L) {
+            beatImagePicker.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+            )
+        }
+    }
+
+    if (state.showColorPicker) {
+        TextColorPickerDialog(
+            initial = MaterialTheme.colorScheme.primary,
+            onDismiss = viewModel::dismissColorPicker,
+            onConfirm = { color -> viewModel.applyColorOnSelection(color.toSpanHex()) },
         )
-        val mediaPickerActions = rememberMediaPickerActions(onPicked = { uris ->
-            scope.launch {
-                uris.forEach { uri ->
-                    val media = viewModel.importMedia(uri)
-                    val kind = if (media.type == MediaType.Video) MediaKind.Video else MediaKind.Image
-                    val afterId = editorState.blocks.lastOrNull()?.id.orEmpty()
-                    editorState.insertBlockAfter(afterId, MediaBlock(id = newId(), mediaId = media.id, kind = kind))
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        val contentPad = adaptiveContentPadding()
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(contentPad)
+                .padding(
+                    bottom = when {
+                        state.aiOverlay == null -> 0.dp
+                        state.aiOverlay?.commandId == "scene_beat" -> 0.dp
+                        else -> 120.dp
+                    },
+                ),
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(0.dp),
+            ) {
+                var mediaMenuOpen by remember { mutableStateOf(false) }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        state.sceneTitle.ifBlank { "Scene" },
+                        style = MaterialTheme.typography.titleSmall,
+                        color = tokens.primaryText,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        softWrap = false,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Box {
+                        InkTextButton(
+                            label = "Media",
+                            onClick = { mediaMenuOpen = true },
+                            compact = true,
+                        )
+                        DropdownMenu(
+                            expanded = mediaMenuOpen,
+                            onDismissRequest = { mediaMenuOpen = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Mic") },
+                                onClick = {
+                                    mediaMenuOpen = false
+                                    startDictate()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Audio") },
+                                onClick = {
+                                    mediaMenuOpen = false
+                                    viewModel.requestAddAudio()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Picture") },
+                                onClick = {
+                                    mediaMenuOpen = false
+                                    viewModel.requestAddMedia()
+                                },
+                            )
+                        }
+                    }
+                }
+                Text(
+                    "${state.wordCount} words",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = tokens.secondaryText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    softWrap = false,
+                )
+            }
+            if (state.statusMessage.isNotBlank()) {
+                Text(
+                    state.statusMessage,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .padding(bottom = InkSpacing.xs)
+                        .then(
+                            if (state.pendingCodexEntryId != null) {
+                                Modifier.padding(0.dp) // click target via InkTextButton below
+                            } else {
+                                Modifier
+                            },
+                        ),
+                )
+                if (state.pendingCodexEntryId != null) {
+                    InkTextButton(
+                        label = "Open entry",
+                        onClick = {
+                            onOpenCodexEntry(state.pendingCodexEntryId!!)
+                            viewModel.clearStatus()
+                        },
+                    )
                 }
             }
-        })
-        var showMediaGridCreator by remember { mutableStateOf(false) }
-        val allMedia by viewModel.mediaRepository.observeAll().collectAsState(initial = emptyList())
-
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.lg, vertical = Spacing.sm),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            ScenePicker(scenes = scenes, currentTitle = currentSceneValue.title, onSelect = viewModel::selectScene)
-            SaveStatusIndicator(status = saveStatus)
-        }
-
-        IconToolbarRow(
-            actions = listOf(
-                ToolbarAction(Icons.Filled.Undo, "Undo", enabled = editorState.canUndo, onClick = editorState::undo),
-                ToolbarAction(Icons.Filled.Redo, "Redo", enabled = editorState.canRedo, onClick = editorState::redo),
-                ToolbarAction(Icons.Filled.Image, "Insert image", onClick = mediaPickerActions.pickImage),
-                ToolbarAction(Icons.Filled.Videocam, "Insert video", onClick = mediaPickerActions.pickVideo),
-                ToolbarAction(Icons.Filled.GridView, "Insert media grid", onClick = { showMediaGridCreator = true }),
-            ),
-            modifier = Modifier.padding(horizontal = Spacing.lg),
-        )
-        Text(
-            "${editorState.document.wordCount()} words",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.xs),
-        )
-
-        BlockEditor(
-            state = editorState,
-            mediaRepository = viewModel.mediaRepository,
-            writeViewModel = viewModel,
-            codexEntries = codexEntries,
-            showSceneBeats = showSceneBeats,
-            onPickImage = mediaPickerActions.pickImage,
-            onPickVideo = mediaPickerActions.pickVideo,
-            onOpenCodexEntry = { entryId -> openCodexEntryId = entryId },
-            modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = Spacing.lg),
-        )
-
-        if (showMediaGridCreator) {
-            MediaGridCreatorDialog(
-                allMedia = allMedia,
-                onCreate = { template, items ->
-                    val afterId = editorState.blocks.lastOrNull()?.id.orEmpty()
-                    editorState.insertBlockAfter(afterId, MediaGrid(id = newId(), template = template, items = items))
-                    showMediaGridCreator = false
+            DocumentEditor(
+                blocks = state.blocks,
+                mediaPaths = state.mediaPaths,
+                onParagraphChange = viewModel::updateParagraph,
+                onMediaWidthChange = viewModel::updateMediaWidth,
+                onMediaSelect = viewModel::selectMediaBlock,
+                onMediaRemove = viewModel::removeMediaBlock,
+                onMediaMoveBy = viewModel::moveBlock,
+                onStackMedia = viewModel::stackMediaWithAdjacent,
+                onCycleStack = viewModel::cycleMediaStack,
+                onMediaDragRelease = viewModel::onMediaDragRelease,
+                canPasteMedia = state.canPasteMedia,
+                onMediaEditAction = viewModel::onMediaEditAction,
+                selectedMediaBlockIndex = state.selectedMediaBlockIndex,
+                onSlashTrigger = viewModel::onSlashTrigger,
+                onBackslashTrigger = viewModel::onBackslashTrigger,
+                focusedBlockIndex = state.selection.blockIndex,
+                editPopupBlockIndex = state.editPopupBlockIndex,
+                onSelectionChange = viewModel::onSelectionChange,
+                onShowEditPopup = viewModel::setEditPopupBlock,
+                popupConfig = EditTextPopupConfig(
+                    canUndo = state.canUndo,
+                    canRedo = state.canRedo,
+                    hasSelection = state.selection.hasSelection,
+                ),
+                onSceneBeatPromptChange = viewModel::updateSceneBeatPrompt,
+                onToggleSceneBeat = viewModel::toggleSceneBeat,
+                onGenerateSceneBeat = viewModel::generateFromSceneBeat,
+                onClearSceneBeat = viewModel::clearSceneBeat,
+                onAcceptSceneBeat = viewModel::acceptAiResult,
+                onRetrySceneBeat = viewModel::retryAiGeneration,
+                onRequestBeatImage = viewModel::requestBeatImage,
+                beatImageAttached = state.aiOverlay?.imagePath != null,
+                sceneBeatResultIndex = state.aiOverlay
+                    ?.takeIf { it.commandId == "scene_beat" && it.streamingText.isNotBlank() && !it.isStreaming }
+                    ?.insertAfterIndex,
+                generatingSceneBeatIndex = state.aiOverlay
+                    ?.takeIf { it.commandId == "scene_beat" && it.isStreaming }
+                    ?.insertAfterIndex,
+                codexNames = state.codexNames,
+                onContinuationSubmit = viewModel::insertContinuation,
+                showInlineWritingPrompt = state.showInlineWritingPrompt,
+                showSceneBeatCard = state.showSceneBeatCard,
+                showContinuationBox = state.showContinuationBox,
+                onEditAction = { index, action, value ->
+                    viewModel.onSelectionChange(index, value.selection)
+                    when (action) {
+                        EditTextAction.Copy -> {
+                            val text = viewModel.selectedText()
+                            if (text.isNotBlank()) clipboard.setText(AnnotatedString(text))
+                        }
+                        EditTextAction.Cut -> {
+                            val text = viewModel.cutSelection()
+                            if (text.isNotBlank()) clipboard.setText(AnnotatedString(text))
+                        }
+                        EditTextAction.Paste -> {
+                            val clip = clipboard.getText()?.text.orEmpty()
+                            viewModel.pasteIntoSelection(clip)
+                        }
+                        EditTextAction.SelectAll -> viewModel.selectAllInFocusedBlock()
+                        EditTextAction.Delete -> viewModel.deleteSelection()
+                        EditTextAction.Edit -> Unit
+                        EditTextAction.Bold -> viewModel.toggleMarkOnSelection(Mark.Bold)
+                        EditTextAction.Italic -> viewModel.toggleMarkOnSelection(Mark.Italic)
+                        EditTextAction.Color -> viewModel.requestColorPicker()
+                        EditTextAction.AddToCodex -> viewModel.addSelectionToCodex()
+                        EditTextAction.Shorten -> viewModel.startSelectionAi("shorten", "Shorten")
+                        EditTextAction.Extend -> viewModel.startSelectionAi("extend", "Extend")
+                        EditTextAction.Replace -> viewModel.startSelectionAi("replace", "Replace")
+                        EditTextAction.Undo -> viewModel.undo()
+                        EditTextAction.Redo -> viewModel.redo()
+                        EditTextAction.Speak -> {
+                            val text = viewModel.selectedText().ifBlank {
+                                state.aiOverlay?.streamingText.orEmpty()
+                            }
+                            viewModel.speakText(text)
+                        }
+                        EditTextAction.Dictate -> startDictate()
+                    }
                 },
-                onDismiss = { showMediaGridCreator = false },
+                modifier = Modifier.fillMaxSize(),
             )
         }
-
-        openCodexEntryId?.let { entryId ->
-            val categories by codexViewModel.categories.collectAsState()
-            val openEntry by remember(entryId) {
-                codexViewModel.observeEntry(entryId)
-            }.collectAsState(initial = null)
-            CodexEntryEditorSheet(
-                entryId = entryId,
-                category = categories.firstOrNull { it.id == openEntry?.categoryId },
-                viewModel = codexViewModel,
-                onDismiss = { openCodexEntryId = null },
+        if (state.slashBlockIndex != null) {
+            SlashCommandOverlay(
+                commands = defaultSlashCommands,
+                filter = state.slashFilter.removePrefix("/"),
+                onSelect = viewModel::applySlashCommand,
+                onDismiss = viewModel::dismissSlash,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(InkSpacing.lg),
             )
         }
-    }
-}
-
-@Composable
-private fun ScenePicker(
-    scenes: List<SceneEntity>,
-    currentTitle: String,
-    onSelect: (String) -> Unit,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    Column {
-        TextButton(onClick = { expanded = true }) {
-            Text(currentTitle, style = MaterialTheme.typography.titleMedium)
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            scenes.forEach { scene ->
-                DropdownMenuItem(
-                    text = { Text(scene.title) },
-                    onClick = { onSelect(scene.id); expanded = false },
+        state.aiOverlay?.takeIf { it.commandId != "scene_beat" }?.let { overlay ->
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(horizontal = InkSpacing.md, vertical = InkSpacing.sm)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.94f))
+                    .padding(horizontal = InkSpacing.md, vertical = InkSpacing.sm),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        overlay.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 11.sp,
+                        color = tokens.secondaryText,
+                    )
+                    InkTextButton(label = "Hide", onClick = viewModel::dismissAiOverlay)
+                }
+                VoiceToTextField(
+                    value = overlay.prompt,
+                    onValueChange = viewModel::updateAiPrompt,
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = "Add a short instruction…",
+                    minLines = 1,
+                    maxLines = 3,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent,
+                        disabledBorderColor = Color.Transparent,
+                    ),
                 )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = InkSpacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
+                ) {
+                    InkFilledButton(
+                        label = if (overlay.isStreaming) "…" else "Generate",
+                        onClick = viewModel::runAiGeneration,
+                        enabled = !overlay.isStreaming,
+                    )
+                    InkModeCapsule(
+                        label = "Clear Text",
+                        onClick = {
+                            viewModel.updateAiPrompt("")
+                            viewModel.discardAiResult()
+                        },
+                        enabled = overlay.prompt.isNotBlank() || overlay.streamingText.isNotBlank(),
+                    )
+                    Text("Words", style = MaterialTheme.typography.labelMedium)
+                    OutlinedTextField(
+                        value = overlay.outputWords.toString(),
+                        onValueChange = { raw ->
+                            val digits = raw.filter { it.isDigit() }.take(4)
+                            viewModel.updateOutputWords(digits.toIntOrNull() ?: 750)
+                        },
+                        modifier = Modifier.width(64.dp),
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                if (overlay.streamingText.isNotBlank() && !overlay.isStreaming) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = InkSpacing.xs),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
+                    ) {
+                        InkConfirmButton(
+                            onClick = viewModel::acceptAiResult,
+                            label = "Accept",
+                            contentDescription = "Accept",
+                        )
+                        InkModeCapsule(label = "Retry", onClick = viewModel::retryAiGeneration)
+                    }
+                }
+                if (overlay.errorMessage.isNotBlank()) {
+                    Text(
+                        overlay.errorMessage,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = InkSpacing.xs),
+                    )
+                }
+                if (overlay.isStreaming) {
+                    Text(
+                        "Generating…",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tokens.secondaryText,
+                        modifier = Modifier.padding(top = InkSpacing.xs),
+                    )
+                }
+                if (overlay.usageLog.isNotBlank()) {
+                    Text(
+                        overlay.usageLog,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tokens.secondaryText,
+                    )
+                }
             }
         }
     }

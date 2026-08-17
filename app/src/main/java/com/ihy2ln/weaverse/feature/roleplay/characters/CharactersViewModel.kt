@@ -1,89 +1,133 @@
 package com.ihy2ln.weaverse.feature.roleplay.characters
 
-import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Color
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.ihy2ln.weaverse.core.media.MediaImporter
-import com.ihy2ln.weaverse.core.media.MediaPaths
-import com.ihy2ln.weaverse.data.db.entity.RpCharacterEntity
-import com.ihy2ln.weaverse.data.repo.MediaRepository
-import com.ihy2ln.weaverse.data.repo.RoleplayRepository
+import com.ihy2ln.weaverse.core.roleplay.CharacterCardImporter
+import com.ihy2ln.weaverse.data.db.WeaverseDatabase
+import com.ihy2ln.weaverse.data.db.entities.RpCharacterEntity
+import com.ihy2ln.weaverse.feature.shell.WorkspaceHistory
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonPrimitive
+import java.util.UUID
 import javax.inject.Inject
 
-/**
- * Backs the Characters screen (spec §9/§11), including PNG character-card
- * import/export (spec §13 acceptance criterion). [importCard] reads the
- * picked URI's raw bytes directly for [CharacterCardCodec.decode] rather
- * than going through [MediaImporter] first — `MediaImporter` re-compresses
- * (and can re-encode to JPEG) any image over `ImageDownscaler.MAX_LONG_EDGE`,
- * which would silently strip the embedded `chara` chunk before it's ever
- * read. The avatar is imported separately, through the normal pipeline,
- * since *that* copy is fine to downscale.
- */
+data class CharacterCategoryGroup(
+    val name: String,
+    val expanded: Boolean,
+    val entries: List<RpCharacterEntity>,
+)
+
+data class CharactersUiState(
+    val groups: List<CharacterCategoryGroup> = emptyList(),
+    val importStatus: String = "",
+    val pendingOpenId: String? = null,
+)
+
 @HiltViewModel
 class CharactersViewModel @Inject constructor(
-    @ApplicationContext private val context: Context,
-    private val roleplayRepository: RoleplayRepository,
-    val mediaRepository: MediaRepository,
-    private val mediaImporter: MediaImporter,
+    private val db: WeaverseDatabase,
+    private val cardImporter: CharacterCardImporter,
+    private val workspaceHistory: WorkspaceHistory,
 ) : ViewModel() {
-    val characters: StateFlow<List<RpCharacterEntity>> = roleplayRepository.observeCharacters()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val json = Json { ignoreUnknownKeys = true }
+    private val collapsed = MutableStateFlow<Set<String>>(emptySet())
+    private val _importStatus = MutableStateFlow("")
+    private val _pendingOpenId = MutableStateFlow<String?>(null)
 
-    fun createCharacter(name: String) {
-        viewModelScope.launch { roleplayRepository.upsertCharacter(RpCharacterEntity(name = name)) }
+    val uiState: StateFlow<CharactersUiState> = combine(
+        db.roleplayDao().observeCharacters(),
+        collapsed,
+        _importStatus,
+        _pendingOpenId,
+    ) { characters, collapsedIds, status, pendingOpen ->
+        val grouped = characters.groupBy { categoryOf(it) }
+            .toSortedMap()
+            .map { (name, entries) ->
+                CharacterCategoryGroup(
+                    name = name,
+                    expanded = name !in collapsedIds,
+                    entries = entries.sortedBy { it.name },
+                )
+            }
+        CharactersUiState(groups = grouped, importStatus = status, pendingOpenId = pendingOpen)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CharactersUiState())
+
+    /** Back-compat. */
+    val characters: StateFlow<List<RpCharacterEntity>> = db.roleplayDao()
+        .observeCharacters()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val importStatus: StateFlow<String> = _importStatus.asStateFlow()
+
+    fun toggleCategory(name: String) {
+        collapsed.update { set ->
+            if (name in set) set - name else set + name
+        }
     }
 
-    fun update(character: RpCharacterEntity) {
-        viewModelScope.launch { roleplayRepository.upsertCharacter(character) }
+    fun addCharacter(category: String = "Characters") {
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val safe = category.replace("\"", "")
+            val id = "rpc-${UUID.randomUUID()}"
+            val entity = RpCharacterEntity(
+                id = id,
+                name = "New character",
+                description = "",
+                tagsJson = "[\"$safe\"]",
+                createdAt = now,
+            )
+            db.roleplayDao().upsertCharacter(entity)
+            workspaceHistory.record(
+                undo = { db.roleplayDao().deleteCharacter(id) },
+                redo = { db.roleplayDao().upsertCharacter(entity) },
+            )
+            collapsed.update { it - category }
+            _pendingOpenId.value = id
+        }
     }
 
-    fun delete(character: RpCharacterEntity) {
-        viewModelScope.launch { roleplayRepository.deleteCharacter(character) }
+    fun removeCharacter(id: String) {
+        viewModelScope.launch {
+            val existing = db.roleplayDao().getCharacter(id) ?: return@launch
+            db.roleplayDao().deleteCharacter(id)
+            workspaceHistory.record(
+                undo = { db.roleplayDao().upsertCharacter(existing) },
+                redo = { db.roleplayDao().deleteCharacter(id) },
+            )
+        }
     }
 
-    suspend fun importAvatar(uri: Uri) = mediaImporter.importFromUri(uri)
-
-    fun setAvatar(character: RpCharacterEntity, mediaId: String) {
-        viewModelScope.launch { roleplayRepository.upsertCharacter(character.copy(avatarMediaId = mediaId)) }
+    fun importCard(uri: Uri) {
+        viewModelScope.launch {
+            runCatching { cardImporter.importFromUri(uri) }
+                .onSuccess { id ->
+                    _importStatus.update { "Imported character $id" }
+                    _pendingOpenId.value = id
+                }
+                .onFailure { err -> _importStatus.update { "Import failed: ${err.message}" } }
+        }
     }
 
-    /** Reads [uri] as a character card PNG; returns null (and imports nothing) if it has no `chara` chunk. */
-    suspend fun importCard(uri: Uri): RpCharacterEntity? = withContext(Dispatchers.IO) {
-        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@withContext null
-        val decoded = CharacterCardCodec.decode(bytes) ?: return@withContext null
-        val avatarMediaId = runCatching { mediaImporter.importFromUri(uri) }.getOrNull()?.id
-        val character = decoded.copy(avatarMediaId = avatarMediaId)
-        roleplayRepository.upsertCharacter(character)
-        character
+    fun consumePendingOpen() {
+        _pendingOpenId.value = null
     }
 
-    /** Builds the exportable card PNG bytes for [character] — caller writes them wherever the user picked. */
-    suspend fun exportCard(character: RpCharacterEntity): ByteArray = withContext(Dispatchers.IO) {
-        val basePng = buildBasePng(character)
-        CharacterCardCodec.encode(character, basePng)
-    }
-
-    private suspend fun buildBasePng(character: RpCharacterEntity): ByteArray {
-        val avatar = character.avatarMediaId?.let { mediaRepository.getById(it) }
-        val bitmap = avatar?.let { BitmapFactory.decodeFile(MediaPaths.resolve(context, it.relativePath).path) }
-            ?: Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.DKGRAY) }
-        val output = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
-        bitmap.recycle()
-        return output.toByteArray()
+    private fun categoryOf(character: RpCharacterEntity): String {
+        val tags = runCatching {
+            json.parseToJsonElement(character.tagsJson).jsonArray.map { it.jsonPrimitive.content }
+        }.getOrDefault(emptyList())
+        return tags.firstOrNull()?.takeIf { it.isNotBlank() } ?: "Characters"
     }
 }

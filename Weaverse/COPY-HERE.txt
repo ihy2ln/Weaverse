@@ -1,0 +1,21 @@
+Weaverse desktop + web package
+==============================
+
+Intended location on your PC:
+
+  S:\AI\Novel\Weaverse
+
+This repo folder (Weaverse/) is the source of that package.
+
+On Windows, run INSTALL-TO-S.ps1 to copy/download:
+
+  - START-HERE.txt
+  - Weaverse.exe
+  - Weaverse.jar
+  - START-DESKTOP.bat
+  - START-WEB.bat
+  - README.md
+  - SYNC.md
+  - data\
+
+into S:\AI\Novel\Weaverse, then double-click Weaverse.exe.

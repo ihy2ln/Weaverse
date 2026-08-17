@@ -1,27 +1,34 @@
-*.iml
+# Gradle / Android
 .gradle/
-/local.properties
-/.idea/
-.DS_Store
-/build/
-/captures/
-.externalNativeBuild/
-.cxx/
+build/
+local.properties
+*.iml
+.idea/
+*.apk
+*.aab
 *.jks
 *.keystore
 keystore.properties
-
-# Android Studio
-.navigation/
-*.apk
-*.ap_
-*.aab
-
-# Gradle
+release.keystore
+captures/
+.externalNativeBuild/
+.cxx/
 !gradle/wrapper/gradle-wrapper.jar
-!**/src/main/**/build/
-!**/src/test/**/build/
-!**/src/androidTest/**/build/
 
-app/release/
-app/debug/
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+*.env
+
+# Kotlin
+.kotlin/
+
+# Desktop local data (keep package scripts)
+Weaverse/data/**
+!Weaverse/data/.gitkeep
+desktop/build/
+sync-core/build/
+/releases/

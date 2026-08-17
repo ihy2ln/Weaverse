@@ -1,96 +1,129 @@
 # Weaverse
 
-A native Android app that pairs a Novelcrafter-style novel-writing workspace
-(Plan / Write / Chat / Review, Codex, Snippets, Prompt library) with a
-SillyTavern-style roleplay chat mode (characters, personas, codex,
-sampler presets, real streaming 1:1 chats with swipe-cycled regeneration).
-Both modes share one Room database, one AI provider layer, and one media
-engine; a single pill in the top bar switches between them.
+Novel writing (Novelcrafter-style) and SillyTavern-style roleplay — **Android**,
+**Windows desktop**, and **web**, with **Wi-Fi / remote sync** between them.
 
-Offline-first: everything except AI text generation works with the network
-off. No account, no login, no cloud sync, no telemetry.
+**Android package:** `com.ihy2ln.weaverse`
+**Repo:** [github.com/ihy2ln/weaverse](https://github.com/ihy2ln/weaverse)
 
-Status: under active construction, phase by phase — see
-[BUILD_NOTES.md](BUILD_NOTES.md) for what's done and what's next.
+Offline-first: everything except AI text generation works with the network off.
+No account, no login, no cloud sync — sync is peer-to-peer over your own Wi-Fi
+or a tunnel you control, with a one-time password issued by the desktop/web hub.
 
-## Getting the APK
+Status: actively developed — see [BUILD_NOTES.md](BUILD_NOTES.md) for the
+working log, and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a from-the-
+ground-up description of how the app is built (detailed enough to rebuild it
+from scratch if this repo ever disappeared).
 
-Every push to `main` builds a debug APK in GitHub Actions:
+## Downloads
 
-1. Open the repo's **Actions** tab → the latest **Build** run.
-2. Download the `weaverse-debug-apk` artifact and unzip it to get
-   `app-debug.apk`.
+| Platform | Where |
+|----------|-------|
+| **Android APK** | [GitHub Releases](https://github.com/ihy2ln/weaverse/releases), or the `weaverse-debug-apk` artifact on the latest [Build Action](https://github.com/ihy2ln/weaverse/actions/workflows/build.yml) run |
+| **Windows desktop + web** | `Weaverse-Desktop-*.zip` on [GitHub Releases](https://github.com/ihy2ln/weaverse/releases) |
+| **PC package (source)** | [`Weaverse/`](Weaverse/) — run `INSTALL-TO-S.ps1` to install locally |
 
-Tagged releases (`vX.Y.Z`) additionally publish a release APK to the repo's
-**Releases** page via the **Release** workflow.
+## Platforms
 
-## Sideloading
+### Android (full editor)
+Novel · Roleplay · Notes · Library · Prompts · OpenRouter AI · speech-to-text
+**Settings → Sync** — start a host or Push/Pull to a desktop/web peer.
 
-1. Copy the APK to your phone (e.g. via a file share, USB, or a link).
-2. On the phone: **Settings → Apps → Special app access → Install unknown
-   apps**, and enable it for whichever app you used to open the file (Files,
-   Chrome, etc.).
-3. Open the APK file and confirm the install.
+### Windows desktop (sync host + companion)
+Double-click `Weaverse.exe` (or `START-DESKTOP.bat`). Needs Java 17+ unless
+you use the full Windows portable zip. Hosts the sync API and opens the web
+UI. Data lives in `Weaverse/data/` (or wherever you installed the package).
 
-Weaverse is not signed with a Play-distributed key, so if you previously
-installed a build with a different signature you'll need to uninstall the
-old one first (`adb uninstall com.ihy2ln.weaverse` or Settings → Apps →
-Weaverse → Uninstall).
+### Web (Novelcrafter-style hub)
+Plan · Write · Chat · Review · Roleplay · Notes, with a manuscript rail and
+Codex. Same Wi-Fi: `http://<pc-ip>:8787` · Remote: tunnel port **8787**.
 
-## API keys
+## Sync (through the web version — stays connected)
 
-AI generation (workshop chats, scene beats, roleplay replies, text
-replacements) needs at least one provider configured:
+1. Start the **desktop EXE** — it opens the **web hub**.
+2. The web page shows the **single password**.
+3. On Android: **Settings → Open web sync** → enter that password once.
+4. Leave **Auto-sync on** — the phone Push/Pulls in the background.
+5. After a Pull the app reloads so the new library is live.
 
-**Settings → AI Providers → add a connection profile** — pick Anthropic,
-OpenAI-compatible (also covers OpenRouter, DeepSeek, Together, KoboldCpp,
-Ollama, LM Studio, or any compatible endpoint via a custom base URL), or
-Gemini, paste your API key, and tap **Test connection**.
+## Import a Novelcrafter ZIP
 
-Keys are stored on-device only, encrypted with Jetpack Security
-(`EncryptedSharedPreferences`, AES-256-GCM) — never in plaintext, never
-synced anywhere. With no key configured, AI surfaces return a clearly
-labeled mock response instead of failing, so the rest of the app is fully
-explorable without one.
+Success check: drop `Weaverse/import/isekai-gacha-full-word.zip` (or any full
+export with `novel.docx`/`novel.md` + `characters/`) into:
 
-## Backup and restore
+- **Android** — top-bar **Import** / **Export** (novels, roleplay, notes).
+- **Web / desktop** — **Import** / **Export** on the hub, or place the file
+  in `Weaverse/import/` and start the EXE.
 
-**Settings → Export & Import → Export current book** writes a JSON file
-(acts/chapters/scenes as plain text, plus the codex) to a location you
-choose — a structural backup, not a full database/media dump. **Import a
-book** reads one back in as a new book. Roleplay characters export/import
-individually as PNG character cards (**Roleplay → Characters**), matching
-the SillyTavern/Chub card format.
+Codex folders land in Characters / Locations / Objects / Lore. Characters
+also become Roleplay cards with Messenger, DM, and manga chats.
+
+## What's in this app
+
+### Novel
+- **Plan · Write · Chat · Review** with a manuscript rail; **Codex** and
+  **Notes** are shared across every book and mode.
+- Scene documents with media blocks.
+
+### Roleplay — three separate workspaces
+| Mode | Layout |
+|------|--------|
+| **Messenger** | Color-coded chat bubbles + inline media |
+| **DM** | Invisible **3×3** snap canvas |
+| **Roleplay** | Invisible **6×6** manga canvas |
+
+### Notes
+- Shared board — same notes in Novel, Roleplay, and Notes mode.
+- Mic speech-to-text.
+
+### Prompts & AI
+- **`/`** AI prompt · **`\`** manual entry · OpenRouter provider.
+- Compact **PROMPT** dock; **Models** picks any OpenRouter text model.
 
 ## Building locally
 
-Requires JDK 17 and Gradle 8.9 (no `gradlew` wrapper is committed yet — see
-**BUILD_NOTES.md → Gradle wrapper** for why, and run `gradle wrapper
---gradle-version 8.9` once locally to generate it if you want one).
+**Requirements:** JDK 17, Android SDK 35 (only needed for the Android
+target — `:sync-core` and `:desktop` are pure JVM).
 
 ```bash
-gradle assembleDebug
+./gradlew assembleDebug                    # Android APK
+./gradlew :desktop:packageDesktopZip       # Windows/desktop bundle
+./gradlew :sync-core:test                  # shared sync-protocol tests
 ```
 
-The debug APK lands at `app/build/outputs/apk/debug/app-debug.apk`.
+- Android APK → `app/build/outputs/apk/debug/`
+- Desktop zip → `releases/desktop/Weaverse-Desktop-0.5.2.zip`
 
-To build a release APK signed with your own key, create
-`keystore.properties` at the repo root (gitignored) or set the
-`WEAVERSE_KEYSTORE_PATH` / `WEAVERSE_KEYSTORE_PASSWORD` /
-`WEAVERSE_KEY_ALIAS` / `WEAVERSE_KEY_PASSWORD` environment variables, then
-run `gradle assembleRelease`. Without either, the release build type falls
-back to debug signing so it still installs.
+To build a release APK signed with your own key, set the `KEYSTORE_PATH` /
+`KEYSTORE_PASSWORD` / `KEY_ALIAS` / `KEY_PASSWORD` environment variables (CI
+instead decodes a base64 keystore from repo secrets — see
+`.github/workflows/release.yml`), then run `./gradlew assembleRelease`.
+Without a keystore, the release build type falls back to debug signing so it
+still installs.
 
 ## Tech stack
 
-Kotlin 2.0 · Jetpack Compose (Material 3) · Navigation Compose · Hilt ·
-Room + FTS4 · DataStore · Jetpack Security · Ktor Client (SSE streaming) ·
-Coil 3 · Media3/ExoPlayer · kotlinx.serialization · JUnit 5 + Turbine.
+Kotlin · Jetpack Compose (Material 3) · Navigation Compose · Hilt ·
+Room + FTS4 · DataStore · Jetpack Security · Ktor (client + embedded server,
+SSE streaming) · Coil 3 · Media3/ExoPlayer · kotlinx.serialization ·
+JUnit 5 + Turbine (app), a Go launcher for the Windows `.exe` shim.
 
 ## Project layout
 
-See `app/src/main/java/com/ihy2ln/weaverse/` — `core/` (design system,
-media, text, util), `data/` (Room, repositories, settings), `ai/`
-(providers, prompt library, ContextBuilder, token budgeting), `feature/`
-(the actual screens, split into `novel/`, `roleplay/`, `search/`, and
-`settings/`), `di/` (Hilt modules).
+- `app/` — the Android app: `com.ihy2ln.weaverse` (`ai/`, `core/`, `data/`,
+  `feature/novel/`, `feature/roleplay/`, `di/`, …)
+- `sync-core/` — pure-Kotlin/JVM module shared by `app` and `desktop`: the
+  sync package format and protocol logic.
+- `desktop/` — Windows/desktop companion: an embedded Ktor server (the "web
+  hub") plus a tiny Go launcher (`desktop/launcher/`) compiled to
+  `Weaverse.exe`.
+- `Weaverse/` — the distributable PC package (scripts, install helper,
+  sample import, not the built binaries — those come from Releases).
+
+## Docs
+
+- Build notes / working log: [BUILD_NOTES.md](BUILD_NOTES.md)
+- **Rebuild documentation** (architecture, data model, protocols — detailed
+  enough to reconstruct this app from scratch): [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- Same content, wiki-formatted: the [repo Wiki](https://github.com/ihy2ln/weaverse/wiki)
+- Desktop package: [Weaverse/README.md](Weaverse/README.md)

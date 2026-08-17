@@ -1,0 +1,23 @@
+Weaverse — three versions
+=========================
+
+  Android APK     Desktop EXE     Web hub (sync)
+
+1. Double-click Weaverse.exe
+   It opens the web version:  http://127.0.0.1:8787
+
+2. The web page shows the ONE sync password.
+
+3. Import a Novelcrafter ZIP with the web **Import ZIP** button,
+   or drop it in the import\ folder (sample: isekai-gacha-full-word.zip).
+
+4. On the phone: Settings → Import / Export, or Open web sync
+   Enter that password → Push to web or Pull from web.
+
+Folder for this PC package:
+
+    S:\AI\Novel\Weaverse
+
+Remote: tunnel port 8787 and open that link instead.
+Needs Java 17+ unless you installed the full Windows package.
+GitHub: https://github.com/ihy2ln/weaverse/releases

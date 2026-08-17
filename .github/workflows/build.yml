@@ -23,30 +23,30 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      # No gradle-wrapper.jar is committed (the build sandbox that authored
-      # this repo had no outbound network to fetch the binary jar — see
-      # BUILD_NOTES.md "Gradle wrapper"). setup-gradle provisions Gradle
-      # directly instead, so every step below calls `gradle`, not `./gradlew`.
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.9"
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
 
       - name: Lint
-        run: gradle lint --stacktrace
+        run: ./gradlew lint --stacktrace
 
-      - name: Unit tests
-        run: gradle testDebugUnitTest --stacktrace
+      - name: Unit tests (app)
+        run: ./gradlew testDebugUnitTest --stacktrace
+
+      - name: Unit tests (sync-core)
+        run: ./gradlew :sync-core:test --stacktrace
 
       - name: Assemble debug APK
-        run: gradle assembleDebug --stacktrace
+        run: ./gradlew assembleDebug --stacktrace
 
-      # Short retention on purpose: this artifact is only for quick per-push CI verification,
-      # not distribution (release.yml's GitHub Release does that, as a release asset — which
-      # doesn't count against the Actions storage quota). Frequent pushes to main at 30/14-day
-      # retention silently filled the account's 0.5GB Actions storage cap, which then blocked
-      # every subsequent build from getting a runner at all (not a quota-minutes issue — plenty
-      # of those left — but storage, a distinct limit on the billing page).
+      - name: Package desktop zip
+        run: ./gradlew :desktop:packageDesktopZip --stacktrace
+
+      # Short retention on purpose: these artifacts are only for quick per-push CI
+      # verification, not distribution (release.yml's GitHub Release does that, as
+      # a release asset — which doesn't count against the Actions storage quota).
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
@@ -54,10 +54,19 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 3
 
+      - name: Upload desktop zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: weaverse-desktop-zip
+          path: releases/desktop/Weaverse-Desktop-*.zip
+          retention-days: 3
+
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-reports
-          path: app/build/reports/tests/
+          path: |
+            app/build/reports/tests/
+            sync-core/build/reports/tests/
           retention-days: 3

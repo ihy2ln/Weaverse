@@ -6,10 +6,11 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
-import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
+import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 
 @Module
@@ -17,24 +18,27 @@ import javax.inject.Singleton
 object NetworkModule {
     @Provides
     @Singleton
-    fun provideHttpClient(): HttpClient = HttpClient(OkHttp) {
-        expectSuccess = false
-        install(ContentNegotiation) {
-            json(Json { ignoreUnknownKeys = true })
+    fun provideOkHttpClient(): OkHttpClient =
+        OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(300, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .callTimeout(0, TimeUnit.SECONDS)
+            .build()
+
+    @Provides
+    @Singleton
+    fun provideHttpClient(okHttpClient: OkHttpClient): HttpClient = HttpClient(OkHttp) {
+        engine {
+            preconfigured = okHttpClient
         }
-        // requestTimeoutMillis is a hard cap on the *entire* request, including however long a
-        // real generation legitimately streams for — setting that short cuts long generations
-        // off mid-stream; setting it long (as an earlier version of this did, 300s for both)
-        // means a truly dead connection with zero bytes ever arriving stays a silent spinner for
-        // up to 5 minutes before anything tells the user it failed. socketTimeoutMillis is the
-        // right tool for that: it resets on every byte received, so it only fires on genuine
-        // inactivity, not on a slow-but-progressing stream — a moderate value here lets long
-        // generations run indefinitely while still failing fast when nothing is coming back at
-        // all (a dead route, a server that accepted the connection but never responds, etc.).
-        install(HttpTimeout) {
-            connectTimeoutMillis = 30_000
-            socketTimeoutMillis = 90_000
-            requestTimeoutMillis = 600_000
+        install(ContentNegotiation) {
+            json(
+                Json {
+                    ignoreUnknownKeys = true
+                    isLenient = true
+                },
+            )
         }
     }
 }

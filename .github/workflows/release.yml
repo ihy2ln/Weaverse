@@ -43,8 +43,9 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.9"
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
 
       # If signing secrets aren't configured, app/build.gradle.kts falls back
       # to the debug signing config automatically, so a release APK is always
@@ -63,13 +64,19 @@ jobs:
         if: steps.signing.outputs.has_signing == 'true'
         run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > "$RUNNER_TEMP/weaverse-release.jks"
 
+      # app/build.gradle.kts reads unprefixed KEYSTORE_PATH / KEYSTORE_PASSWORD /
+      # KEY_ALIAS / KEY_PASSWORD (carried over as-is from the transplanted source) —
+      # these env var names must match that, not the repo secret names above.
       - name: Assemble release APK
-        run: gradle assembleRelease --stacktrace
+        run: ./gradlew assembleRelease --stacktrace
         env:
-          WEAVERSE_KEYSTORE_PATH: ${{ steps.signing.outputs.has_signing == 'true' && format('{0}/weaverse-release.jks', runner.temp) || '' }}
-          WEAVERSE_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          WEAVERSE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          WEAVERSE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEYSTORE_PATH: ${{ steps.signing.outputs.has_signing == 'true' && format('{0}/weaverse-release.jks', runner.temp) || '' }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Package desktop zip
+        run: ./gradlew :desktop:packageDesktopZip --stacktrace
 
       - name: Rename APK
         run: |
@@ -83,10 +90,28 @@ jobs:
           else
             cp app/build/outputs/apk/release/app-release.apk "dist/weaverse-${{ steps.tag.outputs.name }}-debug-signed.apk"
           fi
+          cp releases/desktop/Weaverse-Desktop-*.zip dist/ || true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.name }}
-          files: dist/*.apk
+          files: |
+            dist/*.apk
+            dist/*.zip
           generate_release_notes: true
+          body: |
+            ## Download & test
+
+            ### Android
+            Install the APK on an Android device (API 26+).
+
+            ### Windows desktop + web
+            Download the `Weaverse-Desktop-*.zip`. Unzip it, run `INSTALL-TO-S.ps1`
+            (or copy the folder wherever you like), then double-click `Weaverse.exe`
+            (or `START-DESKTOP.bat`) — needs Java 17+ unless you use the full
+            Windows package. It opens the web hub, which shows the one sync
+            password. On Android: **Settings → Open web sync** → enter that
+            password → Push / Pull.
+
+            See `Weaverse/SYNC.md` for details.

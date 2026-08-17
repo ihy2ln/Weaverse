@@ -1,8 +1,10 @@
 package com.ihy2ln.weaverse.feature.settings
 
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,277 +12,852 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import com.ihy2ln.weaverse.core.ui.util.AlwaysScrollEndPadding
+import com.ihy2ln.weaverse.core.ui.util.adaptiveContentPadding
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.CloudDownload
-import androidx.compose.material.icons.filled.CloudUpload
-import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material.icons.filled.SmartToy
-import androidx.compose.material.icons.filled.TextFields
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Surface
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.ihy2ln.weaverse.core.export.ExportFormat
-import com.ihy2ln.weaverse.core.media.formatByteSize
-import com.ihy2ln.weaverse.core.ui.AppTheme
-import com.ihy2ln.weaverse.core.ui.FormatPickerDialog
-import com.ihy2ln.weaverse.core.ui.InkCard
-import com.ihy2ln.weaverse.core.ui.NamedFontFamily
-import com.ihy2ln.weaverse.core.ui.Spacing
-import com.ihy2ln.weaverse.core.ui.TypographySettings
-import com.ihy2ln.weaverse.feature.novel.aiproviders.ConnectionProfilesScreen
-import com.ihy2ln.weaverse.feature.novel.prompts.PromptLibraryScreen
-import kotlinx.coroutines.launch
+import com.ihy2ln.weaverse.ai.ModelInfo
+import com.ihy2ln.weaverse.data.settings.ExtraPromptSurface
+import com.ihy2ln.weaverse.core.ui.components.ExpandableSection
+import com.ihy2ln.weaverse.core.ui.components.AppearanceSection
+import com.ihy2ln.weaverse.core.ui.components.InkCard
+import com.ihy2ln.weaverse.core.ui.components.InkConfirmButton
+import com.ihy2ln.weaverse.core.ui.components.InkFilledButton
+import com.ihy2ln.weaverse.core.ui.components.InkHsvColorWheel
+import com.ihy2ln.weaverse.core.ui.components.InkOutlinedButton
+import com.ihy2ln.weaverse.core.ui.components.InkSegmentedPill
+import com.ihy2ln.weaverse.core.ui.components.SegmentedOption
+import com.ihy2ln.weaverse.core.ui.theme.AppThemeMode
+import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
+import com.ihy2ln.weaverse.core.ui.theme.inkTokens
+import com.ihy2ln.weaverse.core.ui.theme.toHexString
+import com.ihy2ln.weaverse.core.ui.util.parseHexColor
 
-private enum class SettingsSection(val title: String) {
-    Appearance("Appearance"),
-    Providers("AI Providers"),
-    Prompts("Prompts"),
-    Storage("Storage"),
-    Data("Export & Import"),
-}
 
-/** Settings overlay (spec §12): Appearance, AI Providers, Prompts, Storage, Export/Import —
- * shown the same way as [com.ihy2ln.weaverse.feature.search.GlobalSearchScreen]. */
+
 @Composable
-fun SettingsScreen(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
-    var section by remember { mutableStateOf<SettingsSection?>(null) }
 
-    Surface(modifier = modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            Row(modifier = Modifier.fillMaxWidth().padding(Spacing.lg), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { if (section != null) section = null else onDismiss() }) {
-                    Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
-                }
-                Text(section?.title ?: "Settings", style = MaterialTheme.typography.titleLarge)
-            }
+fun SettingsScreen(
 
-            when (section) {
-                null -> SettingsMenu(onSelect = { section = it })
-                SettingsSection.Appearance -> AppearanceSection()
-                SettingsSection.Providers -> ConnectionProfilesScreen(modifier = Modifier.padding(horizontal = Spacing.lg))
-                SettingsSection.Prompts -> PromptLibraryScreen(modifier = Modifier.padding(horizontal = Spacing.lg))
-                SettingsSection.Storage -> StorageSection()
-                SettingsSection.Data -> DataSection()
-            }
-        }
+    modifier: Modifier = Modifier,
+
+    viewModel: SettingsViewModel = hiltViewModel(),
+
+) {
+
+    val state by viewModel.uiState.collectAsState()
+
+    var appearanceExpanded by rememberSaveable { mutableStateOf(false) }
+    var promptEntryExpanded by rememberSaveable { mutableStateOf(true) }
+    var openRouterExpanded by rememberSaveable { mutableStateOf(true) }
+    var modelsExpanded by rememberSaveable { mutableStateOf(false) }
+    var otherProvidersExpanded by rememberSaveable { mutableStateOf(false) }
+    var backupExpanded by rememberSaveable { mutableStateOf(false) }
+    var syncExpanded by rememberSaveable { mutableStateOf(true) }
+    var peerHost by rememberSaveable { mutableStateOf("") }
+    var peerPin by rememberSaveable { mutableStateOf("") }
+    var selectedSection by rememberSaveable { mutableStateOf(AppearanceSection.Chrome.name) }
+
+    val backgroundPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri != null) viewModel.importBackground(uri)
     }
-}
 
-@Composable
-private fun SettingsMenu(onSelect: (SettingsSection) -> Unit) {
-    val icons = mapOf(
-        SettingsSection.Appearance to Icons.Filled.Palette,
-        SettingsSection.Providers to Icons.Filled.SmartToy,
-        SettingsSection.Prompts to Icons.Filled.TextFields,
-        SettingsSection.Storage to Icons.Filled.Storage,
-        SettingsSection.Data to Icons.Filled.CloudUpload,
-    )
-    LazyColumn(
-        modifier = Modifier.padding(horizontal = Spacing.lg),
-        verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+
+
+    val contentPad = adaptiveContentPadding()
+
+    Column(
+
+        modifier = modifier
+
+            .fillMaxSize()
+
+            .verticalScroll(rememberScrollState())
+
+            .padding(contentPad),
+
     ) {
-        items(items = SettingsSection.entries, key = { it.name }) { entry ->
-            InkCard(onClick = { onSelect(entry) }, modifier = Modifier.fillMaxWidth()) {
-                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(icons.getValue(entry), contentDescription = null)
-                    Text(entry.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = Spacing.md).weight(1f))
-                    Icon(Icons.Filled.ChevronRight, contentDescription = null)
-                }
-            }
-        }
-    }
-}
 
-@Composable
-private fun AppearanceSection(viewModel: AppearanceViewModel = hiltViewModel()) {
-    val appTheme by viewModel.appTheme.collectAsState()
-    val typography by viewModel.typography.collectAsState()
-    var fontMenuOpen by remember { mutableStateOf(false) }
-    var customThemeSheetOpen by remember { mutableStateOf(false) }
+        ExpandableSection(
 
-    Column(modifier = Modifier.padding(horizontal = Spacing.lg)) {
-        Text("Theme", style = MaterialTheme.typography.labelLarge)
-        AppTheme.entries.forEach { theme ->
+            title = "Appearance",
+
+            expanded = appearanceExpanded,
+
+            onToggle = { appearanceExpanded = !appearanceExpanded },
+
+        ) {
+
+            InkSegmentedPill(
+
+                options = AppThemeMode.entries.map { SegmentedOption(it.name, it.name) },
+
+                selectedId = state.prefs.themeMode.name,
+
+                onSelect = { viewModel.setTheme(AppThemeMode.valueOf(it)) },
+
+                modifier = Modifier.padding(vertical = InkSpacing.sm),
+
+            )
+
+            Text("Font size: ${state.prefs.fontSizeSp}sp")
+
+            Slider(
+
+                value = state.prefs.fontSizeSp.toFloat(),
+
+                onValueChange = { viewModel.setFontSize(it.toInt()) },
+
+                valueRange = 12f..28f,
+
+                steps = 15,
+
+            )
+
+            Text("Line height: ${"%.1f".format(state.prefs.lineHeight)}")
+
+            Slider(
+
+                value = state.prefs.lineHeight,
+
+                onValueChange = viewModel::setLineHeight,
+
+                valueRange = 1.2f..2.2f,
+
+                steps = 9,
+
+            )
+
+            Text(
+                "Overall brightness: ${state.prefs.appBrightnessPercent}%",
+                modifier = Modifier.padding(top = InkSpacing.sm),
+            )
+            Text(
+                "Dims the whole app UI (independent of section colors)",
+                style = MaterialTheme.typography.bodySmall,
+                color = inkTokens().secondaryText,
+            )
+            Slider(
+                value = state.prefs.appBrightnessPercent.toFloat(),
+                onValueChange = { viewModel.setAppBrightness(it.toInt()) },
+                valueRange = 5f..100f,
+            )
+
+            Text("Section colors", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = InkSpacing.md))
+
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.xxs),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(vertical = InkSpacing.sm),
             ) {
-                RadioButton(selected = appTheme == theme, onClick = { viewModel.setAppTheme(theme) })
-                Text(theme.label, modifier = Modifier.padding(start = Spacing.xs))
+                InkSegmentedPill(
+                    options = AppearanceSection.entries.map { SegmentedOption(it.name, it.label) },
+                    selectedId = selectedSection,
+                    onSelect = { selectedSection = it },
+                )
             }
-        }
-        if (appTheme == AppTheme.Custom) {
-            TextButton(onClick = { customThemeSheetOpen = true }) {
-                Text("Edit custom theme…")
-            }
-        }
 
-        Spacer(modifier = Modifier.height(Spacing.lg))
-        Text("Font family", style = MaterialTheme.typography.labelLarge)
-        TextButton(onClick = { fontMenuOpen = true }) { Text(typography.fontFamily.label) }
-        DropdownMenu(expanded = fontMenuOpen, onDismissRequest = { fontMenuOpen = false }) {
-            NamedFontFamily.entries.forEach { family ->
-                DropdownMenuItem(
-                    text = { Text(family.label) },
-                    onClick = { viewModel.setTypography { copy(fontFamily = family) }; fontMenuOpen = false },
+            val section = AppearanceSection.valueOf(selectedSection)
+
+            val sectionKey = section.storageKey
+
+            val appearance = when (section) {
+
+                AppearanceSection.Chrome -> state.prefs.appearance.chrome
+
+                AppearanceSection.Rail -> state.prefs.appearance.rail
+
+                AppearanceSection.Content -> state.prefs.appearance.content
+
+                AppearanceSection.Page -> state.prefs.appearance.page
+
+                AppearanceSection.ChatBubble -> state.prefs.appearance.chatBubble
+
+            }
+
+            val fallback = when (section) {
+
+                AppearanceSection.Chrome -> inkTokens().background
+
+                AppearanceSection.Rail -> inkTokens().panel
+
+                AppearanceSection.Content -> inkTokens().background
+
+                AppearanceSection.Page -> inkTokens().page
+
+                AppearanceSection.ChatBubble -> inkTokens().hover
+
+            }
+
+            val currentColor = parseHexColor(appearance.colorHex, fallback)
+
+                .copy(alpha = appearance.opacityPercent / 100f)
+
+            InkHsvColorWheel(
+                selected = currentColor,
+                onSelect = { color ->
+                    viewModel.setSectionAppearance(sectionKey, color.toHexString(), (color.alpha * 100).toInt())
+                },
+                opacityPercent = appearance.opacityPercent,
+                onOpacityChange = { pct ->
+                    viewModel.setSectionAppearance(sectionKey, appearance.colorHex.ifBlank { currentColor.toHexString() }, pct)
+                },
+            )
+            InkOutlinedButton(
+                label = "Reset section colors",
+                onClick = viewModel::resetAppearanceColors,
+                modifier = Modifier.padding(top = InkSpacing.sm),
+            )
+
+            Text(
+                "Background media",
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(top = InkSpacing.md),
+            )
+            Text(
+                "Shell wallpaper (image applied; video stored)",
+                style = MaterialTheme.typography.bodySmall,
+                color = inkTokens().secondaryText,
+            )
+            Text(
+                "Current: ${state.backgroundLabel}",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = InkSpacing.xs),
+            )
+            if (state.backgroundNote.isNotBlank()) {
+                Text(
+                    state.backgroundNote,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = inkTokens().secondaryText,
+                    modifier = Modifier.padding(top = InkSpacing.xs),
+                )
+            }
+            Row(modifier = Modifier.padding(top = InkSpacing.sm)) {
+                InkFilledButton(
+                    label = "Add media",
+                    onClick = {
+                        backgroundPicker.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
+                        )
+                    },
+                )
+                InkOutlinedButton(
+                    label = "Clear",
+                    onClick = viewModel::clearBackground,
+                    modifier = Modifier.padding(start = InkSpacing.sm),
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(Spacing.md))
-        Text("Font size: ${typography.fontSizeSp.toInt()}sp", style = MaterialTheme.typography.labelLarge)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = {
-                viewModel.setTypography { copy(fontSizeSp = (fontSizeSp - 1f).coerceIn(TypographySettingsRange)) }
-            }) { Text("-") }
-            TextButton(onClick = {
-                viewModel.setTypography { copy(fontSizeSp = (fontSizeSp + 1f).coerceIn(TypographySettingsRange)) }
-            }) { Text("+") }
-        }
-        Spacer(modifier = Modifier.height(Spacing.lg))
-    }
-
-    if (customThemeSheetOpen) {
-        CustomThemeEditorSheet(onDismiss = { customThemeSheetOpen = false }, viewModel = viewModel)
-    }
-}
-
-private val TypographySettingsRange = TypographySettings.FontSizeRange
-
-@Composable
-private fun StorageSection(viewModel: StorageViewModel = hiltViewModel()) {
-    val totalBytes by viewModel.totalBytes.collectAsState()
-    val lastCleanupCount by viewModel.lastCleanupCount.collectAsState()
-    val isCleaning by viewModel.isCleaning.collectAsState()
-
-    Column(modifier = Modifier.padding(horizontal = Spacing.lg)) {
-        Text("Media storage used: ${formatByteSize(totalBytes)}", style = MaterialTheme.typography.bodyLarge)
-        Spacer(modifier = Modifier.height(Spacing.md))
-        TextButton(onClick = viewModel::cleanUpOrphanedMedia, enabled = !isCleaning) {
-            Text(if (isCleaning) "Cleaning up…" else "Clean up orphaned media")
-        }
-        lastCleanupCount?.let { count ->
+        ExpandableSection(
+            title = "Prompt entry",
+            subtitle = "PROMPT box is always on; extra generators stay in this menu",
+            expanded = promptEntryExpanded,
+            onToggle = { promptEntryExpanded = !promptEntryExpanded },
+            modifier = Modifier.padding(top = InkSpacing.md),
+        ) {
             Text(
-                "Removed $count orphaned file(s).",
+                "The compact PROMPT box is always on. Turn on any extra generator you still want. They are not deleted.",
+                style = MaterialTheme.typography.bodySmall,
+                color = inkTokens().secondaryText,
+                modifier = Modifier.padding(bottom = InkSpacing.sm),
+            )
+            val extras = state.prefs.extraPromptSurfaces
+            PromptSurfaceToggle(
+                label = "Inline writing",
+                checked = extras.inlineWriting,
+                onCheckedChange = { viewModel.setExtraPromptSurface(ExtraPromptSurface.InlineWriting, it) },
+            )
+            PromptSurfaceToggle(
+                label = "SCENE BEAT card",
+                checked = extras.sceneBeatCard,
+                onCheckedChange = { viewModel.setExtraPromptSurface(ExtraPromptSurface.SceneBeatCard, it) },
+            )
+            PromptSurfaceToggle(
+                label = "Continue under last line",
+                checked = extras.continuation,
+                onCheckedChange = { viewModel.setExtraPromptSurface(ExtraPromptSurface.Continuation, it) },
+            )
+            PromptSurfaceToggle(
+                label = "Chat composer",
+                checked = extras.chatComposer,
+                onCheckedChange = { viewModel.setExtraPromptSurface(ExtraPromptSurface.ChatComposer, it) },
+            )
+            PromptSurfaceToggle(
+                label = "Roleplay / AI · \\ manual",
+                checked = extras.roleplayButtons,
+                onCheckedChange = { viewModel.setExtraPromptSurface(ExtraPromptSurface.RoleplayButtons, it) },
+            )
+        }
+
+        ExpandableSection(
+
+            title = "AI Connections — OpenRouter",
+
+            subtitle = "Key validated via GET /api/v1/key",
+
+            expanded = openRouterExpanded,
+
+            onToggle = { openRouterExpanded = !openRouterExpanded },
+
+            modifier = Modifier.padding(top = InkSpacing.md),
+
+        ) {
+
+            OutlinedTextField(
+
+                value = state.openRouterKey,
+
+                onValueChange = viewModel::onOpenRouterKey,
+
+                label = { Text("OpenRouter API key") },
+
+                modifier = Modifier.fillMaxWidth(),
+
+                singleLine = true,
+
+            )
+
+            Row(modifier = Modifier.padding(top = InkSpacing.sm)) {
+
+                InkConfirmButton(
+
+                    onClick = viewModel::saveOpenRouterKey,
+
+                    enabled = !state.isValidatingKey,
+
+                    contentDescription = "Save and validate API key",
+
+                )
+
+                InkOutlinedButton(
+
+                    label = "Test connection",
+
+                    onClick = viewModel::testConnection,
+
+                    enabled = !state.isValidatingKey,
+
+                    modifier = Modifier.padding(start = InkSpacing.sm),
+
+                )
+
+            }
+
+            if (state.isValidatingKey) {
+
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = InkSpacing.sm))
+
+            }
+
+            if (state.keyStatus.isNotBlank()) {
+
+                Text(
+
+                    state.keyStatus,
+
+                    modifier = Modifier.padding(top = InkSpacing.sm),
+
+                    color = if (state.keyStatusIsError) MaterialTheme.colorScheme.error
+
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+
+                )
+
+            }
+
+            state.openRouterKeyInfo?.let { info ->
+
+                InkCard(modifier = Modifier.padding(top = InkSpacing.sm)) {
+
+                    Text("Key info (from OpenRouter)", style = MaterialTheme.typography.labelLarge)
+
+                    info.label?.let { Text("Label: $it") }
+
+                    info.usage?.let { Text("Usage: $it") }
+
+                    info.limit?.let { Text("Limit: $it") }
+
+                    info.limitRemaining?.let { Text("Remaining: $it") }
+
+                    info.isFreeTier?.let { Text("Free tier: $it") }
+
+                    info.rateLimit?.let { rl ->
+
+                        Text("Rate limit: ${rl.requests ?: "?"} / ${rl.interval ?: "?"}")
+
+                    }
+
+                }
+
+            }
+
+        }
+
+
+
+        ExpandableSection(
+
+            title = "Models",
+
+            expanded = modelsExpanded,
+
+            onToggle = { modelsExpanded = !modelsExpanded },
+
+            modifier = Modifier.padding(top = InkSpacing.md),
+
+        ) {
+
+            Text(
+                "Default: ${state.prefs.defaultModelRef}. Writing lists every OpenRouter text model after Refresh (search to filter).",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            Row(modifier = Modifier.padding(vertical = InkSpacing.sm)) {
+
+                InkOutlinedButton(
+
+                    label = if (state.isRefreshingModels) "Refreshing…" else "Refresh models",
+
+                    onClick = viewModel::refreshModels,
+
+                    enabled = !state.isRefreshingModels,
+
+                )
+
+            }
+
+            InkSegmentedPill(
+
+                options = listOf(
+
+                    SegmentedOption(ModelListTab.Writing.name, "Writing"),
+
+                    SegmentedOption(ModelListTab.TextToSpeech.name, "Text to speech"),
+
+                    SegmentedOption(ModelListTab.All.name, "All"),
+
+                ),
+
+                selectedId = state.modelTab.name,
+
+                onSelect = { viewModel.onModelTab(ModelListTab.valueOf(it)) },
+
+            )
+
+            OutlinedTextField(
+
+                value = state.modelSearch,
+
+                onValueChange = viewModel::onModelSearch,
+
+                label = { Text("Search models") },
+
+                modifier = Modifier.fillMaxWidth().padding(top = InkSpacing.sm),
+
+                singleLine = true,
+
+            )
+
+            val list = when (state.modelTab) {
+
+                ModelListTab.Writing -> state.writingModels
+
+                ModelListTab.TextToSpeech -> state.ttsModels
+
+                ModelListTab.All -> state.models
+
+            }.filter { model ->
+                state.modelSearch.isBlank() ||
+                    model.id.contains(state.modelSearch, ignoreCase = true) ||
+                    model.displayName.contains(state.modelSearch, ignoreCase = true) ||
+                    model.tags.any { it.contains(state.modelSearch, ignoreCase = true) }
+            }
+            if (list.isEmpty()) {
+                Text(
+                    "No models cached. Save a valid OpenRouter key, then tap Refresh models.",
+                    modifier = Modifier.padding(top = InkSpacing.sm),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Text(
+                    "${list.size} models",
+                    modifier = Modifier.padding(top = InkSpacing.sm),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                list.forEach { model ->
+                    ModelRow(
+                        model = model,
+                        selected = state.prefs.defaultModelRef.endsWith(model.id),
+                        onClick = { viewModel.selectDefaultModel(model.id, model.available) },
+                    )
+                }
+            }
+
+        }
+
+
+
+        ExpandableSection(
+
+            title = "Other providers",
+
+            subtitle = "Stored locally, not validated here",
+
+            expanded = otherProvidersExpanded,
+
+            onToggle = { otherProvidersExpanded = !otherProvidersExpanded },
+
+            modifier = Modifier.padding(top = InkSpacing.md),
+
+        ) {
+
+            OutlinedTextField(
+
+                value = state.anthropicKey,
+
+                onValueChange = viewModel::onAnthropicKey,
+
+                label = { Text("Anthropic API key") },
+
+                modifier = Modifier.fillMaxWidth(),
+
+            )
+
+            OutlinedTextField(
+
+                value = state.openAiKey,
+
+                onValueChange = viewModel::onOpenAiKey,
+
+                label = { Text("OpenAI API key") },
+
+                modifier = Modifier.fillMaxWidth().padding(top = InkSpacing.sm),
+
+            )
+
+            OutlinedTextField(
+
+                value = state.geminiKey,
+
+                onValueChange = viewModel::onGeminiKey,
+
+                label = { Text("Gemini API key") },
+
+                modifier = Modifier.fillMaxWidth().padding(top = InkSpacing.sm),
+
+            )
+
+            InkConfirmButton(
+
+                onClick = viewModel::saveOtherKeys,
+
+                label = "Save keys",
+
+                contentDescription = "Save other keys",
+
+                modifier = Modifier.padding(top = InkSpacing.sm),
+
+            )
+
+        }
+
+
+
+        ExpandableSection(
+            title = "Sync through the web version",
+            expanded = syncExpanded,
+            onToggle = { syncExpanded = !syncExpanded },
+            modifier = Modifier.padding(top = InkSpacing.md),
+        ) {
+            val context = LocalContext.current
+            Text(
+                "Three versions: Android APK, desktop EXE, and the web hub. Sync always goes through the web page. Open that link, copy the password it shows, then Push or Pull.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(bottom = InkSpacing.sm),
+            )
+            OutlinedTextField(
+                value = peerHost.ifBlank { state.sync.peerHost },
+                onValueChange = {
+                    peerHost = it
+                    viewModel.setSyncPeer(it, peerPin.ifBlank { state.sync.peerPin })
+                },
+                label = { Text("Web link (from desktop or this phone)") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = InkSpacing.sm),
+                singleLine = true,
+            )
+            Row(modifier = Modifier.padding(bottom = InkSpacing.sm)) {
+                InkConfirmButton(
+                    onClick = {
+                        val typed = peerHost.ifBlank { state.sync.peerHost }
+                        if (typed.isNotBlank()) {
+                            viewModel.setSyncPeer(typed, peerPin.ifBlank { state.sync.peerPin })
+                        }
+                        val url = viewModel.suggestedWebUrl()
+                        runCatching {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                        }
+                    },
+                    label = "Open web sync",
+                    contentDescription = "Open the web sync hub",
+                )
+                if (state.sync.hosting) {
+                    InkOutlinedButton(
+                        label = "Stop web hub",
+                        onClick = viewModel::stopSyncHost,
+                        modifier = Modifier.padding(start = InkSpacing.sm),
+                    )
+                } else {
+                    InkConfirmButton(
+                        onClick = viewModel::startSyncHost,
+                        label = "Start web hub",
+                        contentDescription = "Start the web sync hub on this phone",
+                        modifier = Modifier.padding(start = InkSpacing.sm),
+                    )
+                }
+            }
+            Row(modifier = Modifier.padding(bottom = InkSpacing.sm)) {
+                if (state.sync.autoSync) {
+                    InkOutlinedButton(
+                        label = "Auto-sync on",
+                        onClick = { viewModel.setAutoSync(false) },
+                    )
+                } else {
+                    InkConfirmButton(
+                        onClick = { viewModel.setAutoSync(true) },
+                        label = "Auto-sync off",
+                        contentDescription = "Enable automatic web sync",
+                    )
+                }
+            }
+            OutlinedTextField(
+                value = peerPin.ifBlank { state.sync.peerPin },
+                onValueChange = {
+                    peerPin = it
+                    viewModel.setSyncPeer(peerHost.ifBlank { state.sync.peerHost }, it)
+                },
+                label = { Text("Password from the web page") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = InkSpacing.sm),
+                singleLine = true,
+            )
+            Row {
+                InkConfirmButton(
+                    onClick = viewModel::pushSyncToPeer,
+                    label = "Push to web",
+                    contentDescription = "Push library to the web hub",
+                )
+                InkConfirmButton(
+                    onClick = viewModel::pullSyncFromPeer,
+                    label = "Pull from web",
+                    contentDescription = "Pull library from the web hub",
+                    modifier = Modifier.padding(start = InkSpacing.sm),
+                )
+            }
+            if (state.sync.statusText.isNotBlank()) {
+                Text(
+                    state.sync.statusText,
+                    modifier = Modifier.padding(top = InkSpacing.sm),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (state.sync.lastError.isNotBlank()) {
+                Text(
+                    state.sync.lastError,
+                    modifier = Modifier.padding(top = InkSpacing.xs),
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+
+        ExpandableSection(
+
+            title = "Backup & restore",
+
+            expanded = backupExpanded,
+
+            onToggle = { backupExpanded = !backupExpanded },
+
+            modifier = Modifier.padding(top = InkSpacing.md),
+
+        ) {
+
+            Text(
+                "Backup now writes two zip files: one for this phone (Restore) and one for PC (extract into the Weaverse folder that contains data/). Copies also go to Android/data/…/files/backups so you can copy them off the device.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(bottom = InkSpacing.sm),
+            )
+
+            Row {
+
+                InkConfirmButton(
+
+                    onClick = viewModel::exportBackup,
+
+                    label = "Backup now",
+
+                    contentDescription = "Backup app database",
+
+                )
+
+                InkConfirmButton(
+
+                    onClick = viewModel::restoreBackup,
+
+                    label = "Restore",
+
+                    contentDescription = "Restore latest backup",
+
+                    modifier = Modifier.padding(start = InkSpacing.sm),
+
+                )
+
+            }
+
+            if (state.exportStatus.isNotBlank()) {
+
+                Text(
+
+                    state.exportStatus,
+
+                    modifier = Modifier.padding(top = InkSpacing.sm),
+
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+
+                )
+
+            }
+
+        }
+
+        Spacer(modifier = Modifier.height(AlwaysScrollEndPadding))
+
+    }
+
+}
+
+
+
+@Composable
+private fun ModelRow(
+    model: ModelInfo,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val muted = !model.available
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .background(
+                if (selected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent,
+            )
+            .clickable(enabled = model.available, onClick = onClick)
+            .padding(InkSpacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                buildString {
+                    append(model.displayName)
+                    if (model.tags.isNotEmpty()) {
+                        append(" · ")
+                        append(model.tags.joinToString(" · "))
+                    }
+                },
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                color = if (muted) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                else MaterialTheme.colorScheme.onSurface,
+            )
+            val price = buildString {
+                append(model.id)
+                model.contextLength?.let { append(" · ctx $it") }
+                val p = model.promptPricePerMillion
+                val c = model.completionPricePerMillion
+                if (p != null || c != null) {
+                    append(" · $")
+                    append(p?.let { "%.2f".format(it) } ?: "?")
+                    append(" / $")
+                    append(c?.let { "%.2f".format(it) } ?: "?")
+                    append(" per M")
+                }
+                if (muted) append(" · unavailable")
+            }
+            Text(
+                price,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (muted) 0.4f else 1f),
+            )
+        }
+        if (selected) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = "Selected",
+                tint = MaterialTheme.colorScheme.primary,
             )
         }
     }
 }
 
 @Composable
-private fun DataSection(viewModel: BackupViewModel = hiltViewModel()) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var status by remember { mutableStateOf<String?>(null) }
-    var exportPickerOpen by remember { mutableStateOf(false) }
-    var importPickerOpen by remember { mutableStateOf(false) }
-    var pendingFormat by remember { mutableStateOf<ExportFormat?>(null) }
-
-    // CreateDocument's mime type is fixed at launcher-creation time, but which format the user
-    // wants varies per tap — "*/*" plus the format-specific filename extension (set at launch)
-    // is simpler than juggling four separate launchers, and every file manager accepts it.
-    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
-        val format = pendingFormat
-        pendingFormat = null
-        if (uri != null && format != null) {
-            scope.launch {
-                val bytes = viewModel.exportCurrentBook(format)
-                if (bytes == null) {
-                    status = "No book to export yet."
-                } else {
-                    context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
-                    status = "Exported as ${format.label}."
-                }
-            }
-        }
-    }
-    // "*/*" here too rather than format.mimeType — Android file providers tag extensions like
-    // .md inconsistently (text/markdown vs text/plain vs text/x-markdown depending on OEM), so a
-    // strict mime filter can hide the very file the user picked a format to import. The chosen
-    // format still tells the importer how to parse the bytes; it just doesn't gate the picker.
-    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        val format = pendingFormat
-        pendingFormat = null
-        if (uri != null && format != null) {
-            scope.launch {
-                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                status = if (bytes == null) {
-                    "Could not read that file."
-                } else {
-                    runCatching { viewModel.importBook(bytes, format) }
-                        .fold(
-                            onSuccess = { title -> "Imported \"$title\" as a new book." },
-                            onFailure = { "That file isn't a valid ${format.label} book export." },
-                        )
-                }
-            }
-        }
-    }
-
-    Column(modifier = Modifier.padding(horizontal = Spacing.lg)) {
-        Text(
-            "Export the current book's structure and codex, or import one back in, in JSON " +
-                "(full fidelity), Markdown, HTML, or Word (.docx) format. Media and full " +
-                "rich-text formatting aren't included in any format yet.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+private fun PromptSurfaceToggle(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(vertical = InkSpacing.xxs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = CheckboxDefaults.colors(
+                checkedColor = MaterialTheme.colorScheme.primary,
+                checkmarkColor = MaterialTheme.colorScheme.onPrimary,
+            ),
         )
-        Spacer(modifier = Modifier.height(Spacing.md))
-        TextButton(onClick = { exportPickerOpen = true }) {
-            Icon(Icons.Filled.CloudUpload, contentDescription = null)
-            Text("Export current book", modifier = Modifier.padding(start = Spacing.xs))
-        }
-        TextButton(onClick = { importPickerOpen = true }) {
-            Icon(Icons.Filled.CloudDownload, contentDescription = null)
-            Text("Import a book", modifier = Modifier.padding(start = Spacing.xs))
-        }
-        status?.let { Text(it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Spacing.sm)) }
-    }
-
-    if (exportPickerOpen) {
-        FormatPickerDialog(
-            title = "Export as…",
-            onDismiss = { exportPickerOpen = false },
-            onSelect = { format ->
-                exportPickerOpen = false
-                pendingFormat = format
-                exportLauncher.launch("weaverse-backup.${format.extension}")
-            },
-        )
-    }
-    if (importPickerOpen) {
-        FormatPickerDialog(
-            title = "Import from…",
-            onDismiss = { importPickerOpen = false },
-            onSelect = { format ->
-                importPickerOpen = false
-                pendingFormat = format
-                importLauncher.launch("*/*")
-            },
-        )
+        Text(label, color = MaterialTheme.colorScheme.onSurface)
     }
 }
+
+
