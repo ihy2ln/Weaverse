@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Only used as the pre-Compose window background to avoid a flash of
+         white before the Compose theme (core/ui/Color.kt) takes over. -->
+    <color name="window_background_light">#FFFBF7</color>
+    <color name="window_background_dark">#15130F</color>
+</resources>

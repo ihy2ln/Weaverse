@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Stylized fountain-pen nib, centered in the 66dp adaptive-icon safe zone. -->
+    <path
+        android:fillColor="#E8A33D"
+        android:pathData="M54,20 C69,20 83,35 83,55 C83,74 71,90 54,90 C37,90 25,74 25,55 C25,35 39,20 54,20 Z" />
+    <path
+        android:fillColor="#2B2620"
+        android:pathData="M53,34 L55,34 L57,68 L54,80 L51,68 Z" />
+    <path
+        android:fillColor="#2B2620"
+        android:pathData="M54,42 m-3.6,0 a3.6,3.6 0 1,0 7.2,0 a3.6,3.6 0 1,0 -7.2,0" />
+</vector>
