@@ -151,6 +151,53 @@ fun GlobalPromptOverlay(
             colors = fieldColors,
             showMic = false,
         )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = InkSpacing.xxs),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xxs),
+        ) {
+            InkTextButton(
+                label = "Models",
+                onClick = { modelsOpen = true },
+                compact = true,
+                enabled = !state.isStreaming,
+            )
+            Text(
+                PromptModelSelection.shortLabel(activeModelRef, state.writingModels),
+                style = MaterialTheme.typography.labelSmall,
+                color = tokens.secondaryText,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Clip,
+                modifier = Modifier
+                    .weight(1f)
+                    .basicMarquee(iterations = Int.MAX_VALUE, repeatDelayMillis = 1_200),
+            )
+            if (state.isStreaming) {
+                Text(
+                    "…",
+                    color = tokens.secondaryText,
+                    modifier = Modifier.padding(end = InkSpacing.xxs),
+                )
+            } else {
+                InkCheckIconButton(
+                    onClick = viewModel::submit,
+                    enabled = canSubmit,
+                    contentDescription = acceptDescription,
+                )
+            }
+            InkClearIconButton(
+                onClick = viewModel::clearText,
+                enabled = canClear,
+            )
+            VoiceInputButton(
+                enabled = !state.isStreaming,
+                compact = true,
+                onSpoken = { spoken -> viewModel.onTextChange(mergeSpokenText(state.text, spoken)) },
+            )
+        }
         if (kind == PromptEntryKind.Ai) {
             Row(
                 modifier = Modifier
@@ -198,53 +245,6 @@ fun GlobalPromptOverlay(
                 onClick = { viewModel.setKind(PromptEntryKind.Ai) },
                 selected = kind == PromptEntryKind.Ai,
                 enabled = !state.isStreaming,
-            )
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = InkSpacing.xxs),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xxs),
-        ) {
-            InkTextButton(
-                label = "Models",
-                onClick = { modelsOpen = true },
-                compact = true,
-                enabled = !state.isStreaming,
-            )
-            Text(
-                PromptModelSelection.shortLabel(activeModelRef, state.writingModels),
-                style = MaterialTheme.typography.labelSmall,
-                color = tokens.secondaryText,
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Clip,
-                modifier = Modifier
-                    .weight(1f)
-                    .basicMarquee(iterations = Int.MAX_VALUE, repeatDelayMillis = 1_200),
-            )
-            if (state.isStreaming) {
-                Text(
-                    "…",
-                    color = tokens.secondaryText,
-                    modifier = Modifier.padding(end = InkSpacing.xxs),
-                )
-            } else {
-                InkCheckIconButton(
-                    onClick = viewModel::submit,
-                    enabled = canSubmit,
-                    contentDescription = acceptDescription,
-                )
-            }
-            InkClearIconButton(
-                onClick = viewModel::clearText,
-                enabled = canClear,
-            )
-            VoiceInputButton(
-                enabled = !state.isStreaming,
-                compact = true,
-                onSpoken = { spoken -> viewModel.onTextChange(mergeSpokenText(state.text, spoken)) },
             )
         }
         if (state.isStreaming) {
