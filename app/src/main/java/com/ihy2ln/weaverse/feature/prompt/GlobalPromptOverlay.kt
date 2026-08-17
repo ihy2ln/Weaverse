@@ -158,6 +158,20 @@ fun GlobalPromptOverlay(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(InkSpacing.xxs),
         ) {
+            InkModeCapsule(
+                label = "Man",
+                onClick = { viewModel.setKind(PromptEntryKind.Manual) },
+                selected = kind == PromptEntryKind.Manual,
+                enabled = !state.isStreaming,
+                compact = true,
+            )
+            InkModeCapsule(
+                label = "Gen",
+                onClick = { viewModel.setKind(PromptEntryKind.Ai) },
+                selected = kind == PromptEntryKind.Ai,
+                enabled = !state.isStreaming,
+                compact = true,
+            )
             InkTextButton(
                 label = "Models",
                 onClick = { modelsOpen = true },
@@ -227,25 +241,6 @@ fun GlobalPromptOverlay(
                     enabled = !state.isStreaming,
                 )
             }
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = InkSpacing.xxs),
-            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
-        ) {
-            InkModeCapsule(
-                label = "Man",
-                onClick = { viewModel.setKind(PromptEntryKind.Manual) },
-                selected = kind == PromptEntryKind.Manual,
-                enabled = !state.isStreaming,
-            )
-            InkModeCapsule(
-                label = "Gen",
-                onClick = { viewModel.setKind(PromptEntryKind.Ai) },
-                selected = kind == PromptEntryKind.Ai,
-                enabled = !state.isStreaming,
-            )
         }
         if (state.isStreaming) {
             Text(
