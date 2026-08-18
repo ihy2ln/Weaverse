@@ -39,6 +39,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.ihy2ln.weaverse.core.text.Mark
 import com.ihy2ln.weaverse.core.ui.components.EditTextAction
 import com.ihy2ln.weaverse.core.ui.components.EditTextPopupConfig
+import com.ihy2ln.weaverse.core.ui.components.FontFamilyPickerDialog
+import com.ihy2ln.weaverse.core.ui.components.FontSizePickerDialog
 import com.ihy2ln.weaverse.core.ui.components.InkConfirmButton
 import com.ihy2ln.weaverse.core.ui.components.InkFilledButton
 import com.ihy2ln.weaverse.core.ui.components.InkModeCapsule
@@ -51,6 +53,7 @@ import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import com.ihy2ln.weaverse.core.ui.util.adaptiveContentPadding
 import com.ihy2ln.weaverse.feature.novel.write.editor.DocumentEditor
+import com.ihy2ln.weaverse.feature.novel.write.editor.FormatToolbar
 import com.ihy2ln.weaverse.feature.novel.write.editor.SlashCommandOverlay
 import com.ihy2ln.weaverse.feature.novel.write.editor.defaultSlashCommands
 
@@ -124,6 +127,28 @@ fun WriteScreen(
             initial = MaterialTheme.colorScheme.primary,
             onDismiss = viewModel::dismissColorPicker,
             onConfirm = { color -> viewModel.applyColorOnSelection(color.toSpanHex()) },
+        )
+    }
+    if (state.showHighlightPicker) {
+        TextColorPickerDialog(
+            initial = MaterialTheme.colorScheme.primaryContainer,
+            onDismiss = viewModel::dismissHighlightPicker,
+            onConfirm = { color -> viewModel.applyHighlightOnSelection(color.toSpanHex()) },
+            title = "Highlight color",
+        )
+    }
+    if (state.showFontFamilyPicker) {
+        FontFamilyPickerDialog(
+            current = viewModel.activeFontFamilyKeyInSelection(),
+            onDismiss = viewModel::dismissFontFamilyPicker,
+            onSelect = viewModel::applyFontFamilyOnSelection,
+        )
+    }
+    if (state.showFontSizePicker) {
+        FontSizePickerDialog(
+            current = viewModel.activeFontSizeSpInSelection(),
+            onDismiss = viewModel::dismissFontSizePicker,
+            onSelect = viewModel::applyFontSizeOnSelection,
         )
     }
 
@@ -233,6 +258,22 @@ fun WriteScreen(
                     )
                 }
             }
+            FormatToolbar(
+                hasSelection = state.selection.hasSelection,
+                activeMarks = viewModel.activeMarksInSelection(),
+                activeFontFamilyKey = viewModel.activeFontFamilyKeyInSelection(),
+                activeFontSizeSp = viewModel.activeFontSizeSpInSelection(),
+                canUndo = state.canUndo,
+                canRedo = state.canRedo,
+                onToggleMark = viewModel::toggleMarkOnSelection,
+                onOpenColorPicker = viewModel::requestColorPicker,
+                onOpenHighlightPicker = viewModel::requestHighlightPicker,
+                onOpenFontFamilyPicker = viewModel::requestFontFamilyPicker,
+                onOpenFontSizePicker = viewModel::requestFontSizePicker,
+                onUndo = viewModel::undo,
+                onRedo = viewModel::redo,
+                modifier = Modifier.padding(bottom = InkSpacing.xs),
+            )
             DocumentEditor(
                 blocks = state.blocks,
                 mediaPaths = state.mediaPaths,
@@ -257,6 +298,7 @@ fun WriteScreen(
                     canUndo = state.canUndo,
                     canRedo = state.canRedo,
                     hasSelection = state.selection.hasSelection,
+                    activeMarks = viewModel.activeMarksInSelection(),
                 ),
                 onSceneBeatPromptChange = viewModel::updateSceneBeatPrompt,
                 onToggleSceneBeat = viewModel::toggleSceneBeat,
@@ -299,7 +341,14 @@ fun WriteScreen(
                         EditTextAction.Edit -> Unit
                         EditTextAction.Bold -> viewModel.toggleMarkOnSelection(Mark.Bold)
                         EditTextAction.Italic -> viewModel.toggleMarkOnSelection(Mark.Italic)
+                        EditTextAction.Underline -> viewModel.toggleMarkOnSelection(Mark.Underline)
+                        EditTextAction.Strikethrough -> viewModel.toggleMarkOnSelection(Mark.Strikethrough)
+                        EditTextAction.Superscript -> viewModel.toggleMarkOnSelection(Mark.Superscript)
+                        EditTextAction.Subscript -> viewModel.toggleMarkOnSelection(Mark.Subscript)
                         EditTextAction.Color -> viewModel.requestColorPicker()
+                        EditTextAction.Highlight -> viewModel.requestHighlightPicker()
+                        EditTextAction.FontFamily -> viewModel.requestFontFamilyPicker()
+                        EditTextAction.FontSize -> viewModel.requestFontSizePicker()
                         EditTextAction.AddToCodex -> viewModel.addSelectionToCodex()
                         EditTextAction.Shorten -> viewModel.startSelectionAi("shorten", "Shorten")
                         EditTextAction.Extend -> viewModel.startSelectionAi("extend", "Extend")

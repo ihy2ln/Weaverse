@@ -23,6 +23,10 @@ data class Span(
     val colorHex: String? = null,
     val highlightHex: String? = null,
     val codexEntryId: String? = null,
+    /** Key into [com.ihy2ln.weaverse.core.text.FontOption]; null = inherit the editor default. */
+    val fontFamilyKey: String? = null,
+    /** null = inherit the editor default size. */
+    val fontSizeSp: Float? = null,
 )
 
 @Serializable
