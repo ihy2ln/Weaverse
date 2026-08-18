@@ -8,10 +8,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.ihy2ln.weaverse.core.text.FontOption
@@ -21,13 +17,15 @@ import com.ihy2ln.weaverse.core.ui.components.InkTextButton
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 
 /**
- * Google Docs-style format bar for the manuscript editor: collapsed down to a single "Aa"
- * tap target by default, expanding into the full set of options on tap. Every button here
- * mirrors an [com.ihy2ln.weaverse.core.ui.components.EditTextAction] so the toolbar and the
- * long-press Format menu stay in sync.
+ * Google Docs-style format bar for the manuscript editor. The expand/collapse trigger lives
+ * in the caller's header row next to Prompting/Media; this composable renders only the
+ * options panel, and only while [expanded] is true. Every button here mirrors an
+ * [com.ihy2ln.weaverse.core.ui.components.EditTextAction] so the toolbar and the long-press
+ * Format menu stay in sync.
  */
 @Composable
 fun FormatToolbar(
+    expanded: Boolean,
     hasSelection: Boolean,
     activeMarks: Set<Mark>,
     activeFontFamilyKey: String?,
@@ -43,17 +41,9 @@ fun FormatToolbar(
     onRedo: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    if (!expanded) return
 
     Column(modifier = modifier.fillMaxWidth()) {
-        if (!expanded) {
-            InkTextButton(
-                label = "Aa ▾",
-                onClick = { expanded = true },
-                compact = true,
-            )
-            return@Column
-        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -61,11 +51,6 @@ fun FormatToolbar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
         ) {
-            InkTextButton(
-                label = "Aa ▴",
-                onClick = { expanded = false },
-                compact = true,
-            )
             InkTextButton(label = "Undo", onClick = onUndo, enabled = canUndo, compact = true)
             InkTextButton(label = "Redo", onClick = onRedo, enabled = canRedo, compact = true)
             InkModeCapsule(

@@ -76,22 +76,40 @@ fun BlockEditorField(
     }
     var layoutResult by remember(paragraph.id) { mutableStateOf<TextLayoutResult?>(null) }
 
+    // A pure re-style (Bold/Color/Font toggled via the toolbar, the Format menu, or a
+    // color/font dialog) rewrites paragraph.spans, which forces the resync effect below to
+    // assign a brand-new TextFieldValue — and Compose treats that as reason enough to ask
+    // the system to redisplay the selection toolbar, i.e. showMenu() fires again right
+    // after we dismiss our own popup, popping it back open. Suppressing showMenu() for a
+    // beat after a styling-only resync breaks that loop.
+    var suppressShowMenuUntilMillis by remember { mutableStateOf(0L) }
+
     // Sync external paragraph updates (undo/AI accept) without clobbering caret during typing
     LaunchedEffect(paragraph.id, plain, paragraph.spans, codexMentionTargets) {
         if (value.text != plain || codexMentionTargets.isNotEmpty()) {
+            val nextAnnotated = paragraph.spans.toAnnotatedString(
+                textColor,
+                mentions = mentionsFor(plain),
+                linkColor = InkAccentBlue,
+            )
+            if (value.text == plain && value.annotatedString == nextAnnotated) {
+                // A typing round-trip echoing back content that's already on screen —
+                // nothing to do. Reassigning value anyway would still create a new
+                // TextFieldValue object, which is exactly what can spuriously
+                // re-trigger the system's showMenu() callback mid-selection.
+                return@LaunchedEffect
+            }
+            if (value.text == plain) {
+                // Text is unchanged but the styling/mentions differ: a pure re-style or
+                // a mention-highlight refresh, not a fresh text edit.
+                suppressShowMenuUntilMillis = System.currentTimeMillis() + 400L
+            }
             val sel = value.selection
             val capped = TextRange(
                 sel.start.coerceIn(0, plain.length),
                 sel.end.coerceIn(0, plain.length),
             )
-            value = TextFieldValue(
-                annotatedString = paragraph.spans.toAnnotatedString(
-                    textColor,
-                    mentions = mentionsFor(plain),
-                    linkColor = InkAccentBlue,
-                ),
-                selection = capped,
-            )
+            value = TextFieldValue(annotatedString = nextAnnotated, selection = capped)
         }
     }
 
@@ -109,7 +127,9 @@ fun BlockEditorField(
                 onSelectAllRequested: (() -> Unit)?,
             ) {
                 status = TextToolbarStatus.Hidden
-                latestOnShow(true)
+                if (System.currentTimeMillis() >= suppressShowMenuUntilMillis) {
+                    latestOnShow(true)
+                }
             }
 
             override fun hide() {
@@ -211,7 +231,10 @@ fun BlockEditorField(
         }
         EditTextPopup(
             expanded = showEditPopup,
-            onDismiss = { onShowEditPopupChange(false) },
+            onDismiss = {
+                suppressShowMenuUntilMillis = System.currentTimeMillis() + 400L
+                onShowEditPopupChange(false)
+            },
             onAction = { action ->
                 val nextValue = if (action == EditTextAction.SelectAll) {
                     value.copy(selection = TextRange(0, value.text.length)).also {

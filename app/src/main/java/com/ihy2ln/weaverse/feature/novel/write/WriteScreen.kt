@@ -166,6 +166,7 @@ fun WriteScreen(
                     },
                 ),
         ) {
+            var formatExpanded by remember { mutableStateOf(false) }
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(0.dp),
@@ -184,6 +185,11 @@ fun WriteScreen(
                         overflow = TextOverflow.Ellipsis,
                         softWrap = false,
                         modifier = Modifier.weight(1f),
+                    )
+                    InkTextButton(
+                        label = if (formatExpanded) "Aa ▴" else "Aa ▾",
+                        onClick = { formatExpanded = !formatExpanded },
+                        compact = true,
                     )
                     Box {
                         InkTextButton(
@@ -303,6 +309,7 @@ fun WriteScreen(
                 }
             }
             FormatToolbar(
+                expanded = formatExpanded,
                 hasSelection = state.selection.hasSelection,
                 activeMarks = viewModel.activeMarksInSelection(),
                 activeFontFamilyKey = viewModel.activeFontFamilyKeyInSelection(),
