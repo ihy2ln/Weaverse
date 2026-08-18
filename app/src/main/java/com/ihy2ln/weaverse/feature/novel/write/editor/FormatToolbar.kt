@@ -21,10 +21,10 @@ import com.ihy2ln.weaverse.core.ui.components.InkTextButton
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 
 /**
- * Google Docs-style format bar for the manuscript editor: a compact always-visible row of
- * the most common toggles, plus a second row of the rest that shows/hides via the "Aa"
- * expand toggle. Every button here mirrors an [com.ihy2ln.weaverse.core.ui.components.EditTextAction]
- * so the toolbar and the long-press Format menu stay in sync.
+ * Google Docs-style format bar for the manuscript editor: collapsed down to a single "Aa"
+ * tap target by default, expanding into the full set of options on tap. Every button here
+ * mirrors an [com.ihy2ln.weaverse.core.ui.components.EditTextAction] so the toolbar and the
+ * long-press Format menu stay in sync.
  */
 @Composable
 fun FormatToolbar(
@@ -46,6 +46,14 @@ fun FormatToolbar(
     var expanded by remember { mutableStateOf(false) }
 
     Column(modifier = modifier.fillMaxWidth()) {
+        if (!expanded) {
+            InkTextButton(
+                label = "Aa ▾",
+                onClick = { expanded = true },
+                compact = true,
+            )
+            return@Column
+        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -54,8 +62,8 @@ fun FormatToolbar(
             horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
         ) {
             InkTextButton(
-                label = if (expanded) "Aa ▴" else "Aa ▾",
-                onClick = { expanded = !expanded },
+                label = "Aa ▴",
+                onClick = { expanded = false },
                 compact = true,
             )
             InkTextButton(label = "Undo", onClick = onUndo, enabled = canUndo, compact = true)
@@ -82,61 +90,59 @@ fun FormatToolbar(
                 compact = true,
             )
         }
-        if (expanded) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = InkSpacing.xxs)
-                    .horizontalScroll(rememberScrollState()),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
-            ) {
-                InkTextButton(
-                    label = "Font: ${FontOption.fromKey(activeFontFamilyKey).label}",
-                    onClick = onOpenFontFamilyPicker,
-                    enabled = hasSelection,
-                    compact = true,
-                )
-                InkTextButton(
-                    label = "Size: ${activeFontSizeSp?.toInt() ?: "—"}",
-                    onClick = onOpenFontSizePicker,
-                    enabled = hasSelection,
-                    compact = true,
-                )
-                InkModeCapsule(
-                    label = "S",
-                    onClick = { onToggleMark(Mark.Strikethrough) },
-                    selected = Mark.Strikethrough in activeMarks,
-                    enabled = hasSelection,
-                    compact = true,
-                )
-                InkModeCapsule(
-                    label = "x²",
-                    onClick = { onToggleMark(Mark.Superscript) },
-                    selected = Mark.Superscript in activeMarks,
-                    enabled = hasSelection,
-                    compact = true,
-                )
-                InkModeCapsule(
-                    label = "x₂",
-                    onClick = { onToggleMark(Mark.Subscript) },
-                    selected = Mark.Subscript in activeMarks,
-                    enabled = hasSelection,
-                    compact = true,
-                )
-                InkTextButton(
-                    label = "Color",
-                    onClick = onOpenColorPicker,
-                    enabled = hasSelection,
-                    compact = true,
-                )
-                InkTextButton(
-                    label = "Highlight",
-                    onClick = onOpenHighlightPicker,
-                    enabled = hasSelection,
-                    compact = true,
-                )
-            }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = InkSpacing.xxs)
+                .horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+        ) {
+            InkTextButton(
+                label = "Font: ${FontOption.fromKey(activeFontFamilyKey).label}",
+                onClick = onOpenFontFamilyPicker,
+                enabled = hasSelection,
+                compact = true,
+            )
+            InkTextButton(
+                label = "Size: ${activeFontSizeSp?.toInt() ?: "—"}",
+                onClick = onOpenFontSizePicker,
+                enabled = hasSelection,
+                compact = true,
+            )
+            InkModeCapsule(
+                label = "S",
+                onClick = { onToggleMark(Mark.Strikethrough) },
+                selected = Mark.Strikethrough in activeMarks,
+                enabled = hasSelection,
+                compact = true,
+            )
+            InkModeCapsule(
+                label = "x²",
+                onClick = { onToggleMark(Mark.Superscript) },
+                selected = Mark.Superscript in activeMarks,
+                enabled = hasSelection,
+                compact = true,
+            )
+            InkModeCapsule(
+                label = "x₂",
+                onClick = { onToggleMark(Mark.Subscript) },
+                selected = Mark.Subscript in activeMarks,
+                enabled = hasSelection,
+                compact = true,
+            )
+            InkTextButton(
+                label = "Color",
+                onClick = onOpenColorPicker,
+                enabled = hasSelection,
+                compact = true,
+            )
+            InkTextButton(
+                label = "Highlight",
+                onClick = onOpenHighlightPicker,
+                enabled = hasSelection,
+                compact = true,
+            )
         }
     }
 }

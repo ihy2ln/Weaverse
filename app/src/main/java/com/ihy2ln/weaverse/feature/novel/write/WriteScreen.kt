@@ -171,6 +171,7 @@ fun WriteScreen(
                 verticalArrangement = Arrangement.spacedBy(0.dp),
             ) {
                 var mediaMenuOpen by remember { mutableStateOf(false) }
+                var promptMenuOpen by remember { mutableStateOf(false) }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -184,12 +185,55 @@ fun WriteScreen(
                         softWrap = false,
                         modifier = Modifier.weight(1f),
                     )
-                    InkTextButton(
-                        label = if (state.isSummarizing) "Summarizing…" else "Summarize",
-                        onClick = viewModel::summarizeScene,
-                        enabled = !state.isSummarizing,
-                        compact = true,
-                    )
+                    Box {
+                        InkTextButton(
+                            label = if (state.isSummarizing) "Prompting…" else "Prompting",
+                            onClick = { promptMenuOpen = true },
+                            enabled = !state.isSummarizing,
+                            compact = true,
+                        )
+                        DropdownMenu(
+                            expanded = promptMenuOpen,
+                            onDismissRequest = { promptMenuOpen = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Extend") },
+                                onClick = {
+                                    promptMenuOpen = false
+                                    viewModel.startSelectionAi("extend", "Extend")
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Summarize") },
+                                onClick = {
+                                    promptMenuOpen = false
+                                    viewModel.summarizeScene()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Condense") },
+                                onClick = {
+                                    promptMenuOpen = false
+                                    viewModel.startSelectionAi("shorten", "Condense")
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Replace") },
+                                onClick = {
+                                    promptMenuOpen = false
+                                    viewModel.startSelectionAi("replace", "Replace")
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Retry") },
+                                enabled = state.aiOverlay != null,
+                                onClick = {
+                                    promptMenuOpen = false
+                                    viewModel.retryAiGeneration()
+                                },
+                            )
+                        }
+                    }
                     Box {
                         InkTextButton(
                             label = "Media",

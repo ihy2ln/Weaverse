@@ -121,6 +121,7 @@ fun EditTextPopup(
                 labelColor = labelColor,
                 muted = muted,
                 onAction = onAction,
+                onDismiss = onDismiss,
                 onBack = { page = EditPopupPage.Main },
             )
         }
@@ -193,6 +194,7 @@ private fun FormatMenuItems(
     labelColor: Color,
     muted: Color,
     onAction: (EditTextAction) -> Unit,
+    onDismiss: () -> Unit,
     onBack: () -> Unit,
 ) {
     fun markLabel(base: String, mark: Mark) = if (mark in config.activeMarks) "$base  ✓" else base
@@ -200,23 +202,26 @@ private fun FormatMenuItems(
     MenuHeader("Format", muted)
     Item("← Back", labelColor, onClick = onBack)
     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+    // Each toggle closes the menu immediately: leaving it open let a mark toggle's span
+    // change re-sync the text field's selection, which could re-trigger the system's
+    // showMenu() callback and pop the menu back open right after it closed.
     Item(markLabel("Bold", Mark.Bold), labelColor, enabled = config.hasSelection) {
-        onAction(EditTextAction.Bold)
+        onAction(EditTextAction.Bold); onDismiss()
     }
     Item(markLabel("Italic", Mark.Italic), labelColor, enabled = config.hasSelection) {
-        onAction(EditTextAction.Italic)
+        onAction(EditTextAction.Italic); onDismiss()
     }
     Item(markLabel("Underline", Mark.Underline), labelColor, enabled = config.hasSelection) {
-        onAction(EditTextAction.Underline)
+        onAction(EditTextAction.Underline); onDismiss()
     }
     Item(markLabel("Strikethrough", Mark.Strikethrough), labelColor, enabled = config.hasSelection) {
-        onAction(EditTextAction.Strikethrough)
+        onAction(EditTextAction.Strikethrough); onDismiss()
     }
     Item(markLabel("Superscript", Mark.Superscript), labelColor, enabled = config.hasSelection) {
-        onAction(EditTextAction.Superscript)
+        onAction(EditTextAction.Superscript); onDismiss()
     }
     Item(markLabel("Subscript", Mark.Subscript), labelColor, enabled = config.hasSelection) {
-        onAction(EditTextAction.Subscript)
+        onAction(EditTextAction.Subscript); onDismiss()
     }
     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
     Item("Text color…", labelColor, enabled = config.hasSelection) { onAction(EditTextAction.Color) }
