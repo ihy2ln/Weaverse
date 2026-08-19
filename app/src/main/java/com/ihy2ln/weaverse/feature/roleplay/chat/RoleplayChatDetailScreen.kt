@@ -238,7 +238,7 @@ fun RoleplayChatDetailScreen(
                     compactStyle = compactStyle,
                     gridSize = MediaGrid.DM_SIZE,
                     textEmphasis = false,
-                    emptyHint = "Storyboard — a 3×3 grid of panels. Add Media/Audio, then hold → Move to place on the grid. Drag corner to resize each panel. Drop onto another picture to stack.\nPress / for AI · \\ for manual text.",
+                    emptyHint = "Storyboard — a 3×3 grid of panels. Tap + on an empty panel to add media, then hold → Move to reposition or drag corner to resize. Drop onto another picture to stack.\nPress / for AI · \\ for manual text.",
                     onSelect = { msgId, blockId -> viewModel.selectMedia(msgId, blockId) },
                     onRemove = viewModel::removeMedia,
                     onSnap = viewModel::setMediaGridCell,
@@ -248,6 +248,8 @@ fun RoleplayChatDetailScreen(
                     onCycleStack = viewModel::cycleMediaStack,
                     onMediaEdit = viewModel::onMediaEditAction,
                     onSetCaption = viewModel::setPanelCaption,
+                    showAddCell = true,
+                    onAddMedia = { col, row -> viewModel.requestMediaPickForCell(col, row) },
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -533,6 +535,7 @@ private fun DungeonMasterFlow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MangaSnapGrid(
     panels: List<RpMediaRef>,
@@ -551,10 +554,13 @@ private fun MangaSnapGrid(
     onCycleStack: (String, String) -> Unit,
     onMediaEdit: (String, String, MediaEditAction) -> Unit,
     onSetCaption: (String, String, String) -> Unit = { _, _, _ -> },
+    showAddCell: Boolean = false,
+    onAddMedia: (Int, Int) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
 ) {
     val tokens = inkTokens()
     val scroll = rememberScrollState()
+    val density = androidx.compose.ui.platform.LocalDensity.current
     var captionEditKey by remember { mutableStateOf<String?>(null) }
     var captionEditText by remember { mutableStateOf("") }
     Column(
@@ -584,6 +590,7 @@ private fun MangaSnapGrid(
                         .padding(InkSpacing.lg),
                 )
             }
+            val occupiedCells = mutableSetOf<Pair<Int, Int>>()
             panels.forEach { panel ->
                 val col = if (MediaGrid.isPlaced(panel.gridCol, panel.gridRow, gridSize)) {
                     panel.gridCol
@@ -599,6 +606,7 @@ private fun MangaSnapGrid(
                     .coerceAtMost(gridSize - col)
                 val rowSpan = MediaGrid.clampSpan(panel.gridRowSpan, gridSize)
                     .coerceAtMost(gridSize - row)
+                occupiedCells += MediaGrid.cellsCovered(col, row, colSpan, rowSpan, gridSize)
                 val key = "${panel.messageId}::${panel.blockId}"
                 MangaSnapPanel(
                     panel = panel,
@@ -629,6 +637,39 @@ private fun MangaSnapGrid(
                         captionEditText = panel.caption.takeIf { it != "[media]" }.orEmpty()
                     },
                 )
+            }
+            if (showAddCell) {
+                for (r in 0 until gridSize) {
+                    for (c in 0 until gridSize) {
+                        if ((c to r) in occupiedCells) continue
+                        Box(
+                            modifier = Modifier
+                                .offset {
+                                    IntOffset(
+                                        x = with(density) { (cellW * c).roundToPx() },
+                                        y = with(density) { (cellH * r).roundToPx() },
+                                    )
+                                }
+                                .width(cellW)
+                                .height(cellH)
+                                .padding(2.dp)
+                                .clip(RoundedCornerShape(InkSpacing.radiusSm))
+                                .border(
+                                    1.dp,
+                                    tokens.secondaryText.copy(alpha = 0.35f),
+                                    RoundedCornerShape(InkSpacing.radiusSm),
+                                )
+                                .combinedClickable(onClick = { onAddMedia(c, r) }),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                "+",
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = tokens.secondaryText,
+                            )
+                        }
+                    }
+                }
             }
         }
         Spacer(modifier = Modifier.height(48.dp))

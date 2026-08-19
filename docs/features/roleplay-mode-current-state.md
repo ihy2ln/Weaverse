@@ -218,3 +218,31 @@ A second round of changes, requested after the above:
   340dp-capped thumbnail inside a scrolling column — "large picture" per
   the request. A placeholder message fills the same reserved area when no
   scene image exists yet, so the layout doesn't jump when one is added.
+
+## Update — Storyboard: add media to a specific empty panel
+
+Previously Storyboard could only *remove* media from a panel (the "-"
+button); adding media always went through the bottom Media/Audio buttons
+and landed wherever `ensureMangaGridPlacement()`'s next-free-cell search
+put it — there was no way to choose which of the 9 cells a new picture
+went into.
+
+Empty grid cells now render a tappable "+" placeholder
+(`MangaSnapGrid` in `RoleplayChatDetailScreen.kt`, gated by a new
+`showAddCell` param, `true` only for the Storyboard call site — DM and
+messenger don't use this grid). Occupied cells are tracked while
+rendering panels (`MediaGrid.cellsCovered(...)` per panel) and skipped;
+every other cell gets the "+" overlay, positioned with the same
+`cellW`/`cellH` offset math the panels themselves use.
+
+Tapping "+" calls `RoleplayChatViewModel.requestMediaPickForCell(col,
+row)`, which stores `(col, row)` in a new `mediaPickTargetCell` state
+field and reuses the existing `mediaPickRequestId` picker-launch
+mechanism (`RoleplayChatDetailScreen`'s `LaunchedEffect` was already
+watching that id). `attachMedia(uris)` then places the *first* imported
+media at that exact cell via `Block.withGridPlacement(...)` instead of
+leaving it unplaced for auto-placement; any additional media from a
+multi-select still falls through to `ensureMangaGridPlacement()` as
+before. The target cell is cleared after use and on picker cancel
+(`clearMediaPickRequest()`, previously a no-op, now clears it) so a
+later plain "Media" button tap doesn't reuse a stale cell.

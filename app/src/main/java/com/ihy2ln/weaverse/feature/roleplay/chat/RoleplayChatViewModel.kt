@@ -126,6 +126,8 @@ data class RoleplayChatUiState(
     val canPasteMedia: Boolean = false,
     val presetId: String = "preset-balanced",
     val showExtraPromptSurfaces: Boolean = false,
+    /** Set by tapping an empty Storyboard cell's "+"; consumed by the next attachMedia(). */
+    val mediaPickTargetCell: Pair<Int, Int>? = null,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -758,7 +760,14 @@ class RoleplayChatViewModel @Inject constructor(
     }
 
     fun requestMediaPick() {
-        _uiState.update { it.copy(mediaPickRequestId = it.mediaPickRequestId + 1) }
+        _uiState.update { it.copy(mediaPickRequestId = it.mediaPickRequestId + 1, mediaPickTargetCell = null) }
+    }
+
+    /** Storyboard: tapping an empty grid cell's "+" requests media targeted at that cell. */
+    fun requestMediaPickForCell(col: Int, row: Int) {
+        _uiState.update {
+            it.copy(mediaPickRequestId = it.mediaPickRequestId + 1, mediaPickTargetCell = col to row)
+        }
     }
 
     fun requestAudioPick() {
@@ -766,7 +775,7 @@ class RoleplayChatViewModel @Inject constructor(
     }
 
     fun clearMediaPickRequest() {
-        // no-op keep id; picker cancel does not need state clear
+        _uiState.update { it.copy(mediaPickTargetCell = null) }
     }
 
     fun attachMedia(uris: List<Uri>) {
@@ -775,6 +784,8 @@ class RoleplayChatViewModel @Inject constructor(
             runCatching {
                 val mediaList = mediaRepository.importFromUris(uris)
                 val caption = _uiState.value.input.ifBlank { "[media]" }
+                val targetCell = _uiState.value.mediaPickTargetCell
+                val gridSize = activeGridSize()
                 val blocks = buildList {
                     add(
                         Paragraph(
@@ -782,13 +793,18 @@ class RoleplayChatViewModel @Inject constructor(
                             listOf(Span(caption)),
                         ),
                     )
-                    mediaList.forEach { media ->
+                    mediaList.forEachIndexed { index, media ->
+                        val block = MediaBlock(
+                            id = UUID.randomUUID().toString(),
+                            mediaId = media.id,
+                            kind = MediaRepository.kindForType(media.type),
+                        )
                         add(
-                            MediaBlock(
-                                id = UUID.randomUUID().toString(),
-                                mediaId = media.id,
-                                kind = MediaRepository.kindForType(media.type),
-                            ),
+                            if (index == 0 && targetCell != null) {
+                                block.withGridPlacement(targetCell.first, targetCell.second, 1, 1, gridSize)
+                            } else {
+                                block
+                            },
                         )
                     }
                 }
@@ -806,7 +822,7 @@ class RoleplayChatViewModel @Inject constructor(
                     displayMode = currentDisplayMode(),
                 )
                 insertStoredMessage(entity)
-                _uiState.update { it.copy(input = "") }
+                _uiState.update { it.copy(input = "", mediaPickTargetCell = null) }
             }
         }
     }
