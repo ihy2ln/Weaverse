@@ -257,11 +257,13 @@ class RoleplayChatViewModel @Inject constructor(
                             blockIds += block.id
                             isAudioFlags += audio
                             collapsedMap[block.id] = block.collapsed
+                            val panelCaption = block.caption.joinToString("") { it.text }
+                                .ifBlank { caption }
                             panels += RpMediaRef(
                                 messageId = m.id,
                                 blockId = block.id,
                                 path = path,
-                                caption = caption,
+                                caption = panelCaption,
                                 speaker = speaker,
                                 role = m.role,
                                 gridCol = block.gridCol,
@@ -286,11 +288,13 @@ class RoleplayChatViewModel @Inject constructor(
                             isAudioFlags += false
                             stackPaths[block.id] = resolved
                             collapsedMap[block.id] = block.collapsed
+                            val panelCaption = block.caption.joinToString("") { it.text }
+                                .ifBlank { caption }
                             panels += RpMediaRef(
                                 messageId = m.id,
                                 blockId = block.id,
                                 path = resolved[idx],
-                                caption = caption,
+                                caption = panelCaption,
                                 speaker = speaker,
                                 role = m.role,
                                 stackedPaths = resolved,
@@ -517,6 +521,22 @@ class RoleplayChatViewModel @Inject constructor(
                     selectedMediaKey = if (it.selectedMediaKey == "$messageId::$blockId") null else it.selectedMediaKey,
                 )
             }
+        }
+    }
+
+    /** Manga mode: set/clear this panel's own caption, independent of the message text. */
+    fun setPanelCaption(messageId: String, blockId: String, text: String) {
+        viewModelScope.launch {
+            val current = rawMessages.find { it.id == messageId } ?: return@launch
+            val nextCaption = if (text.isBlank()) emptyList() else listOf(Span(text))
+            val blocks = documentFromJson(current.contentJson).blocks.map { block ->
+                when {
+                    block is MediaBlock && block.id == blockId -> block.copy(caption = nextCaption)
+                    block is MediaStackBlock && block.id == blockId -> block.copy(caption = nextCaption)
+                    else -> block
+                }
+            }
+            persistMessageBlocks(current, blocks)
         }
     }
 
@@ -887,6 +907,7 @@ class RoleplayChatViewModel @Inject constructor(
                             character = boundCharacter,
                             persona = boundPersona,
                             outputWords = state.outputWords,
+                            displayMode = mode,
                         ),
                         messages = history,
                         usedEntries = emptyList(),
@@ -991,6 +1012,7 @@ class RoleplayChatViewModel @Inject constructor(
                             character = boundCharacter,
                             persona = boundPersona,
                             outputWords = words,
+                            displayMode = current.displayMode,
                         ),
                         messages = history,
                         usedEntries = emptyList(),

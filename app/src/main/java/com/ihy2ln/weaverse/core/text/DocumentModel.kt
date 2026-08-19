@@ -110,6 +110,7 @@ data class MediaStackBlock(
     override val id: String,
     val mediaIds: List<String>,
     val currentIndex: Int = 0,
+    val caption: List<Span> = emptyList(),
     /** 6×6 snap cell (0–5). -1 = auto / unset. */
     val gridCol: Int = -1,
     val gridRow: Int = -1,

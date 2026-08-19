@@ -144,3 +144,39 @@ code, not after:
    to `RoleplayPromptBuilder` so the model's output actually matches each
    mode's format (a short DM beat that stops for player input; a short
    panel caption instead of full prose)?
+
+## Update — questions 2, 3, 4 resolved; question 1 deferred
+
+Resolved by the user and implemented in the same pass as this update:
+
+- **DM mode is now a dedicated linear screen** (`DungeonMasterFlow` in
+  `RoleplayChatDetailScreen.kt`), not the shared `MangaSnapGrid`. It shows
+  the most recent scene image on top, the DM's latest narration in the
+  middle, and a fixed response `OutlinedTextField` + Send button at the
+  bottom, wired to the existing `generate()`/`onInputChange()` path. The
+  3×3 grid, `ensureDmGridPlacement()`, `ensureTextTilesForDm()`, and
+  `DM_TEXT_TILE_MEDIA_ID` are left in place (unused by the new UI, low
+  risk to keep) rather than removed in this pass.
+- **Manga mode now supports real per-panel captions.** Tapping a panel's
+  caption chip (or the "+ Caption" affordance when blank) opens a dialog
+  that writes to that block's own `caption` field via
+  `RoleplayChatViewModel.setPanelCaption(messageId, blockId, text)`.
+  `MediaStackBlock` gained a `caption: List<Span>` field (previously only
+  `MediaBlock` had one) so stacked panels can be captioned too.
+  `publishMessages()` now prefers a block's own caption and falls back to
+  the whole message's text only when the block has none — existing
+  messages keep working exactly as before.
+- **System prompts are now mode-aware.**
+  `RoleplayPromptBuilder.systemBlocks()` takes a `displayMode` parameter;
+  `"dungeonMaster"` gets a short-burst-then-wait-for-the-player
+  instruction, `"roleplay"` gets a short-panel-beat instruction, and
+  `"messenger"` (or anything else) is unchanged. Both `generate()` and
+  `regenerate()` in `RoleplayChatViewModel`, plus the global prompt
+  overlay's roleplay path in `GlobalPromptViewModel`, now pass the chat's
+  actual display mode through.
+
+**Still open**: question 1, AI image generation (local ComfyUI and/or a
+cloud API-credit provider, user-selectable) is a separate, materially
+larger follow-up — new provider abstraction, settings UI, credential
+handling — not attempted here. Today "pictures" in all three modes still
+means user-attached media only.

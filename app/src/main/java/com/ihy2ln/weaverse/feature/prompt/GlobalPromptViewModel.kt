@@ -333,7 +333,12 @@ class GlobalPromptViewModel @Inject constructor(
         val chat = db.roleplayDao().getChat(chatId)
         val character = chat?.characterId?.let { db.roleplayDao().getCharacter(it) }
         val persona = chat?.personaId?.let { db.roleplayDao().getPersona(it) }
-        return RoleplayPromptBuilder.systemBlocks(character, persona, outputWords)
+        return RoleplayPromptBuilder.systemBlocks(
+            character,
+            persona,
+            outputWords,
+            displayMode = chat?.displayMode.orEmpty().ifBlank { "messenger" },
+        )
     }
 
     private suspend fun activeRpDisplayMode(chatId: String): String =
