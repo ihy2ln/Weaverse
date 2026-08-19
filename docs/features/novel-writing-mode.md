@@ -107,29 +107,37 @@ reassigns a brand-new `TextFieldValue` in response; Compose interprets
 that reassignment as reason to ask the system to redisplay the selection
 toolbar — so `TextToolbar.showMenu()` (which `BlockEditorField`
 intercepts to show our custom popup instead of the system one) fires
-again immediately, popping our just-dismissed popup back open. The
-initial fix (dismiss the popup after every action) didn't touch the root
-cause — the *reopen* was self-triggered by the state change, not by the
-menu staying open — so it just meant the ping-pong flash still happened.
+again immediately, popping our just-dismissed popup back open. Dismissing
+the popup after every action alone didn't fix it — the *reopen* is
+self-triggered by the state change, not by the menu staying open.
 
-The real fix (`editor/BlockEditorField.kt`) is two-part:
+Two fixes landed on top of each other here, from two different sessions
+working the same branch concurrently — worth knowing both existed:
 
-1. The resync effect now compares the *actual computed* `AnnotatedString`
-   against what's already displayed and skips reassigning `value`
-   entirely if nothing changed (a typing round-trip echoing back content
-   already on screen was reassigning a fresh object for no reason, which
-   is itself wasteful independent of the popup bug).
-2. When the resync *is* a genuine change but the text itself is
-   unchanged (i.e. a pure re-style — mark/color/font/highlight, from any
-   of the toolbar, the popup, or the color/font dialogs), it arms a
-   400ms `suppressShowMenuUntilMillis` window; `showMenu()` checks that
-   window before calling back into the popup-show callback.
+1. The resync effect (`BlockEditorField.kt`) now compares the *actual
+   computed* `AnnotatedString` against what's already displayed and skips
+   reassigning `value` entirely if nothing changed (a typing round-trip
+   echoing back content already on screen was reassigning a fresh object
+   for no reason, independent of the popup bug).
+2. **The mechanism that actually stops the reopen** is
+   `editor/EditMenuGate.kt` (with `EditMenuGateTest.kt`) — not a timer.
+   An earlier pass tried a 400ms `suppressShowMenuUntilMillis` window
+   after dismiss, but `showMenu()` can fire again well past 400ms later
+   (e.g. canceling the Text color dialog), so a fixed window either
+   reopens too late-blocked or too early-unblocked depending on how long
+   the user takes. `EditMenuGate` instead tracks *identity*: once the
+   popup is dismissed for a given `TextRange`, further `showMenu()` calls
+   for that *same* selection are ignored outright, with no time limit.
+   The gate only re-arms when the selection genuinely changes — the caret
+   collapses (tap away) or the range moves (a new long-press/drag-select)
+   — which is the actual signal that the user is doing something new
+   rather than the system re-asking to show a toolbar for a selection
+   that already had its menu dismissed.
 
-This is general — it covers the toolbar, the popup, and the dialogs
-uniformly, not just the one path that was reported — because all of them
-funnel through the same resync effect. If a future change reintroduces a
-per-entry-point "just dismissed, ignore the next reopen" flag instead,
-prefer extending this shared mechanism.
+Both fixes are still in place and complementary: the resync-skip avoids
+wasted `TextFieldValue` churn generally, and `EditMenuGate` is what
+actually gates `showMenu()`. If this class of bug resurfaces, extend
+`EditMenuGate` rather than reaching for another timer.
 
 ### Prompting menu (`Prompting` button in the scene header)
 
