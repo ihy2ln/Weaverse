@@ -13,6 +13,13 @@ data class RoleplayChatChrome(
 
 fun roleplayModeSubtitle(displayMode: String): String = when (displayMode) {
     "dungeonMaster" -> "DM · scene · picture, narration, response"
-    "roleplay" -> "Roleplay · manga 6×6"
+    "roleplay" -> "Storyboard · 3×3 adjustable panels"
+    else -> "Messenger"
+}
+
+/** Short user-facing name for a displayMode value — used on the mode picker / list headers. */
+fun roleplayModeLabel(displayMode: String): String = when (displayMode) {
+    "dungeonMaster" -> "Dungeon Master"
+    "roleplay" -> "Storyboard"
     else -> "Messenger"
 }

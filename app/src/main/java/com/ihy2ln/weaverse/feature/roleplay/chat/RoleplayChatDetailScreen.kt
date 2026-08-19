@@ -236,9 +236,9 @@ fun RoleplayChatDetailScreen(
                     selectedKey = state.selectedMediaKey,
                     canPaste = state.canPasteMedia,
                     compactStyle = compactStyle,
-                    gridSize = MediaGrid.SIZE,
+                    gridSize = MediaGrid.DM_SIZE,
                     textEmphasis = false,
-                    emptyHint = "Manga canvas — add Media/Audio, then hold → Move to place on the grid. Drag corner to resize. Drop onto another picture to stack.\nPress / for AI · \\ for manual text.",
+                    emptyHint = "Storyboard — a 3×3 grid of panels. Add Media/Audio, then hold → Move to place on the grid. Drag corner to resize each panel. Drop onto another picture to stack.\nPress / for AI · \\ for manual text.",
                     onSelect = { msgId, blockId -> viewModel.selectMedia(msgId, blockId) },
                     onRemove = viewModel::removeMedia,
                     onSnap = viewModel::setMediaGridCell,
@@ -455,25 +455,38 @@ private fun DungeonMasterFlow(
     val sceneImage = mediaPanels.lastOrNull { it.path.isNotBlank() && !it.isAudio }
 
     Column(modifier = modifier.fillMaxSize()) {
-        Column(
+        // Large scene picture — a fixed share of the screen, not a scroll-capped thumbnail.
+        Box(
             modifier = Modifier
-                .weight(1f)
+                .weight(1.1f)
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
                 .padding(InkSpacing.md),
+            contentAlignment = Alignment.Center,
         ) {
             if (sceneImage != null) {
                 ZoomableMedia(
                     path = sceneImage.path,
                     contentDescription = "Scene",
-                    maxHeight = 340.dp,
                     contentScale = ContentScale.Fit,
                     decodeOriginal = true,
                     fillPanel = true,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxSize(),
                 )
-                Spacer(modifier = Modifier.height(InkSpacing.md))
+            } else {
+                Text(
+                    "No scene picture yet — attach one with the Media button below.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = tokens.secondaryText,
+                )
             }
+        }
+        Column(
+            modifier = Modifier
+                .weight(0.9f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = InkSpacing.md),
+        ) {
             Text(
                 text = lastNarration?.text?.takeIf { it.isNotBlank() }
                     ?: "The DM hasn't set a scene yet — type an opening below and send it.",

@@ -180,3 +180,41 @@ cloud API-credit provider, user-selectable) is a separate, materially
 larger follow-up — new provider abstraction, settings UI, credential
 handling — not attempted here. Today "pictures" in all three modes still
 means user-attached media only.
+
+## Update — mode-first navigation, and Storyboard replaces the 6×6 manga grid
+
+A second round of changes, requested after the above:
+
+- **Roleplay now opens on a mode picker.** `RoleplayModePickerScreen.kt`
+  is a new top screen (three labeled cards: Messenger / Dungeon Master /
+  Storyboard) shown by `AppShell`'s `RoleplayDestination.Chats` branch
+  whenever no mode has been picked yet (`selectedRpMode == null`).
+  Selecting a card filters `RoleplayChatsScreen` to chats whose
+  `RpChatEntity.displayMode` matches that mode (client-side filter — no
+  new DAO query), with a "← Modes" button back to the picker. Since
+  `displayMode` is a single mutable field per chat (see "Shared
+  infrastructure" above), a chat only appears under the mode it's
+  currently set to; the existing in-chat mode switcher
+  (`RoleplayDisplayModeBar`) is how a chat moves between modes' lists.
+  `selectedRpMode` resets to null (back to the picker) when leaving the
+  Roleplay section entirely or jumping in via global search, but is
+  preserved across the Characters/Personas/Codex/Presets tabs.
+- **"Roleplay" mode is relabeled Storyboard** in every user-facing string
+  (mode picker, chats list header, in-chat segmented pill, chrome
+  subtitle) via `roleplayModeLabel()`/`roleplayModeSubtitle()` in
+  `RoleplayChatChrome.kt`. The internal `displayMode` value is still the
+  string `"roleplay"` — no data migration.
+- **Storyboard's grid shrank from 6×6 to 3×3** — `activeGridSize()` and
+  `ensureMangaGridPlacement()` in `RoleplayChatViewModel.kt`, and the
+  `gridSize` passed to `MangaSnapGrid` in `RoleplayChatDetailScreen.kt`,
+  now use `MediaGrid.DM_SIZE` (3) for `"roleplay"` instead of
+  `MediaGrid.SIZE` (6). Each of the 9 panels was already independently
+  movable/resizable (drag-to-move, corner-drag resize) — that didn't need
+  new code, just fewer/larger cells to work with. `MediaGrid.DM_SIZE`'s
+  doc comment was updated since Storyboard, not DM, is now its only
+  consumer; the constant itself wasn't renamed (tests reference it).
+- **DM's picture is now a fixed proportion of the screen** (`weight(1.1f)`
+  vs. the narration's `weight(0.9f)` in `DungeonMasterFlow`) instead of a
+  340dp-capped thumbnail inside a scrolling column — "large picture" per
+  the request. A placeholder message fills the same reserved area when no
+  scene image exists yet, so the layout doesn't jump when one is added.

@@ -210,7 +210,7 @@ class RoleplayChatViewModel @Inject constructor(
         _uiState.value.displayMode.ifBlank { "messenger" }
 
     private fun activeGridSize(): Int = when (currentDisplayMode()) {
-        "dungeonMaster" -> MediaGrid.DM_SIZE
+        "roleplay" -> MediaGrid.DM_SIZE
         else -> MediaGrid.SIZE
     }
 
@@ -620,7 +620,7 @@ class RoleplayChatViewModel @Inject constructor(
 
     /** Auto-place unset panels into free 6×6 cells (row-major), span-aware. */
     fun ensureMangaGridPlacement() {
-        viewModelScope.launch { placeUnplacedPanels(MediaGrid.SIZE) }
+        viewModelScope.launch { placeUnplacedPanels(MediaGrid.DM_SIZE) }
     }
 
     /** Auto-place unset panels into free 3×3 cells; ensure text-only messages get tiles. */
