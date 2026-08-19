@@ -265,6 +265,7 @@ fun RoleplayChatDetailScreen(
                     isStreaming = state.isStreaming,
                     onInputChange = viewModel::onInputChange,
                     onSend = viewModel::generate,
+                    onAddMedia = viewModel::requestMediaPick,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -441,6 +442,7 @@ fun RoleplayChatDetailScreen(
  * the DM's narration in the middle, and the player's response pinned at the
  * bottom. Replaces the free-form snap grid this mode used to share with manga.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DungeonMasterFlow(
     messages: List<RpMessageUi>,
@@ -449,6 +451,7 @@ private fun DungeonMasterFlow(
     isStreaming: Boolean,
     onInputChange: (String) -> Unit,
     onSend: () -> Unit,
+    onAddMedia: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val tokens = inkTokens()
@@ -474,12 +477,43 @@ private fun DungeonMasterFlow(
                     fillPanel = true,
                     modifier = Modifier.fillMaxSize(),
                 )
-            } else {
-                Text(
-                    "No scene picture yet — attach one with the Media button below.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = tokens.secondaryText,
+                InkTextButton(
+                    label = "+",
+                    onClick = onAddMedia,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(InkSpacing.xs)
+                        .background(
+                            MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                            RoundedCornerShape(InkSpacing.radiusSm),
+                        ),
                 )
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(InkSpacing.radiusSm))
+                        .border(
+                            1.dp,
+                            tokens.secondaryText.copy(alpha = 0.35f),
+                            RoundedCornerShape(InkSpacing.radiusSm),
+                        )
+                        .combinedClickable(onClick = onAddMedia),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        "+",
+                        style = MaterialTheme.typography.headlineLarge,
+                        color = tokens.secondaryText,
+                    )
+                    Text(
+                        "Tap to add a scene picture",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = tokens.secondaryText,
+                        modifier = Modifier.padding(top = InkSpacing.xs),
+                    )
+                }
             }
         }
         Column(

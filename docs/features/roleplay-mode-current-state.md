@@ -246,3 +246,18 @@ multi-select still falls through to `ensureMangaGridPlacement()` as
 before. The target cell is cleared after use and on picker cancel
 (`clearMediaPickRequest()`, previously a no-op, now clears it) so a
 later plain "Media" button tap doesn't reuse a stale cell.
+
+## Update — DM: matching add-picture button
+
+DM mode has no grid/cells (it shows one scene picture), so it gets the
+same affordance in the one place it applies: the scene-picture area in
+`DungeonMasterFlow`. Empty, it's a full-area dashed-border tap target
+("+ / Tap to add a scene picture") styled like Storyboard's empty-cell
+placeholder. Once a picture is showing, a small "+" chip sits in the
+top-right corner (mirroring where Storyboard panels put their "-" remove
+button) so the scene picture can be swapped without leaving the screen.
+Both call the existing untargeted `RoleplayChatViewModel.requestMediaPick()`
+— no cell math needed here, since `DungeonMasterFlow` already picks
+whichever media panel is most recent
+(`mediaPanels.lastOrNull { ... }`) regardless of grid placement, the same
+way the bottom "Media" button always worked for this mode.
