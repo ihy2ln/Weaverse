@@ -202,9 +202,8 @@ private fun FormatMenuItems(
     MenuHeader("Format", muted)
     Item("← Back", labelColor, onClick = onBack)
     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-    // Each toggle closes the menu immediately: leaving it open let a mark toggle's span
-    // change re-sync the text field's selection, which could re-trigger the system's
-    // showMenu() callback and pop the menu back open right after it closed.
+    // Close after each toggle. Span changes make Compose call showMenu() again;
+    // EditMenuGate keeps the popup from coming back for this same selection.
     Item(markLabel("Bold", Mark.Bold), labelColor, enabled = config.hasSelection) {
         onAction(EditTextAction.Bold); onDismiss()
     }
@@ -224,10 +223,18 @@ private fun FormatMenuItems(
         onAction(EditTextAction.Subscript); onDismiss()
     }
     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-    Item("Text color…", labelColor, enabled = config.hasSelection) { onAction(EditTextAction.Color) }
-    Item("Highlight…", labelColor, enabled = config.hasSelection) { onAction(EditTextAction.Highlight) }
-    Item("Font…", labelColor, enabled = config.hasSelection) { onAction(EditTextAction.FontFamily) }
-    Item("Size…", labelColor, enabled = config.hasSelection) { onAction(EditTextAction.FontSize) }
+    Item("Text color…", labelColor, enabled = config.hasSelection) {
+        onAction(EditTextAction.Color); onDismiss()
+    }
+    Item("Highlight…", labelColor, enabled = config.hasSelection) {
+        onAction(EditTextAction.Highlight); onDismiss()
+    }
+    Item("Font…", labelColor, enabled = config.hasSelection) {
+        onAction(EditTextAction.FontFamily); onDismiss()
+    }
+    Item("Size…", labelColor, enabled = config.hasSelection) {
+        onAction(EditTextAction.FontSize); onDismiss()
+    }
 }
 
 @Composable

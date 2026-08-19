@@ -11,7 +11,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
@@ -76,13 +75,14 @@ fun BlockEditorField(
     }
     var layoutResult by remember(paragraph.id) { mutableStateOf<TextLayoutResult?>(null) }
 
-    // A pure re-style (Bold/Color/Font toggled via the toolbar, the Format menu, or a
-    // color/font dialog) rewrites paragraph.spans, which forces the resync effect below to
-    // assign a brand-new TextFieldValue — and Compose treats that as reason enough to ask
-    // the system to redisplay the selection toolbar, i.e. showMenu() fires again right
-    // after we dismiss our own popup, popping it back open. Suppressing showMenu() for a
-    // beat after a styling-only resync breaks that loop.
-    var suppressShowMenuUntilMillis by remember { mutableStateOf(0L) }
+    // A pure re-style (Bold/Color/Font via the toolbar, Format menu, or a color/font
+    // dialog) rewrites paragraph.spans, which forces the resync effect below to assign
+    // a brand-new TextFieldValue. Compose treats that as reason to call showMenu()
+    // again — and showMenu also fires after a dialog closes while the selection
+    // handles are still on screen. A 400ms suppress window is not enough for that
+    // (canceling Text color is well past 400ms). EditMenuGate keeps the popup closed
+    // for the same selection until the caret collapses or the range changes.
+    val menuGate = remember { EditMenuGate() }
 
     // Sync external paragraph updates (undo/AI accept) without clobbering caret during typing
     LaunchedEffect(paragraph.id, plain, paragraph.spans, codexMentionTargets) {
@@ -99,11 +99,6 @@ fun BlockEditorField(
                 // re-trigger the system's showMenu() callback mid-selection.
                 return@LaunchedEffect
             }
-            if (value.text == plain) {
-                // Text is unchanged but the styling/mentions differ: a pure re-style or
-                // a mention-highlight refresh, not a fresh text edit.
-                suppressShowMenuUntilMillis = System.currentTimeMillis() + 400L
-            }
             val sel = value.selection
             val capped = TextRange(
                 sel.start.coerceIn(0, plain.length),
@@ -113,8 +108,10 @@ fun BlockEditorField(
         }
     }
 
-    val latestOnShow by rememberUpdatedState(onShowEditPopupChange)
-    val toolbar = remember {
+    menuGate.setSelection(value.selection)
+    menuGate.setExpanded(showEditPopup)
+    menuGate.setOpenHandler { onShowEditPopupChange(true) }
+    val toolbar = remember(menuGate) {
         object : TextToolbar {
             override var status: TextToolbarStatus = TextToolbarStatus.Hidden
                 private set
@@ -127,9 +124,7 @@ fun BlockEditorField(
                 onSelectAllRequested: (() -> Unit)?,
             ) {
                 status = TextToolbarStatus.Hidden
-                if (System.currentTimeMillis() >= suppressShowMenuUntilMillis) {
-                    latestOnShow(true)
-                }
+                menuGate.onSystemShowMenu()
             }
 
             override fun hide() {
@@ -197,6 +192,7 @@ fun BlockEditorField(
                             onBackslashDetected()
                         }
                         else -> {
+                            menuGate.onSelectionChange(next.selection)
                             value = next.copy(
                                 annotatedString = spans.toAnnotatedString(
                                     textColor,
@@ -232,7 +228,7 @@ fun BlockEditorField(
         EditTextPopup(
             expanded = showEditPopup,
             onDismiss = {
-                suppressShowMenuUntilMillis = System.currentTimeMillis() + 400L
+                menuGate.onDismiss()
                 onShowEditPopupChange(false)
             },
             onAction = { action ->
