@@ -88,6 +88,8 @@ data class MediaBlock(
     val gridRowSpan: Int = 1,
     /** When true, show a compact bar instead of full media. */
     val collapsed: Boolean = false,
+    /** Storyboard: which separate 3×3 board this panel lives on. 0 = first page. */
+    val gridPage: Int = 0,
 ) : Block
 
 @Serializable
@@ -117,6 +119,8 @@ data class MediaStackBlock(
     val gridColSpan: Int = 1,
     val gridRowSpan: Int = 1,
     val collapsed: Boolean = false,
+    /** Storyboard: which separate 3×3 board this panel lives on. 0 = first page. */
+    val gridPage: Int = 0,
 ) : Block
 
 @Serializable

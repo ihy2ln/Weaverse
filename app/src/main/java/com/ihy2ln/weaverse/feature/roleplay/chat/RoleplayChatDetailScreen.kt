@@ -43,6 +43,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -238,7 +239,7 @@ fun RoleplayChatDetailScreen(
                     compactStyle = compactStyle,
                     gridSize = MediaGrid.DM_SIZE,
                     textEmphasis = false,
-                    emptyHint = "Storyboard — a 3×3 grid of panels. Tap + on an empty panel to add media, then hold → Move to reposition or drag corner to resize. Drop onto another picture to stack.\nPress / for AI · \\ for manual text.",
+                    emptyHint = "Storyboard — a 3×3 grid of panels. Tap + on an empty panel to add media, then hold → Move to reposition or drag corner to resize (this moves other panels out of the way, it won't cover them). Drop onto another picture to stack. Use + Page for more panels than one board holds.\nPress / for AI · \\ for manual text.",
                     onSelect = { msgId, blockId -> viewModel.selectMedia(msgId, blockId) },
                     onRemove = viewModel::removeMedia,
                     onSnap = viewModel::setMediaGridCell,
@@ -249,7 +250,8 @@ fun RoleplayChatDetailScreen(
                     onMediaEdit = viewModel::onMediaEditAction,
                     onSetCaption = viewModel::setPanelCaption,
                     showAddCell = true,
-                    onAddMedia = { col, row -> viewModel.requestMediaPickForCell(col, row) },
+                    onAddMedia = { col, row, page -> viewModel.requestMediaPickForCell(col, row, page) },
+                    pagingEnabled = true,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -589,7 +591,8 @@ private fun MangaSnapGrid(
     onMediaEdit: (String, String, MediaEditAction) -> Unit,
     onSetCaption: (String, String, String) -> Unit = { _, _, _ -> },
     showAddCell: Boolean = false,
-    onAddMedia: (Int, Int) -> Unit = { _, _ -> },
+    onAddMedia: (Int, Int, Int) -> Unit = { _, _, _ -> },
+    pagingEnabled: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val tokens = inkTokens()
@@ -597,12 +600,43 @@ private fun MangaSnapGrid(
     val density = androidx.compose.ui.platform.LocalDensity.current
     var captionEditKey by remember { mutableStateOf<String?>(null) }
     var captionEditText by remember { mutableStateOf("") }
+    var currentPage by remember { mutableIntStateOf(0) }
+    val realPageCount = (panels.maxOfOrNull { it.gridPage } ?: 0) + 1
+    val totalPages = maxOf(realPageCount, currentPage + 1)
+    val pagePanels = if (pagingEnabled) panels.filter { it.gridPage == currentPage } else panels
     Column(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(scroll)
             .padding(horizontal = 12.dp, vertical = InkSpacing.sm),
     ) {
+        if (pagingEnabled) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                InkTextButton(
+                    label = "‹",
+                    enabled = currentPage > 0,
+                    onClick = { currentPage = (currentPage - 1).coerceAtLeast(0) },
+                )
+                Text(
+                    "Page ${currentPage + 1}/$totalPages",
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(horizontal = InkSpacing.xs),
+                )
+                InkTextButton(
+                    label = "›",
+                    enabled = currentPage < realPageCount - 1,
+                    onClick = { currentPage = (currentPage + 1).coerceAtMost(realPageCount - 1) },
+                )
+                InkTextButton(
+                    label = "+ Page",
+                    onClick = { currentPage = maxOf(realPageCount, currentPage + 1) },
+                    modifier = Modifier.padding(start = InkSpacing.sm),
+                )
+            }
+        }
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
@@ -614,7 +648,7 @@ private fun MangaSnapGrid(
             val cellW = maxWidth / gridSize
             val cellH = maxHeight / gridSize
             // Snap grid stays active for move/resize/stack, but lines are hidden.
-            if (panels.isEmpty()) {
+            if (pagePanels.isEmpty()) {
                 Text(
                     emptyHint,
                     style = MaterialTheme.typography.bodyMedium,
@@ -625,7 +659,7 @@ private fun MangaSnapGrid(
                 )
             }
             val occupiedCells = mutableSetOf<Pair<Int, Int>>()
-            panels.forEach { panel ->
+            pagePanels.forEach { panel ->
                 val col = if (MediaGrid.isPlaced(panel.gridCol, panel.gridRow, gridSize)) {
                     panel.gridCol
                 } else {
@@ -655,7 +689,7 @@ private fun MangaSnapGrid(
                     gridSize = gridSize,
                     textEmphasis = textEmphasis,
                     compactStyle = compactStyle,
-                    panels = panels,
+                    panels = pagePanels,
                     onSelect = { onSelect(panel.messageId, panel.blockId) },
                     onRemove = { onRemove(panel.messageId, panel.blockId) },
                     onSnap = { c, r -> onSnap(panel.messageId, panel.blockId, c, r) },
@@ -693,7 +727,7 @@ private fun MangaSnapGrid(
                                     tokens.secondaryText.copy(alpha = 0.35f),
                                     RoundedCornerShape(InkSpacing.radiusSm),
                                 )
-                                .combinedClickable(onClick = { onAddMedia(c, r) }),
+                                .combinedClickable(onClick = { onAddMedia(c, r, currentPage) }),
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(

@@ -28,10 +28,12 @@ import com.ihy2ln.weaverse.core.text.stackMediaWithAdjacent
 import com.ihy2ln.weaverse.core.text.toJson
 import com.ihy2ln.weaverse.core.text.gridColOrUnset
 import com.ihy2ln.weaverse.core.text.gridColSpanOrOne
+import com.ihy2ln.weaverse.core.text.gridPageOrZero
 import com.ihy2ln.weaverse.core.text.gridRowOrUnset
 import com.ihy2ln.weaverse.core.text.gridRowSpanOrOne
 import com.ihy2ln.weaverse.core.text.withGridCell
 import com.ihy2ln.weaverse.core.text.withGridPlacement
+import com.ihy2ln.weaverse.core.text.withGridUnplaced
 import com.ihy2ln.weaverse.core.ui.theme.InkAccentBlue
 import com.ihy2ln.weaverse.core.ui.util.UsageFormat
 import com.ihy2ln.weaverse.core.ui.util.parseHexColor
@@ -82,7 +84,12 @@ data class RpMediaRef(
         com.ihy2ln.weaverse.core.text.MediaKind.Image,
     /** DM prose tile (no picture). */
     val isTextTile: Boolean = false,
+    /** Storyboard: which separate 3×3 board this panel is on. */
+    val gridPage: Int = 0,
 )
+
+/** Storyboard: target cell for the next attachMedia() call, from tapping an empty "+" cell. */
+data class GridCellTarget(val col: Int, val row: Int, val page: Int)
 
 data class RpMessageUi(
     val id: String,
@@ -127,7 +134,7 @@ data class RoleplayChatUiState(
     val presetId: String = "preset-balanced",
     val showExtraPromptSurfaces: Boolean = false,
     /** Set by tapping an empty Storyboard cell's "+"; consumed by the next attachMedia(). */
-    val mediaPickTargetCell: Pair<Int, Int>? = null,
+    val mediaPickTargetCell: GridCellTarget? = null,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -248,6 +255,7 @@ class RoleplayChatViewModel @Inject constructor(
                                 mediaId = block.mediaId,
                                 mediaKind = MediaKind.Image,
                                 isTextTile = true,
+                                gridPage = block.gridPage,
                             )
                             return@forEach
                         }
@@ -276,6 +284,7 @@ class RoleplayChatViewModel @Inject constructor(
                                 isAudio = audio,
                                 mediaId = block.mediaId,
                                 mediaKind = block.kind,
+                                gridPage = block.gridPage,
                             )
                         }
                     }
@@ -308,6 +317,7 @@ class RoleplayChatViewModel @Inject constructor(
                                 isAudio = false,
                                 mediaId = block.mediaIds.getOrNull(idx).orEmpty(),
                                 mediaKind = MediaKind.Image,
+                                gridPage = block.gridPage,
                             )
                         }
                     }
@@ -603,20 +613,100 @@ class RoleplayChatViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Resize a panel's span. Expanding it can overlap neighbors already on the same
+     * Storyboard page — rather than letting the resized panel cover them, each
+     * overlapped panel is bumped to the next free slot of its own size on that page,
+     * or left unplaced (recovered by [placeUnplacedPanels] once room frees up) if the
+     * page is too full to fit it anywhere.
+     */
     fun setMediaGridSpan(messageId: String, blockId: String, colSpan: Int, rowSpan: Int) {
         viewModelScope.launch {
             val current = rawMessages.find { it.id == messageId } ?: return@launch
             val gridSize = activeGridSize()
-            val blocks = documentFromJson(current.contentJson).blocks.toMutableList()
-            val index = blocks.indexOfFirst {
+
+            // All mutated messages funnel through this map so a displaced panel that
+            // happens to live in the SAME message as the resized panel builds on top
+            // of that edit instead of overwriting it with stale rawMessages content.
+            val pendingBlocks = mutableMapOf<String, MutableList<Block>>()
+            fun blocksFor(msgId: String): MutableList<Block> = pendingBlocks.getOrPut(msgId) {
+                rawMessages.find { it.id == msgId }
+                    ?.let { documentFromJson(it.contentJson).blocks.toMutableList() }
+                    ?: mutableListOf()
+            }
+
+            val resizeBlocks = blocksFor(messageId)
+            val index = resizeBlocks.indexOfFirst {
                 (it is MediaBlock && it.id == blockId) || (it is MediaStackBlock && it.id == blockId)
             }
             if (index < 0) return@launch
-            val block = blocks[index]
+            val block = resizeBlocks[index]
             val col = block.gridColOrUnset().takeIf { it >= 0 } ?: 0
             val row = block.gridRowOrUnset().takeIf { it >= 0 } ?: 0
-            blocks[index] = block.withGridPlacement(col, row, colSpan, rowSpan, gridSize)
-            persistMessageBlocks(current, blocks)
+            resizeBlocks[index] = block.withGridPlacement(col, row, colSpan, rowSpan, gridSize)
+
+            val resizedPage = block.gridPageOrZero()
+            val (rCs, rRs) = MediaGrid.clampSpanAt(col, row, colSpan, rowSpan, gridSize)
+            val newFootprint = MediaGrid.cellsCovered(col, row, rCs, rRs, gridSize)
+            val samePagePanels = _uiState.value.mediaPanels.filter {
+                it.gridPage == resizedPage && !(it.messageId == messageId && it.blockId == blockId)
+            }
+            val displaced = samePagePanels.filter { panel ->
+                MediaGrid.isPlaced(panel.gridCol, panel.gridRow, gridSize) &&
+                    MediaGrid.cellsCovered(
+                        panel.gridCol,
+                        panel.gridRow,
+                        panel.gridColSpan,
+                        panel.gridRowSpan,
+                        gridSize,
+                    ).any { it in newFootprint }
+            }
+            if (displaced.isNotEmpty()) {
+                val occupied = newFootprint.toMutableSet()
+                (samePagePanels - displaced.toSet()).forEach { panel ->
+                    if (MediaGrid.isPlaced(panel.gridCol, panel.gridRow, gridSize)) {
+                        occupied += MediaGrid.cellsCovered(
+                            panel.gridCol,
+                            panel.gridRow,
+                            panel.gridColSpan,
+                            panel.gridRowSpan,
+                            gridSize,
+                        )
+                    }
+                }
+                displaced
+                    .sortedWith(compareBy({ it.gridRow }, { it.gridCol }))
+                    .forEach { panel ->
+                        val slot = MediaGrid.nextFreeSlot(occupied, gridSize, panel.gridColSpan, panel.gridRowSpan)
+                        val movedBlocks = blocksFor(panel.messageId)
+                        val movedIndex = movedBlocks.indexOfFirst {
+                            (it is MediaBlock && it.id == panel.blockId) ||
+                                (it is MediaStackBlock && it.id == panel.blockId)
+                        }
+                        if (movedIndex < 0) return@forEach
+                        movedBlocks[movedIndex] = if (slot != null) {
+                            occupied += MediaGrid.cellsCovered(
+                                slot.first,
+                                slot.second,
+                                panel.gridColSpan,
+                                panel.gridRowSpan,
+                                gridSize,
+                            )
+                            movedBlocks[movedIndex].withGridCell(slot.first, slot.second, gridSize)
+                        } else {
+                            movedBlocks[movedIndex].withGridUnplaced()
+                        }
+                    }
+            }
+
+            pendingBlocks.forEach { (msgId, msgBlocks) ->
+                if (msgId == messageId) {
+                    persistMessageBlocks(current, msgBlocks)
+                } else {
+                    val entity = rawMessages.find { it.id == msgId } ?: return@forEach
+                    db.roleplayDao().upsertMessage(entity.copy(contentJson = Document(blocks = msgBlocks).toJson()))
+                }
+            }
         }
     }
 
@@ -661,22 +751,27 @@ class RoleplayChatViewModel @Inject constructor(
     private suspend fun placeUnplacedPanels(gridSize: Int) {
         val panels = _uiState.value.mediaPanels
         if (panels.isEmpty()) return
-        val occupied = mutableSetOf<Pair<Int, Int>>()
-        panels.filter { MediaGrid.isPlaced(it.gridCol, it.gridRow, gridSize) }.forEach { panel ->
-            occupied += MediaGrid.cellsCovered(
-                panel.gridCol,
-                panel.gridRow,
-                panel.gridColSpan,
-                panel.gridRowSpan,
-                gridSize,
-            )
-        }
+        // Each Storyboard page has its own independent free-cell search — an unplaced
+        // panel (new media, or one bumped by a resize) is re-placed on its own page,
+        // not folded into whichever page happens to have room first.
         val updates = mutableListOf<Triple<String, String, Pair<Int, Int>>>()
-        panels.forEach { panel ->
-            if (!MediaGrid.isPlaced(panel.gridCol, panel.gridRow, gridSize)) {
-                val cell = MediaGrid.nextFreeCell(occupied, gridSize)
-                occupied += MediaGrid.cellsCovered(cell.first, cell.second, 1, 1, gridSize)
-                updates += Triple(panel.messageId, panel.blockId, cell)
+        panels.groupBy { it.gridPage }.forEach { (_, pagePanels) ->
+            val occupied = mutableSetOf<Pair<Int, Int>>()
+            pagePanels.filter { MediaGrid.isPlaced(it.gridCol, it.gridRow, gridSize) }.forEach { panel ->
+                occupied += MediaGrid.cellsCovered(
+                    panel.gridCol,
+                    panel.gridRow,
+                    panel.gridColSpan,
+                    panel.gridRowSpan,
+                    gridSize,
+                )
+            }
+            pagePanels.forEach { panel ->
+                if (!MediaGrid.isPlaced(panel.gridCol, panel.gridRow, gridSize)) {
+                    val cell = MediaGrid.nextFreeCell(occupied, gridSize)
+                    occupied += MediaGrid.cellsCovered(cell.first, cell.second, 1, 1, gridSize)
+                    updates += Triple(panel.messageId, panel.blockId, cell)
+                }
             }
         }
         updates.forEach { (messageId, blockId, cell) ->
@@ -763,10 +858,13 @@ class RoleplayChatViewModel @Inject constructor(
         _uiState.update { it.copy(mediaPickRequestId = it.mediaPickRequestId + 1, mediaPickTargetCell = null) }
     }
 
-    /** Storyboard: tapping an empty grid cell's "+" requests media targeted at that cell. */
-    fun requestMediaPickForCell(col: Int, row: Int) {
+    /** Storyboard: tapping an empty grid cell's "+" requests media targeted at that cell/page. */
+    fun requestMediaPickForCell(col: Int, row: Int, page: Int) {
         _uiState.update {
-            it.copy(mediaPickRequestId = it.mediaPickRequestId + 1, mediaPickTargetCell = col to row)
+            it.copy(
+                mediaPickRequestId = it.mediaPickRequestId + 1,
+                mediaPickTargetCell = GridCellTarget(col, row, page),
+            )
         }
     }
 
@@ -801,7 +899,14 @@ class RoleplayChatViewModel @Inject constructor(
                         )
                         add(
                             if (index == 0 && targetCell != null) {
-                                block.withGridPlacement(targetCell.first, targetCell.second, 1, 1, gridSize)
+                                block.withGridPlacement(
+                                    targetCell.col,
+                                    targetCell.row,
+                                    1,
+                                    1,
+                                    gridSize,
+                                    page = targetCell.page,
+                                )
                             } else {
                                 block
                             },

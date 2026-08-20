@@ -261,3 +261,47 @@ Both call the existing untargeted `RoleplayChatViewModel.requestMediaPick()`
 whichever media panel is most recent
 (`mediaPanels.lastOrNull { ... }`) regardless of grid placement, the same
 way the bottom "Media" button always worked for this mode.
+
+## Update — Storyboard: resize displaces neighbors, "+ Page" for more boards
+
+Two gaps from the initial Storyboard pass: expanding a panel used to just
+draw it over whatever was already in those cells (no collision handling
+at all), and a single 3×3 board was a hard ceiling — nine panels, no way
+to get more without cannibalizing existing ones.
+
+**Resize now displaces instead of covering.** `MediaBlock`/
+`MediaStackBlock` gained a `gridPage: Int = 0` field (`DocumentModel.kt`)
+so panels can live on separate boards; `MediaGrid.kt` gained
+`nextFreeSlot(occupied, gridSize, colSpan, rowSpan)` (a span-aware
+version of the existing 1×1-only `nextFreeCell`) plus `Block.gridPageOrZero()`,
+`withGridPage`-aware `withGridPlacement(..., page: Int? = null)`, and
+`Block.withGridUnplaced()`. `RoleplayChatViewModel.setMediaGridSpan()`
+now: computes the resized panel's new footprint, finds every other panel
+on the *same page* whose current footprint overlaps it, and re-homes
+each of those into the next free slot of its own size on that page —
+or, if the page is too full to fit it anywhere, marks it unplaced
+(`withGridUnplaced()`) so the existing `placeUnplacedPanels()` auto-place
+pass picks it back up once room frees up, rather than losing it. All
+the mutated messages (the resized panel's, plus any displaced panels
+that happen to live in other messages — or the *same* message, which
+needed care to avoid one write clobbering the other) are collected into
+a `pendingBlocks` map and persisted together at the end.
+`placeUnplacedPanels()` (used for both new-media auto-placement and this
+recovery path) is now itself page-aware — `panels.groupBy { it.gridPage }`
+— so each page gets its own independent free-cell search instead of one
+shared across every board.
+
+**"+ Page" adds another board.** `MangaSnapGrid` gained a `pagingEnabled`
+param (`true` only for the Storyboard call site) and local `currentPage`
+state, filtering `panels` down to `pagePanels` for that page before
+rendering — drag/resize/stack interactions only ever see the current
+page's panels, so nothing can be dragged onto or stacked with a panel on
+a page that isn't visible. A `‹ Page X/N › [+ Page]` row sits above the
+grid: `‹`/`›` step between pages that actually have panels on them
+(`realPageCount`, derived from `panels.maxOf { it.gridPage } + 1`);
+`+ Page` jumps to one page past the current max — a purely local,
+unpersisted "blank page," since nothing needs writing until a panel
+actually lands on it. Tapping an empty cell's "+" now threads the page
+through too (`GridCellTarget(col, row, page)` replaces the old
+`Pair<Int, Int>` for `mediaPickTargetCell`), so new media added from
+page 2 lands on page 2, not page 1.
