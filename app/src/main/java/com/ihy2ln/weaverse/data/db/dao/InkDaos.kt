@@ -20,6 +20,7 @@ import com.ihy2ln.weaverse.data.db.entities.RpChatEntity
 import com.ihy2ln.weaverse.data.db.entities.RpMessageEntity
 import com.ihy2ln.weaverse.data.db.entities.RpPersonaEntity
 import com.ihy2ln.weaverse.data.db.entities.SceneEntity
+import com.ihy2ln.weaverse.data.db.entities.SceneSnapshotEntity
 import com.ihy2ln.weaverse.data.db.entities.SeriesEntity
 import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
 import kotlinx.coroutines.flow.Flow
@@ -91,6 +92,21 @@ interface ManuscriptDao {
 
     @Query("SELECT * FROM scenes WHERE id = :id LIMIT 1")
     suspend fun getScene(id: String): SceneEntity?
+
+    @Query("SELECT * FROM chapters WHERE id = :id LIMIT 1")
+    suspend fun getChapter(id: String): ChapterEntity?
+
+    @Query("SELECT * FROM scene_snapshots WHERE sceneId = :sceneId ORDER BY createdAt DESC")
+    fun observeSnapshots(sceneId: String): Flow<List<SceneSnapshotEntity>>
+
+    @Query("SELECT * FROM scene_snapshots WHERE id = :id LIMIT 1")
+    suspend fun getSnapshot(id: String): SceneSnapshotEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertSnapshot(entity: SceneSnapshotEntity)
+
+    @Query("DELETE FROM scene_snapshots WHERE id = :id")
+    suspend fun deleteSnapshot(id: String)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAct(entity: ActEntity)

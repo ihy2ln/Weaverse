@@ -20,6 +20,7 @@ import com.ihy2ln.weaverse.core.text.toJson
 import com.ihy2ln.weaverse.core.ui.util.UsageFormat
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
 import com.ihy2ln.weaverse.data.db.entities.ChatMessageEntity
+import com.ihy2ln.weaverse.data.settings.ActionModelKeys
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
 import com.ihy2ln.weaverse.feature.shell.WorkspaceHistory
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -81,7 +82,12 @@ class WorkshopChatViewModel @Inject constructor(
         viewModelScope.launch {
             settings.preferences.collect { prefs ->
                 bookId = prefs.selectedBookId
-                _uiState.update { it.copy(showExtraPromptSurfaces = prefs.extraPromptSurfaces.chatComposer) }
+                _uiState.update {
+                    it.copy(
+                        showExtraPromptSurfaces = prefs.extraPromptSurfaces.chatComposer,
+                        modelRef = settings.modelRefForAction(prefs, ActionModelKeys.WORKSHOP),
+                    )
+                }
             }
         }
         selectThread("thread-1")

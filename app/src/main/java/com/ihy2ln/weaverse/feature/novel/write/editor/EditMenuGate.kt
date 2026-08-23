@@ -37,6 +37,17 @@ class EditMenuGate {
         openHandler = handler
     }
 
+    fun allowReopen() {
+        dismissedSelection = null
+    }
+
+    fun onUserPressInSelection() {
+        allowReopen()
+        if (!expanded) {
+            openHandler?.invoke()
+        }
+    }
+
     fun onSystemShowMenu() {
         if (!shouldOpen()) return
         openHandler?.invoke()

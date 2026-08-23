@@ -77,4 +77,19 @@ class EditMenuGateTest {
         gate.onSystemShowMenu()
         assertTrue(opened == 1)
     }
+
+    @Test
+    fun pressingHighlightedTextReopensAfterDismiss() {
+        val gate = EditMenuGate()
+        var opened = 0
+        gate.setOpenHandler { opened += 1 }
+        gate.setSelection(word)
+        gate.setExpanded(true)
+        gate.onDismiss()
+        assertFalse(gate.shouldOpen(word))
+        gate.onUserPressInSelection()
+        assertTrue(opened == 1)
+        gate.setExpanded(true)
+        assertFalse(gate.shouldOpen(word))
+    }
 }

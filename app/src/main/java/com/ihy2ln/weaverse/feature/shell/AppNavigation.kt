@@ -10,7 +10,6 @@ enum class NovelDestination(val label: String) {
     Plan("Plan"),
     Write("Write"),
     Chat("Chat"),
-    Review("Review"),
 }
 
 /** How Plan's Write button opens the editor — not a workspace mode. */
@@ -18,11 +17,14 @@ enum class WriteJumpKind(val label: String) {
     Scene("Scene"),
     SceneBeat("Scene beat"),
     Chapter("Chapter"),
+    ReviewScene("Review scene"),
+    ReviewChapter("Review chapter"),
     ;
 
     companion object {
-        /** Plan Write ▾ — Scene is opened from Plan/Write/Chat/Review, not this menu. */
+        /** Plan Write ▾ — Scene is opened from Plan/Write/Chat, not this menu. */
         val planMenu: List<WriteJumpKind> = listOf(SceneBeat, Chapter)
+        val writeMenu: List<WriteJumpKind> = listOf(ReviewScene, ReviewChapter)
     }
 }
 

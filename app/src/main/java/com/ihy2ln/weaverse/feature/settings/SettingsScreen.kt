@@ -69,6 +69,8 @@ fun SettingsScreen(
 
     viewModel: SettingsViewModel = hiltViewModel(),
 
+    onOpenHelp: (() -> Unit)? = null,
+
 ) {
 
     val state by viewModel.uiState.collectAsState()
@@ -105,6 +107,27 @@ fun SettingsScreen(
             .padding(contentPad),
 
     ) {
+        if (onOpenHelp != null) {
+            InkCard(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    "Help & Tutorial",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    "New to Weaverse? Walk through Write, Prompting, Codex, and Review.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = inkTokens().secondaryText,
+                    modifier = Modifier.padding(top = InkSpacing.xs, bottom = InkSpacing.sm),
+                )
+                InkFilledButton(
+                    label = "Open Help",
+                    onClick = onOpenHelp,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Spacer(modifier = Modifier.height(InkSpacing.md))
+        }
 
         ExpandableSection(
 

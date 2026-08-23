@@ -20,6 +20,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.changedToDown
 import androidx.compose.ui.input.pointer.pointerInput
@@ -50,6 +52,7 @@ fun MediaStackBlockView(
 ) {
     var menuOpen by remember(block.id) { mutableStateOf(false) }
     var menuAnchor by remember(block.id) { mutableStateOf(Offset.Zero) }
+    val haptic = LocalHapticFeedback.current
     val ids = block.mediaIds
     val index = block.currentIndex.coerceIn(0, (ids.size - 1).coerceAtLeast(0))
     val currentId = ids.getOrNull(index)
@@ -61,6 +64,7 @@ fun MediaStackBlockView(
     }
 
     fun openMenu(at: Offset) {
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         onSelect()
         menuAnchor = at
         menuOpen = true

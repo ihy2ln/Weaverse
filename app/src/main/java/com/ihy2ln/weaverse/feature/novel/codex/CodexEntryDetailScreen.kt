@@ -82,7 +82,7 @@ fun CodexEntryDetailScreen(
         Box {
             InkToolbar(
                 title = state.name.ifBlank { "Codex" },
-                subtitle = "Entry detail",
+                subtitle = "Codex",
                 canGoBack = true,
                 onBack = onBack,
                 onSettings = { viewModel.onShowSettingsMenuChange(true) },

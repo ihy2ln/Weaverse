@@ -10,6 +10,8 @@ import com.ihy2ln.weaverse.ai.AiGenerationService
 import com.ihy2ln.weaverse.ai.ImageAttachment
 import com.ihy2ln.weaverse.ai.ModelInfo
 import com.ihy2ln.weaverse.ai.context.AssembledPrompt
+import com.ihy2ln.weaverse.ai.context.ContextBuildRequest
+import com.ihy2ln.weaverse.ai.context.ContextBuilder
 import com.ihy2ln.weaverse.ai.openrouter.OpenRouterModelCache
 import com.ihy2ln.weaverse.ai.prompt.DefaultAiGuides
 import com.ihy2ln.weaverse.ai.prompt.PromptTokenContext
@@ -58,6 +60,9 @@ data class GlobalPromptUiState(
     val selectedModelRef: String = "",
     val defaultModelRef: String = "",
     val writingModels: List<ModelInfo> = emptyList(),
+    val showPreview: Boolean = false,
+    val promptPreview: String = "",
+    val contextMeter: String = "",
 )
 
 data class PromptInsertContext(
@@ -82,6 +87,7 @@ class GlobalPromptViewModel @Inject constructor(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(GlobalPromptUiState())
     val uiState: StateFlow<GlobalPromptUiState> = _uiState.asStateFlow()
+    private val contextBuilder = ContextBuilder()
 
     private var context = PromptInsertContext()
 
@@ -91,7 +97,17 @@ class GlobalPromptViewModel @Inject constructor(
         }
         viewModelScope.launch {
             settings.preferences.collect { prefs ->
-                _uiState.update { it.copy(defaultModelRef = prefs.defaultModelRef) }
+                val actionKey = PromptModelSelection.dockActionKey(
+                    context.mode,
+                    context.novelDest,
+                    _uiState.value.kind,
+                )
+                _uiState.update {
+                    it.copy(
+                        defaultModelRef = prefs.defaultModelRef,
+                        selectedModelRef = prefs.actionModelRefs[actionKey].orEmpty(),
+                    )
+                }
             }
         }
         viewModelScope.launch {
@@ -103,27 +119,46 @@ class GlobalPromptViewModel @Inject constructor(
 
     fun updateContext(ctx: PromptInsertContext) {
         context = ctx
+        viewModelScope.launch {
+            val prefs = settings.preferences.first()
+            val actionKey = PromptModelSelection.dockActionKey(ctx.mode, ctx.novelDest, _uiState.value.kind)
+            _uiState.update {
+                it.copy(
+                    defaultModelRef = prefs.defaultModelRef,
+                    selectedModelRef = prefs.actionModelRefs[actionKey].orEmpty(),
+                )
+            }
+        }
     }
 
     fun open(kind: PromptEntryKind) {
-        _uiState.update {
-            it.copy(
-                kind = kind,
-                text = "",
-                streamingText = "",
-                errorMessage = "",
-                usageText = "",
-                statusMessage = "",
-                isStreaming = false,
-                imageMediaId = null,
-                imagePath = null,
-                outputWords = if (kind == PromptEntryKind.Ai) 750 else it.outputWords,
-            )
+        viewModelScope.launch {
+            val prefs = settings.preferences.first()
+            val actionKey = PromptModelSelection.dockActionKey(context.mode, context.novelDest, kind)
+            _uiState.update {
+                it.copy(
+                    kind = kind,
+                    text = "",
+                    streamingText = "",
+                    errorMessage = "",
+                    usageText = "",
+                    statusMessage = "",
+                    isStreaming = false,
+                    imageMediaId = null,
+                    imagePath = null,
+                    outputWords = if (kind == PromptEntryKind.Ai) 750 else it.outputWords,
+                    selectedModelRef = prefs.actionModelRefs[actionKey].orEmpty(),
+                    defaultModelRef = prefs.defaultModelRef,
+                    showPreview = false,
+                    promptPreview = "",
+                    contextMeter = "",
+                )
+            }
         }
     }
 
     fun dismiss() {
-        _uiState.update { it.copy(kind = null, isStreaming = false) }
+        _uiState.update { it.copy(kind = null, isStreaming = false, showPreview = false) }
     }
 
     /**
@@ -136,7 +171,16 @@ class GlobalPromptViewModel @Inject constructor(
         if (current == null) {
             open(kind)
         } else {
-            _uiState.update { it.copy(kind = kind) }
+            viewModelScope.launch {
+                val prefs = settings.preferences.first()
+                val actionKey = PromptModelSelection.dockActionKey(context.mode, context.novelDest, kind)
+                _uiState.update {
+                    it.copy(
+                        kind = kind,
+                        selectedModelRef = prefs.actionModelRefs[actionKey].orEmpty(),
+                    )
+                }
+            }
         }
     }
 
@@ -155,11 +199,43 @@ class GlobalPromptViewModel @Inject constructor(
     }
 
     fun selectModel(modelId: String) {
-        _uiState.update { it.copy(selectedModelRef = PromptModelSelection.modelRef(modelId)) }
+        val ref = PromptModelSelection.modelRef(modelId)
+        _uiState.update { it.copy(selectedModelRef = ref) }
+        persistDockModel(ref)
     }
 
     fun useDefaultModel() {
         _uiState.update { it.copy(selectedModelRef = "") }
+        persistDockModel("")
+    }
+
+    fun togglePreview() {
+        val next = !_uiState.value.showPreview
+        if (!next) {
+            _uiState.update { it.copy(showPreview = false) }
+            return
+        }
+        viewModelScope.launch {
+            val assembled = assembleForPreview()
+            _uiState.update {
+                it.copy(
+                    showPreview = true,
+                    promptPreview = assembled.systemBlocks.joinToString("\n\n"),
+                    contextMeter = UsageFormat.formatBreakdown(assembled.tokenBreakdown),
+                )
+            }
+        }
+    }
+
+    private fun persistDockModel(modelRef: String) {
+        viewModelScope.launch {
+            val actionKey = PromptModelSelection.dockActionKey(
+                context.mode,
+                context.novelDest,
+                _uiState.value.kind,
+            )
+            settings.setActionModelRef(actionKey, modelRef)
+        }
     }
 
     fun requestImage() {
@@ -237,18 +313,21 @@ class GlobalPromptViewModel @Inject constructor(
                 }
                 listOf(ImageAttachment(mimeType = mime, base64Data = Base64.encodeToString(bytes, Base64.NO_WRAP)))
             }.orEmpty()
+            val assembled = assemblePrompt(state.outputWords, userMessage)
+            _uiState.update {
+                it.copy(contextMeter = UsageFormat.formatBreakdown(assembled.tokenBreakdown))
+            }
+            val modelRef = PromptModelSelection.effectiveModelRef(
+                state.selectedModelRef,
+                state.defaultModelRef,
+            ).ifBlank { null }
             val builder = StringBuilder()
             var usage = ""
             runCatching {
                 aiGeneration.stream(
                     userMessage = userMessage,
-                    assembled = AssembledPrompt(
-                        systemBlocks = assembleSystemBlocks(state.outputWords),
-                        messages = emptyList(),
-                        usedEntries = emptyList(),
-                        tokenBreakdown = emptyList(),
-                    ),
-                    modelRef = state.selectedModelRef.ifBlank { null },
+                    assembled = assembled,
+                    modelRef = modelRef,
                     maxTokens = maxTokens,
                     temperature = 0.85,
                     imageAttachments = imageAttachments,
@@ -314,20 +393,72 @@ class GlobalPromptViewModel @Inject constructor(
         }
     }
 
+    private suspend fun assembleForPreview(): AssembledPrompt {
+        val state = _uiState.value
+        val userMessage = state.text.ifBlank { DefaultAiGuides.draftFor(context.mode) }
+        return assemblePrompt(state.outputWords, userMessage)
+    }
+
+    private suspend fun assemblePrompt(outputWords: Int, userMessage: String): AssembledPrompt {
+        if (context.mode == AppMode.Novel && !isWorkshopChat()) {
+            val sceneText = context.sceneId
+                ?.let { id -> db.manuscriptDao().getScene(id)?.plainText }
+                .orEmpty()
+            val bookId = context.bookId.ifBlank { settings.preferences.first().selectedBookId }
+            val entries = if (bookId.isNotBlank()) {
+                db.codexDao().observeEntries(bookId).first()
+            } else {
+                emptyList()
+            }
+            val built = contextBuilder.build(
+                entries,
+                ContextBuildRequest(
+                    scanText = sceneText + " " + userMessage,
+                    sceneText = sceneText,
+                    userMessage = userMessage,
+                ),
+            )
+            val guides = DefaultAiGuides.systemBlocks(
+                context.mode,
+                outputWords,
+                novelTokenContext(bookId),
+            )
+            return AssembledPrompt(
+                systemBlocks = guides + built.systemBlocks.filter { it !in guides },
+                messages = emptyList(),
+                usedEntries = built.usedEntries,
+                tokenBreakdown = built.tokenBreakdown,
+                droppedEntryIds = built.droppedEntryIds,
+                codexBlock = built.codexBlock,
+            )
+        }
+        return AssembledPrompt(
+            systemBlocks = assembleSystemBlocks(outputWords),
+            messages = emptyList(),
+            usedEntries = emptyList(),
+            tokenBreakdown = emptyList(),
+        )
+    }
+
+    private suspend fun novelTokenContext(bookId: String): PromptTokenContext {
+        val book = bookId.takeIf { it.isNotBlank() }?.let { db.bookDao().getById(it) }
+        val series = book?.seriesId?.let { id -> db.seriesDao().observeById(id).first() }
+        return PromptTokenContext(
+            tense = book?.tense?.ifBlank { "past tense" } ?: "past tense",
+            bookTitle = book?.title.orEmpty(),
+            seriesTitle = series?.title.orEmpty(),
+            seriesDescription = series?.description.orEmpty(),
+        )
+    }
+
     private suspend fun assembleSystemBlocks(outputWords: Int): List<String> {
         val chatId = context.rpChatId
         if (context.mode != AppMode.Roleplay || chatId.isNullOrBlank()) {
-            val book = context.bookId.takeIf { it.isNotBlank() }?.let { db.bookDao().getById(it) }
-            val series = book?.seriesId?.let { id -> db.seriesDao().observeById(id).first() }
+            val bookId = context.bookId
             return DefaultAiGuides.systemBlocks(
                 context.mode,
                 outputWords,
-                PromptTokenContext(
-                    tense = book?.tense?.ifBlank { "past tense" } ?: "past tense",
-                    bookTitle = book?.title.orEmpty(),
-                    seriesTitle = series?.title.orEmpty(),
-                    seriesDescription = series?.description.orEmpty(),
-                ),
+                novelTokenContext(bookId),
             )
         }
         val chat = db.roleplayDao().getChat(chatId)

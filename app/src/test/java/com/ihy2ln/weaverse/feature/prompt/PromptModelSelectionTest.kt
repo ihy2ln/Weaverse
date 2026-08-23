@@ -1,6 +1,9 @@
 package com.ihy2ln.weaverse.feature.prompt
 
 import com.ihy2ln.weaverse.ai.ModelInfo
+import com.ihy2ln.weaverse.data.settings.ActionModelKeys
+import com.ihy2ln.weaverse.feature.shell.AppMode
+import com.ihy2ln.weaverse.feature.shell.NovelDestination
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -94,6 +97,26 @@ class PromptModelSelectionTest {
                 selectedRef = "openrouter/openai/gpt-5.6-luna",
                 defaultRef = "openrouter/deepseek/deepseek-v4-flash",
             ),
+        )
+    }
+
+    @Test
+    fun dockActionKeySplitsSceneBeatWorkshopAndRoleplay() {
+        assertEquals(
+            ActionModelKeys.SCENE_BEAT,
+            PromptModelSelection.dockActionKey(AppMode.Novel, NovelDestination.Write.name, PromptEntryKind.Ai),
+        )
+        assertEquals(
+            ActionModelKeys.WORKSHOP,
+            PromptModelSelection.dockActionKey(AppMode.Novel, NovelDestination.Chat.name, PromptEntryKind.Ai),
+        )
+        assertEquals(
+            ActionModelKeys.ROLEPLAY_SWIPE,
+            PromptModelSelection.dockActionKey(AppMode.Roleplay, null, PromptEntryKind.Ai),
+        )
+        assertEquals(
+            ActionModelKeys.PROMPT_AI,
+            PromptModelSelection.dockActionKey(AppMode.Notes, null, PromptEntryKind.Manual),
         )
     }
 }

@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import com.ihy2ln.weaverse.core.ui.util.toRgbHexString
 
 val LocalInkTokens = staticCompositionLocalOf { tokensFor(AppThemeMode.Light) }
 
@@ -53,4 +54,4 @@ fun WeaverseTheme(
 @Composable
 fun inkTokens(): InkThemeTokens = LocalInkTokens.current
 
-fun Color.toHexString(): String = "#%06X".format(0xFFFFFF and this.value.toInt())
+fun Color.toHexString(): String = toRgbHexString()

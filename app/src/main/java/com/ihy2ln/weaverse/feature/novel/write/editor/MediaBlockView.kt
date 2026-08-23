@@ -24,6 +24,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -75,6 +77,7 @@ fun MediaBlockView(
     var menuAnchor by remember(block.id) { mutableStateOf(Offset.Zero) }
     val fraction = (widthPercent / 100f).coerceIn(0.2f, 1f)
     val focusRequester = remember { FocusRequester() }
+    val haptic = LocalHapticFeedback.current
     val borderColor = if (selected) {
         MaterialTheme.colorScheme.primary
     } else {
@@ -82,6 +85,7 @@ fun MediaBlockView(
     }
 
     fun openMenu(at: Offset) {
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         onSelect()
         menuAnchor = at
         menuOpen = true

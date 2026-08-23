@@ -18,6 +18,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.waitForUpOrCancellation
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.TextToolbar
 import androidx.compose.ui.platform.TextToolbarStatus
@@ -27,6 +30,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.withTimeoutOrNull
 import com.ihy2ln.weaverse.core.text.CodexMention
 import com.ihy2ln.weaverse.core.text.CodexMentionTag
 import com.ihy2ln.weaverse.core.text.CodexMentionTarget
@@ -83,6 +87,7 @@ fun BlockEditorField(
     // (canceling Text color is well past 400ms). EditMenuGate keeps the popup closed
     // for the same selection until the caret collapses or the range changes.
     val menuGate = remember { EditMenuGate() }
+    val haptic = LocalHapticFeedback.current
 
     // Sync external paragraph updates (undo/AI accept) without clobbering caret during typing
     LaunchedEffect(paragraph.id, plain, paragraph.spans, codexMentionTargets) {
@@ -110,7 +115,10 @@ fun BlockEditorField(
 
     menuGate.setSelection(value.selection)
     menuGate.setExpanded(showEditPopup)
-    menuGate.setOpenHandler { onShowEditPopupChange(true) }
+    menuGate.setOpenHandler {
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        onShowEditPopupChange(true)
+    }
     val toolbar = remember(menuGate) {
         object : TextToolbar {
             override var status: TextToolbarStatus = TextToolbarStatus.Hidden
@@ -136,7 +144,7 @@ fun BlockEditorField(
     Box(
         modifier = modifier.pointerInput(codexMentionTargets) {
             // PointerEventPass.Initial runs before BasicTextField's own gesture handling,
-            // so a tap landing on a codex mention can be consumed here to navigate instead
+            // so a tap landing on a codex mention can be consumed here to peek instead
             // of placing the text cursor / opening the keyboard.
             awaitEachGesture {
                 val down = awaitFirstDown(pass = PointerEventPass.Initial)
@@ -148,6 +156,25 @@ fun BlockEditorField(
                 if (annotation != null) {
                     down.consume()
                     onMentionClick(annotation.item)
+                    return@awaitEachGesture
+                }
+                val sel = value.selection
+                val inSelection = !sel.collapsed && offset >= sel.min && offset < sel.max
+                if (inSelection) {
+                    // Keep the highlight; reopen Format on tap / long-press of the same range.
+                    down.consume()
+                    withTimeoutOrNull(EditorGestures.SELECTION_TAP_MS) {
+                        waitForUpOrCancellation(PointerEventPass.Initial)
+                    }
+                    menuGate.onUserPressInSelection()
+                    return@awaitEachGesture
+                }
+                val released = withTimeoutOrNull(EditorGestures.TEXT_LONG_PRESS_MS) {
+                    waitForUpOrCancellation(PointerEventPass.Main)
+                }
+                if (released == null) {
+                    menuGate.allowReopen()
+                    menuGate.onSystemShowMenu()
                 }
             }
         },

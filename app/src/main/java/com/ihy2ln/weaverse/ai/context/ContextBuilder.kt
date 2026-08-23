@@ -28,6 +28,7 @@ data class AssembledPrompt(
 data class ContextBuildRequest(
     val scanText: String,
     val userMessage: String = "",
+    val sceneText: String = "",
     val manualIncludeIds: Set<String> = emptySet(),
     val manualExcludeIds: Set<String> = emptySet(),
     val maxContextTokens: Int = 8000,
@@ -52,23 +53,17 @@ class ContextBuilder {
         val manual = entries.filter { it.id in request.manualIncludeIds && it.id !in request.manualExcludeIds }
         val merged = (detected + manual).distinctBy { it.id }.sortedBy { it.name }
 
-        val chips = merged.map {
-            ContextChip(it.id, it.name, it.colorHex, autoDetected = it.id !in request.manualIncludeIds)
-        }
-
-        val codexBlock = merged.joinToString("\n\n") { "[[${it.name}]]\n${it.plainText}" }
-        val systemBlocks = listOfNotNull(
-            "You are a creative writing assistant.",
-            codexBlock.takeIf { it.isNotBlank() },
-        )
-
+        val framing = "You are a creative writing assistant."
         val budget = request.maxContextTokens - request.reserveResponseTokens
-        var used = systemBlocks.sumOf { estimateTokens(it) }
+        var used = estimateTokens(framing)
         val included = mutableListOf<CodexEntryEntity>()
         val dropped = mutableListOf<String>()
 
+        // Pack entries under the budget, then build the prompt from included only.
+        // (Building first then "dropping" left dropped text still in systemBlocks/codexBlock.)
         merged.forEach { entry ->
-            val cost = estimateTokens(entry.plainText)
+            val piece = "[[${entry.name}]]\n${entry.plainText}"
+            val cost = estimateTokens(piece)
             if (used + cost <= budget) {
                 included.add(entry)
                 used += cost
@@ -77,14 +72,31 @@ class ContextBuilder {
             }
         }
 
+        val codexBlock = included.joinToString("\n\n") { "[[${it.name}]]\n${it.plainText}" }
+        val systemBlocks = listOfNotNull(
+            framing,
+            codexBlock.takeIf { it.isNotBlank() },
+        )
+        val includedIds = included.map { it.id }.toSet()
+
         return AssembledPrompt(
             systemBlocks = systemBlocks,
             messages = listOf("user" to request.userMessage),
-            usedEntries = chips.filter { it.entryId !in dropped },
+            usedEntries = merged
+                .filter { it.id in includedIds }
+                .map {
+                    ContextChip(
+                        it.id,
+                        it.name,
+                        it.colorHex,
+                        autoDetected = it.id !in request.manualIncludeIds,
+                    )
+                },
             tokenBreakdown = listOf(
-                TokenBreakdown("system", systemBlocks.sumOf { estimateTokens(it) }),
-                TokenBreakdown("user", estimateTokens(request.userMessage)),
-            ),
+                TokenBreakdown("Codex", estimateTokens(codexBlock)),
+                TokenBreakdown("Scene", estimateTokens(request.sceneText)),
+                TokenBreakdown("User", estimateTokens(request.userMessage)),
+            ).filter { it.tokens > 0 },
             droppedEntryIds = dropped,
             codexBlock = codexBlock,
         )
@@ -98,5 +110,6 @@ class ContextBuilder {
         }
     }
 
-    private fun estimateTokens(text: String): Int = (text.length / 4).coerceAtLeast(1)
+    private fun estimateTokens(text: String): Int =
+        if (text.isBlank()) 0 else (text.length / 4).coerceAtLeast(1)
 }

@@ -28,9 +28,9 @@ class RailTabDefaultsTest {
     }
 
     @Test
-    fun novelDestinationsStayPlanWriteChatReview() {
+    fun novelDestinationsStayPlanWriteChat() {
         assertEquals(
-            listOf("Plan", "Write", "Chat", "Review"),
+            listOf("Plan", "Write", "Chat"),
             NovelDestination.entries.map { it.label },
         )
     }
@@ -44,6 +44,7 @@ class RailTabDefaultsTest {
     fun writeJumpPlanMenuIsSceneBeatOrChapter() {
         assertEquals(listOf("Scene beat", "Chapter"), WriteJumpKind.planMenu.map { it.label })
         assertEquals("Scene", WriteJumpKind.Scene.label)
+        assertEquals(listOf("Review scene", "Review chapter"), WriteJumpKind.writeMenu.map { it.label })
         assertTrue(AppMode.entries.none { it.name == "Chat" })
     }
 
