@@ -395,7 +395,6 @@ fun WriteScreen(
                             onClick = { focusMode = true },
                             compact = true,
                         )
-                    }
                 }
                 Text(
                     "${state.wordCount} words",
