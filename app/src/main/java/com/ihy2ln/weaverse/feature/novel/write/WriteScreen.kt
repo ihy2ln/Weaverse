@@ -245,9 +245,9 @@ fun WriteScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(contentPad)
+                .padding(if (focusMode) 0.dp else contentPad)
                 .padding(
-                    bottom = when {
+                    bottom = if (focusMode) 0.dp else when {
                         state.aiOverlay == null -> 0.dp
                         state.aiOverlay?.commandId == "scene_beat" -> 0.dp
                         else -> 120.dp
@@ -255,6 +255,7 @@ fun WriteScreen(
                 ),
         ) {
             var formatExpanded by remember { mutableStateOf(false) }
+            if (!focusMode) {
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(0.dp),
@@ -302,14 +303,7 @@ fun WriteScreen(
                         softWrap = false,
                         modifier = Modifier.weight(1f),
                     )
-                    if (focusMode) {
-                        InkTextButton(
-                            label = "Exit focus",
-                            onClick = { focusMode = false },
-                            compact = true,
-                        )
-                    } else {
-                        InkTextButton(
+                    InkTextButton(
                             label = if (formatExpanded) "Aa ▴" else "Aa ▾",
                             onClick = { formatExpanded = !formatExpanded },
                             compact = true,
@@ -412,7 +406,7 @@ fun WriteScreen(
                     softWrap = false,
                 )
             }
-            if (state.statusMessage.isNotBlank()) {
+            if (state.statusMessage.isNotBlank() && !focusMode) {
                 Text(
                     state.statusMessage,
                     style = MaterialTheme.typography.labelMedium,
@@ -428,6 +422,7 @@ fun WriteScreen(
                         },
                     )
                 }
+            }
             }
             if (!focusMode) {
                 FormatToolbar(
@@ -541,7 +536,7 @@ fun WriteScreen(
                 modifier = Modifier.fillMaxSize(),
             )
         }
-        if (state.slashBlockIndex != null) {
+        if (state.slashBlockIndex != null && !focusMode) {
             SlashCommandOverlay(
                 commands = defaultSlashCommands,
                 filter = state.slashFilter.removePrefix("/"),
@@ -552,6 +547,7 @@ fun WriteScreen(
                     .padding(InkSpacing.lg),
             )
         }
+        if (!focusMode) {
         state.aiOverlay?.takeIf { it.commandId != "scene_beat" }?.let { overlay ->
             val activeModelRef = PromptModelSelection.effectiveModelRef(
                 overlay.modelRef,
@@ -747,6 +743,8 @@ fun WriteScreen(
                 }
             }
         }
+        }
+        if (!focusMode) {
         state.codexPeek?.let { peek ->
             Column(
                 modifier = Modifier
@@ -790,8 +788,19 @@ fun WriteScreen(
                 )
             }
         }
+        }
+        if (focusMode) {
+            InkTextButton(
+                label = "Exit focus",
+                onClick = { focusMode = false },
+                compact = true,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 8.dp, end = 8.dp),
+            )
+        }
     }
-    if (modelsOpen) {
+    if (modelsOpen && !focusMode) {
         val overlay = state.aiOverlay
         PromptModelPickerDialog(
             models = state.writingModels,
