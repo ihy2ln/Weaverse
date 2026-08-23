@@ -37,7 +37,9 @@ fun HelpScreen(
     var tabName by rememberSaveable { mutableStateOf(initialTab.name) }
     val tab = runCatching { HelpContent.Tab.valueOf(tabName) }.getOrDefault(HelpContent.Tab.Tutorial)
     val sections = HelpContent.sectionsFor(tab)
-    var expandedTitle by rememberSaveable { mutableStateOf(sections.firstOrNull()?.title.orEmpty()) }
+    var expandedTitle by rememberSaveable {
+        mutableStateOf(sections.firstOrNull()?.title.orEmpty())
+    }
 
     Column(
         modifier = modifier
@@ -48,12 +50,12 @@ fun HelpScreen(
         verticalArrangement = Arrangement.spacedBy(InkSpacing.sm),
     ) {
         Text(
-            "Help",
+            text = "Help",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.SemiBold,
         )
         Text(
-            "Tutorial for first sessions, Manual for reference, What's new for this build.",
+            text = "Tutorial for first sessions, Manual for reference, What's new for this build.",
             style = MaterialTheme.typography.bodyMedium,
             color = tokens.secondaryText,
         )
@@ -68,7 +70,7 @@ fun HelpScreen(
             },
             modifier = Modifier.fillMaxWidth(),
         )
-        Spacer(Modifier = Modifier.height(InkSpacing.xs))
+        Spacer(modifier = Modifier.height(InkSpacing.xs))
         sections.forEach { section ->
             val open = expandedTitle == section.title
             InkCard(modifier = Modifier.fillMaxWidth()) {
@@ -80,7 +82,7 @@ fun HelpScreen(
                     },
                 ) {
                     Text(
-                        section.body,
+                        text = section.body,
                         style = MaterialTheme.typography.bodyMedium,
                         color = tokens.primaryText,
                         modifier = Modifier.padding(bottom = InkSpacing.sm),
