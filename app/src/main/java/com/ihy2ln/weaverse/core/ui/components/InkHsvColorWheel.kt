@@ -3,8 +3,9 @@ package com.ihy2ln.weaverse.core.ui.components
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,9 +16,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -30,11 +35,15 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.toHexString
+import com.ihy2ln.weaverse.core.ui.util.parseHexColor
 import kotlin.math.roundToInt
 
 /**
@@ -50,10 +59,28 @@ fun InkHsvColorWheel(
     opacityPercent: Int = 100,
     onOpacityChange: ((Int) -> Unit)? = null,
 ) {
-    var hue by remember(selected) { mutableFloatStateOf(colorToHue(selected)) }
-    var saturation by remember(selected) { mutableFloatStateOf(colorToSaturation(selected)) }
-    var value by remember(selected) { mutableFloatStateOf(colorToValue(selected).coerceAtLeast(0.05f)) }
+    var hue by remember { mutableFloatStateOf(colorToHue(selected)) }
+    var saturation by remember { mutableFloatStateOf(colorToSaturation(selected)) }
+    var value by remember { mutableFloatStateOf(colorToValue(selected).coerceAtLeast(0.05f)) }
+    var hexDraft by remember { mutableStateOf(selected.toHexString()) }
     val preview = hsvToColor(hue, saturation, value, opacityPercent)
+    val focus = LocalFocusManager.current
+
+    LaunchedEffect(selected) {
+        val incoming = selected.toHexString()
+        if (!incoming.equals(preview.toHexString(), ignoreCase = true)) {
+            hue = colorToHue(selected)
+            saturation = colorToSaturation(selected)
+            value = colorToValue(selected).coerceAtLeast(0.05f)
+            hexDraft = incoming
+        }
+    }
+
+    fun emit(h: Float, s: Float, v: Float, opacity: Int = opacityPercent) {
+        val next = hsvToColor(h, s, v, opacity)
+        hexDraft = next.toHexString()
+        onSelect(next)
+    }
 
     Column(modifier = modifier) {
         Text("Hue")
@@ -61,7 +88,7 @@ fun InkHsvColorWheel(
             hue = hue,
             onHueChange = {
                 hue = it
-                onSelect(hsvToColor(it, saturation, value, opacityPercent))
+                emit(it, saturation, value)
             },
             modifier = Modifier
                 .fillMaxWidth()
@@ -76,7 +103,7 @@ fun InkHsvColorWheel(
             onChange = { s, v ->
                 saturation = s
                 value = v
-                onSelect(hsvToColor(hue, s, v, opacityPercent))
+                emit(hue, s, v)
             },
             modifier = Modifier
                 .fillMaxWidth()
@@ -90,11 +117,35 @@ fun InkHsvColorWheel(
                 onValueChange = {
                     val pct = it.toInt().coerceIn(0, 100)
                     onOpacityChange(pct)
-                    onSelect(hsvToColor(hue, saturation, value, pct))
+                    emit(hue, saturation, value, pct)
                 },
                 valueRange = 0f..100f,
             )
         }
+        OutlinedTextField(
+            value = hexDraft,
+            onValueChange = { raw ->
+                val next = raw.trim().uppercase().let { if (it.startsWith("#")) it else "#$it" }
+                hexDraft = next.take(7)
+                val parsed = parseHexColor(hexDraft, fallback = preview)
+                if (hexDraft.removePrefix("#").length == 6) {
+                    hue = colorToHue(parsed)
+                    saturation = colorToSaturation(parsed)
+                    value = colorToValue(parsed).coerceAtLeast(0.05f)
+                    onSelect(hsvToColor(hue, saturation, value, opacityPercent))
+                }
+            },
+            label = { Text("Hex") },
+            singleLine = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = InkSpacing.sm),
+            keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.Characters,
+                imeAction = ImeAction.Done,
+            ),
+            keyboardActions = KeyboardActions(onDone = { focus.clearFocus() }),
+        )
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -126,15 +177,18 @@ private fun HueStrip(
         modifier = modifier
             .clip(RoundedCornerShape(InkSpacing.radiusSm))
             .onSizeChanged { size = it.width.toFloat().coerceAtLeast(1f) }
-            .pointerInput(size) {
-                detectTapGestures { pos ->
-                    onHueChange((pos.x / size * 359f).coerceIn(0f, 359f))
-                }
-            }
-            .pointerInput(size) {
-                detectDragGestures { change, _ ->
-                    change.consume()
-                    onHueChange((change.position.x / size * 359f).coerceIn(0f, 359f))
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    val width = size.coerceAtLeast(1f)
+                    fun apply(x: Float) {
+                        onHueChange((x / width * 359f).coerceIn(0f, 359f))
+                    }
+                    apply(down.position.x)
+                    drag(down.id) { change ->
+                        change.consume()
+                        apply(change.position.x)
+                    }
                 }
             },
     ) {
@@ -167,21 +221,23 @@ private fun SatValueSquare(
         modifier = modifier
             .clip(RoundedCornerShape(InkSpacing.radiusSm))
             .onSizeChanged { boxSize = it }
-            .pointerInput(boxSize, hue) {
-                if (boxSize.width == 0 || boxSize.height == 0) return@pointerInput
-                detectTapGestures { pos ->
-                    val s = (pos.x / boxSize.width).coerceIn(0f, 1f)
-                    val v = (1f - pos.y / boxSize.height).coerceIn(0.05f, 1f)
-                    onChange(s, v)
-                }
-            }
-            .pointerInput(boxSize, hue) {
-                if (boxSize.width == 0 || boxSize.height == 0) return@pointerInput
-                detectDragGestures { change, _ ->
-                    change.consume()
-                    val s = (change.position.x / boxSize.width).coerceIn(0f, 1f)
-                    val v = (1f - change.position.y / boxSize.height).coerceIn(0.05f, 1f)
-                    onChange(s, v)
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    val w = boxSize.width.toFloat().coerceAtLeast(1f)
+                    val h = boxSize.height.toFloat().coerceAtLeast(1f)
+                    fun apply(x: Float, y: Float) {
+                        onChange(
+                            (x / w).coerceIn(0f, 1f),
+                            (1f - y / h).coerceIn(0.05f, 1f),
+                        )
+                    }
+                    apply(down.position.x, down.position.y)
+                    drag(down.id) { change ->
+                        change.consume()
+                        val pos = change.position
+                        apply(pos.x, pos.y)
+                    }
                 }
             },
     ) {

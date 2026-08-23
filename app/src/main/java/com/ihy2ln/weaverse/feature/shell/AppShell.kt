@@ -76,7 +76,6 @@ import com.ihy2ln.weaverse.feature.novel.codex.CodexEntryDetailScreen
 import com.ihy2ln.weaverse.feature.novel.codex.CodexRailScreen
 import com.ihy2ln.weaverse.feature.novel.manuscript.ManuscriptRailScreen
 import com.ihy2ln.weaverse.feature.novel.plan.PlanScreen
-import com.ihy2ln.weaverse.feature.novel.review.ReviewScreen
 import com.ihy2ln.weaverse.feature.novel.snippets.SnippetsRailScreen
 import com.ihy2ln.weaverse.feature.novel.write.WriteScreen
 import com.ihy2ln.weaverse.feature.prompts.PromptsScreen
@@ -93,6 +92,7 @@ import com.ihy2ln.weaverse.feature.roleplay.personas.PersonasScreen
 import com.ihy2ln.weaverse.feature.roleplay.presets.PresetsScreen
 import com.ihy2ln.weaverse.feature.search.GlobalSearchScreen
 import com.ihy2ln.weaverse.feature.search.SearchResultType
+import com.ihy2ln.weaverse.feature.help.HelpScreen
 import com.ihy2ln.weaverse.feature.settings.SettingsScreen
 import java.io.File
 
@@ -107,6 +107,7 @@ fun AppShell(
     var novelDest by rememberSaveable { mutableStateOf(NovelDestination.Plan.name) }
     var rpDest by rememberSaveable { mutableStateOf(RoleplayDestination.Chats.name) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
+    var showHelp by rememberSaveable { mutableStateOf(false) }
     var showSearch by rememberSaveable { mutableStateOf(false) }
     var showLibrary by rememberSaveable { mutableStateOf(true) }
     var showExport by rememberSaveable { mutableStateOf(false) }
@@ -212,6 +213,7 @@ fun AppShell(
                 AppMode.Notes -> NotesDestination.Board.name
             }
             val chromeTitle = when {
+                showHelp -> "Help"
                 showSettings -> "Settings"
                 showExport -> "Import / Export"
                 showSearch -> "Search"
@@ -222,6 +224,7 @@ fun AppShell(
                 else -> toolbarTitle
             }
             val chromeSubtitle = when {
+                showHelp -> "Tutorial · Manual · What's new"
                 showLibrary -> listOf(bookTitle, seriesTitle).filter { it.isNotBlank() }.distinct().joinToString(" · ")
                 showSettings -> "Weaverse"
                 showExport -> "Novels · Roleplay · Notes"
@@ -248,6 +251,7 @@ fun AppShell(
                         if (shellInfo.book != null) showLibrary = false
                     } else {
                         showSettings = false
+                        showHelp = false
                         showExport = false
                         showSearch = false
                         selectedCodexEntryId = null
@@ -256,7 +260,24 @@ fun AppShell(
                         showLibrary = true
                     }
                 },
-                onSettings = { showSettings = !showSettings },
+                onSettings = {
+                    showHelp = false
+                    showSettings = !showSettings
+                },
+                onHelp = {
+                    showSettings = false
+                    showExport = false
+                    showSearch = false
+                    showLibrary = false
+                    showHelp = !showHelp
+                },
+                onSearch = {
+                    showSettings = false
+                    showHelp = false
+                    showExport = false
+                    showLibrary = false
+                    showSearch = true
+                },
                 onImport = { showExport = true },
                 onExport = { showExport = true },
                 canUndo = historyState.canUndo,
@@ -266,6 +287,7 @@ fun AppShell(
                 onTool = { id ->
                     showLibrary = false
                     showSettings = false
+                    showHelp = false
                     showExport = false
                     showSearch = false
                     if (id == RailTab.Pictures.name) {
@@ -279,6 +301,7 @@ fun AppShell(
                 onWorkspace = { next ->
                     showLibrary = false
                     showSettings = false
+                    showHelp = false
                     showExport = false
                     showSearch = false
                     mode = next
@@ -293,6 +316,7 @@ fun AppShell(
                 onMode = { id ->
                     showLibrary = false
                     showSettings = false
+                    showHelp = false
                     chromeTool = null
                     workspaceFocus = WorkspaceFocus.Story.name
                     when (currentMode) {
@@ -308,7 +332,14 @@ fun AppShell(
                 onFocus = { workspaceFocus = it; chromeTool = null },
             )
             when {
-                showSettings -> SettingsScreen(modifier = Modifier.weight(1f).fillMaxSize())
+                showHelp -> HelpScreen(modifier = Modifier.weight(1f).fillMaxSize())
+                showSettings -> SettingsScreen(
+                    modifier = Modifier.weight(1f).fillMaxSize(),
+                    onOpenHelp = {
+                        showSettings = false
+                        showHelp = true
+                    },
+                )
                 showExport -> ExportImportScreen(modifier = Modifier.weight(1f).fillMaxSize())
                 showSearch -> GlobalSearchScreen(
                     onResultClick = { result ->
@@ -483,7 +514,9 @@ fun AppShell(
                             return@Crossfade
                         }
                         when (currentMode) {
-                            AppMode.Novel.name -> when (NovelDestination.valueOf(nd)) {
+                            AppMode.Novel.name -> when (
+                                runCatching { NovelDestination.valueOf(nd) }.getOrElse { NovelDestination.Write }
+                            ) {
                                 NovelDestination.Plan -> PlanScreen(
                                     onWrite = { sceneId, kind ->
                                         selectedSceneId = sceneId
@@ -496,9 +529,9 @@ fun AppShell(
                                     sceneId = selectedSceneId,
                                     jumpKind = writeJumpKind,
                                     onOpenCodexEntry = { selectedCodexEntryId = it },
+                                    onJumpKind = { writeJumpKind = it },
                                 )
                                 NovelDestination.Chat -> WorkshopChatScreen(threadId = selectedThreadId)
-                                NovelDestination.Review -> ReviewScreen()
                             }
                             AppMode.Notes.name -> NotesScreen(viewModel = notesViewModel)
                             else -> when (RoleplayDestination.valueOf(rd)) {

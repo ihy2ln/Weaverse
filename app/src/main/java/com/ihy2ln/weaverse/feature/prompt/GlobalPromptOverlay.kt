@@ -178,6 +178,14 @@ fun GlobalPromptOverlay(
                 compact = true,
                 enabled = !state.isStreaming,
             )
+            if (kind == PromptEntryKind.Ai) {
+                InkTextButton(
+                    label = if (state.showPreview) "Preview ▴" else "Preview",
+                    onClick = viewModel::togglePreview,
+                    compact = true,
+                    enabled = !state.isStreaming,
+                )
+            }
             Text(
                 PromptModelSelection.shortLabel(activeModelRef, state.writingModels),
                 style = MaterialTheme.typography.labelSmall,
@@ -242,6 +250,25 @@ fun GlobalPromptOverlay(
                 )
             }
         }
+        if (state.showPreview && state.promptPreview.isNotBlank()) {
+            Text(
+                state.promptPreview,
+                style = MaterialTheme.typography.labelSmall,
+                color = tokens.secondaryText,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 120.dp)
+                    .padding(top = InkSpacing.xxs),
+            )
+        }
+        if (state.contextMeter.isNotBlank()) {
+            Text(
+                "Context · ${state.contextMeter}",
+                style = MaterialTheme.typography.labelSmall,
+                color = tokens.secondaryText,
+                modifier = Modifier.padding(top = InkSpacing.xxs),
+            )
+        }
         if (state.isStreaming) {
             Text(
                 "Generating…",
@@ -288,7 +315,7 @@ fun GlobalPromptOverlay(
 }
 
 @Composable
-private fun PromptModelPickerDialog(
+fun PromptModelPickerDialog(
     models: List<ModelInfo>,
     search: String,
     onSearchChange: (String) -> Unit,
@@ -312,7 +339,7 @@ private fun PromptModelPickerDialog(
                     placeholder = { Text("Search models") },
                 )
                 Text(
-                    "Per generation · Settings default stays unless you change it there",
+                    "Remembered for this action — Settings default stays unless you change it there",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = InkSpacing.xs, bottom = InkSpacing.xs),

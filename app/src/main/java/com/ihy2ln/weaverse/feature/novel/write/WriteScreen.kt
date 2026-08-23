@@ -10,21 +10,27 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,21 +58,43 @@ import com.ihy2ln.weaverse.core.ui.components.toSpanHex
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import com.ihy2ln.weaverse.core.ui.util.adaptiveContentPadding
+import com.ihy2ln.weaverse.feature.novel.review.ReviewScreen
 import com.ihy2ln.weaverse.feature.novel.write.editor.DocumentEditor
 import com.ihy2ln.weaverse.feature.novel.write.editor.FormatToolbar
 import com.ihy2ln.weaverse.feature.novel.write.editor.SlashCommandOverlay
 import com.ihy2ln.weaverse.feature.novel.write.editor.defaultSlashCommands
+import com.ihy2ln.weaverse.feature.prompt.PromptModelPickerDialog
+import com.ihy2ln.weaverse.feature.prompt.PromptModelSelection
+import com.ihy2ln.weaverse.feature.shell.WriteJumpKind
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun WriteScreen(
     sceneId: String = "scene-1",
     jumpKind: String = "Scene",
     onOpenCodexEntry: (String) -> Unit = {},
+    onJumpKind: (String) -> Unit = {},
     viewModel: WriteViewModel = hiltViewModel(),
 ) {
+    val reviewKind = runCatching { WriteJumpKind.valueOf(jumpKind) }.getOrNull()
+    if (reviewKind == WriteJumpKind.ReviewScene || reviewKind == WriteJumpKind.ReviewChapter) {
+        ReviewScreen(
+            sceneId = sceneId,
+            chapterScope = reviewKind == WriteJumpKind.ReviewChapter,
+            onClose = { onJumpKind(WriteJumpKind.Scene.name) },
+        )
+        return
+    }
+
     val state by viewModel.uiState.collectAsState()
     val tokens = inkTokens()
     val clipboard = LocalClipboardManager.current
+    var focusMode by rememberSaveable { mutableStateOf(false) }
+    var writeMenuOpen by remember { mutableStateOf(false) }
+    var modelsOpen by remember { mutableStateOf(false) }
+    var modelSearch by rememberSaveable { mutableStateOf("") }
     val startDictate = rememberSpeechToText { spoken ->
         viewModel.pasteIntoSelection(spoken)
     }
@@ -151,15 +179,75 @@ fun WriteScreen(
             onSelect = viewModel::applyFontSizeOnSelection,
         )
     }
+    if (state.showSnapshots) {
+        AlertDialog(
+            onDismissRequest = viewModel::toggleSnapshots,
+            title = { Text("Snapshots") },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    InkFilledButton(
+                        label = "Save snapshot",
+                        onClick = { viewModel.saveSnapshot() },
+                    )
+                    if (state.snapshots.isEmpty()) {
+                        Text(
+                            "No snapshots yet.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = InkSpacing.sm),
+                        )
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 320.dp)
+                                .padding(top = InkSpacing.sm),
+                        ) {
+                            items(state.snapshots, key = { it.id }) { snap ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = InkSpacing.xs),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(snap.title, style = MaterialTheme.typography.bodyMedium)
+                                        Text(
+                                            SimpleDateFormat("MMM d, HH:mm", Locale.US)
+                                                .format(Date(snap.createdAt)),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    InkTextButton(
+                                        label = "Restore",
+                                        onClick = { viewModel.restoreSnapshot(snap.id) },
+                                        compact = true,
+                                    )
+                                    InkTextButton(
+                                        label = "Delete",
+                                        onClick = { viewModel.deleteSnapshot(snap.id) },
+                                        compact = true,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = viewModel::toggleSnapshots) { Text("Close") }
+            },
+        )
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         val contentPad = adaptiveContentPadding()
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(contentPad)
+                .padding(if (focusMode) 0.dp else contentPad)
                 .padding(
-                    bottom = when {
+                    bottom = if (focusMode) 0.dp else when {
                         state.aiOverlay == null -> 0.dp
                         state.aiOverlay?.commandId == "scene_beat" -> 0.dp
                         else -> 120.dp
@@ -167,6 +255,7 @@ fun WriteScreen(
                 ),
         ) {
             var formatExpanded by remember { mutableStateOf(false) }
+            if (!focusMode) {
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(0.dp),
@@ -177,6 +266,34 @@ fun WriteScreen(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    Box {
+                        InkTextButton(
+                            label = "Write ▾",
+                            onClick = { writeMenuOpen = true },
+                            compact = true,
+                        )
+                        DropdownMenu(
+                            expanded = writeMenuOpen,
+                            onDismissRequest = { writeMenuOpen = false },
+                        ) {
+                            WriteJumpKind.writeMenu.forEach { kind ->
+                                DropdownMenuItem(
+                                    text = { Text(kind.label) },
+                                    onClick = {
+                                        writeMenuOpen = false
+                                        onJumpKind(kind.name)
+                                    },
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text("Snapshots") },
+                                onClick = {
+                                    writeMenuOpen = false
+                                    viewModel.toggleSnapshots()
+                                },
+                            )
+                        }
+                    }
                     Text(
                         state.sceneTitle.ifBlank { "Scene" },
                         style = MaterialTheme.typography.titleSmall,
@@ -187,92 +304,97 @@ fun WriteScreen(
                         modifier = Modifier.weight(1f),
                     )
                     InkTextButton(
-                        label = if (formatExpanded) "Aa ▴" else "Aa ▾",
-                        onClick = { formatExpanded = !formatExpanded },
-                        compact = true,
-                    )
-                    Box {
-                        InkTextButton(
-                            label = if (state.isSummarizing) "Prompting…" else "Prompting",
-                            onClick = { promptMenuOpen = true },
-                            enabled = !state.isSummarizing,
+                            label = if (formatExpanded) "Aa ▴" else "Aa ▾",
+                            onClick = { formatExpanded = !formatExpanded },
                             compact = true,
                         )
-                        DropdownMenu(
-                            expanded = promptMenuOpen,
-                            onDismissRequest = { promptMenuOpen = false },
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Extend") },
-                                onClick = {
-                                    promptMenuOpen = false
-                                    viewModel.startSelectionAi("extend", "Extend")
-                                },
+                        Box {
+                            InkTextButton(
+                                label = if (state.isSummarizing) "Prompting…" else "Prompting",
+                                onClick = { promptMenuOpen = true },
+                                enabled = !state.isSummarizing,
+                                compact = true,
                             )
-                            DropdownMenuItem(
-                                text = { Text("Summarize") },
-                                onClick = {
-                                    promptMenuOpen = false
-                                    viewModel.summarizeScene()
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Condense") },
-                                onClick = {
-                                    promptMenuOpen = false
-                                    viewModel.startSelectionAi("shorten", "Condense")
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Replace") },
-                                onClick = {
-                                    promptMenuOpen = false
-                                    viewModel.startSelectionAi("replace", "Replace")
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Retry") },
-                                enabled = state.aiOverlay != null,
-                                onClick = {
-                                    promptMenuOpen = false
-                                    viewModel.retryAiGeneration()
-                                },
-                            )
+                            DropdownMenu(
+                                expanded = promptMenuOpen,
+                                onDismissRequest = { promptMenuOpen = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Extend") },
+                                    onClick = {
+                                        promptMenuOpen = false
+                                        viewModel.startSelectionAi("extend", "Extend")
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Summarize") },
+                                    onClick = {
+                                        promptMenuOpen = false
+                                        viewModel.summarizeScene()
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Condense") },
+                                    onClick = {
+                                        promptMenuOpen = false
+                                        viewModel.startSelectionAi("shorten", "Condense")
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Replace") },
+                                    onClick = {
+                                        promptMenuOpen = false
+                                        viewModel.startSelectionAi("replace", "Replace")
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Retry") },
+                                    enabled = state.aiOverlay != null,
+                                    onClick = {
+                                        promptMenuOpen = false
+                                        viewModel.retryAiGeneration()
+                                    },
+                                )
+                            }
                         }
-                    }
-                    Box {
+                        Box {
+                            InkTextButton(
+                                label = "Media",
+                                onClick = { mediaMenuOpen = true },
+                                compact = true,
+                            )
+                            DropdownMenu(
+                                expanded = mediaMenuOpen,
+                                onDismissRequest = { mediaMenuOpen = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Mic") },
+                                    onClick = {
+                                        mediaMenuOpen = false
+                                        startDictate()
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Audio") },
+                                    onClick = {
+                                        mediaMenuOpen = false
+                                        viewModel.requestAddAudio()
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Picture") },
+                                    onClick = {
+                                        mediaMenuOpen = false
+                                        viewModel.requestAddMedia()
+                                    },
+                                )
+                            }
+                        }
                         InkTextButton(
-                            label = "Media",
-                            onClick = { mediaMenuOpen = true },
+                            label = "Focus",
+                            onClick = { focusMode = true },
                             compact = true,
                         )
-                        DropdownMenu(
-                            expanded = mediaMenuOpen,
-                            onDismissRequest = { mediaMenuOpen = false },
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Mic") },
-                                onClick = {
-                                    mediaMenuOpen = false
-                                    startDictate()
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Audio") },
-                                onClick = {
-                                    mediaMenuOpen = false
-                                    viewModel.requestAddAudio()
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Picture") },
-                                onClick = {
-                                    mediaMenuOpen = false
-                                    viewModel.requestAddMedia()
-                                },
-                            )
-                        }
-                    }
                 }
                 Text(
                     "${state.wordCount} words",
@@ -283,20 +405,12 @@ fun WriteScreen(
                     softWrap = false,
                 )
             }
-            if (state.statusMessage.isNotBlank()) {
+            if (state.statusMessage.isNotBlank() && !focusMode) {
                 Text(
                     state.statusMessage,
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .padding(bottom = InkSpacing.xs)
-                        .then(
-                            if (state.pendingCodexEntryId != null) {
-                                Modifier.padding(0.dp) // click target via InkTextButton below
-                            } else {
-                                Modifier
-                            },
-                        ),
+                    modifier = Modifier.padding(bottom = InkSpacing.xs),
                 )
                 if (state.pendingCodexEntryId != null) {
                     InkTextButton(
@@ -308,23 +422,26 @@ fun WriteScreen(
                     )
                 }
             }
-            FormatToolbar(
-                expanded = formatExpanded,
-                hasSelection = state.selection.hasSelection,
-                activeMarks = viewModel.activeMarksInSelection(),
-                activeFontFamilyKey = viewModel.activeFontFamilyKeyInSelection(),
-                activeFontSizeSp = viewModel.activeFontSizeSpInSelection(),
-                canUndo = state.canUndo,
-                canRedo = state.canRedo,
-                onToggleMark = viewModel::toggleMarkOnSelection,
-                onOpenColorPicker = viewModel::requestColorPicker,
-                onOpenHighlightPicker = viewModel::requestHighlightPicker,
-                onOpenFontFamilyPicker = viewModel::requestFontFamilyPicker,
-                onOpenFontSizePicker = viewModel::requestFontSizePicker,
-                onUndo = viewModel::undo,
-                onRedo = viewModel::redo,
-                modifier = Modifier.padding(bottom = InkSpacing.xs),
-            )
+            }
+            if (!focusMode) {
+                FormatToolbar(
+                    expanded = formatExpanded,
+                    hasSelection = state.selection.hasSelection,
+                    activeMarks = viewModel.activeMarksInSelection(),
+                    activeFontFamilyKey = viewModel.activeFontFamilyKeyInSelection(),
+                    activeFontSizeSp = viewModel.activeFontSizeSpInSelection(),
+                    canUndo = state.canUndo,
+                    canRedo = state.canRedo,
+                    onToggleMark = viewModel::toggleMarkOnSelection,
+                    onOpenColorPicker = viewModel::requestColorPicker,
+                    onOpenHighlightPicker = viewModel::requestHighlightPicker,
+                    onOpenFontFamilyPicker = viewModel::requestFontFamilyPicker,
+                    onOpenFontSizePicker = viewModel::requestFontSizePicker,
+                    onUndo = viewModel::undo,
+                    onRedo = viewModel::redo,
+                    modifier = Modifier.padding(bottom = InkSpacing.xs),
+                )
+            }
             DocumentEditor(
                 blocks = state.blocks,
                 mediaPaths = state.mediaPaths,
@@ -367,11 +484,11 @@ fun WriteScreen(
                     ?.insertAfterIndex,
                 codexNames = state.codexNames,
                 codexMentionTargets = state.codexMentionTargets,
-                onMentionClick = onOpenCodexEntry,
+                onMentionClick = viewModel::peekCodex,
                 onContinuationSubmit = viewModel::insertContinuation,
-                showInlineWritingPrompt = state.showInlineWritingPrompt,
+                showInlineWritingPrompt = state.showInlineWritingPrompt && !focusMode,
                 showSceneBeatCard = state.showSceneBeatCard,
-                showContinuationBox = state.showContinuationBox,
+                showContinuationBox = state.showContinuationBox && !focusMode,
                 onEditAction = { index, action, value ->
                     viewModel.onSelectionChange(index, value.selection)
                     when (action) {
@@ -418,7 +535,7 @@ fun WriteScreen(
                 modifier = Modifier.fillMaxSize(),
             )
         }
-        if (state.slashBlockIndex != null) {
+        if (state.slashBlockIndex != null && !focusMode) {
             SlashCommandOverlay(
                 commands = defaultSlashCommands,
                 filter = state.slashFilter.removePrefix("/"),
@@ -429,7 +546,12 @@ fun WriteScreen(
                     .padding(InkSpacing.lg),
             )
         }
+        if (!focusMode) {
         state.aiOverlay?.takeIf { it.commandId != "scene_beat" }?.let { overlay ->
+            val activeModelRef = PromptModelSelection.effectiveModelRef(
+                overlay.modelRef,
+                state.defaultModelRef,
+            )
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -497,6 +619,36 @@ fun WriteScreen(
                         textStyle = MaterialTheme.typography.bodyMedium,
                     )
                 }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = InkSpacing.xxs),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+                ) {
+                    InkTextButton(
+                        label = "Models",
+                        onClick = { modelsOpen = true },
+                        compact = true,
+                        enabled = !overlay.isStreaming,
+                    )
+                    Text(
+                        PromptModelSelection.shortLabel(activeModelRef, state.writingModels),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tokens.secondaryText,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                if (overlay.contextMeter.isNotBlank()) {
+                    Text(
+                        "Context · ${overlay.contextMeter}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tokens.secondaryText,
+                        modifier = Modifier.padding(top = InkSpacing.xxs),
+                    )
+                }
                 if (overlay.streamingText.isNotBlank() && !overlay.isStreaming) {
                     Row(
                         modifier = Modifier
@@ -538,5 +690,132 @@ fun WriteScreen(
                 }
             }
         }
+        // Scene beat lives in the document card; still expose Models + context meter here.
+        state.aiOverlay?.takeIf { it.commandId == "scene_beat" }?.let { overlay ->
+            val activeModelRef = PromptModelSelection.effectiveModelRef(
+                overlay.modelRef,
+                state.defaultModelRef,
+            )
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(horizontal = InkSpacing.md, vertical = InkSpacing.sm)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.94f))
+                    .padding(horizontal = InkSpacing.md, vertical = InkSpacing.sm),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+                ) {
+                    InkTextButton(
+                        label = "Models",
+                        onClick = { modelsOpen = true },
+                        compact = true,
+                        enabled = !overlay.isStreaming,
+                    )
+                    Text(
+                        PromptModelSelection.shortLabel(activeModelRef, state.writingModels),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tokens.secondaryText,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                if (overlay.contextMeter.isNotBlank()) {
+                    Text(
+                        "Context · ${overlay.contextMeter}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tokens.secondaryText,
+                        modifier = Modifier.padding(top = InkSpacing.xxs),
+                    )
+                }
+                if (overlay.usageLog.isNotBlank()) {
+                    Text(
+                        overlay.usageLog,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tokens.secondaryText,
+                    )
+                }
+            }
+        }
+        }
+        if (!focusMode) {
+        state.codexPeek?.let { peek ->
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(InkSpacing.md)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.97f))
+                    .padding(InkSpacing.md),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(peek.name, style = MaterialTheme.typography.titleSmall)
+                    InkTextButton(label = "Close", onClick = viewModel::dismissCodexPeek, compact = true)
+                }
+                if (peek.aliases.isNotEmpty()) {
+                    Text(
+                        "Also: ${peek.aliases.joinToString()}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tokens.secondaryText,
+                    )
+                }
+                Text(
+                    peek.plainText.take(600).ifBlank { "No body yet." },
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 160.dp)
+                        .padding(top = InkSpacing.xs),
+                )
+                InkTextButton(
+                    label = "Open Codex",
+                    onClick = {
+                        onOpenCodexEntry(peek.entryId)
+                        viewModel.dismissCodexPeek()
+                    },
+                    compact = true,
+                )
+            }
+        }
+        }
+        if (focusMode) {
+            InkTextButton(
+                label = "Exit focus",
+                onClick = { focusMode = false },
+                compact = true,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 8.dp, end = 8.dp),
+            )
+        }
+    }
+    if (modelsOpen && !focusMode) {
+        val overlay = state.aiOverlay
+        PromptModelPickerDialog(
+            models = state.writingModels,
+            search = modelSearch,
+            onSearchChange = { modelSearch = it },
+            selectedRef = overlay?.modelRef.orEmpty(),
+            defaultRef = state.defaultModelRef,
+            onSelect = { id ->
+                viewModel.selectOverlayModel(id)
+                modelsOpen = false
+            },
+            onUseDefault = {
+                viewModel.useDefaultOverlayModel()
+                modelsOpen = false
+            },
+            onDismiss = { modelsOpen = false },
+        )
     }
 }

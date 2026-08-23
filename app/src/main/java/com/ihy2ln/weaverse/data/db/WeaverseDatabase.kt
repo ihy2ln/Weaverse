@@ -3,6 +3,8 @@ package com.ihy2ln.weaverse.data.db
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.ihy2ln.weaverse.data.db.dao.BookDao
 import com.ihy2ln.weaverse.data.db.dao.CodexDao
 import com.ihy2ln.weaverse.data.db.dao.MediaDao
@@ -30,6 +32,7 @@ import com.ihy2ln.weaverse.data.db.entities.RpMessageEntity
 import com.ihy2ln.weaverse.data.db.entities.RpPersonaEntity
 import com.ihy2ln.weaverse.data.db.entities.SceneCodexLinkEntity
 import com.ihy2ln.weaverse.data.db.entities.SceneEntity
+import com.ihy2ln.weaverse.data.db.entities.SceneSnapshotEntity
 import com.ihy2ln.weaverse.data.db.entities.SeriesEntity
 import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
 
@@ -40,6 +43,7 @@ import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
         ActEntity::class,
         ChapterEntity::class,
         SceneEntity::class,
+        SceneSnapshotEntity::class,
         SceneCodexLinkEntity::class,
         CodexCategoryEntity::class,
         CodexEntryEntity::class,
@@ -56,7 +60,7 @@ import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
         PromptEntity::class,
         AiProfileEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 @TypeConverters(InkTypeConverters::class)
@@ -70,4 +74,25 @@ abstract class WeaverseDatabase : RoomDatabase() {
     abstract fun roleplayDao(): RoleplayDao
     abstract fun mediaDao(): MediaDao
     abstract fun promptDao(): PromptDao
+
+    companion object {
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS scene_snapshots (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        sceneId TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        docJson TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_scene_snapshots_sceneId ON scene_snapshots (sceneId)",
+                )
+            }
+        }
+    }
 }

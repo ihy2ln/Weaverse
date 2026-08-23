@@ -17,6 +17,7 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): WeaverseDatabase =
         Room.databaseBuilder(context, WeaverseDatabase::class.java, "weaverse.db")
+            .addMigrations(WeaverseDatabase.MIGRATION_5_6)
             .fallbackToDestructiveMigration()
             .build()
 }

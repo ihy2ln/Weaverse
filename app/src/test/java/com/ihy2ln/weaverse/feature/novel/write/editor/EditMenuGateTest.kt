@@ -77,4 +77,44 @@ class EditMenuGateTest {
         gate.onSystemShowMenu()
         assertTrue(opened == 1)
     }
+
+    @Test
+    fun pressingHighlightedTextReopensAfterDismiss() {
+        val gate = EditMenuGate()
+        var opened = 0
+        gate.setOpenHandler { opened += 1 }
+        gate.setSelection(word)
+        gate.setExpanded(true)
+        gate.onDismiss()
+        assertFalse(gate.shouldOpen(word))
+        gate.onUserPressInSelection()
+        assertTrue(opened == 1)
+        gate.setExpanded(true)
+        assertFalse(gate.shouldOpen(word))
+    }
+
+    @Test
+    fun pointerDragSuppressesTheNextSystemShowMenu() {
+        val gate = EditMenuGate()
+        var opened = 0
+        gate.setOpenHandler { opened += 1 }
+        gate.setSelection(word)
+        gate.notePointerDrag()
+        gate.onSystemShowMenu()
+        assertTrue(opened == 0)
+        // Suppression is one-shot; a later long-press can open.
+        gate.onSystemShowMenu()
+        assertTrue(opened == 1)
+    }
+
+    @Test
+    fun tapInSelectionClearsDragSuppression() {
+        val gate = EditMenuGate()
+        var opened = 0
+        gate.setOpenHandler { opened += 1 }
+        gate.setSelection(word)
+        gate.notePointerDrag()
+        gate.onUserPressInSelection()
+        assertTrue(opened == 1)
+    }
 }

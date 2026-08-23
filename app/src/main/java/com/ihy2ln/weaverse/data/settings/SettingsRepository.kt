@@ -84,6 +84,8 @@ data class UserPreferences(
      * all default off. The PROMPT box itself is always available.
      */
     val extraPromptSurfaces: ExtraPromptSurfaces = ExtraPromptSurfaces(),
+    /** Last model used per generate action (scene beat, shorten, roleplay swipe, …). */
+    val actionModelRefs: Map<String, String> = emptyMap(),
 )
 
 @Singleton
@@ -127,6 +129,7 @@ class SettingsRepository @Inject constructor(
                 chatComposer = extraFlag(prefs, KEY_PROMPT_CHAT_COMPOSER),
                 roleplayButtons = extraFlag(prefs, KEY_PROMPT_ROLEPLAY_BUTTONS),
             ),
+            actionModelRefs = ActionModels.decode(prefs[KEY_ACTION_MODELS] ?: ""),
         )
     }
 
@@ -245,6 +248,17 @@ class SettingsRepository @Inject constructor(
         }
     }
 
+    suspend fun setActionModelRef(actionKey: String, modelRef: String) {
+        context.dataStore.edit { prefs ->
+            val current = ActionModels.decode(prefs[KEY_ACTION_MODELS].orEmpty()).toMutableMap()
+            if (modelRef.isBlank()) current.remove(actionKey) else current[actionKey] = modelRef
+            prefs[KEY_ACTION_MODELS] = ActionModels.encode(current)
+        }
+    }
+
+    fun modelRefForAction(prefs: UserPreferences, actionKey: String): String =
+        prefs.actionModelRefs[actionKey]?.takeIf { it.isNotBlank() } ?: prefs.defaultModelRef
+
     fun apiKey(providerId: String): String? = secureKeys.get(providerId)
 
     fun setApiKey(providerId: String, key: String) = secureKeys.set(providerId, key)
@@ -283,6 +297,7 @@ class SettingsRepository @Inject constructor(
         private val KEY_PROMPT_CONTINUATION = booleanPreferencesKey("prompt_continuation")
         private val KEY_PROMPT_CHAT_COMPOSER = booleanPreferencesKey("prompt_chat_composer")
         private val KEY_PROMPT_ROLEPLAY_BUTTONS = booleanPreferencesKey("prompt_roleplay_buttons")
+        private val KEY_ACTION_MODELS = stringPreferencesKey("action_model_refs")
 
         const val InkSpacingRailMin = 48f
         const val InkSpacingRailMax = 420f

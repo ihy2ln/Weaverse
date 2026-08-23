@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import com.ihy2ln.weaverse.ai.AIChunk
 import com.ihy2ln.weaverse.ai.AIError
 import com.ihy2ln.weaverse.ai.AiGenerationService
+import com.ihy2ln.weaverse.ai.ModelInfo
+import com.ihy2ln.weaverse.ai.openrouter.OpenRouterModelCache
 import com.ihy2ln.weaverse.ai.prompt.PromptComponents
 import com.ihy2ln.weaverse.ai.prompt.PromptRenderContext
 import com.ihy2ln.weaverse.ai.prompt.PromptRenderer
@@ -37,6 +39,7 @@ import com.ihy2ln.weaverse.core.text.applyHighlight
 import com.ihy2ln.weaverse.core.text.fontFamilyKeyInRange
 import com.ihy2ln.weaverse.core.text.fontSizeSpInRange
 import com.ihy2ln.weaverse.core.text.marksInRange
+import com.ihy2ln.weaverse.core.text.decodeAliases
 import com.ihy2ln.weaverse.core.text.documentFromJson
 import com.ihy2ln.weaverse.core.text.plainText
 import com.ihy2ln.weaverse.core.text.replaceRangeText
@@ -49,11 +52,12 @@ import com.ihy2ln.weaverse.core.text.toggleMark
 import com.ihy2ln.weaverse.core.text.wordCount
 import com.ihy2ln.weaverse.core.ui.util.UsageFormat
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
-import com.ihy2ln.weaverse.data.db.entities.PromptEntity
 import com.ihy2ln.weaverse.data.db.entities.SceneEntity
+import com.ihy2ln.weaverse.data.db.entities.SceneSnapshotEntity
 import com.ihy2ln.weaverse.data.repo.CodexRepository
 import com.ihy2ln.weaverse.data.repo.ManuscriptRepository
 import com.ihy2ln.weaverse.data.repo.PromptRepository
+import com.ihy2ln.weaverse.data.settings.ActionModelKeys
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
 import com.ihy2ln.weaverse.feature.novel.write.editor.SlashCommand
 import com.ihy2ln.weaverse.core.media.MediaClipboard
@@ -61,6 +65,7 @@ import com.ihy2ln.weaverse.core.media.MediaClipboardPayload
 import com.ihy2ln.weaverse.core.ui.components.MediaEditAction
 import com.ihy2ln.weaverse.feature.prompt.PromptEntryBus
 import com.ihy2ln.weaverse.feature.prompt.PromptEntryKind
+import com.ihy2ln.weaverse.feature.prompt.PromptModelSelection
 import com.ihy2ln.weaverse.feature.shell.WorkspaceHistory
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -113,6 +118,16 @@ data class AiOverlayState(
     val imageMediaId: String? = null,
     val imagePath: String? = null,
     val pickBeatImageRequestId: Long = 0L,
+    /** Empty follows Settings default for this action. */
+    val modelRef: String = "",
+    val contextMeter: String = "",
+)
+
+data class CodexPeekState(
+    val entryId: String,
+    val name: String,
+    val aliases: List<String> = emptyList(),
+    val plainText: String = "",
 )
 
 data class WriteUiState(
@@ -150,6 +165,11 @@ data class WriteUiState(
     val showInlineWritingPrompt: Boolean = false,
     val showSceneBeatCard: Boolean = false,
     val showContinuationBox: Boolean = false,
+    val snapshots: List<SceneSnapshotEntity> = emptyList(),
+    val showSnapshots: Boolean = false,
+    val codexPeek: CodexPeekState? = null,
+    val writingModels: List<ModelInfo> = emptyList(),
+    val defaultModelRef: String = "",
 )
 
 private data class LibraryPromptBundle(
@@ -174,6 +194,7 @@ class WriteViewModel @Inject constructor(
     private val promptEntryBus: PromptEntryBus,
     private val mediaClipboard: MediaClipboard,
     private val workspaceHistory: WorkspaceHistory,
+    private val modelCache: OpenRouterModelCache,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(WriteUiState())
     val uiState: StateFlow<WriteUiState> = _uiState.asStateFlow()
@@ -183,6 +204,7 @@ class WriteViewModel @Inject constructor(
 
     private var loadedScene: SceneEntity? = null
     private var sceneJob: Job? = null
+    private var snapshotJob: Job? = null
     private var generationJob: Job? = null
     private var applyingHistory = false
     /** Snapshot taken at the start of a typing burst; flushed before discrete edits. */
@@ -198,6 +220,7 @@ class WriteViewModel @Inject constructor(
                         showInlineWritingPrompt = prefs.extraPromptSurfaces.inlineWriting,
                         showSceneBeatCard = prefs.extraPromptSurfaces.sceneBeatCard,
                         showContinuationBox = prefs.extraPromptSurfaces.continuation,
+                        defaultModelRef = prefs.defaultModelRef,
                     )
                 }
             }
@@ -205,6 +228,11 @@ class WriteViewModel @Inject constructor(
         viewModelScope.launch {
             workspaceHistory.state.collect { hist ->
                 _uiState.update { it.copy(canUndo = hist.canUndo, canRedo = hist.canRedo) }
+            }
+        }
+        viewModelScope.launch {
+            modelCache.models.collect { dtos ->
+                _uiState.update { it.copy(writingModels = modelCache.writingModels(dtos)) }
             }
         }
         viewModelScope.launch {
@@ -226,7 +254,7 @@ class WriteViewModel @Inject constructor(
                         com.ihy2ln.weaverse.core.text.CodexMentionTarget(
                             entryId = entry.id,
                             name = entry.name,
-                            aliases = com.ihy2ln.weaverse.core.text.decodeAliases(entry.aliasesJson),
+                            aliases = decodeAliases(entry.aliasesJson),
                             caseSensitive = entry.caseSensitiveMatching,
                         )
                     }
@@ -252,6 +280,16 @@ class WriteViewModel @Inject constructor(
         sceneJob = viewModelScope.launch {
             manuscriptRepository.observeScene(sceneId).collect { scene ->
                 if (scene != null) applyScene(scene)
+            }
+        }
+        observeSnapshots(sceneId)
+    }
+
+    private fun observeSnapshots(sceneId: String) {
+        snapshotJob?.cancel()
+        snapshotJob = viewModelScope.launch {
+            db.manuscriptDao().observeSnapshots(sceneId).collect { snaps ->
+                _uiState.update { it.copy(snapshots = snaps) }
             }
         }
     }
@@ -312,6 +350,8 @@ class WriteViewModel @Inject constructor(
         }
         viewModelScope.launch {
             val library = libraryPromptBundle("scene_beat", PromptRenderContext())
+            val prefs = settings.preferences.first()
+            val stored = prefs.actionModelRefs[ActionModelKeys.SCENE_BEAT].orEmpty()
             _uiState.update {
                 it.copy(
                     aiOverlay = AiOverlayState(
@@ -321,6 +361,7 @@ class WriteViewModel @Inject constructor(
                         prompt = beat.prompt,
                         systemInstructions = library.systemInstructions,
                         promptId = library.promptId,
+                        modelRef = stored,
                     ),
                 )
             }
@@ -823,6 +864,9 @@ class WriteViewModel @Inject constructor(
         viewModelScope.launch {
             val library = libraryPromptBundle(commandId, PromptRenderContext())
             val replaceInPlace = sel.hasSelection && block != null
+            val actionKey = actionKeyForCommand(commandId)
+            val prefs = settings.preferences.first()
+            val stored = prefs.actionModelRefs[actionKey].orEmpty()
             _uiState.update {
                 it.copy(
                     editPopupBlockIndex = null,
@@ -846,6 +890,7 @@ class WriteViewModel @Inject constructor(
                         replaceBlockIndex = if (replaceInPlace) sel.blockIndex else null,
                         replaceStart = if (replaceInPlace) sel.min else null,
                         replaceEnd = if (replaceInPlace) sel.max else null,
+                        modelRef = stored,
                     ),
                 )
             }
@@ -944,6 +989,8 @@ class WriteViewModel @Inject constructor(
                         }
                     }
                     val library = libraryPromptBundle(command.id, PromptRenderContext())
+                    val prefs = settings.preferences.first()
+                    val stored = prefs.actionModelRefs[actionKeyForCommand(command.id)].orEmpty()
                     _uiState.update {
                         it.copy(
                             aiOverlay = AiOverlayState(
@@ -953,6 +1000,7 @@ class WriteViewModel @Inject constructor(
                                 prompt = "",
                                 systemInstructions = library.systemInstructions,
                                 promptId = library.promptId,
+                                modelRef = stored,
                             ),
                             slashBlockIndex = null,
                             slashFilter = "",
@@ -1060,7 +1108,13 @@ class WriteViewModel @Inject constructor(
             }
             val hasImage = !overlay.imageMediaId.isNullOrBlank() && !overlay.imagePath.isNullOrBlank()
             val commandForPrompt = if (hasImage) "describe_image" else overlay.commandId
-            if (hasImage && !aiGeneration.modelSupportsImages()) {
+            val actionKey = actionKeyForCommand(commandForPrompt)
+            val prefs = settings.preferences.first()
+            val modelRef = PromptModelSelection.effectiveModelRef(
+                overlay.modelRef.ifBlank { prefs.actionModelRefs[actionKey].orEmpty() },
+                prefs.defaultModelRef,
+            )
+            if (hasImage && !aiGeneration.modelSupportsImages(modelRef)) {
                 _uiState.update {
                     it.copy(
                         aiOverlay = it.aiOverlay?.copy(
@@ -1077,6 +1131,7 @@ class WriteViewModel @Inject constructor(
                 entries,
                 ContextBuildRequest(
                     scanText = sceneText + " " + overlay.prompt + " " + (scene?.pov.orEmpty()),
+                    sceneText = sceneText,
                     userMessage = overlay.prompt,
                 ),
             )
@@ -1098,6 +1153,8 @@ class WriteViewModel @Inject constructor(
             val activeOverlay = overlay.copy(
                 systemInstructions = fresh.systemInstructions.ifBlank { overlay.systemInstructions },
                 promptId = fresh.promptId ?: overlay.promptId,
+                modelRef = overlay.modelRef,
+                contextMeter = UsageFormat.formatBreakdown(assembled.tokenBreakdown),
             )
             _uiState.update {
                 it.copy(
@@ -1149,6 +1206,7 @@ class WriteViewModel @Inject constructor(
                         usedEntries = assembled.usedEntries,
                         tokenBreakdown = assembled.tokenBreakdown,
                     ),
+                    modelRef = modelRef,
                     maxTokens = maxTokens,
                     imageAttachments = imageAttachments,
                 ).collect { chunk ->
@@ -1215,7 +1273,7 @@ class WriteViewModel @Inject constructor(
             val entries = db.codexDao().observeEntries(bookId).first()
             val assembled = contextBuilder.build(
                 entries,
-                ContextBuildRequest(scanText = sceneText, userMessage = ""),
+                ContextBuildRequest(scanText = sceneText, sceneText = sceneText, userMessage = ""),
             )
             val renderCtx = buildPromptRenderContext(
                 sceneText = sceneText,
@@ -1224,6 +1282,8 @@ class WriteViewModel @Inject constructor(
                 codexBlock = assembled.codexBlock,
             )
             val fresh = libraryPromptBundle("summarize", renderCtx)
+            val prefs = settings.preferences.first()
+            val modelRef = settings.modelRefForAction(prefs, ActionModelKeys.SUMMARIZE)
             runCatching {
                 aiGeneration.complete(
                     userMessage = fresh.finalUserMessage ?: "Summarize the scene above in a few sentences.",
@@ -1233,6 +1293,7 @@ class WriteViewModel @Inject constructor(
                         usedEntries = assembled.usedEntries,
                         tokenBreakdown = assembled.tokenBreakdown,
                     ),
+                    modelRef = modelRef,
                     maxTokens = 400,
                 )
             }.onSuccess { result ->
@@ -1270,6 +1331,7 @@ class WriteViewModel @Inject constructor(
         if (replaceIndex != null && replaceStart != null && replaceEnd != null) {
             val block = _uiState.value.blocks.getOrNull(replaceIndex) as? Paragraph
             if (block != null) {
+                persistPreAcceptSnapshot("Before AI replace")
                 updateBlocksSync(recordHistory = true) { blocks ->
                     val p = blocks[replaceIndex] as Paragraph
                     blocks[replaceIndex] = p.copy(
@@ -1280,6 +1342,7 @@ class WriteViewModel @Inject constructor(
                 return
             }
         }
+        persistPreAcceptSnapshot("Before AI insert")
         updateBlocksSync(recordHistory = true) { blocks ->
             val next = blocks.insertGeneratedProseAfter(
                 insertAfterIndex = overlay.insertAfterIndex,
@@ -1292,6 +1355,22 @@ class WriteViewModel @Inject constructor(
         dismissAiOverlay()
     }
 
+    private fun persistPreAcceptSnapshot(title: String) {
+        val scene = loadedScene ?: return
+        val doc = Document(_uiState.value.blocks)
+        viewModelScope.launch {
+            db.manuscriptDao().upsertSnapshot(
+                SceneSnapshotEntity(
+                    id = "snap-${UUID.randomUUID()}",
+                    sceneId = scene.id,
+                    title = title,
+                    docJson = doc.toJson(),
+                    createdAt = System.currentTimeMillis(),
+                ),
+            )
+        }
+    }
+
     fun discardAiResult() {
         _uiState.update {
             it.copy(aiOverlay = it.aiOverlay?.copy(streamingText = "", usageLog = "", errorMessage = ""))
@@ -1299,6 +1378,108 @@ class WriteViewModel @Inject constructor(
     }
 
     fun retryAiGeneration() = runAiGeneration()
+
+    fun selectOverlayModel(modelId: String) {
+        val overlay = _uiState.value.aiOverlay ?: return
+        val ref = PromptModelSelection.modelRef(modelId)
+        val actionKey = actionKeyForCommand(overlay.commandId)
+        _uiState.update { it.copy(aiOverlay = it.aiOverlay?.copy(modelRef = ref)) }
+        viewModelScope.launch { settings.setActionModelRef(actionKey, ref) }
+    }
+
+    fun useDefaultOverlayModel() {
+        val overlay = _uiState.value.aiOverlay ?: return
+        val actionKey = actionKeyForCommand(overlay.commandId)
+        _uiState.update { it.copy(aiOverlay = it.aiOverlay?.copy(modelRef = "")) }
+        viewModelScope.launch { settings.setActionModelRef(actionKey, "") }
+    }
+
+    fun peekCodex(entryId: String) {
+        viewModelScope.launch {
+            val entry = db.codexDao().observeEntry(entryId).first() ?: return@launch
+            _uiState.update {
+                it.copy(
+                    codexPeek = CodexPeekState(
+                        entryId = entry.id,
+                        name = entry.name,
+                        aliases = decodeAliases(entry.aliasesJson),
+                        plainText = entry.plainText,
+                    ),
+                )
+            }
+        }
+    }
+
+    fun dismissCodexPeek() {
+        _uiState.update { it.copy(codexPeek = null) }
+    }
+
+    fun toggleSnapshots() {
+        _uiState.update { it.copy(showSnapshots = !it.showSnapshots) }
+    }
+
+    fun saveSnapshot(title: String = "") {
+        val scene = loadedScene ?: return
+        val doc = Document(_uiState.value.blocks)
+        viewModelScope.launch {
+            val label = title.ifBlank {
+                "Snapshot ${java.text.SimpleDateFormat("MMM d HH:mm", java.util.Locale.US).format(java.util.Date())}"
+            }
+            db.manuscriptDao().upsertSnapshot(
+                SceneSnapshotEntity(
+                    id = "snap-${UUID.randomUUID()}",
+                    sceneId = scene.id,
+                    title = label,
+                    docJson = doc.toJson(),
+                    createdAt = System.currentTimeMillis(),
+                ),
+            )
+            _uiState.update { it.copy(statusMessage = "Snapshot saved", showSnapshots = true) }
+        }
+    }
+
+    fun restoreSnapshot(snapshotId: String) {
+        viewModelScope.launch {
+            val snap = db.manuscriptDao().getSnapshot(snapshotId) ?: return@launch
+            val scene = loadedScene ?: return@launch
+            flushTypingHistory()
+            val doc = documentFromJson(snap.docJson)
+            val blocks = doc.blocks.ifEmpty { listOf(Paragraph("new-p", listOf(Span("")))) }
+            updateBlocksSync(recordHistory = true) { list ->
+                list.clear()
+                list.addAll(blocks)
+            }
+            manuscriptRepository.saveScene(
+                scene.copy(
+                    docJson = doc.toJson(),
+                    plainText = doc.plainText(),
+                    wordCount = doc.wordCount(),
+                    updatedAt = System.currentTimeMillis(),
+                ),
+            )
+            _uiState.update {
+                it.copy(
+                    showSnapshots = false,
+                    statusMessage = "Restored: ${snap.title}",
+                )
+            }
+        }
+    }
+
+    fun deleteSnapshot(snapshotId: String) {
+        viewModelScope.launch {
+            db.manuscriptDao().deleteSnapshot(snapshotId)
+        }
+    }
+
+    private fun actionKeyForCommand(commandId: String): String = when (commandId) {
+        "scene_beat", "describe_image" -> ActionModelKeys.SCENE_BEAT
+        "shorten" -> ActionModelKeys.SHORTEN
+        "extend", "expand", "continue" -> ActionModelKeys.EXTEND
+        "replace" -> ActionModelKeys.REPLACE
+        "summarize" -> ActionModelKeys.SUMMARIZE
+        else -> ActionModelKeys.PROMPT_AI
+    }
 
     fun updateMediaWidth(index: Int, widthPercent: Float) {
         updateBlocks(recordHistory = true) { blocks ->

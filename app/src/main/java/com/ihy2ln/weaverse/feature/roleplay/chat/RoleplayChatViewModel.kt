@@ -42,6 +42,7 @@ import com.ihy2ln.weaverse.data.db.entities.RpCharacterEntity
 import com.ihy2ln.weaverse.data.db.entities.RpChatEntity
 import com.ihy2ln.weaverse.data.db.entities.RpMessageEntity
 import com.ihy2ln.weaverse.data.db.entities.RpPersonaEntity
+import com.ihy2ln.weaverse.data.settings.ActionModelKeys
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
 import com.ihy2ln.weaverse.feature.roleplay.presets.defaultPresets
 import com.ihy2ln.weaverse.feature.shell.WorkspaceHistory
@@ -52,6 +53,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -1034,6 +1036,10 @@ class RoleplayChatViewModel @Inject constructor(
                         usedEntries = emptyList(),
                         tokenBreakdown = emptyList(),
                     ),
+                    modelRef = settings.modelRefForAction(
+                        settings.preferences.first(),
+                        ActionModelKeys.ROLEPLAY_SWIPE,
+                    ),
                     maxTokens = maxTokens,
                     temperature = temperature,
                 ).collect { chunk ->
@@ -1138,6 +1144,10 @@ class RoleplayChatViewModel @Inject constructor(
                         messages = history,
                         usedEntries = emptyList(),
                         tokenBreakdown = emptyList(),
+                    ),
+                    modelRef = settings.modelRefForAction(
+                        settings.preferences.first(),
+                        ActionModelKeys.ROLEPLAY_SWIPE,
                     ),
                     maxTokens = (words * 1.5).toInt().coerceIn(64, 8192),
                     temperature = temperature,

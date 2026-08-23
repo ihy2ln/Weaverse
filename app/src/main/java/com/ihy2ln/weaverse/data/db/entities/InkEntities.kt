@@ -68,6 +68,15 @@ data class SceneEntity(
     val updatedAt: Long,
 )
 
+@Entity(tableName = "scene_snapshots", indices = [Index("sceneId")])
+data class SceneSnapshotEntity(
+    @PrimaryKey val id: String,
+    val sceneId: String,
+    val title: String,
+    val docJson: String,
+    val createdAt: Long,
+)
+
 @Entity(
     tableName = "scene_codex_links",
     primaryKeys = ["sceneId", "entryId"],
