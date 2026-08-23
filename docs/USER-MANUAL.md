@@ -1,7 +1,7 @@
-# Weaverse v0.5.28 — User Manual
+# Weaverse v0.5.34 — User Manual
 
 **App:** Weaverse (`com.ihy2ln.weaverse`)  
-**Version:** 0.5.28 (versionCode 41)  
+**Version:** 0.5.34 (versionCode 42)  
 **Platforms:** Android · Windows desktop · Web hub
 
 This manual matches the in-app **Help** overlay (chrome **?** icon, or **Settings → Open Help**).
@@ -37,7 +37,7 @@ This manual matches the in-app **Help** overlay (chrome **?** icon, or **Setting
 ## Writing
 
 - **Format:** long-press text (~650 ms). Dismiss, then press the same highlight to reopen. Selection is kept after style changes.
-- **Color:** HSV wheel + editable `#RRGGBB` hex (fixed in 0.5.28 — no longer stuck on black).
+- **Color:** HSV wheel + editable `#RRGGBB` hex (fixed in 0.5.34 — no longer stuck on black).
 - **Media:** shorter long-press + haptic; stack/reorder from the media menu.
 - **Codex mentions:** tap a linked name to peek; open full Codex from the sheet.
 - **Snapshots:** save/restore scene document versions (Room migration 5→6).
@@ -72,7 +72,7 @@ This manual matches the in-app **Help** overlay (chrome **?** icon, or **Setting
 
 ## Related docs
 
-- [What's New 0.5.28](./Whats-New-0.5.28.md)
+- [What's New 0.5.34](./Whats-New-0.5.34.md)
 - [Wiki Home](./wiki/Home.md)
 - [Architecture](./ARCHITECTURE.md)
 - [README](../README.md)

@@ -1,8 +1,8 @@
-# What's New — Weaverse v0.5.28
+# What's New — Weaverse v0.5.34
 
 **Released:** August 2026  
-**versionName:** `0.5.28` · **versionCode:** `41`  
-**APK artifact (CI):** `weaverse-v0.5.28-debug-signed.apk` (when using the debug-signed release path)
+**versionName:** `0.5.34` · **versionCode:** `41`  
+**APK artifact (CI):** `weaverse-v0.5.34-debug-signed.apk` (when using the debug-signed release path)
 
 ## Highlights
 
@@ -43,4 +43,4 @@
 
 - [User Manual](./USER-MANUAL.md)
 - [Wiki Home](./wiki/Home.md)
-- [Release notes (detailed)](./RELEASE-NOTES-0.5.28.md)
+- [Release notes (detailed)](./RELEASE-NOTES-0.5.34.md)

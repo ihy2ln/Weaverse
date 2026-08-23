@@ -12,7 +12,7 @@ Welcome to the Weaverse documentation wiki (repo copy under `docs/wiki/`).
 | [AI & Prompting](AI-and-Prompting.md) | Models, preview, context meter |
 | [Codex](Codex.md) | World bible & mentions |
 | [Review](Review.md) | Scene/chapter LLM review |
-| [What's New 0.5.28](../Whats-New-0.5.28.md) | Release highlights |
+| [What's New 0.5.34](../Whats-New-0.5.34.md) | Release highlights |
 | [User Manual](../USER-MANUAL.md) | Full manual |
 | [Architecture](../ARCHITECTURE.md) | Rebuild-from-scratch tech doc |
 

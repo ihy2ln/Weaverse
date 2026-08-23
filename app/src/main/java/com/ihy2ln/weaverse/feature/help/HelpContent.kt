@@ -1,6 +1,6 @@
 package com.ihy2ln.weaverse.feature.help
 
-/** In-app Manual / Tutorial / What's New copy for v0.5.28. */
+/** In-app Manual / Tutorial / What's New copy for v0.5.34. */
 object HelpContent {
     data class Section(
         val title: String,
@@ -132,7 +132,7 @@ object HelpContent {
 
     val whatsNew: List<Section> = listOf(
         Section(
-            title = "v0.5.28",
+            title = "v0.5.34",
             body = """
                 • Fixed color picker hex (no more stuck #000000); editable hex
                 • Format menu: reopen on highlighted-text press; keep selection

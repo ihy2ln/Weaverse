@@ -1,4 +1,4 @@
-# Weaverse v0.5.28 — Detailed release notes
+# Weaverse v0.5.34 — Detailed release notes
 
 ## Summary
 
