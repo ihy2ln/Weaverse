@@ -33,6 +33,10 @@ class EditMenuGate {
     @Volatile
     private var openHandler: (() -> Unit)? = null
 
+    /** Ignore the next [onSystemShowMenu] — used when a press turned into a scroll/drag. */
+    @Volatile
+    private var suppressSystemShowMenu: Boolean = false
+
     fun setOpenHandler(handler: () -> Unit) {
         openHandler = handler
     }
@@ -41,7 +45,17 @@ class EditMenuGate {
         dismissedSelection = null
     }
 
+    /**
+     * Finger moved past touch slop before lift. BasicTextField can still call
+     * [androidx.compose.ui.platform.TextToolbar.showMenu] on release; swallow that
+     * so scrolling the manuscript does not open Format.
+     */
+    fun notePointerDrag() {
+        suppressSystemShowMenu = true
+    }
+
     fun onUserPressInSelection() {
+        suppressSystemShowMenu = false
         allowReopen()
         if (!expanded) {
             openHandler?.invoke()
@@ -49,6 +63,10 @@ class EditMenuGate {
     }
 
     fun onSystemShowMenu() {
+        if (suppressSystemShowMenu) {
+            suppressSystemShowMenu = false
+            return
+        }
         if (!shouldOpen()) return
         openHandler?.invoke()
     }

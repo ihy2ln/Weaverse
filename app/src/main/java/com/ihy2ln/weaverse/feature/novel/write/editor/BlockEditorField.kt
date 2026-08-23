@@ -22,6 +22,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalTextToolbar
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.TextToolbar
 import androidx.compose.ui.platform.TextToolbarStatus
 import androidx.compose.ui.text.TextLayoutResult
@@ -88,6 +89,7 @@ fun BlockEditorField(
     // for the same selection until the caret collapses or the range changes.
     val menuGate = remember { EditMenuGate() }
     val haptic = LocalHapticFeedback.current
+    val touchSlop = LocalViewConfiguration.current.touchSlop
 
     // Sync external paragraph updates (undo/AI accept) without clobbering caret during typing
     LaunchedEffect(paragraph.id, plain, paragraph.spans, codexMentionTargets) {
@@ -142,39 +144,61 @@ fun BlockEditorField(
     }
 
     Box(
-        modifier = modifier.pointerInput(codexMentionTargets) {
-            // PointerEventPass.Initial runs before BasicTextField's own gesture handling,
-            // so a tap landing on a codex mention can be consumed here to peek instead
-            // of placing the text cursor / opening the keyboard.
+        modifier = modifier.pointerInput(codexMentionTargets, touchSlop) {
+            // PointerEventPass.Initial for mention hit-testing; Final for drag tracking so
+            // we never steal LazyColumn scroll. Do not treat scroll-cancel as a long-press —
+            // Format opens only via TextToolbar.showMenu or a clean tap in a highlight.
             awaitEachGesture {
-                val down = awaitFirstDown(pass = PointerEventPass.Initial)
-                val layout = layoutResult ?: return@awaitEachGesture
-                val offset = layout.getOffsetForPosition(down.position)
-                val annotation = value.annotatedString
-                    .getStringAnnotations(CodexMentionTag, offset, offset)
-                    .firstOrNull()
-                if (annotation != null) {
-                    down.consume()
-                    onMentionClick(annotation.item)
-                    return@awaitEachGesture
+                val down = awaitFirstDown(
+                    requireUnconsumed = false,
+                    pass = PointerEventPass.Initial,
+                )
+                val layout = layoutResult
+                val offset = layout?.getOffsetForPosition(down.position)
+                val annotation = if (offset != null) {
+                    value.annotatedString
+                        .getStringAnnotations(CodexMentionTag, offset, offset)
+                        .firstOrNull()
+                } else {
+                    null
                 }
-                val sel = value.selection
-                val inSelection = !sel.collapsed && offset >= sel.min && offset < sel.max
-                if (inSelection) {
-                    // Keep the highlight; reopen Format on tap / long-press of the same range.
-                    down.consume()
-                    withTimeoutOrNull(EditorGestures.SELECTION_TAP_MS) {
+                if (annotation != null) {
+                    val up = withTimeoutOrNull(EditorGestures.SELECTION_TAP_MS) {
                         waitForUpOrCancellation(PointerEventPass.Initial)
                     }
-                    menuGate.onUserPressInSelection()
+                    if (up != null) {
+                        down.consume()
+                        onMentionClick(annotation.item)
+                    } else {
+                        menuGate.notePointerDrag()
+                    }
                     return@awaitEachGesture
                 }
-                val released = withTimeoutOrNull(EditorGestures.TEXT_LONG_PRESS_MS) {
-                    waitForUpOrCancellation(PointerEventPass.Main)
+
+                var dragged = false
+                val downPos = down.position
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Final)
+                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                    val dx = kotlin.math.abs(change.position.x - downPos.x)
+                    val dy = kotlin.math.abs(change.position.y - downPos.y)
+                    // Vertical-dominant move = scroll intent. Ignore small long-press jitter
+                    // and horizontal drag-select so those can still open Format.
+                    if (!dragged && dy > touchSlop && dy >= dx) {
+                        dragged = true
+                        menuGate.notePointerDrag()
+                    }
+                    if (!change.pressed) break
                 }
-                if (released == null) {
-                    menuGate.allowReopen()
-                    menuGate.onSystemShowMenu()
+                if (dragged) {
+                    return@awaitEachGesture
+                }
+                if (offset != null) {
+                    val sel = value.selection
+                    val inSelection = !sel.collapsed && offset >= sel.min && offset < sel.max
+                    if (inSelection) {
+                        menuGate.onUserPressInSelection()
+                    }
                 }
             }
         },
