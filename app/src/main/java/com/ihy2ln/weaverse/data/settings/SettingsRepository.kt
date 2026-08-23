@@ -62,7 +62,7 @@ enum class ExtraPromptSurface {
 }
 
 data class UserPreferences(
-    val themeMode: AppThemeMode = AppThemeMode.Dark,
+    val themeMode: AppThemeMode = AppThemeMode.Light,
     val fontSizeSp: Int = 16,
     val lineHeight: Float = 1.6f,
     val defaultModelRef: String = WritingModelSeeds.DEFAULT_MODEL_REF,
@@ -95,7 +95,7 @@ class SettingsRepository @Inject constructor(
 ) {
     val preferences: Flow<UserPreferences> = context.dataStore.data.map { prefs ->
         UserPreferences(
-            themeMode = AppThemeMode.entries.find { it.name == prefs[KEY_THEME] } ?: AppThemeMode.Dark,
+            themeMode = AppThemeMode.entries.find { it.name == prefs[KEY_THEME] } ?: AppThemeMode.Light,
             fontSizeSp = prefs[KEY_FONT_SIZE] ?: 16,
             lineHeight = prefs[KEY_LINE_HEIGHT] ?: 1.6f,
             defaultModelRef = prefs[KEY_DEFAULT_MODEL] ?: WritingModelSeeds.DEFAULT_MODEL_REF,
