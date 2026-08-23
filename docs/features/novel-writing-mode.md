@@ -180,6 +180,32 @@ order:
 Model name uses `Modifier.basicMarquee()` to scroll instead of
 truncating when it doesn't fit the row.
 
+## Update — Codex hyperlink click now opens a scrollable, dismiss-on-outside-tap popup
+
+Tapping a codex mention link (`CodexMentionTag`, rendered by
+`toAnnotatedString`/handled in `BlockEditorField.kt`'s `onMentionClick`)
+used to fully replace whatever screen was on-screen with
+`CodexEntryDetailScreen` — a real navigation, not a popup, no way to
+dismiss except its own back button, and the underlying Write/Plan/Codex
+screen unmounted while it was open.
+
+`AppShell.kt` now renders it as an actual popup instead: the
+`selectedCodexEntryId != null` branch was removed from the main content
+`when` (so the screen behind it — Write, the Codex rail list, etc. —
+stays mounted and visible), and a dimmed-scrim overlay with a bounded
+card (94% width × 85% height) was added as a sibling to
+`GlobalPromptOverlay` near the end of the function, so it always draws
+on top regardless of which screen is underneath. The card is
+`CodexEntryDetailScreen` unchanged — its own `Column(...).verticalScroll(...)`
+already made it scrollable, that didn't need touching. Tapping the scrim
+outside the card calls the same `onBack`-equivalent (`selectedCodexEntryId
+= null`) that the card's own toolbar back button uses; the card itself
+has a no-op `clickable` so taps inside it don't fall through and
+dismiss it. This is shared plumbing — `selectedCodexEntryId` is set from
+four places (the Write-screen hyperlink, Novel's Codex rail, Roleplay's
+Lorebook rail, and the manuscript rail's codex-entry click), so all four
+now open as this same popup rather than just the hyperlink case.
+
 ## Release process reminder
 
 Every push to a feature branch in an active session should be followed by
