@@ -25,9 +25,24 @@ carefully but untested until the workflow actually runs. See "How to
 get your first test build" below for what to do next, and "Known risk
 areas" for where a first run is most likely to need a fix.
 
+## Platform priority
+
+The user's explicit ordering, for any future trade-off between the three
+targets: **Android (APK) first, iOS second, Desktop third.** Android is
+the mature, actively-shipping platform and stays the priority for new
+Roleplay/Novel features. iOS is the current active build-out (this doc).
+Desktop (`desktop/` + the web hub) is lowest priority — it already works
+and needs no further investment unless specifically asked for; if
+something has to give, iOS work wins over Desktop work.
+
 ## How to get your first test build
 
-1. On GitHub: **Actions → iOS Build → Run workflow**, on this branch.
+1. Push to `claude/prompt-window-ui-updates-ttkkdd` with changes under
+   `shared/`, `iosApp/`, or `.github/workflows/ios-build.yml` — that's
+   what actually triggers a run today (see the workflow file's own
+   comment for why `workflow_dispatch` doesn't work yet: it only
+   becomes fireable via the Actions UI/API once this branch reaches
+   `main`). Check **Actions → iOS Build** for the run.
 2. Wait for it to finish (macOS runners are slower than Linux ones).
 3. Download the `weaverse-ios-simulator-app` artifact from the run — a
    `Weaverse-iOS-Simulator.zip` containing `iosApp.app`.
