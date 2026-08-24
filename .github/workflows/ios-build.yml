@@ -1,10 +1,25 @@
 name: iOS Build
 
-# Manual only — macOS runners are far more expensive/slower than Linux ones,
-# and this only needs to run when there's iOS work to actually verify, unlike
-# build.yml/release.yml which need to run on every push.
+# workflow_dispatch only becomes dispatchable via the Actions UI/API once a
+# workflow file exists on the repo's *default* branch — this repo's iOS work
+# lives entirely on claude/prompt-window-ui-updates-ttkkdd, which isn't
+# merged to main, so a plain workflow_dispatch trigger can't actually be
+# fired yet. Pushing to that branch works regardless of default-branch
+# status, so that's the trigger for now; workflow_dispatch stays declared
+# too so it starts working the moment this branch does reach main.
+# path-filtered so unrelated pushes (the vast majority) don't spin up an
+# expensive/slow macOS runner for no reason.
 on:
   workflow_dispatch:
+  push:
+    branches: ["claude/prompt-window-ui-updates-ttkkdd"]
+    paths:
+      - "shared/**"
+      - "iosApp/**"
+      - ".github/workflows/ios-build.yml"
+      - "gradle/libs.versions.toml"
+      - "settings.gradle.kts"
+      - "build.gradle.kts"
 
 jobs:
   ios-simulator-build:
