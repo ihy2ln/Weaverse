@@ -33,6 +33,37 @@ names didn't change, so no other Android file needed an import update.
 Compose Multiplatform in `:shared` doesn't touch `:app`'s existing
 Android UI at all — it's new code, not a replacement.
 
+## The goal, and the fallback
+
+The explicit goal is a genuine **1:1 port** of the Android app to
+iOS — every screen and feature, not a cut-down companion app. That's
+the target every phase below is working toward.
+
+**If the native Compose Multiplatform port stalls hard enough that
+it's not converging** (an iOS-only blocker with no reasonable fix, a
+Skiko/Kotlin-Native limitation that can't be worked around), the
+accepted fallback is an iOS app that's a thin native wrapper
+(`WKWebView`) around the existing desktop web hub (`desktop/` +
+`sync-core`'s `WebAssets.kt`, already real and working today — see
+`SYNC.md`) instead of Compose Multiplatform screens. That's a
+last-resort, not a shortcut to reach for early — it means giving up
+on genuinely native iOS UI, so it only replaces the plan if the native
+route proves unworkable, not just slow.
+
+## Testing gate: every iOS build gets smoke-tested before it ships
+
+`ios-build.yml`'s "Smoke-test app launch in Simulator" step (added
+after the Compose Multiplatform crash below) boots the real iOS
+Simulator on the `macos-latest` runner, installs the built `.app`,
+launches it, and checks it's still running a few seconds later. It's
+how launch-crashes get caught automatically instead of relying on
+manual appetize.io testing to notice them — this now runs on every
+push touching `shared/`/`iosApp/`, and should be checked (or added to
+`release.yml`'s `ios-simulator-build` job as a hard gate) before any
+release is called done. Going forward, treat "the release workflow
+succeeded" as necessary but not sufficient for iOS — the launch smoke
+test result is the real signal.
+
 ## Platform priority
 
 The user's explicit ordering, for any future trade-off between the three
