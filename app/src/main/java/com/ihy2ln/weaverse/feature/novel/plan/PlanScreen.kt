@@ -31,6 +31,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -82,6 +83,8 @@ fun PlanScreen(
     var selectedSceneId by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingDeleteSceneId by rememberSaveable { mutableStateOf<String?>(null) }
     var showStructurePicker by rememberSaveable { mutableStateOf(false) }
+    var editingSceneId by rememberSaveable { mutableStateOf<String?>(null) }
+    var editingChapterId by rememberSaveable { mutableStateOf<String?>(null) }
     val state by viewModel.uiState.collectAsState()
     val focusRequester = remember { FocusRequester() }
     val contentPad = adaptiveContentPadding()
@@ -169,6 +172,7 @@ fun PlanScreen(
                 onAddNewChapter = {
                     viewModel.addNewChapter(selectedSceneId) { id -> selectedSceneId = id }
                 },
+                onEditSceneSummary = { editingSceneId = it },
             )
             PlanViewMode.Outline -> PlanOutlineView(
                 outline = state.outline,
@@ -194,7 +198,41 @@ fun PlanScreen(
                 onAddNewChapter = {
                     viewModel.addNewChapter(selectedSceneId) { id -> selectedSceneId = id }
                 },
+                onEditSceneSummary = { editingSceneId = it },
+                onEditChapterSummary = { editingChapterId = it },
             )
+        }
+        editingSceneId?.let { id ->
+            val scene = state.scenes.firstOrNull { it.id == id }
+            if (scene != null) {
+                EditSummaryDialog(
+                    title = "Scene summary",
+                    initialValue = scene.summary,
+                    onSave = {
+                        viewModel.updateSceneSummary(id, it)
+                        editingSceneId = null
+                    },
+                    onDismiss = { editingSceneId = null },
+                )
+            } else {
+                editingSceneId = null
+            }
+        }
+        editingChapterId?.let { id ->
+            val chapter = state.outline.flatMap { it.chapters }.map { it.chapter }.firstOrNull { it.id == id }
+            if (chapter != null) {
+                EditSummaryDialog(
+                    title = "Chapter summary",
+                    initialValue = chapter.summary,
+                    onSave = {
+                        viewModel.updateChapterSummary(id, it)
+                        editingChapterId = null
+                    },
+                    onDismiss = { editingChapterId = null },
+                )
+            } else {
+                editingChapterId = null
+            }
         }
     }
 }
@@ -245,6 +283,36 @@ private fun StructureTemplatePickerDialog(
             }
         },
         confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
+private fun EditSummaryDialog(
+    title: String,
+    initialValue: String,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var value by remember(initialValue) { mutableStateOf(initialValue) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            OutlinedTextField(
+                value = value,
+                onValueChange = { value = it },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 3,
+                maxLines = 8,
+                placeholder = { Text("Summary") },
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(value) }) { Text("Save") }
+        },
+        dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
         },
     )
@@ -305,6 +373,7 @@ private fun PlanGridView(
     onAddNewScene: () -> Unit,
     onAddSceneBeat: () -> Unit,
     onAddNewChapter: () -> Unit,
+    onEditSceneSummary: (String) -> Unit,
 ) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
@@ -341,6 +410,7 @@ private fun PlanGridView(
                 SceneSummaryBox(
                     scene = scene,
                     tone = SceneSummaryTone.Grid,
+                    onClick = { onEditSceneSummary(scene.id) },
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     WriteJumpButton(
@@ -385,6 +455,8 @@ private fun PlanOutlineView(
     onAddNewScene: () -> Unit,
     onAddSceneBeat: () -> Unit,
     onAddNewChapter: () -> Unit,
+    onEditSceneSummary: (String) -> Unit,
+    onEditChapterSummary: (String) -> Unit,
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         outline.forEach { node ->
@@ -414,7 +486,18 @@ private fun PlanOutlineView(
                         Text(
                             "    ${chapterNode.chapter.summary}",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(start = 24.dp, bottom = InkSpacing.sm),
+                            modifier = Modifier
+                                .padding(start = 24.dp, bottom = InkSpacing.sm)
+                                .clickable { onEditChapterSummary(chapterNode.chapter.id) },
+                        )
+                    } else {
+                        Text(
+                            "    + Add chapter summary",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .padding(start = 24.dp, bottom = InkSpacing.sm)
+                                .clickable { onEditChapterSummary(chapterNode.chapter.id) },
                         )
                     }
                 }
@@ -458,6 +541,7 @@ private fun PlanOutlineView(
                         SceneSummaryBox(
                             scene = scene,
                             tone = SceneSummaryTone.Outline,
+                            onClick = { onEditSceneSummary(scene.id) },
                         )
                         ScenePovControls(
                             scene = scene,
@@ -541,6 +625,7 @@ private fun SceneSummaryBox(
     scene: SceneEntity,
     tone: SceneSummaryTone,
     modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
 ) {
     val accent = when (tone) {
         SceneSummaryTone.Grid -> InkAccentBlue
@@ -566,6 +651,7 @@ private fun SceneSummaryBox(
             .clip(shape)
             .background(accent.copy(alpha = 0.14f))
             .border(1.5.dp, accent, shape)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
     ) {
         SceneSummaryText(

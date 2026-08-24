@@ -163,6 +163,34 @@ class PlanViewModel @Inject constructor(
         }
     }
 
+    fun updateSceneSummary(sceneId: String, summary: String) {
+        viewModelScope.launch {
+            val scene = uiState.value.scenes.firstOrNull { it.id == sceneId } ?: return@launch
+            val after = scene.copy(summary = summary, updatedAt = System.currentTimeMillis())
+            manuscriptRepository.saveScene(after)
+            workspaceHistory.record(
+                undo = { manuscriptRepository.saveScene(scene) },
+                redo = { manuscriptRepository.saveScene(after) },
+            )
+        }
+    }
+
+    fun updateChapterSummary(chapterId: String, summary: String) {
+        viewModelScope.launch {
+            val chapter = uiState.value.outline
+                .flatMap { it.chapters }
+                .map { it.chapter }
+                .firstOrNull { it.id == chapterId }
+                ?: return@launch
+            val after = chapter.copy(summary = summary)
+            manuscriptRepository.saveChapter(after)
+            workspaceHistory.record(
+                undo = { manuscriptRepository.saveChapter(chapter) },
+                redo = { manuscriptRepository.saveChapter(after) },
+            )
+        }
+    }
+
     fun removeScene(sceneId: String) {
         viewModelScope.launch {
             val scene = uiState.value.scenes.firstOrNull { it.id == sceneId } ?: return@launch

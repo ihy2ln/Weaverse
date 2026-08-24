@@ -182,6 +182,31 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
+    fun updateBookDetails(
+        bookId: String,
+        title: String,
+        genre: String,
+        pov: String,
+        povCharacterName: String,
+        premise: String,
+    ) {
+        viewModelScope.launch {
+            val before = bookRepository.getBook(bookId) ?: return@launch
+            val after = before.copy(
+                title = title.ifBlank { "Untitled Book" },
+                genre = genre,
+                pov = pov,
+                povCharacterName = povCharacterName,
+                premise = premise,
+            )
+            bookRepository.updateBook(after)
+            workspaceHistory.record(
+                undo = { bookRepository.updateBook(before) },
+                redo = { bookRepository.updateBook(after) },
+            )
+        }
+    }
+
     fun deleteBook(bookId: String) {
         viewModelScope.launch {
             val wasSelected = _uiState.value.selectedBookId == bookId

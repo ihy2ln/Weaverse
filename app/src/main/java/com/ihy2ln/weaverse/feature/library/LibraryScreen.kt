@@ -69,6 +69,7 @@ fun LibraryScreen(
     val tokens = inkTokens()
     val contentPad = adaptiveContentPadding()
     var showNewNovelDialog by remember { mutableStateOf(false) }
+    var editingBook by remember { mutableStateOf<BookEntity?>(null) }
 
     Column(
         modifier = modifier
@@ -96,6 +97,16 @@ fun LibraryScreen(
                     showNewNovelDialog = false
                 },
                 onDismiss = { showNewNovelDialog = false },
+            )
+        }
+        editingBook?.let { book ->
+            EditNovelDialog(
+                book = book,
+                onSave = { title, genre, pov, povCharacter, premise ->
+                    viewModel.updateBookDetails(book.id, title, genre, pov, povCharacter, premise)
+                    editingBook = null
+                },
+                onDismiss = { editingBook = null },
             )
         }
         if (!state.hasIsekaiGacha) {
@@ -141,6 +152,7 @@ fun LibraryScreen(
                 onExport = { bookId ->
                     viewModel.openBook(bookId) { onOpenExport(bookId) }
                 },
+                onEdit = { book -> editingBook = book },
             )
             LibraryTab.Series -> SeriesTab(
                 state = state,
@@ -154,6 +166,85 @@ fun LibraryScreen(
                 onAddToSeries = viewModel::addBookToSeries,
             )
         }
+    }
+}
+
+@Composable
+private fun NovelDetailsFields(
+    title: String,
+    onTitle: (String) -> Unit,
+    genre: String,
+    onGenre: (String) -> Unit,
+    pov: String,
+    onPov: (String) -> Unit,
+    povCharacter: String,
+    onPovCharacter: (String) -> Unit,
+    premise: String,
+    onPremise: (String) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState()),
+    ) {
+        OutlinedTextField(
+            value = title,
+            onValueChange = onTitle,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text("Title") },
+            placeholder = { Text("Untitled Book") },
+        )
+        Spacer(modifier = Modifier.height(InkSpacing.sm))
+        OutlinedTextField(
+            value = genre,
+            onValueChange = onGenre,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text("Genre") },
+            placeholder = { Text("Fantasy, Romance, Thriller…") },
+        )
+        Spacer(modifier = Modifier.height(InkSpacing.sm))
+        Text(
+            "Point of view",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(top = InkSpacing.xxs),
+            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+        ) {
+            PlanPovOptions.forEach { option ->
+                InkModeCapsule(
+                    label = option,
+                    selected = pov == option,
+                    onClick = { onPov(option) },
+                    compact = true,
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(InkSpacing.sm))
+        OutlinedTextField(
+            value = povCharacter,
+            onValueChange = onPovCharacter,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text("POV character") },
+            placeholder = { Text("Who the story follows") },
+        )
+        Spacer(modifier = Modifier.height(InkSpacing.sm))
+        OutlinedTextField(
+            value = premise,
+            onValueChange = onPremise,
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 2,
+            maxLines = 4,
+            label = { Text("Premise (optional)") },
+            placeholder = { Text("One or two sentences about the story") },
+        )
     }
 }
 
@@ -172,73 +263,58 @@ private fun NewNovelDialog(
         onDismissRequest = onDismiss,
         title = { Text("New Novel") },
         text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-            ) {
-                OutlinedTextField(
-                    value = state.newBookTitle,
-                    onValueChange = onTitle,
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    label = { Text("Title") },
-                    placeholder = { Text("Untitled Book") },
-                )
-                Spacer(modifier = Modifier.height(InkSpacing.sm))
-                OutlinedTextField(
-                    value = state.newBookGenre,
-                    onValueChange = onGenre,
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    label = { Text("Genre") },
-                    placeholder = { Text("Fantasy, Romance, Thriller…") },
-                )
-                Spacer(modifier = Modifier.height(InkSpacing.sm))
-                Text(
-                    "Point of view",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(top = InkSpacing.xxs),
-                    horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
-                ) {
-                    PlanPovOptions.forEach { pov ->
-                        InkModeCapsule(
-                            label = pov,
-                            selected = state.newBookPov == pov,
-                            onClick = { onPov(pov) },
-                            compact = true,
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(InkSpacing.sm))
-                OutlinedTextField(
-                    value = state.newBookPovCharacterName,
-                    onValueChange = onPovCharacter,
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    label = { Text("POV character") },
-                    placeholder = { Text("Who the story follows") },
-                )
-                Spacer(modifier = Modifier.height(InkSpacing.sm))
-                OutlinedTextField(
-                    value = state.newBookPremise,
-                    onValueChange = onPremise,
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 2,
-                    maxLines = 4,
-                    label = { Text("Premise (optional)") },
-                    placeholder = { Text("One or two sentences about the story") },
-                )
-            }
+            NovelDetailsFields(
+                title = state.newBookTitle,
+                onTitle = onTitle,
+                genre = state.newBookGenre,
+                onGenre = onGenre,
+                pov = state.newBookPov,
+                onPov = onPov,
+                povCharacter = state.newBookPovCharacterName,
+                onPovCharacter = onPovCharacter,
+                premise = state.newBookPremise,
+                onPremise = onPremise,
+            )
         },
         confirmButton = {
             TextButton(onClick = onConfirm) { Text("Create") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
+private fun EditNovelDialog(
+    book: BookEntity,
+    onSave: (title: String, genre: String, pov: String, povCharacter: String, premise: String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var title by remember(book.id) { mutableStateOf(book.title) }
+    var genre by remember(book.id) { mutableStateOf(book.genre) }
+    var pov by remember(book.id) { mutableStateOf(book.pov) }
+    var povCharacter by remember(book.id) { mutableStateOf(book.povCharacterName) }
+    var premise by remember(book.id) { mutableStateOf(book.premise) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Novel") },
+        text = {
+            NovelDetailsFields(
+                title = title,
+                onTitle = { title = it },
+                genre = genre,
+                onGenre = { genre = it },
+                pov = pov,
+                onPov = { pov = it },
+                povCharacter = povCharacter,
+                onPovCharacter = { povCharacter = it },
+                premise = premise,
+                onPremise = { premise = it },
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(title, genre, pov, povCharacter, premise) }) { Text("Save") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
@@ -252,6 +328,7 @@ private fun NovelsTab(
     onOpen: (BookEntity) -> Unit,
     onDelete: (String) -> Unit,
     onExport: (String) -> Unit,
+    onEdit: (BookEntity) -> Unit,
 ) {
     val tokens = inkTokens()
     Column(modifier = Modifier.fillMaxSize()) {
@@ -269,6 +346,7 @@ private fun NovelsTab(
                     onOpen = { onOpen(card.book) },
                     onDelete = { onDelete(card.book.id) },
                     onExport = { onExport(card.book.id) },
+                    onEdit = { onEdit(card.book) },
                 )
             }
         }
@@ -282,6 +360,7 @@ private fun NovelCard(
     onOpen: () -> Unit,
     onDelete: () -> Unit,
     onExport: () -> Unit,
+    onEdit: () -> Unit,
 ) {
     val tokens = inkTokens()
     val updated = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
@@ -347,6 +426,7 @@ private fun NovelCard(
                 .padding(top = InkSpacing.sm),
             horizontalArrangement = Arrangement.End,
         ) {
+            InkTextButton(label = "Edit", onClick = onEdit)
             InkTextButton(label = "Export", onClick = onExport)
             InkDeleteButton(itemName = card.book.title, onConfirmedDelete = onDelete)
         }
