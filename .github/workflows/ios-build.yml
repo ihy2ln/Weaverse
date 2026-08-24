@@ -62,6 +62,62 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             build
 
+      # This is the actual iOS Simulator (Apple's own tooling), running on a
+      # real macOS runner — it boots a device, installs the built .app, and
+      # checks whether it's still alive a few seconds after launch. This is
+      # how we test "does it crash on launch" without appetize.io or a
+      # physical device: continue-on-error so the diagnostics below and the
+      # artifact upload still happen even on a crash; "Fail job if..." below
+      # turns that into a real red X once everything's captured.
+      - name: Smoke-test app launch in Simulator
+        id: smoke_test
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          APP_PATH=$(find build/ios -name "iosApp.app" -type d | head -n 1)
+          BUNDLE_ID="com.ihy2ln.weaverse.ios"
+
+          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)
+          for runtime, devices in data["devices"].items():
+              if "iOS" not in runtime:
+                  continue
+              for d in devices:
+                  if d.get("isAvailable") and "iPhone" in d.get("name", ""):
+                      print(d["udid"])
+                      raise SystemExit
+          ')
+          if [ -z "$DEVICE_ID" ]; then
+            echo "No available iPhone simulator device found" >&2
+            exit 1
+          fi
+          echo "Using simulator device: $DEVICE_ID"
+
+          xcrun simctl boot "$DEVICE_ID" || true
+          xcrun simctl bootstatus "$DEVICE_ID" -b
+          xcrun simctl install "$DEVICE_ID" "$APP_PATH"
+
+          xcrun simctl launch --console-pty "$DEVICE_ID" "$BUNDLE_ID" > console.log 2>&1 &
+          LAUNCH_PID=$!
+          sleep 8
+
+          if xcrun simctl spawn "$DEVICE_ID" launchctl list 2>/dev/null | grep -q "$BUNDLE_ID"; then
+            echo "PASS: $BUNDLE_ID is still running 8s after launch."
+            kill "$LAUNCH_PID" 2>/dev/null || true
+            exit 0
+          fi
+
+          echo "FAIL: $BUNDLE_ID is not running 8s after launch — it crashed or exited." >&2
+          echo "--- console output ---"
+          cat console.log || true
+          echo "--- system log (last 2 minutes, this process) ---"
+          xcrun simctl spawn "$DEVICE_ID" log show --last 2m --predicate 'process == "iosApp"' || true
+          echo "--- crash reports ---"
+          find ~/Library/Logs/DiagnosticReports -iname "iosApp*" -exec cat {} \; 2>/dev/null || true
+          kill "$LAUNCH_PID" 2>/dev/null || true
+          exit 1
+
       # appetize.io's iOS support runs Simulator builds specifically — a zipped
       # .app is exactly what it wants, no signing/provisioning needed.
       - name: Locate and zip the .app bundle
@@ -81,3 +137,9 @@ jobs:
           name: weaverse-ios-simulator-app
           path: dist/Weaverse-iOS-Simulator.zip
           retention-days: 14
+
+      - name: Fail job if the launch smoke test failed
+        if: steps.smoke_test.outcome == 'failure'
+        run: |
+          echo "App crashed on launch in the Simulator — see 'Smoke-test app launch in Simulator' step above for logs." >&2
+          exit 1
