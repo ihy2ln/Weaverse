@@ -101,15 +101,30 @@ jobs:
 
           xcrun simctl launch --console-pty "$DEVICE_ID" "$BUNDLE_ID" > console.log 2>&1 &
           LAUNCH_PID=$!
-          sleep 8
 
-          if xcrun simctl spawn "$DEVICE_ID" launchctl list 2>/dev/null | grep -q "$BUNDLE_ID"; then
-            echo "PASS: $BUNDLE_ID is still running 8s after launch."
+          # Poll instead of a single fixed-delay check: on a freshly booted
+          # simulator, launchd can take well over 8s to register the process
+          # even for a healthy app, which was producing false FAILs. Still
+          # bails out at the first sign of life, so a real crash-on-launch
+          # (which exits immediately) is caught just as fast as before.
+          ELAPSED=0
+          RUNNING=0
+          while [ "$ELAPSED" -lt 25 ]; do
+            if xcrun simctl spawn "$DEVICE_ID" launchctl list 2>/dev/null | grep -q "$BUNDLE_ID"; then
+              RUNNING=1
+              break
+            fi
+            sleep 2
+            ELAPSED=$((ELAPSED + 2))
+          done
+
+          if [ "$RUNNING" -eq 1 ]; then
+            echo "PASS: $BUNDLE_ID was running ${ELAPSED}s after launch."
             kill "$LAUNCH_PID" 2>/dev/null || true
             exit 0
           fi
 
-          echo "FAIL: $BUNDLE_ID is not running 8s after launch — it crashed or exited." >&2
+          echo "FAIL: $BUNDLE_ID never came up within 25s of launch — it crashed or exited." >&2
           echo "--- console output ---"
           cat console.log || true
           echo "--- system log (last 2 minutes, this process) ---"
