@@ -14,6 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      tag_name: ${{ steps.tag.outputs.name }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -115,3 +117,74 @@ jobs:
             password → Push / Pull.
 
             See `Weaverse/SYNC.md` for details.
+
+            ### iOS (early walking skeleton — not the full app yet)
+            Download `Weaverse-iOS-Simulator-*.zip` and upload it to
+            [appetize.io](https://appetize.io) as an iOS app — it's a Simulator
+            build (no code signing needed) that confirms the Kotlin↔Swift
+            pipeline works, not a ported version of the Android app. See
+            `docs/features/ios-port-plan.md` for status and what's next. This
+            asset is only attached once the `ios-simulator-build` job below
+            finishes — it can lag a few minutes behind the Android/Desktop
+            assets above since macOS runners are slower.
+
+  ios-simulator-build:
+    needs: release
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      # Cheaper, earlier failure point than the full Xcode build below — see
+      # ios-build.yml, which this job mirrors (kept separate so day-to-day
+      # iOS iteration doesn't have to wait for a full Android+Desktop release
+      # cycle; this copy is what actually publishes to the Release page).
+      - name: Compile shared module for iOS Simulator (arm64)
+        run: ./gradlew :shared:compileKotlinIosSimulatorArm64 --stacktrace
+
+      - name: Build iOS app for Simulator
+        run: |
+          xcodebuild \
+            -project iosApp/iosApp.xcodeproj \
+            -scheme iosApp \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            -derivedDataPath build/ios \
+            -destination "generic/platform=iOS Simulator" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Locate and zip the .app bundle
+        run: |
+          APP_PATH=$(find build/ios -name "iosApp.app" -type d | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "iosApp.app not found under build/ios" >&2
+            exit 1
+          fi
+          echo "Found: $APP_PATH"
+          mkdir -p dist
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "dist/Weaverse-iOS-Simulator-${{ needs.release.outputs.tag_name }}.zip"
+
+      # No body/generate_release_notes here — the release job already created
+      # the release with its own body; omitting these leaves that text alone
+      # and just adds this file to the same tag's asset list.
+      - name: Attach iOS Simulator build to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.release.outputs.tag_name }}
+          files: dist/*.zip
