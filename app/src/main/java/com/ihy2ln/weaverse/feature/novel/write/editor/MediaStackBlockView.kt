@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -29,6 +30,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import com.ihy2ln.weaverse.core.text.MediaStackBlock
 import com.ihy2ln.weaverse.core.ui.components.InkDeleteButton
+import com.ihy2ln.weaverse.core.ui.components.InkTextButton
 import com.ihy2ln.weaverse.core.ui.components.MediaEditAction
 import com.ihy2ln.weaverse.core.ui.components.MediaEditPopup
 import com.ihy2ln.weaverse.core.ui.components.MediaEditPopupConfig
@@ -45,7 +47,8 @@ fun MediaStackBlockView(
     canPaste: Boolean,
     onSelect: () -> Unit,
     onRemove: () -> Unit,
-    onCycle: () -> Unit,
+    onCycleNext: () -> Unit,
+    onCyclePrev: () -> Unit,
     onStackAdjacent: () -> Unit,
     onMediaEditAction: (MediaEditAction) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -57,6 +60,8 @@ fun MediaStackBlockView(
     val index = block.currentIndex.coerceIn(0, (ids.size - 1).coerceAtLeast(0))
     val currentId = ids.getOrNull(index)
     val path = currentId?.let { mediaPaths[it] }
+    val canShrink = block.gridColSpan > 1 || block.gridRowSpan > 1
+    val canExpand = block.gridColSpan < 6 || block.gridRowSpan < 6
     val borderColor = if (selected) {
         MaterialTheme.colorScheme.primary
     } else {
@@ -88,7 +93,7 @@ fun MediaStackBlockView(
                 onClick = {
                     onSelect()
                     if (block.collapsed) onMediaEditAction(MediaEditAction.Uncollapse)
-                    else onCycle()
+                    else onCycleNext()
                 },
                 onLongClick = { openMenu(menuAnchor) },
             ),
@@ -143,16 +148,51 @@ fun MediaStackBlockView(
                     Text("Stack · ${ids.size} pictures", color = inkTokens().secondaryText)
                 }
             }
-            Text(
-                text = "Stack ${index + 1}/${ids.size.coerceAtLeast(1)} · tap to cycle",
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .padding(InkSpacing.xs)
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), RoundedCornerShape(4.dp))
-                    .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xxs),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), RoundedCornerShape(4.dp)),
+            ) {
+                InkTextButton(
+                    label = "‹",
+                    onClick = onCyclePrev,
+                    enabled = ids.size > 1,
+                    compact = true,
+                )
+                Text(
+                    text = "${index + 1}/${ids.size.coerceAtLeast(1)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                InkTextButton(
+                    label = "›",
+                    onClick = onCycleNext,
+                    enabled = ids.size > 1,
+                    compact = true,
+                )
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(InkSpacing.xs)
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), RoundedCornerShape(4.dp)),
+            ) {
+                InkTextButton(
+                    label = "−",
+                    onClick = { onMediaEditAction(MediaEditAction.Shrink) },
+                    enabled = canShrink,
+                    compact = true,
+                )
+                InkTextButton(
+                    label = "+",
+                    onClick = { onMediaEditAction(MediaEditAction.Expand) },
+                    enabled = canExpand,
+                    compact = true,
+                )
+            }
             InkDeleteButton(
                 itemName = "this stack",
                 onConfirmedDelete = onRemove,
@@ -165,8 +205,8 @@ fun MediaStackBlockView(
             config = MediaEditPopupConfig(
                 canPaste = canPaste,
                 isCollapsed = block.collapsed,
-                canShrink = block.gridColSpan > 1 || block.gridRowSpan > 1,
-                canExpand = block.gridColSpan < 6 || block.gridRowSpan < 6,
+                canShrink = canShrink,
+                canExpand = canExpand,
                 showStack = true,
             ),
             anchorOffset = menuAnchor,

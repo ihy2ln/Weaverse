@@ -256,13 +256,13 @@ fun WriteScreen(
                 ),
         ) {
             var formatExpanded by remember { mutableStateOf(false) }
+            var promptMenuOpen by remember { mutableStateOf(false) }
             if (!focusMode) {
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(0.dp),
             ) {
                 var mediaMenuOpen by remember { mutableStateOf(false) }
-                var promptMenuOpen by remember { mutableStateOf(false) }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -468,6 +468,8 @@ fun WriteScreen(
                     canRedo = state.canRedo,
                     hasSelection = state.selection.hasSelection,
                     activeMarks = viewModel.activeMarksInSelection(),
+                    // The Prompting dropdown lives in the top chrome, which focus mode hides.
+                    showPrompting = !focusMode,
                 ),
                 onSceneBeatPromptChange = viewModel::updateSceneBeatPrompt,
                 onToggleSceneBeat = viewModel::toggleSceneBeat,
@@ -531,6 +533,7 @@ fun WriteScreen(
                             viewModel.speakText(text)
                         }
                         EditTextAction.Dictate -> startDictate()
+                        EditTextAction.OpenPrompting -> promptMenuOpen = true
                     }
                 },
                 modifier = Modifier.fillMaxSize(),

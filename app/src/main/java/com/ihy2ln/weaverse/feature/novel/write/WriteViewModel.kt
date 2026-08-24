@@ -817,11 +817,12 @@ class WriteViewModel @Inject constructor(
         }
     }
 
-    fun cycleMediaStack(index: Int) {
+    fun cycleMediaStack(index: Int, delta: Int = 1) {
         updateBlocks(recordHistory = false) { blocks ->
             val stack = blocks.getOrNull(index) as? MediaStackBlock ?: return@updateBlocks
-            if (stack.mediaIds.isEmpty()) return@updateBlocks
-            val nextIndex = (stack.currentIndex + 1) % stack.mediaIds.size
+            val size = stack.mediaIds.size
+            if (size == 0) return@updateBlocks
+            val nextIndex = ((stack.currentIndex + delta) % size + size) % size
             blocks[index] = stack.copy(currentIndex = nextIndex)
         }
     }

@@ -327,6 +327,7 @@ fun RoleplayChatDetailScreen(
                                     showFormatting = false,
                                     showWritingAi = false,
                                     showHistory = false,
+                                    showPrompting = false,
                                     showMessageEdit = true,
                                     showSpeak = true,
                                     hasSelection = message.text.isNotBlank(),

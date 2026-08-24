@@ -54,6 +54,8 @@ enum class EditTextAction {
     Speak,
     /** Speech-to-text: insert dictated words at the caret / selection. */
     Dictate,
+    /** Bounce out to the host screen's AI Prompting window (Extend/Summarize/etc). */
+    OpenPrompting,
 }
 
 data class EditTextPopupConfig(
@@ -62,6 +64,8 @@ data class EditTextPopupConfig(
     val showHistory: Boolean = true,
     val showMessageEdit: Boolean = false,
     val showSpeak: Boolean = true,
+    /** Whether a "Prompting" category is offered — only meaningful where a Prompting window exists. */
+    val showPrompting: Boolean = true,
     val canUndo: Boolean = false,
     val canRedo: Boolean = false,
     val hasSelection: Boolean = false,
@@ -69,7 +73,7 @@ data class EditTextPopupConfig(
     val activeMarks: Set<Mark> = emptySet(),
 )
 
-private enum class EditPopupPage { Main, Format }
+private enum class EditPopupPage { Categories, Edit, Format, WritingAi, History }
 
 @Composable
 fun EditTextPopup(
@@ -87,18 +91,19 @@ fun EditTextPopup(
     val labelColor = MaterialTheme.colorScheme.onSurface
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
 
-    // Selecting text (drag-select) re-fires showMenu with a non-empty selection each time,
-    // so jumping straight to Format there means highlighting text always surfaces format
-    // options directly, while a plain long-press (no selection) opens the full Edit menu.
-    var page by remember { mutableStateOf(EditPopupPage.Main) }
+    // Only worth a category-picker step when there's more than one destination —
+    // a config with just Edit enabled (e.g. chat messages) goes straight there.
+    val showCategories = config.showFormatting || config.showPrompting || config.showWritingAi || config.showHistory
+    var page by remember { mutableStateOf(EditPopupPage.Categories) }
     LaunchedEffect(expanded) {
         if (expanded) {
-            page = if (config.hasSelection && config.showFormatting) {
-                EditPopupPage.Format
-            } else {
-                EditPopupPage.Main
-            }
+            page = if (showCategories) EditPopupPage.Categories else EditPopupPage.Edit
         }
+    }
+    val onBackToCategories: (() -> Unit)? = if (showCategories) {
+        { page = EditPopupPage.Categories }
+    } else {
+        null
     }
 
     DropdownMenu(
@@ -108,13 +113,21 @@ fun EditTextPopup(
         modifier = modifier,
     ) {
         when (page) {
-            EditPopupPage.Main -> MainMenuItems(
+            EditPopupPage.Categories -> CategoryMenuItems(
                 config = config,
                 labelColor = labelColor,
                 muted = muted,
                 onAction = onAction,
                 onDismiss = onDismiss,
-                onOpenFormat = { page = EditPopupPage.Format },
+                onNavigate = { page = it },
+            )
+            EditPopupPage.Edit -> EditActionMenuItems(
+                config = config,
+                labelColor = labelColor,
+                muted = muted,
+                onAction = onAction,
+                onDismiss = onDismiss,
+                onBack = onBackToCategories,
             )
             EditPopupPage.Format -> FormatMenuItems(
                 config = config,
@@ -122,22 +135,67 @@ fun EditTextPopup(
                 muted = muted,
                 onAction = onAction,
                 onDismiss = onDismiss,
-                onBack = { page = EditPopupPage.Main },
+                onBack = { page = EditPopupPage.Categories },
+            )
+            EditPopupPage.WritingAi -> WritingAiMenuItems(
+                config = config,
+                labelColor = labelColor,
+                muted = muted,
+                onAction = onAction,
+                onDismiss = onDismiss,
+                onBack = { page = EditPopupPage.Categories },
+            )
+            EditPopupPage.History -> HistoryMenuItems(
+                config = config,
+                labelColor = labelColor,
+                muted = muted,
+                onAction = onAction,
+                onDismiss = onDismiss,
+                onBack = { page = EditPopupPage.Categories },
             )
         }
     }
 }
 
+/** Condensed landing popup: a chip per category instead of one long flat list. */
 @Composable
-private fun MainMenuItems(
+private fun CategoryMenuItems(
     config: EditTextPopupConfig,
     labelColor: Color,
     muted: Color,
     onAction: (EditTextAction) -> Unit,
     onDismiss: () -> Unit,
-    onOpenFormat: () -> Unit,
+    onNavigate: (EditPopupPage) -> Unit,
+) {
+    MenuHeader("Menu", muted)
+    if (config.showFormatting) {
+        Item("Aa · Format", labelColor, onClick = { onNavigate(EditPopupPage.Format) })
+    }
+    if (config.showPrompting) {
+        Item("Prompting", labelColor) { onAction(EditTextAction.OpenPrompting); onDismiss() }
+    }
+    Item("Edit", labelColor, onClick = { onNavigate(EditPopupPage.Edit) })
+    if (config.showWritingAi) {
+        Item("Writing AI", labelColor, onClick = { onNavigate(EditPopupPage.WritingAi) })
+    }
+    if (config.showHistory) {
+        Item("History", labelColor, onClick = { onNavigate(EditPopupPage.History) })
+    }
+}
+
+@Composable
+private fun EditActionMenuItems(
+    config: EditTextPopupConfig,
+    labelColor: Color,
+    muted: Color,
+    onAction: (EditTextAction) -> Unit,
+    onDismiss: () -> Unit,
+    onBack: (() -> Unit)?,
 ) {
     MenuHeader("Edit", muted)
+    if (onBack != null) {
+        Item("← Back", labelColor, onClick = onBack)
+    }
     Item("Copy", labelColor) { onAction(EditTextAction.Copy); onDismiss() }
     Item("Cut", labelColor, enabled = config.hasSelection) {
         onAction(EditTextAction.Cut); onDismiss()
@@ -158,33 +216,43 @@ private fun MainMenuItems(
             onAction(EditTextAction.Speak); onDismiss()
         }
     }
+}
 
-    if (config.showFormatting) {
-        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-        MenuHeader("Format", muted)
-        Item("Format…", labelColor, enabled = config.hasSelection, onClick = onOpenFormat)
+@Composable
+private fun WritingAiMenuItems(
+    config: EditTextPopupConfig,
+    labelColor: Color,
+    muted: Color,
+    onAction: (EditTextAction) -> Unit,
+    onDismiss: () -> Unit,
+    onBack: () -> Unit,
+) {
+    MenuHeader("Writing AI", muted)
+    Item("← Back", labelColor, onClick = onBack)
+    Item("Add to Codex", labelColor, enabled = config.hasSelection) {
+        onAction(EditTextAction.AddToCodex); onDismiss()
     }
+    Item("Shorten", labelColor) { onAction(EditTextAction.Shorten); onDismiss() }
+    Item("Extend", labelColor) { onAction(EditTextAction.Extend); onDismiss() }
+    Item("Replace", labelColor) { onAction(EditTextAction.Replace); onDismiss() }
+}
 
-    if (config.showWritingAi) {
-        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-        MenuHeader("Writing AI", muted)
-        Item("Add to Codex", labelColor, enabled = config.hasSelection) {
-            onAction(EditTextAction.AddToCodex); onDismiss()
-        }
-        Item("Shorten", labelColor) { onAction(EditTextAction.Shorten); onDismiss() }
-        Item("Extend", labelColor) { onAction(EditTextAction.Extend); onDismiss() }
-        Item("Replace", labelColor) { onAction(EditTextAction.Replace); onDismiss() }
+@Composable
+private fun HistoryMenuItems(
+    config: EditTextPopupConfig,
+    labelColor: Color,
+    muted: Color,
+    onAction: (EditTextAction) -> Unit,
+    onDismiss: () -> Unit,
+    onBack: () -> Unit,
+) {
+    MenuHeader("History", muted)
+    Item("← Back", labelColor, onClick = onBack)
+    Item("Undo", labelColor, enabled = config.canUndo) {
+        onAction(EditTextAction.Undo); onDismiss()
     }
-
-    if (config.showHistory) {
-        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-        MenuHeader("History", muted)
-        Item("Undo", labelColor, enabled = config.canUndo) {
-            onAction(EditTextAction.Undo); onDismiss()
-        }
-        Item("Redo", labelColor, enabled = config.canRedo) {
-            onAction(EditTextAction.Redo); onDismiss()
-        }
+    Item("Redo", labelColor, enabled = config.canRedo) {
+        onAction(EditTextAction.Redo); onDismiss()
     }
 }
 
