@@ -1,29 +1,28 @@
 # Native iOS — plan and current status
 
-**Status as of this document: a real, buildable-in-CI walking skeleton —
-not the ported app yet.** There's now a full pipeline: `:shared` (Kotlin
-Multiplatform, Android/iOS/JVM) → `iosApp/` (a minimal SwiftUI app that
-links the shared framework and displays `Platform().name`) → a
-`workflow_dispatch`-triggered `.github/workflows/ios-build.yml` job that
-builds it for the iOS Simulator on a `macos-latest` runner and uploads a
-zipped `.app` as a workflow artifact. That zip is exactly what
+**Status as of this document: the walking skeleton is confirmed working
+on real hardware, and the first real domain code has moved into
+`:shared`.** The pipeline is `:shared` (Kotlin Multiplatform,
+Android/iOS/JVM) → `iosApp/` (a minimal SwiftUI app that links the
+shared framework and displays `Platform().name`) → `.github/workflows/ios-build.yml`
+/ `release.yml`'s `ios-simulator-build` job, which build it for the iOS
+Simulator on a `macos-latest` runner. That zip is exactly what
 appetize.io wants for iOS Simulator testing — **no Apple Developer
 account, certificates, or provisioning profiles needed**, since simulator
 builds don't require code signing at all (the Xcode project explicitly
 sets `CODE_SIGNING_ALLOWED=NO`/`CODE_SIGNING_REQUIRED=NO`).
 
-**The Android app is completely unaffected** — `:shared` isn't depended
-on by `:app`, and `ios-build.yml` is a separate, manually-triggered
-workflow that never touches `release.yml`'s Android/desktop pipeline.
+**Confirmed working, not just CI-green**: the user ran the app on
+appetize.io (iPhone 14 Pro, iOS 16.2) and saw the expected screen —
+"Weaverse — iOS shell — shared Kotlin module linked — Running on iOS
+16.2." That verifies the whole chain end to end: Kotlin compiles for
+iOS, the framework links into a real Swift app via the hand-written
+Xcode project, and the app actually boots and renders in the Simulator.
 
-**Nothing about the Xcode project, the Swift code, or the CI job has
-been verified on real macOS yet** — I don't have a Mac in this sandbox,
-so this is my best-effort reproduction of the standard, well-documented
-Kotlin Multiplatform "direct integration with Xcode" pattern
-(`embedAndSignAppleFrameworkForXcode` run from a build phase), written
-carefully but untested until the workflow actually runs. See "How to
-get your first test build" below for what to do next, and "Known risk
-areas" for where a first run is most likely to need a fix.
+**The Android app is unaffected apart from a new module dependency** —
+`:app` now depends on `:shared` (needed so `:app` can keep using
+`core.text.*`, which partly lives in `:shared` now), but the package
+names didn't change, so no other Android file needed an import update.
 
 ## Platform priority
 
@@ -35,48 +34,35 @@ Desktop (`desktop/` + the web hub) is lowest priority — it already works
 and needs no further investment unless specifically asked for; if
 something has to give, iOS work wins over Desktop work.
 
-## How to get your first test build
+## How to get a test build
 
-1. Push to `claude/prompt-window-ui-updates-ttkkdd` with changes under
-   `shared/`, `iosApp/`, or `.github/workflows/ios-build.yml` — that's
-   what actually triggers a run today (see the workflow file's own
-   comment for why `workflow_dispatch` doesn't work yet: it only
-   becomes fireable via the Actions UI/API once this branch reaches
-   `main`). Check **Actions → iOS Build** for the run.
-2. Wait for it to finish (macOS runners are slower than Linux ones).
-3. Download the `weaverse-ios-simulator-app` artifact from the run — a
-   `Weaverse-iOS-Simulator.zip` containing `iosApp.app`.
-4. Upload that zip directly to appetize.io as an iOS app — it should
-   boot into a plain screen reading "Weaverse — iOS shell — shared
-   Kotlin module linked — Running on iOS <version>". That confirms the
-   whole pipeline end to end: Kotlin compiles for iOS, the framework
-   links into a real Swift app, and Xcode's simulator build succeeds.
+1. Every push to the `Release` workflow (`vX.Y.Z` tag, same as
+   Android/Desktop) now attaches `Weaverse-iOS-Simulator-<tag>.zip` to
+   that GitHub Release once the `ios-simulator-build` job finishes — it
+   can lag a few minutes behind the Android/Desktop assets since macOS
+   runners are slower. There's also a faster, separate
+   `.github/workflows/ios-build.yml` that fires on any push touching
+   `shared/`, `iosApp/`, or the workflow files, for quicker iteration
+   without waiting on a full release.
+2. Download the zip from the Release page (or the workflow run's
+   artifact) — it contains `iosApp.app`.
+3. Upload that zip directly to appetize.io as an iOS app.
 
-If it fails, the workflow's logs will show whether it died in the
+If a run fails, the workflow's logs will show whether it died in the
 "Compile shared module for iOS Simulator" step (a Kotlin/KMP problem) or
-the "Build iOS app for Simulator" step (an Xcode project problem) — send
-me the log and I'll fix it from there; I can iterate against real build
-output now that this exists, even without a Mac myself.
+the "Build iOS app for Simulator" step (an Xcode project problem).
 
-## Known risk areas (untested without a Mac)
+## Known risk areas — resolved
 
-- **`project.pbxproj`** was hand-written, not generated by Xcode. The
-  object graph is internally consistent (every UUID reference resolves)
-  and I've validated the sibling `.xcscheme` as well-formed XML, but
-  Xcode's proprietary pbxproj format itself can't be validated without
-  Xcode/`plutil`, which don't exist on Linux.
-- **`ContentView.swift`'s `import WeaverseShared` / `Platform()`
-  resolution** depends on Kotlin/Native's Objective-C export naming a
-  `expect class Platform` as a plain `Platform` class (which is the
-  well-documented, reliable behavior for exported classes — top-level
-  *functions* are riskier to guess the wrapper name for, which is why
-  `ContentView` calls `Platform().name` and not the `greeting()`
-  top-level function).
-- **`ENABLE_USER_SCRIPT_SANDBOXING = NO`** is set because recent Xcode
-  versions sandbox Run Script build phases by default, which is known to
-  break Gradle-invoking script phases (Gradle needs filesystem/network
-  access the sandbox blocks). This is documented as the standard fix,
-  but I can't confirm it's sufficient without seeing a real build.
+The Xcode project, Swift code, and CI pipeline were originally written
+without access to a Mac and flagged here as unverified. They're no
+longer a risk: the pipeline has both built successfully in CI and run
+correctly on real hardware via appetize.io (iPhone 14 Pro, iOS 16.2),
+confirming the hand-written `project.pbxproj`, the `Platform()` Swift/
+Kotlin interop, and the `ENABLE_USER_SCRIPT_SANDBOXING = NO` Gradle
+build-phase workaround all work as intended. New risk going forward is
+concentrated in whatever gets added next (real UI, Koin, SQLDelight),
+not in this walking-skeleton foundation.
 
 ## Why this is a real, multi-session undertaking
 
@@ -132,20 +118,24 @@ importing an Objective-C API), that's where it'll surface.
 2. **(Done)** Walking-skeleton `iosApp/` SwiftUI shell + hand-written
    Xcode project/scheme linking the shared framework via the standard
    `embedAndSignAppleFrameworkForXcode` direct-integration pattern, plus
-   `.github/workflows/ios-build.yml` (manual `macos-latest` job) building
-   it for the Simulator and uploading an appetize.io-ready `.app` zip.
-   **Unverified on real macOS** — see "Known risk areas" above; a first
-   `workflow_dispatch` run is the next step, not more code, until that
-   comes back green or with a concrete error to fix.
-3. Move genuinely platform-agnostic domain code into `:shared`'s
-   `commonMain` — the best first candidates are `core/text/DocumentModel.kt`
-   and `core/text/MediaGrid.kt` (already pure Kotlin + kotlinx.serialization,
-   already unit-tested, zero Android imports). This requires `:app` to
-   depend on `:shared` and every `core.text.*` import across the app
-   (dozens of files) to update — a real, invasive refactor, deliberately
-   *not* done in this pass to avoid colliding with concurrent work on this
-   branch or risking the shipping Android build without a careful,
-   reviewable step of its own.
+   CI (`ios-build.yml` and `release.yml`'s `ios-simulator-build` job)
+   building it for the Simulator and publishing an appetize.io-ready
+   `.app` zip. **Verified on real hardware** via appetize.io — see
+   "Known risk areas" above.
+3. **(Done)** Moved `core/text/DocumentModel.kt`, `MediaGrid.kt`,
+   `DocumentJson.kt`, and `DocumentSerializers.kt` into `:shared`'s
+   `commonMain`, with their JUnit tests ported to `kotlin.test` in
+   `:shared`'s `commonTest`. This turned out to be far less invasive
+   than originally expected: because the package
+   (`com.ihy2ln.weaverse.core.text`) didn't change, `:app`'s existing
+   `import com.ihy2ln.weaverse.core.text.MediaGrid`-style imports kept
+   working unmodified once `:app` gained
+   `implementation(project(":shared"))` — no per-file import rewrite
+   needed. Left behind deliberately: `MediaStackOps.kt` (uses
+   `java.util.UUID`, JVM-only — would need Kotlin's multiplatform
+   `kotlin.uuid.Uuid` instead), `SpanEdit.kt`/`FontOption.kt` (depend on
+   `androidx.compose.*`), and `Aliases.kt`/`CodexMentionMatcher.kt`/
+   `SceneBeatOps.kt` (pure but deferred to keep this diff reviewable).
 4. Swap Hilt → Koin and Room → SQLDelight for the pieces that move into
    `:shared`, one feature area at a time (start with something small and
    self-contained, e.g. Settings/preferences, before touching the novel
@@ -154,17 +144,15 @@ importing an Objective-C API), that's where it'll surface.
    of the existing `@Composable` tree as the dependency swap allows —
    replacing `iosApp/ContentView.swift`'s plain SwiftUI with a
    `ComposeUIViewController` hosting real app screens.
-6. Once that's real enough to be worth it, consider wiring
-   `ios-build.yml` to run automatically (e.g. on tags, like
-   `release.yml`) instead of manual-only.
+6. **(Done)** `ios-simulator-build` in `release.yml` already runs
+   automatically on every version tag, attaching the Simulator zip
+   straight to the GitHub Release alongside the APK and Desktop zip.
 
 ## On testing today
 
-- **appetize.io** now has something real to test: run `ios-build.yml`
-  and upload the resulting `Weaverse-iOS-Simulator.zip` — see "How to
-  get your first test build" above. It's a Simulator build (matches what
-  appetize.io's iOS support expects) of the walking-skeleton shell, not
-  the full app yet.
+- **appetize.io** — see "How to get a test build" above. Every release
+  now ships a Simulator build; it's still the walking-skeleton shell
+  plus the moved document/media-grid models, not the full app's UI yet.
 - The **desktop web hub** (`desktop/` + `sync-core`'s `WebAssets.kt`) is a
   separate, already-working way to use a simpler version of the app from
   Safari on an iPhone/iPad today, over the same local network — see
