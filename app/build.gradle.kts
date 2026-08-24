@@ -91,6 +91,7 @@ android {
 
 dependencies {
     implementation(project(":sync-core"))
+    implementation(project(":shared"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
