@@ -1,0 +1,68 @@
+name: iOS Build
+
+# Manual only — macOS runners are far more expensive/slower than Linux ones,
+# and this only needs to run when there's iOS work to actually verify, unlike
+# build.yml/release.yml which need to run on every push.
+on:
+  workflow_dispatch:
+
+jobs:
+  ios-simulator-build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Show available Xcode versions
+        run: ls /Applications | grep Xcode
+
+      # Cheaper, earlier failure point than the full Xcode build below — if the
+      # KMP module itself doesn't compile for iOS, this fails fast with a
+      # clearer Gradle/Kotlin error instead of a murkier Xcode build log.
+      - name: Compile shared module for iOS Simulator (arm64)
+        run: ./gradlew :shared:compileKotlinIosSimulatorArm64 --stacktrace
+
+      - name: Build iOS app for Simulator
+        run: |
+          xcodebuild \
+            -project iosApp/iosApp.xcodeproj \
+            -scheme iosApp \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            -derivedDataPath build/ios \
+            -destination "generic/platform=iOS Simulator" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      # appetize.io's iOS support runs Simulator builds specifically — a zipped
+      # .app is exactly what it wants, no signing/provisioning needed.
+      - name: Locate and zip the .app bundle
+        run: |
+          APP_PATH=$(find build/ios -name "iosApp.app" -type d | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "iosApp.app not found under build/ios" >&2
+            exit 1
+          fi
+          echo "Found: $APP_PATH"
+          mkdir -p dist
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" dist/Weaverse-iOS-Simulator.zip
+
+      - name: Upload Simulator .app (upload to appetize.io to test)
+        uses: actions/upload-artifact@v4
+        with:
+          name: weaverse-ios-simulator-app
+          path: dist/Weaverse-iOS-Simulator.zip
+          retention-days: 14

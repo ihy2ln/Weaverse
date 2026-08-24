@@ -31,4 +31,18 @@ Weaverse/data/**
 !Weaverse/data/.gitkeep
 desktop/build/
 sync-core/build/
+shared/build/
 /releases/
+
+# Xcode / iOS
+iosApp/build/
+DerivedData/
+*.xcuserstate
+*.xcuserdatad/
+xcuserdata/
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.xcworkspace
+!default.xcworkspace
+.swiftpm/
