@@ -61,6 +61,8 @@ fun GlobalPromptOverlay(
     novelDest: String? = null,
     modifier: Modifier = Modifier,
     active: Boolean = true,
+    collapsed: Boolean = false,
+    onCollapsedChange: (Boolean) -> Unit = {},
     viewModel: GlobalPromptViewModel = hiltViewModel(),
 ) {
     if (!active) return
@@ -68,6 +70,22 @@ fun GlobalPromptOverlay(
     val state by viewModel.uiState.collectAsState()
     val tokens = inkTokens()
     LaunchedEffect(context) { viewModel.updateContext(context) }
+
+    if (collapsed) {
+        Text(
+            "▴ Prompt",
+            modifier = modifier
+                .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xxs)
+                .clip(RoundedCornerShape(InkSpacing.radiusMd))
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.97f))
+                .border(1.dp, InkAccentBlue, RoundedCornerShape(InkSpacing.radiusMd))
+                .clickable { onCollapsedChange(false) }
+                .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xxs),
+            style = MaterialTheme.typography.labelSmall,
+            color = InkAccentBlue,
+        )
+        return
+    }
 
     val imagePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia(),
@@ -138,6 +156,7 @@ fun GlobalPromptOverlay(
             if (expanded) {
                 InkTextButton(label = "−", onClick = viewModel::dismiss, compact = true)
             }
+            InkTextButton(label = "▾", onClick = { onCollapsedChange(true) }, compact = true)
         }
         VoiceToTextField(
             value = state.text,

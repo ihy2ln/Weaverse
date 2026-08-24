@@ -124,6 +124,7 @@ fun InkMenuChip(
 fun WorkspaceChrome(
     bookTitle: String,
     seriesTitle: String,
+    collapsed: Boolean = false,
     workspaceOptions: List<SegmentedOption>,
     workspaceId: String,
     modeOptions: List<SegmentedOption>,
@@ -156,59 +157,61 @@ fun WorkspaceChrome(
             .padding(top = InkSpacing.sm)
             .border(width = InkSpacing.hairline, color = tokens.hairline),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xxs),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xxs),
-        ) {
-            IconButton(onClick = onLibrary) {
-                Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = "Library")
-            }
-            IconButton(onClick = onSettings) {
-                Icon(Icons.Default.Settings, contentDescription = "Settings")
-            }
-            if (onHelp != null) {
-                IconButton(onClick = onHelp) {
-                    Icon(Icons.Default.HelpOutline, contentDescription = "Help")
+        if (!collapsed) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xxs),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(InkSpacing.xxs),
+            ) {
+                IconButton(onClick = onLibrary) {
+                    Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = "Library")
                 }
-            }
-            if (onSearch != null) {
-                IconButton(onClick = onSearch) {
-                    Icon(Icons.Default.Search, contentDescription = "Search")
+                IconButton(onClick = onSettings) {
+                    Icon(Icons.Default.Settings, contentDescription = "Settings")
                 }
-            }
-            InkMenuChip(
-                label = "Workspace",
-                options = workspaceOptions,
-                selectedId = workspaceId,
-                onSelect = onWorkspace,
-            )
-            InkMenuChip(
-                label = "Mode",
-                options = modeOptions,
-                selectedId = modeId,
-                onSelect = onMode,
-            )
-            InkMenuChip(
-                label = "Focus",
-                options = focusOptions,
-                selectedId = focusId,
-                onSelect = onFocus,
-            )
-            toolOptions.forEach { tab ->
-                InkTextTab(
-                    label = tab.label,
-                    selected = activeToolId == tab.id,
-                    onClick = { onTool(if (activeToolId == tab.id) null else tab.id) },
+                if (onHelp != null) {
+                    IconButton(onClick = onHelp) {
+                        Icon(Icons.Default.HelpOutline, contentDescription = "Help")
+                    }
+                }
+                if (onSearch != null) {
+                    IconButton(onClick = onSearch) {
+                        Icon(Icons.Default.Search, contentDescription = "Search")
+                    }
+                }
+                InkMenuChip(
+                    label = "Workspace",
+                    options = workspaceOptions,
+                    selectedId = workspaceId,
+                    onSelect = onWorkspace,
                 )
+                InkMenuChip(
+                    label = "Mode",
+                    options = modeOptions,
+                    selectedId = modeId,
+                    onSelect = onMode,
+                )
+                InkMenuChip(
+                    label = "Focus",
+                    options = focusOptions,
+                    selectedId = focusId,
+                    onSelect = onFocus,
+                )
+                toolOptions.forEach { tab ->
+                    InkTextTab(
+                        label = tab.label,
+                        selected = activeToolId == tab.id,
+                        onClick = { onTool(if (activeToolId == tab.id) null else tab.id) },
+                    )
+                }
+                InkTextButton(label = "Import", onClick = onImport)
+                InkTextButton(label = "Export", onClick = onExport)
+                InkTextButton(label = "Undo", onClick = onUndo, enabled = canUndo)
+                InkTextButton(label = "Redo", onClick = onRedo, enabled = canRedo)
             }
-            InkTextButton(label = "Import", onClick = onImport)
-            InkTextButton(label = "Export", onClick = onExport)
-            InkTextButton(label = "Undo", onClick = onUndo, enabled = canUndo)
-            InkTextButton(label = "Redo", onClick = onRedo, enabled = canRedo)
         }
         Box(
             modifier = Modifier

@@ -76,6 +76,8 @@ fun WriteScreen(
     jumpKind: String = "Scene",
     onOpenCodexEntry: (String) -> Unit = {},
     onJumpKind: (String) -> Unit = {},
+    focusMode: Boolean = false,
+    onFocusModeChange: (Boolean) -> Unit = {},
     viewModel: WriteViewModel = hiltViewModel(),
 ) {
     val reviewKind = runCatching { WriteJumpKind.valueOf(jumpKind) }.getOrNull()
@@ -91,7 +93,6 @@ fun WriteScreen(
     val state by viewModel.uiState.collectAsState()
     val tokens = inkTokens()
     val clipboard = LocalClipboardManager.current
-    var focusMode by rememberSaveable { mutableStateOf(false) }
     var writeMenuOpen by remember { mutableStateOf(false) }
     var modelsOpen by remember { mutableStateOf(false) }
     var modelSearch by rememberSaveable { mutableStateOf("") }
@@ -392,7 +393,7 @@ fun WriteScreen(
                         }
                         InkTextButton(
                             label = "Focus",
-                            onClick = { focusMode = true },
+                            onClick = { onFocusModeChange(true) },
                             compact = true,
                         )
                 }
@@ -791,7 +792,7 @@ fun WriteScreen(
         if (focusMode) {
             InkTextButton(
                 label = "Exit focus",
-                onClick = { focusMode = false },
+                onClick = { onFocusModeChange(false) },
                 compact = true,
                 modifier = Modifier
                     .align(Alignment.TopEnd)

@@ -112,6 +112,8 @@ fun AppShell(
     var showLibrary by rememberSaveable { mutableStateOf(true) }
     var showExport by rememberSaveable { mutableStateOf(false) }
     var workspaceFocus by rememberSaveable { mutableStateOf(WorkspaceFocus.Story.name) }
+    var writeFocusMode by rememberSaveable { mutableStateOf(false) }
+    var promptCollapsed by rememberSaveable { mutableStateOf(false) }
     var chromeTool by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedRpChatId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedRpMode by rememberSaveable { mutableStateOf<String?>(null) }
@@ -234,6 +236,7 @@ fun AppShell(
             WorkspaceChrome(
                 bookTitle = chromeTitle,
                 seriesTitle = chromeSubtitle,
+                collapsed = writeFocusMode,
                 workspaceOptions = listOf(
                     SegmentedOption(AppMode.Novel.name, "Novel"),
                     SegmentedOption(AppMode.Roleplay.name, "Roleplay"),
@@ -530,6 +533,8 @@ fun AppShell(
                                     jumpKind = writeJumpKind,
                                     onOpenCodexEntry = { selectedCodexEntryId = it },
                                     onJumpKind = { writeJumpKind = it },
+                                    focusMode = writeFocusMode,
+                                    onFocusModeChange = { writeFocusMode = it },
                                 )
                                 NovelDestination.Chat -> WorkshopChatScreen(threadId = selectedThreadId)
                             }
@@ -595,7 +600,9 @@ fun AppShell(
                 novelDest = novelDest,
             ),
             novelDest = novelDest,
-            active = !showLibrary && !showSettings && !showSearch && !showExport,
+            active = !showLibrary && !showSettings && !showSearch && !showExport && !writeFocusMode,
+            collapsed = promptCollapsed,
+            onCollapsedChange = { promptCollapsed = it },
             modifier = Modifier.align(Alignment.BottomCenter),
         )
         if (selectedCodexEntryId != null) {
