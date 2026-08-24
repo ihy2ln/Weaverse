@@ -22,7 +22,8 @@ data class BookEntity(
     val title: String,
     val genre: String = "",
     val pov: String = "",
-    val povCharacterName: String = "",
+    /** Links to a "Characters" Codex entry rather than storing a free-text name. */
+    val povCharacterId: String? = null,
     val premise: String = "",
     val tense: String = "",
     val styleGuide: String = "",

@@ -60,7 +60,7 @@ import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
         PromptEntity::class,
         AiProfileEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = false,
 )
 @TypeConverters(InkTypeConverters::class)
@@ -98,6 +98,13 @@ abstract class WeaverseDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE books ADD COLUMN povCharacterName TEXT NOT NULL DEFAULT ''")
                 db.execSQL("ALTER TABLE books ADD COLUMN premise TEXT NOT NULL DEFAULT ''")
+            }
+        }
+        // Replaces the free-text povCharacterName with a link into the Codex "Characters"
+        // category; the old column is left in place (unused) rather than dropped.
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE books ADD COLUMN povCharacterId TEXT")
             }
         }
     }

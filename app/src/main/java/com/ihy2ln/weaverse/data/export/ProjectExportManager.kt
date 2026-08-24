@@ -509,12 +509,12 @@ class ProjectExportManager @Inject constructor(
 
 private fun BookEntity.toDto() = BookDto(
     id = id, seriesId = seriesId, title = title, genre = genre, pov = pov,
-    povCharacterName = povCharacterName, premise = premise, tense = tense, styleGuide = styleGuide,
+    povCharacterId = povCharacterId, premise = premise, tense = tense, styleGuide = styleGuide,
     targetWordCount = targetWordCount, coverMediaId = coverMediaId, createdAt = createdAt, updatedAt = updatedAt,
 )
 private fun BookDto.toEntity() = BookEntity(
     id = id, seriesId = seriesId, title = title, genre = genre, pov = pov,
-    povCharacterName = povCharacterName, premise = premise, tense = tense, styleGuide = styleGuide,
+    povCharacterId = povCharacterId, premise = premise, tense = tense, styleGuide = styleGuide,
     targetWordCount = targetWordCount, coverMediaId = coverMediaId, createdAt = createdAt, updatedAt = updatedAt,
 )
 private fun ActEntity.toDto() = ActDto(id, bookId, title, sortOrder)

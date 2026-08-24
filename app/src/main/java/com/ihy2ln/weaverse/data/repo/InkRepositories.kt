@@ -76,7 +76,7 @@ class BookRepository @Inject constructor(
         seriesId: String? = null,
         genre: String = "",
         pov: String = "",
-        povCharacterName: String = "",
+        povCharacterId: String? = null,
         premise: String = "",
     ): BookEntity {
         val now = System.currentTimeMillis()
@@ -90,7 +90,7 @@ class BookRepository @Inject constructor(
             title = title.ifBlank { "Untitled Book" },
             genre = genre,
             pov = pov,
-            povCharacterName = povCharacterName,
+            povCharacterId = povCharacterId,
             premise = premise,
             createdAt = now,
             updatedAt = now,

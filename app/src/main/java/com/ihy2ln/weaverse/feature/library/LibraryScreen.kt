@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import com.ihy2ln.weaverse.core.ui.components.InkCard
+import com.ihy2ln.weaverse.core.ui.components.InkChip
 import com.ihy2ln.weaverse.core.ui.components.InkConfirmButton
 import com.ihy2ln.weaverse.core.ui.components.InkDeleteButton
 import com.ihy2ln.weaverse.core.ui.components.InkModeCapsule
@@ -48,10 +49,12 @@ import com.ihy2ln.weaverse.core.ui.components.InkOutlinedButton
 import com.ihy2ln.weaverse.core.ui.components.InkSegmentedPill
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
 import com.ihy2ln.weaverse.core.ui.components.SegmentedOption
+import com.ihy2ln.weaverse.core.ui.theme.CodexCharacters
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import com.ihy2ln.weaverse.core.ui.util.adaptiveContentPadding
 import com.ihy2ln.weaverse.data.db.entities.BookEntity
+import com.ihy2ln.weaverse.data.db.entities.CodexEntryEntity
 import com.ihy2ln.weaverse.feature.novel.plan.PlanPovOptions
 import java.io.File
 import java.text.DateFormat
@@ -62,6 +65,7 @@ fun LibraryScreen(
     onOpenBook: (bookId: String, sceneId: String?) -> Unit,
     onWriteBook: (bookId: String, sceneId: String?) -> Unit = onOpenBook,
     onOpenExport: (bookId: String?) -> Unit = {},
+    onOpenCodexEntry: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
@@ -90,8 +94,9 @@ fun LibraryScreen(
                 onTitle = viewModel::onNewBookTitle,
                 onGenre = viewModel::onNewBookGenre,
                 onPov = viewModel::onNewBookPov,
-                onPovCharacter = viewModel::onNewBookPovCharacterName,
+                onPovCharacterId = viewModel::onNewBookPovCharacterId,
                 onPremise = viewModel::onNewBookPremise,
+                onOpenCodexEntry = onOpenCodexEntry,
                 onConfirm = {
                     viewModel.createBook { bookId, sceneId -> onWriteBook(bookId, sceneId) }
                     showNewNovelDialog = false
@@ -102,8 +107,10 @@ fun LibraryScreen(
         editingBook?.let { book ->
             EditNovelDialog(
                 book = book,
-                onSave = { title, genre, pov, povCharacter, premise ->
-                    viewModel.updateBookDetails(book.id, title, genre, pov, povCharacter, premise)
+                characters = state.characters,
+                onOpenCodexEntry = onOpenCodexEntry,
+                onSave = { title, genre, pov, povCharacterId, premise ->
+                    viewModel.updateBookDetails(book.id, title, genre, pov, povCharacterId, premise)
                     editingBook = null
                 },
                 onDismiss = { editingBook = null },
@@ -177,8 +184,10 @@ private fun NovelDetailsFields(
     onGenre: (String) -> Unit,
     pov: String,
     onPov: (String) -> Unit,
-    povCharacter: String,
-    onPovCharacter: (String) -> Unit,
+    characters: List<CodexEntryEntity>,
+    povCharacterId: String?,
+    onPovCharacterId: (String?) -> Unit,
+    onOpenCodexEntry: (String) -> Unit,
     premise: String,
     onPremise: (String) -> Unit,
 ) {
@@ -227,14 +236,54 @@ private fun NovelDetailsFields(
             }
         }
         Spacer(modifier = Modifier.height(InkSpacing.sm))
-        OutlinedTextField(
-            value = povCharacter,
-            onValueChange = onPovCharacter,
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            label = { Text("POV character") },
-            placeholder = { Text("Who the story follows") },
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "POV character",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            val selected = characters.find { it.id == povCharacterId }
+            if (selected != null) {
+                Spacer(modifier = Modifier.width(InkSpacing.xs))
+                Text(
+                    "· open in Codex ↗",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable { onOpenCodexEntry(selected.id) },
+                )
+            }
+        }
+        if (characters.isEmpty()) {
+            Text(
+                "No Codex characters yet — add one from the Codex tab first.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = InkSpacing.xxs),
+            )
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(top = InkSpacing.xxs),
+                horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+            ) {
+                InkChip(
+                    label = "None",
+                    color = CodexCharacters,
+                    selected = povCharacterId == null,
+                    onClick = { onPovCharacterId(null) },
+                )
+                characters.forEach { character ->
+                    InkChip(
+                        label = character.name,
+                        color = CodexCharacters,
+                        selected = povCharacterId == character.id,
+                        onClick = { onPovCharacterId(character.id) },
+                    )
+                }
+            }
+        }
         Spacer(modifier = Modifier.height(InkSpacing.sm))
         OutlinedTextField(
             value = premise,
@@ -254,8 +303,9 @@ private fun NewNovelDialog(
     onTitle: (String) -> Unit,
     onGenre: (String) -> Unit,
     onPov: (String) -> Unit,
-    onPovCharacter: (String) -> Unit,
+    onPovCharacterId: (String?) -> Unit,
     onPremise: (String) -> Unit,
+    onOpenCodexEntry: (String) -> Unit,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -270,8 +320,10 @@ private fun NewNovelDialog(
                 onGenre = onGenre,
                 pov = state.newBookPov,
                 onPov = onPov,
-                povCharacter = state.newBookPovCharacterName,
-                onPovCharacter = onPovCharacter,
+                characters = state.characters,
+                povCharacterId = state.newBookPovCharacterId,
+                onPovCharacterId = onPovCharacterId,
+                onOpenCodexEntry = onOpenCodexEntry,
                 premise = state.newBookPremise,
                 onPremise = onPremise,
             )
@@ -288,13 +340,15 @@ private fun NewNovelDialog(
 @Composable
 private fun EditNovelDialog(
     book: BookEntity,
-    onSave: (title: String, genre: String, pov: String, povCharacter: String, premise: String) -> Unit,
+    characters: List<CodexEntryEntity>,
+    onOpenCodexEntry: (String) -> Unit,
+    onSave: (title: String, genre: String, pov: String, povCharacterId: String?, premise: String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var title by remember(book.id) { mutableStateOf(book.title) }
     var genre by remember(book.id) { mutableStateOf(book.genre) }
     var pov by remember(book.id) { mutableStateOf(book.pov) }
-    var povCharacter by remember(book.id) { mutableStateOf(book.povCharacterName) }
+    var povCharacterId by remember(book.id) { mutableStateOf(book.povCharacterId) }
     var premise by remember(book.id) { mutableStateOf(book.premise) }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -307,14 +361,16 @@ private fun EditNovelDialog(
                 onGenre = { genre = it },
                 pov = pov,
                 onPov = { pov = it },
-                povCharacter = povCharacter,
-                onPovCharacter = { povCharacter = it },
+                characters = characters,
+                povCharacterId = povCharacterId,
+                onPovCharacterId = { povCharacterId = it },
+                onOpenCodexEntry = onOpenCodexEntry,
                 premise = premise,
                 onPremise = { premise = it },
             )
         },
         confirmButton = {
-            TextButton(onClick = { onSave(title, genre, pov, povCharacter, premise) }) { Text("Save") }
+            TextButton(onClick = { onSave(title, genre, pov, povCharacterId, premise) }) { Text("Save") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }

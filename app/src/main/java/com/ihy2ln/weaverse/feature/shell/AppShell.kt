@@ -389,6 +389,7 @@ fun AppShell(
                         mode = AppMode.Novel.name
                     },
                     onOpenExport = { showExport = true },
+                    onOpenCodexEntry = { selectedCodexEntryId = it },
                     modifier = Modifier.weight(1f).fillMaxSize(),
                 )
                 selectedCharacterId != null -> Box(Modifier.weight(1f).fillMaxSize()) {

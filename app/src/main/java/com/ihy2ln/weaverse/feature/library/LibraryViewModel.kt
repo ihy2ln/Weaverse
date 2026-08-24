@@ -5,10 +5,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ihy2ln.weaverse.core.media.MediaRepository
 import com.ihy2ln.weaverse.data.db.entities.BookEntity
+import com.ihy2ln.weaverse.data.db.entities.CodexEntryEntity
 import com.ihy2ln.weaverse.data.db.entities.SeriesEntity
 import com.ihy2ln.weaverse.data.export.ProjectExportManager
 import com.ihy2ln.weaverse.data.export.SampleBookImporter
 import com.ihy2ln.weaverse.data.repo.BookRepository
+import com.ihy2ln.weaverse.data.repo.CodexRepository
 import com.ihy2ln.weaverse.data.repo.SeriesRepository
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
 import com.ihy2ln.weaverse.feature.shell.WorkspaceHistory
@@ -53,19 +55,22 @@ data class LibraryUiState(
     val newBookTitle: String = "",
     val newBookGenre: String = "",
     val newBookPov: String = "",
-    val newBookPovCharacterName: String = "",
+    val newBookPovCharacterId: String? = null,
     val newBookPremise: String = "",
     val newSeriesTitle: String = "",
     val assignSeriesId: String = "",
     val status: String = "",
     val busy: Boolean = false,
     val hasIsekaiGacha: Boolean = false,
+    /** "Characters" Codex entries, offered as the POV character picker. */
+    val characters: List<CodexEntryEntity> = emptyList(),
 )
 
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
     private val bookRepository: BookRepository,
     private val seriesRepository: SeriesRepository,
+    private val codexRepository: CodexRepository,
     private val settings: SettingsRepository,
     private val mediaRepository: MediaRepository,
     private val exportManager: ProjectExportManager,
@@ -82,6 +87,18 @@ class LibraryViewModel @Inject constructor(
         books.find { it.id == prefs.selectedBookId } ?: books.firstOrNull()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    private val charactersFlow = combine(
+        codexRepository.observeAllCategories(),
+        codexRepository.observeAllEntries(),
+    ) { categories, entries ->
+        val characterCatIds = categories
+            .filter { it.name.equals("Characters", ignoreCase = true) }
+            .map { it.id }
+            .toSet()
+        entries.filter { it.categoryId in characterCatIds || characterCatIds.isEmpty() }
+            .sortedBy { it.name }
+    }
+
     init {
         viewModelScope.launch {
             combine(
@@ -89,7 +106,8 @@ class LibraryViewModel @Inject constructor(
                 seriesRepository.observeSeries(),
                 settings.preferences,
                 mediaRepository.observeAll(),
-            ) { books, series, prefs, media ->
+                charactersFlow,
+            ) { books, series, prefs, media, characters ->
                 val groups = buildList {
                     series.forEach { s ->
                         add(SeriesGroup(s, books.filter { it.seriesId == s.id }))
@@ -121,13 +139,14 @@ class LibraryViewModel @Inject constructor(
                     newBookTitle = _uiState.value.newBookTitle,
                     newBookGenre = _uiState.value.newBookGenre,
                     newBookPov = _uiState.value.newBookPov,
-                    newBookPovCharacterName = _uiState.value.newBookPovCharacterName,
+                    newBookPovCharacterId = _uiState.value.newBookPovCharacterId,
                     newBookPremise = _uiState.value.newBookPremise,
                     newSeriesTitle = _uiState.value.newSeriesTitle,
                     assignSeriesId = _uiState.value.assignSeriesId,
                     status = _uiState.value.status,
                     busy = _uiState.value.busy,
                     hasIsekaiGacha = books.any { it.title.equals(SampleBookImporter.BOOK_TITLE, ignoreCase = true) },
+                    characters = characters,
                 )
             }.collect { _uiState.value = it }
         }
@@ -137,7 +156,7 @@ class LibraryViewModel @Inject constructor(
     fun onNewBookTitle(value: String) = _uiState.update { it.copy(newBookTitle = value) }
     fun onNewBookGenre(value: String) = _uiState.update { it.copy(newBookGenre = value) }
     fun onNewBookPov(value: String) = _uiState.update { it.copy(newBookPov = value) }
-    fun onNewBookPovCharacterName(value: String) = _uiState.update { it.copy(newBookPovCharacterName = value) }
+    fun onNewBookPovCharacterId(value: String?) = _uiState.update { it.copy(newBookPovCharacterId = value) }
     fun onNewBookPremise(value: String) = _uiState.update { it.copy(newBookPremise = value) }
     fun onNewSeriesTitle(value: String) = _uiState.update { it.copy(newSeriesTitle = value) }
     fun onAssignSeriesId(value: String) = _uiState.update { it.copy(assignSeriesId = value) }
@@ -151,7 +170,7 @@ class LibraryViewModel @Inject constructor(
                 seriesId = seriesId,
                 genre = _uiState.value.newBookGenre,
                 pov = _uiState.value.newBookPov,
-                povCharacterName = _uiState.value.newBookPovCharacterName,
+                povCharacterId = _uiState.value.newBookPovCharacterId,
                 premise = _uiState.value.newBookPremise,
             )
             settings.setSelectedBookId(book.id)
@@ -161,7 +180,7 @@ class LibraryViewModel @Inject constructor(
                     newBookTitle = "",
                     newBookGenre = "",
                     newBookPov = "",
-                    newBookPovCharacterName = "",
+                    newBookPovCharacterId = null,
                     newBookPremise = "",
                     assignSeriesId = "",
                 )
@@ -187,7 +206,7 @@ class LibraryViewModel @Inject constructor(
         title: String,
         genre: String,
         pov: String,
-        povCharacterName: String,
+        povCharacterId: String?,
         premise: String,
     ) {
         viewModelScope.launch {
@@ -196,7 +215,7 @@ class LibraryViewModel @Inject constructor(
                 title = title.ifBlank { "Untitled Book" },
                 genre = genre,
                 pov = pov,
-                povCharacterName = povCharacterName,
+                povCharacterId = povCharacterId,
                 premise = premise,
             )
             bookRepository.updateBook(after)
