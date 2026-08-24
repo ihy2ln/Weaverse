@@ -1,24 +1,34 @@
 package com.ihy2ln.weaverse.feature.library
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,6 +43,7 @@ import coil3.compose.AsyncImage
 import com.ihy2ln.weaverse.core.ui.components.InkCard
 import com.ihy2ln.weaverse.core.ui.components.InkConfirmButton
 import com.ihy2ln.weaverse.core.ui.components.InkDeleteButton
+import com.ihy2ln.weaverse.core.ui.components.InkModeCapsule
 import com.ihy2ln.weaverse.core.ui.components.InkOutlinedButton
 import com.ihy2ln.weaverse.core.ui.components.InkSegmentedPill
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
@@ -41,6 +52,7 @@ import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import com.ihy2ln.weaverse.core.ui.util.adaptiveContentPadding
 import com.ihy2ln.weaverse.data.db.entities.BookEntity
+import com.ihy2ln.weaverse.feature.novel.plan.PlanPovOptions
 import java.io.File
 import java.text.DateFormat
 import java.util.Date
@@ -56,6 +68,7 @@ fun LibraryScreen(
     val state by viewModel.uiState.collectAsState()
     val tokens = inkTokens()
     val contentPad = adaptiveContentPadding()
+    var showNewNovelDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -65,13 +78,26 @@ fun LibraryScreen(
         Text("Your Novels", style = MaterialTheme.typography.headlineSmall)
         InkOutlinedButton(
             label = "+ Create Novel",
-            onClick = {
-                viewModel.createBook { bookId, sceneId -> onWriteBook(bookId, sceneId) }
-            },
+            onClick = { showNewNovelDialog = true },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = InkSpacing.sm, bottom = InkSpacing.md),
         )
+        if (showNewNovelDialog) {
+            NewNovelDialog(
+                state = state,
+                onTitle = viewModel::onNewBookTitle,
+                onGenre = viewModel::onNewBookGenre,
+                onPov = viewModel::onNewBookPov,
+                onPovCharacter = viewModel::onNewBookPovCharacterName,
+                onPremise = viewModel::onNewBookPremise,
+                onConfirm = {
+                    viewModel.createBook { bookId, sceneId -> onWriteBook(bookId, sceneId) }
+                    showNewNovelDialog = false
+                },
+                onDismiss = { showNewNovelDialog = false },
+            )
+        }
         if (!state.hasIsekaiGacha) {
             InkOutlinedButton(
                 label = "Import Isekai Gacha ZIP",
@@ -108,7 +134,6 @@ fun LibraryScreen(
         when (state.tab) {
             LibraryTab.Novels -> NovelsTab(
                 state = state,
-                onTitle = viewModel::onNewBookTitle,
                 onOpen = { book ->
                     viewModel.openBook(book.id) { sceneId -> onOpenBook(book.id, sceneId) }
                 },
@@ -133,9 +158,97 @@ fun LibraryScreen(
 }
 
 @Composable
-private fun NovelsTab(
+private fun NewNovelDialog(
     state: LibraryUiState,
     onTitle: (String) -> Unit,
+    onGenre: (String) -> Unit,
+    onPov: (String) -> Unit,
+    onPovCharacter: (String) -> Unit,
+    onPremise: (String) -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("New Novel") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                OutlinedTextField(
+                    value = state.newBookTitle,
+                    onValueChange = onTitle,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Title") },
+                    placeholder = { Text("Untitled Book") },
+                )
+                Spacer(modifier = Modifier.height(InkSpacing.sm))
+                OutlinedTextField(
+                    value = state.newBookGenre,
+                    onValueChange = onGenre,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Genre") },
+                    placeholder = { Text("Fantasy, Romance, Thriller…") },
+                )
+                Spacer(modifier = Modifier.height(InkSpacing.sm))
+                Text(
+                    "Point of view",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(top = InkSpacing.xxs),
+                    horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+                ) {
+                    PlanPovOptions.forEach { pov ->
+                        InkModeCapsule(
+                            label = pov,
+                            selected = state.newBookPov == pov,
+                            onClick = { onPov(pov) },
+                            compact = true,
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(InkSpacing.sm))
+                OutlinedTextField(
+                    value = state.newBookPovCharacterName,
+                    onValueChange = onPovCharacter,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("POV character") },
+                    placeholder = { Text("Who the story follows") },
+                )
+                Spacer(modifier = Modifier.height(InkSpacing.sm))
+                OutlinedTextField(
+                    value = state.newBookPremise,
+                    onValueChange = onPremise,
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2,
+                    maxLines = 4,
+                    label = { Text("Premise (optional)") },
+                    placeholder = { Text("One or two sentences about the story") },
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) { Text("Create") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
+private fun NovelsTab(
+    state: LibraryUiState,
     onOpen: (BookEntity) -> Unit,
     onDelete: (String) -> Unit,
     onExport: (String) -> Unit,
@@ -147,15 +260,6 @@ private fun NovelsTab(
             style = MaterialTheme.typography.labelLarge,
             color = tokens.secondaryText,
             modifier = Modifier.padding(vertical = InkSpacing.sm),
-        )
-        OutlinedTextField(
-            value = state.newBookTitle,
-            onValueChange = onTitle,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = InkSpacing.sm),
-            singleLine = true,
-            placeholder = { Text("New book title") },
         )
         LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
             items(state.cards, key = { it.book.id }) { card ->

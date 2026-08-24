@@ -70,6 +70,8 @@ data class BookDto(
     val title: String,
     val genre: String = "",
     val pov: String = "",
+    val povCharacterName: String = "",
+    val premise: String = "",
     val tense: String = "",
     val styleGuide: String = "",
     val targetWordCount: Int = 0,

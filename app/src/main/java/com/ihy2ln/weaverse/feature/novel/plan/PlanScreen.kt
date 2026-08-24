@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -17,9 +18,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -78,6 +81,7 @@ fun PlanScreen(
     var viewMode by rememberSaveable { mutableStateOf(PlanViewMode.Grid.name) }
     var selectedSceneId by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingDeleteSceneId by rememberSaveable { mutableStateOf<String?>(null) }
+    var showStructurePicker by rememberSaveable { mutableStateOf(false) }
     val state by viewModel.uiState.collectAsState()
     val focusRequester = remember { FocusRequester() }
     val contentPad = adaptiveContentPadding()
@@ -116,12 +120,29 @@ fun PlanScreen(
                 onDismiss = { pendingDeleteSceneId = null },
             )
         }
-        InkSegmentedPill(
-            options = PlanViewMode.entries.map { SegmentedOption(it.name, it.name) },
-            selectedId = viewMode,
-            onSelect = { viewMode = it },
-            modifier = Modifier.padding(bottom = InkSpacing.md),
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = InkSpacing.md),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            InkSegmentedPill(
+                options = PlanViewMode.entries.map { SegmentedOption(it.name, it.name) },
+                selectedId = viewMode,
+                onSelect = { viewMode = it },
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            InkTextButton(label = "Structure ▾", onClick = { showStructurePicker = true })
+        }
+        if (showStructurePicker) {
+            StructureTemplatePickerDialog(
+                onSelect = { template ->
+                    viewModel.applyStructureTemplate(template)
+                    showStructurePicker = false
+                },
+                onDismiss = { showStructurePicker = false },
+            )
+        }
         when (PlanViewMode.valueOf(viewMode)) {
             PlanViewMode.Grid -> PlanGridView(
                 scenes = state.scenes,
@@ -176,6 +197,57 @@ fun PlanScreen(
             )
         }
     }
+}
+
+@Composable
+private fun StructureTemplatePickerDialog(
+    onSelect: (StoryStructureTemplate) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val tokens = inkTokens()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Chapter structure") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp),
+            ) {
+                Text(
+                    "Lay out chapters as story beats from a popular framework, then fill them in.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.secondaryText,
+                    modifier = Modifier.padding(bottom = InkSpacing.sm),
+                )
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                    items(StoryStructureTemplates.all, key = { it.id }) { template ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onSelect(template) }
+                                .padding(vertical = InkSpacing.sm),
+                        ) {
+                            Text(template.templateName, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                template.summary,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = tokens.secondaryText,
+                            )
+                            Text(
+                                "${template.beats.size} chapters",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = tokens.secondaryText,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
 
 @Composable

@@ -508,10 +508,14 @@ class ProjectExportManager @Inject constructor(
 // --- Entity ↔ DTO mappers ---
 
 private fun BookEntity.toDto() = BookDto(
-    id, seriesId, title, genre, pov, tense, styleGuide, targetWordCount, coverMediaId, createdAt, updatedAt,
+    id = id, seriesId = seriesId, title = title, genre = genre, pov = pov,
+    povCharacterName = povCharacterName, premise = premise, tense = tense, styleGuide = styleGuide,
+    targetWordCount = targetWordCount, coverMediaId = coverMediaId, createdAt = createdAt, updatedAt = updatedAt,
 )
 private fun BookDto.toEntity() = BookEntity(
-    id, seriesId, title, genre, pov, tense, styleGuide, targetWordCount, coverMediaId, createdAt, updatedAt,
+    id = id, seriesId = seriesId, title = title, genre = genre, pov = pov,
+    povCharacterName = povCharacterName, premise = premise, tense = tense, styleGuide = styleGuide,
+    targetWordCount = targetWordCount, coverMediaId = coverMediaId, createdAt = createdAt, updatedAt = updatedAt,
 )
 private fun ActEntity.toDto() = ActDto(id, bookId, title, sortOrder)
 private fun ActDto.toEntity() = ActEntity(id, bookId, title, sortOrder)

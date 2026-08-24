@@ -71,7 +71,14 @@ class BookRepository @Inject constructor(
     suspend fun getBook(id: String): BookEntity? = db.bookDao().getById(id)
     fun observeBooksInSeries(seriesId: String): Flow<List<BookEntity>> = db.bookDao().observeBySeries(seriesId)
 
-    suspend fun createBook(title: String, seriesId: String? = null): BookEntity {
+    suspend fun createBook(
+        title: String,
+        seriesId: String? = null,
+        genre: String = "",
+        pov: String = "",
+        povCharacterName: String = "",
+        premise: String = "",
+    ): BookEntity {
         val now = System.currentTimeMillis()
         val bookId = "book-${UUID.randomUUID()}"
         val actId = "act-$bookId"
@@ -81,6 +88,10 @@ class BookRepository @Inject constructor(
             id = bookId,
             seriesId = seriesId,
             title = title.ifBlank { "Untitled Book" },
+            genre = genre,
+            pov = pov,
+            povCharacterName = povCharacterName,
+            premise = premise,
             createdAt = now,
             updatedAt = now,
         )

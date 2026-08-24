@@ -51,6 +51,10 @@ data class LibraryUiState(
     val seriesGroups: List<SeriesGroup> = emptyList(),
     val selectedBookId: String = "",
     val newBookTitle: String = "",
+    val newBookGenre: String = "",
+    val newBookPov: String = "",
+    val newBookPovCharacterName: String = "",
+    val newBookPremise: String = "",
     val newSeriesTitle: String = "",
     val assignSeriesId: String = "",
     val status: String = "",
@@ -115,6 +119,10 @@ class LibraryViewModel @Inject constructor(
                     seriesGroups = groups,
                     selectedBookId = prefs.selectedBookId,
                     newBookTitle = _uiState.value.newBookTitle,
+                    newBookGenre = _uiState.value.newBookGenre,
+                    newBookPov = _uiState.value.newBookPov,
+                    newBookPovCharacterName = _uiState.value.newBookPovCharacterName,
+                    newBookPremise = _uiState.value.newBookPremise,
                     newSeriesTitle = _uiState.value.newSeriesTitle,
                     assignSeriesId = _uiState.value.assignSeriesId,
                     status = _uiState.value.status,
@@ -127,6 +135,10 @@ class LibraryViewModel @Inject constructor(
 
     fun setTab(tab: LibraryTab) = _uiState.update { it.copy(tab = tab) }
     fun onNewBookTitle(value: String) = _uiState.update { it.copy(newBookTitle = value) }
+    fun onNewBookGenre(value: String) = _uiState.update { it.copy(newBookGenre = value) }
+    fun onNewBookPov(value: String) = _uiState.update { it.copy(newBookPov = value) }
+    fun onNewBookPovCharacterName(value: String) = _uiState.update { it.copy(newBookPovCharacterName = value) }
+    fun onNewBookPremise(value: String) = _uiState.update { it.copy(newBookPremise = value) }
     fun onNewSeriesTitle(value: String) = _uiState.update { it.copy(newSeriesTitle = value) }
     fun onAssignSeriesId(value: String) = _uiState.update { it.copy(assignSeriesId = value) }
 
@@ -134,10 +146,26 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch {
             val title = _uiState.value.newBookTitle.ifBlank { "Untitled Book" }
             val seriesId = _uiState.value.assignSeriesId.ifBlank { null }
-            val book = bookRepository.createBook(title, seriesId)
+            val book = bookRepository.createBook(
+                title = title,
+                seriesId = seriesId,
+                genre = _uiState.value.newBookGenre,
+                pov = _uiState.value.newBookPov,
+                povCharacterName = _uiState.value.newBookPovCharacterName,
+                premise = _uiState.value.newBookPremise,
+            )
             settings.setSelectedBookId(book.id)
             val sceneId = bookRepository.firstSceneId(book.id)
-            _uiState.update { it.copy(newBookTitle = "", assignSeriesId = "") }
+            _uiState.update {
+                it.copy(
+                    newBookTitle = "",
+                    newBookGenre = "",
+                    newBookPov = "",
+                    newBookPovCharacterName = "",
+                    newBookPremise = "",
+                    assignSeriesId = "",
+                )
+            }
             onOpened(book.id, sceneId)
         }
     }

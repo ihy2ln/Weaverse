@@ -203,6 +203,53 @@ class PlanViewModel @Inject constructor(
         }
     }
 
+    fun applyStructureTemplate(template: StoryStructureTemplate, onDone: () -> Unit = {}) {
+        viewModelScope.launch {
+            val bookId = settings.preferences.first().selectedBookId
+            if (bookId.isBlank()) return@launch
+            val act = manuscriptRepository.ensureAct(bookId)
+            val existingChapters = uiState.value.outline
+                .firstOrNull { it.act.id == act.id }
+                ?.chapters
+                .orEmpty()
+            val reusable = existingChapters.singleOrNull()?.takeIf { cws ->
+                cws.scenes.all { it.plainText.isBlank() }
+            }
+
+            val beforeReused = reusable?.chapter
+            var afterReused: ChapterEntity? = null
+            val created = mutableListOf<Pair<ChapterEntity, SceneEntity>>()
+
+            template.beats.forEachIndexed { index, beat ->
+                if (index == 0 && reusable != null) {
+                    val updated = reusable.chapter.copy(title = beat.title, summary = beat.description)
+                    manuscriptRepository.saveChapter(updated)
+                    afterReused = updated
+                } else {
+                    val (chapter, scene) = manuscriptRepository.createChapter(act.id)
+                    val updatedChapter = chapter.copy(title = beat.title, summary = beat.description)
+                    manuscriptRepository.saveChapter(updatedChapter)
+                    created += updatedChapter to scene
+                }
+            }
+
+            workspaceHistory.record(
+                undo = {
+                    created.forEach { (chapter, _) -> manuscriptRepository.deleteChapter(chapter.id) }
+                    beforeReused?.let { manuscriptRepository.saveChapter(it) }
+                },
+                redo = {
+                    afterReused?.let { manuscriptRepository.saveChapter(it) }
+                    created.forEach { (chapter, scene) ->
+                        manuscriptRepository.saveChapter(chapter)
+                        manuscriptRepository.saveScene(scene)
+                    }
+                },
+            )
+            onDone()
+        }
+    }
+
     fun addSceneBeat(selectedSceneId: String?, onReady: (String) -> Unit) {
         viewModelScope.launch {
             val sceneId = PlanCreateTargets.sceneIdForNewBeat(uiState.value.outline, selectedSceneId)
