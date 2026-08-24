@@ -1,28 +1,37 @@
 # Native iOS — plan and current status
 
-**Status as of this document: the walking skeleton is confirmed working
-on real hardware, and the first real domain code has moved into
-`:shared`.** The pipeline is `:shared` (Kotlin Multiplatform,
-Android/iOS/JVM) → `iosApp/` (a minimal SwiftUI app that links the
-shared framework and displays `Platform().name`) → `.github/workflows/ios-build.yml`
-/ `release.yml`'s `ios-simulator-build` job, which build it for the iOS
-Simulator on a `macos-latest` runner. That zip is exactly what
-appetize.io wants for iOS Simulator testing — **no Apple Developer
-account, certificates, or provisioning profiles needed**, since simulator
-builds don't require code signing at all (the Xcode project explicitly
-sets `CODE_SIGNING_ALLOWED=NO`/`CODE_SIGNING_REQUIRED=NO`).
+**Status as of this document: Compose Multiplatform is now wired up on
+iOS, replacing the plain-SwiftUI placeholder.** The pipeline is
+`:shared` (Kotlin Multiplatform, Android/iOS/JVM) → `iosApp/` (a thin
+SwiftUI shell that hosts a `UIViewControllerRepresentable` wrapping
+Compose Multiplatform's `ComposeUIViewController`) →
+`.github/workflows/ios-build.yml` / `release.yml`'s
+`ios-simulator-build` job, which build it for the iOS Simulator on a
+`macos-latest` runner. That zip is exactly what appetize.io wants for
+iOS Simulator testing — **no Apple Developer account, certificates, or
+provisioning profiles needed**, since simulator builds don't require
+code signing at all (the Xcode project explicitly sets
+`CODE_SIGNING_ALLOWED=NO`/`CODE_SIGNING_REQUIRED=NO`).
 
-**Confirmed working, not just CI-green**: the user ran the app on
-appetize.io (iPhone 14 Pro, iOS 16.2) and saw the expected screen —
+**Why the appetize.io screen looked unchanged between builds**: it
+wasn't a bug — the walking-skeleton `ContentView.swift` was static
+SwiftUI text with nothing behind it to change, so every build rendered
+the same screen. Confirmed working (walking-skeleton phase): the user
+ran it on appetize.io (iPhone 14 Pro, iOS 16.2) and saw the expected
 "Weaverse — iOS shell — shared Kotlin module linked — Running on iOS
-16.2." That verifies the whole chain end to end: Kotlin compiles for
-iOS, the framework links into a real Swift app via the hand-written
-Xcode project, and the app actually boots and renders in the Simulator.
+16.2," proving Kotlin compiles for iOS, the framework links into Swift,
+and the app boots in the Simulator. That plain-text screen is now gone
+— `ContentView.swift` hosts real Compose Multiplatform UI
+(`RootScreen` in `:shared`'s `commonMain`), so the *next* release's
+build will visibly look different, and is the foundation every
+subsequent ported screen renders through.
 
 **The Android app is unaffected apart from a new module dependency** —
 `:app` now depends on `:shared` (needed so `:app` can keep using
 `core.text.*`, which partly lives in `:shared` now), but the package
 names didn't change, so no other Android file needed an import update.
+Compose Multiplatform in `:shared` doesn't touch `:app`'s existing
+Android UI at all — it's new code, not a replacement.
 
 ## Platform priority
 
@@ -52,7 +61,7 @@ If a run fails, the workflow's logs will show whether it died in the
 "Compile shared module for iOS Simulator" step (a Kotlin/KMP problem) or
 the "Build iOS app for Simulator" step (an Xcode project problem).
 
-## Known risk areas — resolved
+## Known risk areas — resolved (walking skeleton), new ones open (Compose Multiplatform)
 
 The Xcode project, Swift code, and CI pipeline were originally written
 without access to a Mac and flagged here as unverified. They're no
@@ -60,9 +69,28 @@ longer a risk: the pipeline has both built successfully in CI and run
 correctly on real hardware via appetize.io (iPhone 14 Pro, iOS 16.2),
 confirming the hand-written `project.pbxproj`, the `Platform()` Swift/
 Kotlin interop, and the `ENABLE_USER_SCRIPT_SANDBOXING = NO` Gradle
-build-phase workaround all work as intended. New risk going forward is
-concentrated in whatever gets added next (real UI, Koin, SQLDelight),
-not in this walking-skeleton foundation.
+build-phase workaround all work as intended.
+
+New, currently-unverified risk from wiring up Compose Multiplatform:
+
+- **`compose-multiplatform = "1.7.3"`** was chosen to match
+  `kotlin = "2.0.21"` per JetBrains' published compatibility table, but
+  this is from memory, not a live check against a Mac toolchain — if
+  it's off, expect a clear Gradle/compiler-plugin version-mismatch
+  error, not a silent failure. Because Compose Multiplatform's
+  `commonMain` code (the new `RootScreen`) also compiles for the
+  Android target as part of `./gradlew assembleRelease`, most of this
+  risk actually gets caught by the same Linux CI that already runs on
+  every push — only the iOS-specific linking is Mac-only.
+- **`MainViewControllerKt.MainViewController()`** relies on the same
+  file-name-based Kotlin/Native export convention already confirmed
+  reliable for `Platform()` — the file is named `MainViewController.kt`
+  specifically so the generated wrapper class matches what
+  `ComposeView.swift` calls.
+- **`ComposeUIViewController`** (from `androidx.compose.ui.window`) is
+  the standard, JetBrains-documented entry point for hosting Compose
+  Multiplatform UI in a UIKit view controller — used here exactly as
+  their official templates do.
 
 ## Why this is a real, multi-session undertaking
 
@@ -140,10 +168,16 @@ importing an Objective-C API), that's where it'll surface.
    `:shared`, one feature area at a time (start with something small and
    self-contained, e.g. Settings/preferences, before touching the novel
    or roleplay data models).
-5. Bring in Compose Multiplatform for a shared UI layer, reusing as much
-   of the existing `@Composable` tree as the dependency swap allows —
-   replacing `iosApp/ContentView.swift`'s plain SwiftUI with a
-   `ComposeUIViewController` hosting real app screens.
+5. **(Infrastructure done, screens not yet ported)** `:shared` now
+   applies the Compose Multiplatform + Compose compiler plugins;
+   `iosApp/ContentView.swift` hosts a `ComposeUIViewController` (via
+   `MainViewController()` in `:shared`'s `iosMain`) instead of plain
+   SwiftUI, rendering a real `RootScreen` composable from `commonMain`.
+   That's the plumbing every ported screen needs — actual app screens
+   (Write, Roleplay, Codex, etc.) still need to move from `:app`'s
+   `androidx.compose.*` into `:shared`'s `commonMain`, which in turn
+   needs their ViewModels' Hilt/Room dependencies swapped out first
+   (item 4) since Compose screens are driven by ViewModel state.
 6. **(Done)** `ios-simulator-build` in `release.yml` already runs
    automatically on every version tag, attaching the Simulator zip
    straight to the GitHub Release alongside the APK and Desktop zip.
