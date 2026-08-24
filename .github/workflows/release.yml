@@ -169,6 +169,61 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             build
 
+      # Real hard gate for releases (unlike ios-build.yml's continue-on-error
+      # version): boots the actual iOS Simulator, installs the built .app,
+      # launches it, and fails this job outright if it's not still running a
+      # few seconds later — a crashing build never gets attached to a
+      # release. On failure this dumps console output, the system log, and
+      # any crash report so the cause is visible in the job log without
+      # needing appetize.io or a physical device.
+      - name: Smoke-test app launch in Simulator
+        run: |
+          set -uo pipefail
+          APP_PATH=$(find build/ios -name "iosApp.app" -type d | head -n 1)
+          BUNDLE_ID="com.ihy2ln.weaverse.ios"
+
+          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)
+          for runtime, devices in data["devices"].items():
+              if "iOS" not in runtime:
+                  continue
+              for d in devices:
+                  if d.get("isAvailable") and "iPhone" in d.get("name", ""):
+                      print(d["udid"])
+                      raise SystemExit
+          ')
+          if [ -z "$DEVICE_ID" ]; then
+            echo "No available iPhone simulator device found" >&2
+            exit 1
+          fi
+          echo "Using simulator device: $DEVICE_ID"
+          xcrun simctl list devices available | grep -B1 "$DEVICE_ID" || true
+
+          xcrun simctl boot "$DEVICE_ID" || true
+          xcrun simctl bootstatus "$DEVICE_ID" -b
+          xcrun simctl install "$DEVICE_ID" "$APP_PATH"
+
+          xcrun simctl launch --console-pty "$DEVICE_ID" "$BUNDLE_ID" > console.log 2>&1 &
+          LAUNCH_PID=$!
+          sleep 8
+
+          if xcrun simctl spawn "$DEVICE_ID" launchctl list 2>/dev/null | grep -q "$BUNDLE_ID"; then
+            echo "PASS: $BUNDLE_ID is still running 8s after launch."
+            kill "$LAUNCH_PID" 2>/dev/null || true
+            exit 0
+          fi
+
+          echo "FAIL: $BUNDLE_ID is not running 8s after launch — it crashed or exited." >&2
+          echo "--- console output ---"
+          cat console.log || true
+          echo "--- system log (last 2 minutes, this process) ---"
+          xcrun simctl spawn "$DEVICE_ID" log show --last 2m --predicate 'process == "iosApp"' || true
+          echo "--- crash reports ---"
+          find ~/Library/Logs/DiagnosticReports -iname "iosApp*" -exec cat {} \; 2>/dev/null || true
+          kill "$LAUNCH_PID" 2>/dev/null || true
+          exit 1
+
       - name: Locate and zip the .app bundle
         run: |
           APP_PATH=$(find build/ios -name "iosApp.app" -type d | head -n 1)

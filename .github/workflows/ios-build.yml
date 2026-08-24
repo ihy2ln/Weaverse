@@ -93,6 +93,7 @@ jobs:
             exit 1
           fi
           echo "Using simulator device: $DEVICE_ID"
+          xcrun simctl list devices available | grep -B1 "$DEVICE_ID" || true
 
           xcrun simctl boot "$DEVICE_ID" || true
           xcrun simctl bootstatus "$DEVICE_ID" -b
