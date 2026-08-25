@@ -1,5 +1,14 @@
 # Native iOS — plan and current status
 
+> **PAUSED.** CI no longer builds or gates on iOS (`ios-build.yml` was
+> deleted; `release.yml`'s `ios-simulator-build` job was removed) — the
+> user has no Apple device for real testing yet, so there's no way to
+> verify a build beyond appetize.io/CI, and it was slowing down/blocking
+> Android releases. The `:shared` module, `iosApp/`, and everything
+> below are left in place, untouched — resume from step 5 in "Recommended
+> phased plan" once real device testing is possible. Android stays the
+> only actively-shipping platform in the meantime.
+
 **Status as of this document: Compose Multiplatform is now wired up on
 iOS, replacing the plain-SwiftUI placeholder.** The pipeline is
 `:shared` (Kotlin Multiplatform, Android/iOS/JVM) → `iosApp/` (a thin
