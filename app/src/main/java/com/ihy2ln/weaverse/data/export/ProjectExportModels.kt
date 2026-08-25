@@ -3,6 +3,8 @@ package com.ihy2ln.weaverse.data.export
 import kotlinx.serialization.Serializable
 
 enum class ExportFormat(val label: String, val extension: String) {
+    Epub("EPUB (.epub)", "epub"),
+    Pdf("PDF (.pdf)", "pdf"),
     Docx("Word (.docx)", "docx"),
     Html("HTML", "html"),
     Json("JSON", "json"),
