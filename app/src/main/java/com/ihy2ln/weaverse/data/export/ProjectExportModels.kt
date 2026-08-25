@@ -144,6 +144,9 @@ data class CodexEntryDto(
     val isAiGenerated: Boolean = false,
     val trackMentions: Boolean = true,
     val caseSensitiveMatching: Boolean = false,
+    val usageMode: String = "everywhere",
+    val usageBookIdsJson: String = "[]",
+    val usageRoleplayIdsJson: String = "[]",
     val createdAt: Long = 0,
     val updatedAt: Long = 0,
 )

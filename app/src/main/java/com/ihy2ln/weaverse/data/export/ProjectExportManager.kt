@@ -536,14 +536,22 @@ private fun CodexCategoryDto.toEntity() = CodexCategoryEntity(
     id, scopeType, scopeId, name, colorHex, icon, glyph, sortOrder, isSystem, isBuiltIn,
 )
 private fun CodexEntryEntity.toDto() = CodexEntryDto(
-    id, categoryId, scopeType, scopeId, name, aliasesJson, docJson, plainText, colorHex,
-    alwaysInclude, disabled, imageMediaId, isAiGenerated, trackMentions, caseSensitiveMatching,
-    createdAt, updatedAt,
+    id = id, categoryId = categoryId, scopeType = scopeType, scopeId = scopeId, name = name,
+    aliasesJson = aliasesJson, docJson = docJson, plainText = plainText, colorHex = colorHex,
+    alwaysInclude = alwaysInclude, disabled = disabled, imageMediaId = imageMediaId,
+    isAiGenerated = isAiGenerated, trackMentions = trackMentions,
+    caseSensitiveMatching = caseSensitiveMatching, usageMode = usageMode,
+    usageBookIdsJson = usageBookIdsJson, usageRoleplayIdsJson = usageRoleplayIdsJson,
+    createdAt = createdAt, updatedAt = updatedAt,
 )
 private fun CodexEntryDto.toEntity() = CodexEntryEntity(
-    id, categoryId, scopeType, scopeId, name, aliasesJson, docJson, plainText, colorHex,
-    alwaysInclude, disabled, imageMediaId, isAiGenerated, trackMentions, caseSensitiveMatching,
-    createdAt, updatedAt,
+    id = id, categoryId = categoryId, scopeType = scopeType, scopeId = scopeId, name = name,
+    aliasesJson = aliasesJson, docJson = docJson, plainText = plainText, colorHex = colorHex,
+    alwaysInclude = alwaysInclude, disabled = disabled, imageMediaId = imageMediaId,
+    isAiGenerated = isAiGenerated, trackMentions = trackMentions,
+    caseSensitiveMatching = caseSensitiveMatching, usageMode = usageMode,
+    usageBookIdsJson = usageBookIdsJson, usageRoleplayIdsJson = usageRoleplayIdsJson,
+    createdAt = createdAt, updatedAt = updatedAt,
 )
 private fun SnippetEntity.toDto() = SnippetDto(id, scopeType, scopeId, title, body, category, pinned, createdAt)
 private fun SnippetDto.toEntity() = SnippetEntity(id, scopeType, scopeId, title, body, category, pinned, createdAt)
