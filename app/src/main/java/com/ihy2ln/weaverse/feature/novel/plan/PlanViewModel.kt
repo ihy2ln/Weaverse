@@ -33,7 +33,7 @@ data class ChapterWithScenes(
     val scenes: List<SceneEntity>,
 )
 
-enum class PlanViewMode { Grid, Outline }
+enum class PlanViewMode { Grid, Outline, Timeline }
 
 val PlanPovOptions = listOf(
     "1st Person",
@@ -186,6 +186,18 @@ class PlanViewModel @Inject constructor(
         viewModelScope.launch {
             val scene = uiState.value.scenes.firstOrNull { it.id == sceneId } ?: return@launch
             val after = scene.copy(summary = summary, updatedAt = System.currentTimeMillis())
+            manuscriptRepository.saveScene(after)
+            workspaceHistory.record(
+                undo = { manuscriptRepository.saveScene(scene) },
+                redo = { manuscriptRepository.saveScene(after) },
+            )
+        }
+    }
+
+    fun updateSceneInWorldDate(sceneId: String, inWorldDate: String) {
+        viewModelScope.launch {
+            val scene = uiState.value.scenes.firstOrNull { it.id == sceneId } ?: return@launch
+            val after = scene.copy(inWorldDate = inWorldDate, updatedAt = System.currentTimeMillis())
             manuscriptRepository.saveScene(after)
             workspaceHistory.record(
                 undo = { manuscriptRepository.saveScene(scene) },

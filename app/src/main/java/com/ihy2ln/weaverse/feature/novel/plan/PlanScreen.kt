@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
@@ -87,6 +88,7 @@ fun PlanScreen(
     var editingSceneId by rememberSaveable { mutableStateOf<String?>(null) }
     var editingChapterId by rememberSaveable { mutableStateOf<String?>(null) }
     var editingTarget by rememberSaveable { mutableStateOf(false) }
+    var editingDateSceneId by rememberSaveable { mutableStateOf<String?>(null) }
     val state by viewModel.uiState.collectAsState()
     val focusRequester = remember { FocusRequester() }
     val contentPad = adaptiveContentPadding()
@@ -218,6 +220,28 @@ fun PlanScreen(
                 onEditSceneSummary = { editingSceneId = it },
                 onEditChapterSummary = { editingChapterId = it },
             )
+            PlanViewMode.Timeline -> PlanTimelineView(
+                outline = state.outline,
+                selectedSceneId = selectedSceneId,
+                onSelectScene = { selectedSceneId = it },
+                onWrite = onWrite,
+                onEditInWorldDate = { editingDateSceneId = it },
+            )
+        }
+        editingDateSceneId?.let { id ->
+            val scene = state.scenes.firstOrNull { it.id == id }
+            if (scene != null) {
+                EditInWorldDateDialog(
+                    initialValue = scene.inWorldDate,
+                    onSave = {
+                        viewModel.updateSceneInWorldDate(id, it)
+                        editingDateSceneId = null
+                    },
+                    onDismiss = { editingDateSceneId = null },
+                )
+            } else {
+                editingDateSceneId = null
+            }
         }
         editingSceneId?.let { id ->
             val scene = state.scenes.firstOrNull { it.id == id }
@@ -649,6 +673,120 @@ private fun PlanOutlineView(
         }
         alwaysScrollEndSpacer()
     }
+}
+
+/** Scene entry paired with the chapter it belongs to, for display in the timeline. */
+private data class TimelineRow(val chapterTitle: String, val scene: SceneEntity)
+
+@Composable
+private fun PlanTimelineView(
+    outline: List<PlanOutlineNode>,
+    selectedSceneId: String?,
+    onSelectScene: (String) -> Unit,
+    onWrite: (sceneId: String, kind: WriteJumpKind) -> Unit,
+    onEditInWorldDate: (String) -> Unit,
+) {
+    val tokens = inkTokens()
+    val allRows = outline.flatMap { node ->
+        node.chapters.flatMap { chapterNode ->
+            chapterNode.scenes.map { scene -> TimelineRow(chapterNode.chapter.title, scene) }
+        }
+    }
+    val (dated, undated) = allRows.partition { it.scene.inWorldDate.isNotBlank() }
+    val rows = dated.sortedBy { it.scene.inWorldDate } + undated
+
+    if (rows.isEmpty()) {
+        Text(
+            "No scenes yet.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = tokens.secondaryText,
+            modifier = Modifier.padding(InkSpacing.md),
+        )
+        return
+    }
+
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        items(rows, key = { it.scene.id }) { row ->
+            val scene = row.scene
+            val selected = selectedSceneId == scene.id
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSelectScene(scene.id) }
+                    .background(
+                        if (selected) InkAccentBlue.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface,
+                    )
+                    .border(if (selected) 1.5.dp else 0.dp, InkAccentBlue)
+                    .padding(vertical = InkSpacing.sm, horizontal = InkSpacing.md),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    modifier = Modifier
+                        .width(96.dp)
+                        .clickable { onEditInWorldDate(scene.id) },
+                ) {
+                    Text(
+                        scene.inWorldDate.ifBlank { "Undated" },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (scene.inWorldDate.isBlank()) tokens.secondaryText else InkAccentBlue,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        scene.title,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        row.chapterTitle,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tokens.secondaryText,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                WriteJumpButton(
+                    sceneId = scene.id,
+                    chapterSceneId = scene.id,
+                    onWrite = onWrite,
+                )
+            }
+        }
+        alwaysScrollEndSpacer()
+    }
+}
+
+@Composable
+private fun EditInWorldDateDialog(
+    initialValue: String,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var value by remember(initialValue) { mutableStateOf(initialValue) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("In-world date") },
+        text = {
+            OutlinedTextField(
+                value = value,
+                onValueChange = { value = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("Date") },
+                placeholder = { Text("e.g. Day 12, or 1420-03-02") },
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(value) }) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
 
 @Composable
