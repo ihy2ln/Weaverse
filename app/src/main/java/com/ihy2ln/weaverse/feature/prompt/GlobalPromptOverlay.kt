@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -158,6 +160,14 @@ fun GlobalPromptOverlay(
             }
             InkTextButton(label = "▾", onClick = { onCollapsedChange(true) }, compact = true)
         }
+        // Action row (Models/Preview/accept/clear/mic) must always stay reachable — the
+        // text field and prompt preview below it are unbounded in content length, so this
+        // whole block scrolls internally instead of overflowing past the screen bottom.
+        Column(
+            modifier = Modifier
+                .weight(1f, fill = false)
+                .verticalScroll(rememberScrollState()),
+        ) {
         VoiceToTextField(
             value = state.text,
             onValueChange = viewModel::onTextChange,
@@ -276,7 +286,6 @@ fun GlobalPromptOverlay(
                 color = tokens.secondaryText,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 120.dp)
                     .padding(top = InkSpacing.xxs),
             )
         }
@@ -311,6 +320,7 @@ fun GlobalPromptOverlay(
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(top = InkSpacing.xxs),
             )
+        }
         }
     }
     if (modelsOpen) {

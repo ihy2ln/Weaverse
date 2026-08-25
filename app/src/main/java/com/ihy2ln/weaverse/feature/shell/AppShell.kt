@@ -59,6 +59,7 @@ import com.ihy2ln.weaverse.core.ui.components.VerticalResizeHandle
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import com.ihy2ln.weaverse.core.ui.util.resolveSectionColor
+import com.ihy2ln.weaverse.feature.chats.ChatsHubScreen
 import com.ihy2ln.weaverse.feature.export.ExportImportScreen
 import com.ihy2ln.weaverse.feature.library.LibraryScreen
 import com.ihy2ln.weaverse.feature.media.MediaGalleryScreen
@@ -83,6 +84,7 @@ import com.ihy2ln.weaverse.feature.roleplay.characters.CharacterDetailScreen
 import com.ihy2ln.weaverse.feature.roleplay.characters.CharactersScreen
 import com.ihy2ln.weaverse.feature.roleplay.chat.RoleplayChatChrome
 import com.ihy2ln.weaverse.feature.roleplay.chat.RoleplayChatDetailScreen
+import com.ihy2ln.weaverse.feature.roleplay.chat.RoleplayChatsRail
 import com.ihy2ln.weaverse.feature.roleplay.chat.RoleplayChatsScreen
 import com.ihy2ln.weaverse.feature.roleplay.chat.RoleplayModePickerScreen
 import com.ihy2ln.weaverse.feature.roleplay.chat.roleplayModeSubtitle
@@ -110,6 +112,7 @@ fun AppShell(
     var showHelp by rememberSaveable { mutableStateOf(false) }
     var showSearch by rememberSaveable { mutableStateOf(false) }
     var showLibrary by rememberSaveable { mutableStateOf(true) }
+    var showChatsHub by rememberSaveable { mutableStateOf(false) }
     var showExport by rememberSaveable { mutableStateOf(false) }
     var workspaceFocus by rememberSaveable { mutableStateOf(WorkspaceFocus.Story.name) }
     var writeFocusMode by rememberSaveable { mutableStateOf(false) }
@@ -219,6 +222,7 @@ fun AppShell(
                 showSettings -> "Settings"
                 showExport -> "Import / Export"
                 showSearch -> "Search"
+                showChatsHub -> "Chats"
                 showLibrary -> "Library"
                 selectedCodexEntryId != null -> "Codex"
                 selectedCharacterId != null -> "Character"
@@ -227,6 +231,7 @@ fun AppShell(
             }
             val chromeSubtitle = when {
                 showHelp -> "Tutorial · Manual · What's new"
+                showChatsHub -> "Every book · mini chats"
                 showLibrary -> listOf(bookTitle, seriesTitle).filter { it.isNotBlank() }.distinct().joinToString(" · ")
                 showSettings -> "Weaverse"
                 showExport -> "Novels · Roleplay · Notes"
@@ -257,6 +262,7 @@ fun AppShell(
                         showHelp = false
                         showExport = false
                         showSearch = false
+                        showChatsHub = false
                         selectedCodexEntryId = null
                         selectedCharacterId = null
                         selectedPersonaId = null
@@ -272,6 +278,7 @@ fun AppShell(
                     showExport = false
                     showSearch = false
                     showLibrary = false
+                    showChatsHub = false
                     showHelp = !showHelp
                 },
                 onSearch = {
@@ -279,7 +286,16 @@ fun AppShell(
                     showHelp = false
                     showExport = false
                     showLibrary = false
+                    showChatsHub = false
                     showSearch = true
+                },
+                onChats = {
+                    showSettings = false
+                    showHelp = false
+                    showExport = false
+                    showSearch = false
+                    showLibrary = false
+                    showChatsHub = true
                 },
                 onImport = { showExport = true },
                 onExport = { showExport = true },
@@ -293,6 +309,7 @@ fun AppShell(
                     showHelp = false
                     showExport = false
                     showSearch = false
+                    showChatsHub = false
                     if (id == RailTab.Pictures.name) {
                         chromeTool = null
                         workspaceFocus = WorkspaceFocus.Pictures.name
@@ -307,6 +324,7 @@ fun AppShell(
                     showHelp = false
                     showExport = false
                     showSearch = false
+                    showChatsHub = false
                     mode = next
                     chromeTool = null
                     selectedRpChatId = null
@@ -320,6 +338,7 @@ fun AppShell(
                     showLibrary = false
                     showSettings = false
                     showHelp = false
+                    showChatsHub = false
                     chromeTool = null
                     workspaceFocus = WorkspaceFocus.Story.name
                     when (currentMode) {
@@ -392,6 +411,15 @@ fun AppShell(
                     onOpenCodexEntry = { selectedCodexEntryId = it },
                     modifier = Modifier.weight(1f).fillMaxSize(),
                 )
+                showChatsHub -> ChatsHubScreen(
+                    onThreadClick = { id ->
+                        selectedThreadId = id
+                        showChatsHub = false
+                        mode = AppMode.Novel.name
+                        novelDest = NovelDestination.Chat.name
+                    },
+                    modifier = Modifier.weight(1f).fillMaxSize(),
+                )
                 selectedCharacterId != null -> Box(Modifier.weight(1f).fillMaxSize()) {
                     CharacterDetailScreen(characterId = selectedCharacterId!!, onBack = { selectedCharacterId = null })
                 }
@@ -444,6 +472,8 @@ fun AppShell(
                             mode = AppMode.valueOf(mode),
                             selectedThreadId = selectedThreadId,
                             onThreadClick = { selectedThreadId = it; novelDest = NovelDestination.Chat.name },
+                            selectedRpChatId = selectedRpChatId,
+                            onRpChatClick = { selectedRpChatId = it; rpDest = RoleplayDestination.Chats.name },
                             onSceneClick = { selectedSceneId = it; novelDest = NovelDestination.Write.name },
                             onCodexEntryClick = { selectedCodexEntryId = it },
                             onOpenPictures = { workspaceFocus = WorkspaceFocus.Pictures.name },
@@ -495,14 +525,25 @@ fun AppShell(
                                     )
                                 }
                                 RailTab.Snippets -> SnippetsRailScreen()
-                                RailTab.Chats -> WorkshopThreadsRail(
-                                    selectedThreadId = selectedThreadId,
-                                    onThreadClick = { id ->
-                                        selectedThreadId = id
-                                        novelDest = NovelDestination.Chat.name
-                                        chromeTool = null
-                                    },
-                                )
+                                RailTab.Chats -> if (currentMode == AppMode.Roleplay.name) {
+                                    RoleplayChatsRail(
+                                        selectedChatId = selectedRpChatId,
+                                        onChatClick = { id ->
+                                            selectedRpChatId = id
+                                            rpDest = RoleplayDestination.Chats.name
+                                            chromeTool = null
+                                        },
+                                    )
+                                } else {
+                                    WorkshopThreadsRail(
+                                        selectedThreadId = selectedThreadId,
+                                        onThreadClick = { id ->
+                                            selectedThreadId = id
+                                            novelDest = NovelDestination.Chat.name
+                                            chromeTool = null
+                                        },
+                                    )
+                                }
                                 RailTab.Pictures -> MediaGalleryScreen(modifier = Modifier.fillMaxSize())
                                 RailTab.Manuscript -> ManuscriptRailScreen(onSceneClick = {
                                     selectedSceneId = it
@@ -601,7 +642,7 @@ fun AppShell(
                 novelDest = novelDest,
             ),
             novelDest = novelDest,
-            active = !showLibrary && !showSettings && !showSearch && !showExport && !writeFocusMode,
+            active = !showLibrary && !showSettings && !showSearch && !showExport && !showChatsHub && !writeFocusMode,
             collapsed = promptCollapsed,
             onCollapsedChange = { promptCollapsed = it },
             modifier = Modifier.align(Alignment.BottomCenter),
@@ -677,6 +718,8 @@ private fun RailPanel(
     mode: AppMode,
     selectedThreadId: String,
     onThreadClick: (String) -> Unit,
+    selectedRpChatId: String?,
+    onRpChatClick: (String) -> Unit,
     onSceneClick: (String) -> Unit,
     onCodexEntryClick: (String) -> Unit,
     onOpenPictures: () -> Unit,
@@ -714,7 +757,11 @@ private fun RailPanel(
                 RailTab.Prompts -> PromptsScreen(modifier = Modifier.fillMaxSize())
                 RailTab.Snippets -> SnippetsRailScreen()
                 RailTab.Manuscript -> ManuscriptRailScreen(onSceneClick = onSceneClick)
-                RailTab.Chats -> WorkshopThreadsRail(selectedThreadId, onThreadClick)
+                RailTab.Chats -> if (mode == AppMode.Roleplay) {
+                    RoleplayChatsRail(selectedRpChatId, onRpChatClick)
+                } else {
+                    WorkshopThreadsRail(selectedThreadId, onThreadClick)
+                }
                 RailTab.Notes -> NotesRailScreen(
                     viewModel = notesViewModel,
                     modifier = Modifier.fillMaxSize(),

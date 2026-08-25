@@ -271,6 +271,12 @@ interface WorkshopChatDao {
     @Query("SELECT * FROM chat_threads WHERE scopeId = :scopeId ORDER BY pinned DESC, updatedAt DESC")
     suspend fun getThreads(scopeId: String): List<ChatThreadEntity>
 
+    @Query("SELECT * FROM chat_threads ORDER BY pinned DESC, updatedAt DESC")
+    fun observeAllThreads(): Flow<List<ChatThreadEntity>>
+
+    @Query("SELECT * FROM chat_threads WHERE id = :threadId LIMIT 1")
+    suspend fun getThread(threadId: String): ChatThreadEntity?
+
     @Query("SELECT * FROM chat_messages WHERE threadId = :threadId ORDER BY createdAt")
     fun observeMessages(threadId: String): Flow<List<ChatMessageEntity>>
 
@@ -285,6 +291,12 @@ interface WorkshopChatDao {
 
     @Query("DELETE FROM chat_messages WHERE id = :id")
     suspend fun deleteMessage(id: String)
+
+    @Query("DELETE FROM chat_messages WHERE threadId = :threadId")
+    suspend fun deleteMessagesForThread(threadId: String)
+
+    @Query("DELETE FROM chat_threads WHERE id = :id")
+    suspend fun deleteThread(id: String)
 }
 
 @Dao
@@ -359,6 +371,12 @@ interface RoleplayDao {
 
     @Query("DELETE FROM rp_messages WHERE id = :id")
     suspend fun deleteMessage(id: String)
+
+    @Query("DELETE FROM rp_messages WHERE chatId = :chatId")
+    suspend fun deleteMessagesForChat(chatId: String)
+
+    @Query("DELETE FROM rp_chats WHERE id = :id")
+    suspend fun deleteChat(id: String)
 }
 
 @Dao

@@ -19,111 +19,101 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.ihy2ln.weaverse.core.ui.components.InkCard
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
-import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import com.ihy2ln.weaverse.core.ui.util.alwaysScrollEndSpacer
 
-/** Sentinel group key for chats with no characterId — mirrors how the Chats hub buckets mini chats. */
 private const val GeneralGroupKey = ""
 
-/**
- * Roleplay chats, grouped by character (select a character -> its sub chats), the same
- * "main item -> sub chats" organization the standalone Chats hub uses for books.
- */
+/** Roleplay's tool-rail chat list — same "select character -> sub chats" organization as the rail's Novel Chats tab. */
 @Composable
-fun RoleplayChatsScreen(
-    displayMode: String,
+fun RoleplayChatsRail(
+    selectedChatId: String?,
     onChatClick: (String) -> Unit,
-    onBack: () -> Unit,
     viewModel: RoleplayChatsViewModel = hiltViewModel(),
 ) {
     val chats by viewModel.chats.collectAsState()
     val characters by viewModel.characters.collectAsState()
-    val filtered = chats.filter { it.displayMode.ifBlank { "messenger" } == displayMode }
-    var selectedGroupKey by rememberSaveable(displayMode) { mutableStateOf<String?>(null) }
+    var selectedGroupKey by rememberSaveable { mutableStateOf<String?>(null) }
+    val groups = chats.groupBy { it.characterId ?: GeneralGroupKey }
+    val activeGroupKey = selectedGroupKey?.takeIf { groups.containsKey(it) }
 
-    Column(modifier = Modifier.fillMaxSize().padding(InkSpacing.lg)) {
-        val groups = filtered.groupBy { it.characterId ?: GeneralGroupKey }
-        val activeGroupKey = selectedGroupKey?.takeIf { groups.containsKey(it) }
-
+    Column(modifier = Modifier.fillMaxSize()) {
         if (activeGroupKey != null) {
             val character = characters.find { it.id == activeGroupKey }
             val groupLabel = character?.name ?: "General"
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                InkTextButton(label = "← Characters", onClick = { selectedGroupKey = null })
-            }
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = InkSpacing.sm, bottom = InkSpacing.md),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = InkSpacing.md, vertical = InkSpacing.sm),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(groupLabel, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                InkTextButton(label = "←", onClick = { selectedGroupKey = null })
+                Text(groupLabel, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
                 InkTextButton(
                     label = "+",
                     onClick = {
                         val characterId = activeGroupKey.takeIf { it != GeneralGroupKey }
-                        viewModel.createChat(characterId, groupLabel, displayMode, onChatClick)
+                        viewModel.createChat(characterId, groupLabel, "messenger", onChatClick)
                     },
                 )
             }
-            LazyColumn {
+            LazyColumn(modifier = Modifier.weight(1f)) {
                 items(groups[activeGroupKey].orEmpty(), key = { it.id }) { chat ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onChatClick(chat.id) }
-                            .padding(vertical = InkSpacing.sm),
+                            .padding(horizontal = InkSpacing.md, vertical = InkSpacing.sm),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(chat.title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                        Text(
+                            chat.title,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = if (chat.id == selectedChatId) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            },
+                            modifier = Modifier.weight(1f),
+                        )
                         InkTextButton(label = "−", onClick = { viewModel.deleteChat(chat.id) })
                     }
                 }
                 alwaysScrollEndSpacer()
             }
         } else {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                InkTextButton(label = "← Modes", onClick = onBack)
-            }
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = InkSpacing.sm, bottom = InkSpacing.md),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = InkSpacing.md, vertical = InkSpacing.sm),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    "${roleplayModeLabel(displayMode)} chats",
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.weight(1f),
-                )
+                Text("Chats", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
                 InkTextButton(
                     label = "+",
-                    onClick = { viewModel.createChat(null, "New chat", displayMode, onChatClick) },
+                    onClick = { viewModel.createChat(null, "New chat", "messenger", onChatClick) },
                 )
             }
-            if (groups.isEmpty()) {
-                Text(
-                    "No chats in this mode yet. Tap + to start one.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = inkTokens().secondaryText,
-                )
-            }
-            LazyColumn {
+            LazyColumn(modifier = Modifier.weight(1f)) {
                 items(groups.keys.toList(), key = { it }) { key ->
                     val character = characters.find { it.id == key }
                     val label = character?.name ?: "General"
-                    InkCard(
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = InkSpacing.sm)
-                            .clickable { selectedGroupKey = key },
+                            .clickable { selectedGroupKey = key }
+                            .padding(horizontal = InkSpacing.md, vertical = InkSpacing.sm),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(label, style = MaterialTheme.typography.titleMedium)
-                        val count = groups[key].orEmpty().size
-                        Text(
-                            "$count chat${if (count == 1) "" else "s"}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = inkTokens().secondaryText,
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(label, style = MaterialTheme.typography.titleSmall)
+                            val count = groups[key].orEmpty().size
+                            Text(
+                                "$count chat${if (count == 1) "" else "s"}",
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
                     }
                 }
                 alwaysScrollEndSpacer()

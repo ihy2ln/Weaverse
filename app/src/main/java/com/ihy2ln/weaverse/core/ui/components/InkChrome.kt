@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.Search
@@ -143,6 +144,7 @@ fun WorkspaceChrome(
     onRedo: () -> Unit = {},
     onSearch: (() -> Unit)? = null,
     onHelp: (() -> Unit)? = null,
+    onChats: (() -> Unit)? = null,
     onTool: (String?) -> Unit,
     onWorkspace: (String) -> Unit,
     onMode: (String) -> Unit,
@@ -180,6 +182,11 @@ fun WorkspaceChrome(
                 if (onSearch != null) {
                     IconButton(onClick = onSearch) {
                         Icon(Icons.Default.Search, contentDescription = "Search")
+                    }
+                }
+                if (onChats != null) {
+                    IconButton(onClick = onChats) {
+                        Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = "Chats")
                     }
                 }
                 InkMenuChip(
