@@ -3,6 +3,8 @@ package com.ihy2ln.weaverse.data.db
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.ihy2ln.weaverse.data.db.dao.BookDao
 import com.ihy2ln.weaverse.data.db.dao.CodexDao
 import com.ihy2ln.weaverse.data.db.dao.MediaDao
@@ -21,6 +23,7 @@ import com.ihy2ln.weaverse.data.db.entities.ChatThreadEntity
 import com.ihy2ln.weaverse.data.db.entities.CodexCategoryEntity
 import com.ihy2ln.weaverse.data.db.entities.CodexEntryEntity
 import com.ihy2ln.weaverse.data.db.entities.CodexEntryLoreEntity
+import com.ihy2ln.weaverse.data.db.entities.CodexRelationshipEntity
 import com.ihy2ln.weaverse.data.db.entities.MediaEntity
 import com.ihy2ln.weaverse.data.db.entities.PromptEntity
 import com.ihy2ln.weaverse.data.db.entities.PromptFolderEntity
@@ -30,6 +33,7 @@ import com.ihy2ln.weaverse.data.db.entities.RpMessageEntity
 import com.ihy2ln.weaverse.data.db.entities.RpPersonaEntity
 import com.ihy2ln.weaverse.data.db.entities.SceneCodexLinkEntity
 import com.ihy2ln.weaverse.data.db.entities.SceneEntity
+import com.ihy2ln.weaverse.data.db.entities.SceneSnapshotEntity
 import com.ihy2ln.weaverse.data.db.entities.SeriesEntity
 import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
 
@@ -40,10 +44,12 @@ import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
         ActEntity::class,
         ChapterEntity::class,
         SceneEntity::class,
+        SceneSnapshotEntity::class,
         SceneCodexLinkEntity::class,
         CodexCategoryEntity::class,
         CodexEntryEntity::class,
         CodexEntryLoreEntity::class,
+        CodexRelationshipEntity::class,
         SnippetEntity::class,
         ChatThreadEntity::class,
         ChatMessageEntity::class,
@@ -56,7 +62,7 @@ import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
         PromptEntity::class,
         AiProfileEntity::class,
     ],
-    version = 5,
+    version = 10,
     exportSchema = false,
 )
 @TypeConverters(InkTypeConverters::class)
@@ -70,4 +76,66 @@ abstract class WeaverseDatabase : RoomDatabase() {
     abstract fun roleplayDao(): RoleplayDao
     abstract fun mediaDao(): MediaDao
     abstract fun promptDao(): PromptDao
+
+    companion object {
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS scene_snapshots (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        sceneId TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        docJson TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_scene_snapshots_sceneId ON scene_snapshots (sceneId)",
+                )
+            }
+        }
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE books ADD COLUMN povCharacterName TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE books ADD COLUMN premise TEXT NOT NULL DEFAULT ''")
+            }
+        }
+        // Replaces the free-text povCharacterName with a link into the Codex "Characters"
+        // category; the old column is left in place (unused) rather than dropped.
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE books ADD COLUMN povCharacterId TEXT")
+            }
+        }
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS codex_relationships (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        fromEntryId TEXT NOT NULL,
+                        toEntryId TEXT NOT NULL,
+                        label TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_codex_relationships_fromEntryId ON codex_relationships (fromEntryId)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_codex_relationships_toEntryId ON codex_relationships (toEntryId)",
+                )
+            }
+        }
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE codex_entries ADD COLUMN usageMode TEXT NOT NULL DEFAULT 'everywhere'")
+                db.execSQL("ALTER TABLE codex_entries ADD COLUMN usageBookIdsJson TEXT NOT NULL DEFAULT '[]'")
+                db.execSQL("ALTER TABLE codex_entries ADD COLUMN usageRoleplayIdsJson TEXT NOT NULL DEFAULT '[]'")
+            }
+        }
+    }
 }

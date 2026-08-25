@@ -55,7 +55,8 @@ fun DocumentEditor(
     onMediaRemove: (Int) -> Unit = {},
     onMediaMoveBy: (Int, Int) -> Unit = { _, _ -> },
     onStackMedia: (Int) -> Unit = {},
-    onCycleStack: (Int) -> Unit = {},
+    /** (blockIndex, delta) — delta is +1/-1 for next/previous in the stack. */
+    onCycleStack: (Int, Int) -> Unit = { _, _ -> },
     onMediaDragRelease: (Int, Float) -> Unit = { index, dy ->
         when {
             dy < -48f -> onMediaMoveBy(index, -1)
@@ -141,7 +142,8 @@ fun DocumentEditor(
                         canPaste = canPasteMedia,
                         onSelect = { onMediaSelect(index) },
                         onRemove = { onMediaRemove(index) },
-                        onCycle = { onCycleStack(index) },
+                        onCycleNext = { onCycleStack(index, 1) },
+                        onCyclePrev = { onCycleStack(index, -1) },
                         onStackAdjacent = { onStackMedia(index) },
                         onMediaEditAction = { onMediaEditAction(index, it) },
                         modifier = Modifier.fillMaxWidth(),

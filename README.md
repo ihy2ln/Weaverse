@@ -80,6 +80,13 @@ also become Roleplay cards with Messenger, DM, and manga chats.
 - **`/`** AI prompt · **`\`** manual entry · OpenRouter provider.
 - Compact **PROMPT** dock; **Models** picks any OpenRouter text model.
 
+## Docs & Help
+
+- **In-app:** chrome **Help** (?), or Settings → Open Help — Tutorial / Manual / What's new
+- **User Manual:** [docs/USER-MANUAL.md](docs/USER-MANUAL.md)
+- **Wiki:** [docs/wiki/Home.md](docs/wiki/Home.md)
+- **v0.5.34 notes:** [docs/Whats-New-0.5.34.md](docs/Whats-New-0.5.34.md)
+
 ## Building locally
 
 **Requirements:** JDK 17, Android SDK 35 (only needed for the Android

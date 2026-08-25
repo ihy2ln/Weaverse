@@ -1,9 +1,9 @@
 package com.ihy2ln.weaverse.core.text
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class MediaGridTest {
     @Test
@@ -52,6 +52,45 @@ class MediaGridTest {
     fun nextFreeCell_dmSize() {
         val free = MediaGrid.nextFreeCell(setOf(0 to 0, 1 to 0), gridSize = MediaGrid.DM_SIZE)
         assertEquals(2 to 0, free)
+    }
+
+    @Test
+    fun nextFreeSlot_findsRoomForSpan() {
+        val occupied = MediaGrid.cellsCovered(0, 0, 1, 1, gridSize = MediaGrid.DM_SIZE)
+        val slot = MediaGrid.nextFreeSlot(occupied, MediaGrid.DM_SIZE, colSpan = 2, rowSpan = 1)
+        assertEquals(1 to 0, slot)
+    }
+
+    @Test
+    fun nextFreeSlot_nullWhenNoRoom() {
+        val occupied = MediaGrid.cellsCovered(0, 0, MediaGrid.DM_SIZE, MediaGrid.DM_SIZE, gridSize = MediaGrid.DM_SIZE)
+        val slot = MediaGrid.nextFreeSlot(occupied, MediaGrid.DM_SIZE, colSpan = 1, rowSpan = 1)
+        assertEquals(null, slot)
+    }
+
+    @Test
+    fun withGridPlacement_preservesPageByDefault() {
+        val block = MediaBlock(id = "m1", mediaId = "x", kind = MediaKind.Image, gridPage = 2)
+        val placed = block.withGridPlacement(1, 1, 1, 1) as MediaBlock
+        assertEquals(2, placed.gridPage)
+    }
+
+    @Test
+    fun withGridPlacement_setsPageWhenGiven() {
+        val block = MediaBlock(id = "m1", mediaId = "x", kind = MediaKind.Image, gridPage = 0)
+        val placed = block.withGridPlacement(1, 1, 1, 1, page = 3) as MediaBlock
+        assertEquals(3, placed.gridPage)
+    }
+
+    @Test
+    fun withGridUnplaced_clearsCellButKeepsSpanAndPage() {
+        val block = MediaBlock(id = "m1", mediaId = "x", kind = MediaKind.Image)
+            .withGridPlacement(2, 2, 2, 2, page = 1) as MediaBlock
+        val unplaced = block.withGridUnplaced() as MediaBlock
+        assertEquals(-1, unplaced.gridCol)
+        assertEquals(-1, unplaced.gridRow)
+        assertEquals(2, unplaced.gridColSpan)
+        assertEquals(1, unplaced.gridPage)
     }
 
     @Test

@@ -15,7 +15,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -122,6 +125,7 @@ fun InkMenuChip(
 fun WorkspaceChrome(
     bookTitle: String,
     seriesTitle: String,
+    collapsed: Boolean = false,
     workspaceOptions: List<SegmentedOption>,
     workspaceId: String,
     modeOptions: List<SegmentedOption>,
@@ -138,6 +142,9 @@ fun WorkspaceChrome(
     canRedo: Boolean = false,
     onUndo: () -> Unit = {},
     onRedo: () -> Unit = {},
+    onSearch: (() -> Unit)? = null,
+    onHelp: (() -> Unit)? = null,
+    onChats: (() -> Unit)? = null,
     onTool: (String?) -> Unit,
     onWorkspace: (String) -> Unit,
     onMode: (String) -> Unit,
@@ -152,49 +159,66 @@ fun WorkspaceChrome(
             .padding(top = InkSpacing.sm)
             .border(width = InkSpacing.hairline, color = tokens.hairline),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xxs),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xxs),
-        ) {
-            IconButton(onClick = onLibrary) {
-                Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = "Library")
-            }
-            IconButton(onClick = onSettings) {
-                Icon(Icons.Default.Settings, contentDescription = "Settings")
-            }
-            InkMenuChip(
-                label = "Workspace",
-                options = workspaceOptions,
-                selectedId = workspaceId,
-                onSelect = onWorkspace,
-            )
-            InkMenuChip(
-                label = "Mode",
-                options = modeOptions,
-                selectedId = modeId,
-                onSelect = onMode,
-            )
-            InkMenuChip(
-                label = "Focus",
-                options = focusOptions,
-                selectedId = focusId,
-                onSelect = onFocus,
-            )
-            toolOptions.forEach { tab ->
-                InkTextTab(
-                    label = tab.label,
-                    selected = activeToolId == tab.id,
-                    onClick = { onTool(if (activeToolId == tab.id) null else tab.id) },
+        if (!collapsed) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xxs),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(InkSpacing.xxs),
+            ) {
+                IconButton(onClick = onLibrary) {
+                    Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = "Library")
+                }
+                IconButton(onClick = onSettings) {
+                    Icon(Icons.Default.Settings, contentDescription = "Settings")
+                }
+                if (onHelp != null) {
+                    IconButton(onClick = onHelp) {
+                        Icon(Icons.Default.HelpOutline, contentDescription = "Help")
+                    }
+                }
+                if (onSearch != null) {
+                    IconButton(onClick = onSearch) {
+                        Icon(Icons.Default.Search, contentDescription = "Search")
+                    }
+                }
+                if (onChats != null) {
+                    IconButton(onClick = onChats) {
+                        Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = "Chats")
+                    }
+                }
+                InkMenuChip(
+                    label = "Workspace",
+                    options = workspaceOptions,
+                    selectedId = workspaceId,
+                    onSelect = onWorkspace,
                 )
+                InkMenuChip(
+                    label = "Mode",
+                    options = modeOptions,
+                    selectedId = modeId,
+                    onSelect = onMode,
+                )
+                InkMenuChip(
+                    label = "Focus",
+                    options = focusOptions,
+                    selectedId = focusId,
+                    onSelect = onFocus,
+                )
+                toolOptions.forEach { tab ->
+                    InkTextTab(
+                        label = tab.label,
+                        selected = activeToolId == tab.id,
+                        onClick = { onTool(if (activeToolId == tab.id) null else tab.id) },
+                    )
+                }
+                InkTextButton(label = "Import", onClick = onImport)
+                InkTextButton(label = "Export", onClick = onExport)
+                InkTextButton(label = "Undo", onClick = onUndo, enabled = canUndo)
+                InkTextButton(label = "Redo", onClick = onRedo, enabled = canRedo)
             }
-            InkTextButton(label = "Import", onClick = onImport)
-            InkTextButton(label = "Export", onClick = onExport)
-            InkTextButton(label = "Undo", onClick = onUndo, enabled = canUndo)
-            InkTextButton(label = "Redo", onClick = onRedo, enabled = canRedo)
         }
         Box(
             modifier = Modifier
@@ -232,6 +256,7 @@ fun InkModeCapsule(
     modifier: Modifier = Modifier,
     selected: Boolean = false,
     enabled: Boolean = true,
+    compact: Boolean = false,
 ) {
     val tokens = inkTokens()
     val shape = RoundedCornerShape(999.dp)
@@ -246,9 +271,12 @@ fun InkModeCapsule(
                 shape,
             )
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = InkSpacing.lg, vertical = InkSpacing.sm),
+            .padding(
+                horizontal = if (compact) InkSpacing.sm else InkSpacing.lg,
+                vertical = if (compact) InkSpacing.xxs else InkSpacing.sm,
+            ),
         color = if (enabled) tokens.primaryText else tokens.secondaryText,
-        fontSize = 14.sp,
+        fontSize = if (compact) 12.sp else 14.sp,
         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,

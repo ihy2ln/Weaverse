@@ -6,16 +6,33 @@ import androidx.lifecycle.viewModelScope
 import com.ihy2ln.weaverse.core.media.CodexMediaIds
 import com.ihy2ln.weaverse.core.media.MediaRepository
 import com.ihy2ln.weaverse.core.text.decodeAliases
+import com.ihy2ln.weaverse.data.db.WeaverseDatabase
+import com.ihy2ln.weaverse.data.db.entities.BookEntity
 import com.ihy2ln.weaverse.data.db.entities.CodexEntryEntity
+import com.ihy2ln.weaverse.data.db.entities.CodexRelationshipEntity
+import com.ihy2ln.weaverse.data.db.entities.RpChatEntity
+import com.ihy2ln.weaverse.data.repo.BookRepository
 import com.ihy2ln.weaverse.data.repo.CodexRepository
 import com.ihy2ln.weaverse.feature.shell.WorkspaceHistory
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+private fun Set<String>.toggled(id: String): Set<String> = if (id in this) this - id else this + id
+
+data class RelationshipRow(
+    val id: String,
+    val label: String,
+    val otherEntryId: String,
+    val otherEntryName: String,
+    /** true: this entry -> other; false: other -> this (relationship was created from the other side). */
+    val outgoing: Boolean,
+)
 
 data class CodexMediaItem(
     val id: String,
@@ -38,13 +55,25 @@ data class CodexEntryDetailUiState(
     val saved: Boolean = false,
     val statusMessage: String = "",
     val showSettingsMenu: Boolean = false,
+    val relationships: List<RelationshipRow> = emptyList(),
+    /** Every other Codex entry, offered as relationship targets. */
+    val otherEntries: List<CodexEntryEntity> = emptyList(),
+    val showAddRelationship: Boolean = false,
+    /** "everywhere" or "specific" — whether usageBookIds/usageRoleplayIds restrict where this entry appears. */
+    val usageMode: String = "everywhere",
+    val usageBookIds: Set<String> = emptySet(),
+    val usageRoleplayIds: Set<String> = emptySet(),
+    val allBooks: List<BookEntity> = emptyList(),
+    val allRoleplayChats: List<RpChatEntity> = emptyList(),
 )
 
 @HiltViewModel
 class CodexEntryDetailViewModel @Inject constructor(
     private val codexRepository: CodexRepository,
+    private val bookRepository: BookRepository,
     private val mediaRepository: MediaRepository,
     private val workspaceHistory: WorkspaceHistory,
+    private val db: WeaverseDatabase,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(CodexEntryDetailUiState())
     val uiState: StateFlow<CodexEntryDetailUiState> = _uiState.asStateFlow()
@@ -68,8 +97,36 @@ class CodexEntryDetailViewModel @Inject constructor(
                         trackMentions = entry.trackMentions,
                         caseSensitiveMatching = entry.caseSensitiveMatching,
                         media = resolveMedia(mediaIds),
+                        usageMode = entry.usageMode,
+                        usageBookIds = decodeAliases(entry.usageBookIdsJson).toSet(),
+                        usageRoleplayIds = decodeAliases(entry.usageRoleplayIdsJson).toSet(),
                     )
                 }
+            }
+        }
+        viewModelScope.launch {
+            combine(
+                codexRepository.observeRelationships(entryId),
+                codexRepository.observeAllEntries(),
+            ) { relationships, allEntries ->
+                val nameById = allEntries.associateBy({ it.id }, { it.name })
+                val rows = relationships.mapNotNull { rel ->
+                    val outgoing = rel.fromEntryId == entryId
+                    val otherId = if (outgoing) rel.toEntryId else rel.fromEntryId
+                    val otherName = nameById[otherId] ?: return@mapNotNull null
+                    RelationshipRow(rel.id, rel.label, otherId, otherName, outgoing)
+                }.sortedBy { it.otherEntryName }
+                rows to allEntries.filter { it.id != entryId }
+            }.collect { (rows, others) ->
+                _uiState.update { it.copy(relationships = rows, otherEntries = others) }
+            }
+        }
+        viewModelScope.launch {
+            combine(
+                bookRepository.observeBooks(),
+                db.roleplayDao().observeChats(),
+            ) { books, chats -> books to chats }.collect { (books, chats) ->
+                _uiState.update { it.copy(allBooks = books, allRoleplayChats = chats) }
             }
         }
     }
@@ -82,7 +139,34 @@ class CodexEntryDetailViewModel @Inject constructor(
     fun onCaseSensitiveMatching(value: Boolean) =
         _uiState.update { it.copy(caseSensitiveMatching = value, saved = false) }
 
+    fun onUsageMode(mode: String) = _uiState.update { it.copy(usageMode = mode, saved = false) }
+    fun onToggleUsageBook(bookId: String) = _uiState.update {
+        it.copy(usageBookIds = it.usageBookIds.toggled(bookId), saved = false)
+    }
+    fun onToggleUsageRoleplay(chatId: String) = _uiState.update {
+        it.copy(usageRoleplayIds = it.usageRoleplayIds.toggled(chatId), saved = false)
+    }
+
     fun onShowSettingsMenuChange(show: Boolean) = _uiState.update { it.copy(showSettingsMenu = show) }
+    fun onShowAddRelationshipChange(show: Boolean) = _uiState.update { it.copy(showAddRelationship = show) }
+
+    fun addRelationship(toEntryId: String, label: String) {
+        if (label.isBlank()) return
+        val fromEntryId = _uiState.value.id
+        if (fromEntryId.isBlank()) return
+        viewModelScope.launch {
+            val entity = codexRepository.addRelationship(fromEntryId, toEntryId, label.trim())
+            workspaceHistory.record(
+                undo = { codexRepository.deleteRelationship(entity.id) },
+                redo = { codexRepository.addRelationship(entity.fromEntryId, entity.toEntryId, entity.label) },
+            )
+            _uiState.update { it.copy(showAddRelationship = false) }
+        }
+    }
+
+    fun removeRelationship(id: String) {
+        viewModelScope.launch { codexRepository.deleteRelationship(id) }
+    }
 
     /** Body text to insert when the caller pastes clipboard content in. */
     fun onPaste(clipboardText: String) {
@@ -166,6 +250,9 @@ class CodexEntryDetailViewModel @Inject constructor(
                 caseSensitiveMatching = state.caseSensitiveMatching,
                 imageMediaId = CodexMediaIds.encode(mediaIds),
                 clearImageMediaId = mediaIds.isEmpty(),
+                usageMode = state.usageMode,
+                usageBookIds = state.usageBookIds.toList(),
+                usageRoleplayIds = state.usageRoleplayIds.toList(),
             )
             val after = codexRepository.getEntry(state.id) ?: return@launch
             if (before != after) {
@@ -190,6 +277,9 @@ class CodexEntryDetailViewModel @Inject constructor(
                 trackMentions = entity.trackMentions,
                 caseSensitiveMatching = entity.caseSensitiveMatching,
                 media = resolveMedia(mediaIds),
+                usageMode = entity.usageMode,
+                usageBookIds = decodeAliases(entity.usageBookIdsJson).toSet(),
+                usageRoleplayIds = decodeAliases(entity.usageRoleplayIdsJson).toSet(),
                 saved = true,
             )
         }

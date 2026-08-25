@@ -1,5 +1,6 @@
 package com.ihy2ln.weaverse.core.ui.util
 
+import com.ihy2ln.weaverse.ai.context.TokenBreakdown
 import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
 import java.util.Locale
@@ -40,4 +41,8 @@ object UsageFormat {
     }
 
     fun formatCount(n: Int): String = "%,d".format(Locale.US, n)
+
+    fun formatBreakdown(items: List<TokenBreakdown>): String =
+        items.filter { it.tokens > 0 }
+            .joinToString(" · ") { "${it.section} ${formatCount(it.tokens)}" }
 }

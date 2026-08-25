@@ -3,6 +3,8 @@ package com.ihy2ln.weaverse.data.export
 import kotlinx.serialization.Serializable
 
 enum class ExportFormat(val label: String, val extension: String) {
+    Epub("EPUB (.epub)", "epub"),
+    Pdf("PDF (.pdf)", "pdf"),
     Docx("Word (.docx)", "docx"),
     Html("HTML", "html"),
     Json("JSON", "json"),
@@ -70,6 +72,8 @@ data class BookDto(
     val title: String,
     val genre: String = "",
     val pov: String = "",
+    val povCharacterId: String? = null,
+    val premise: String = "",
     val tense: String = "",
     val styleGuide: String = "",
     val targetWordCount: Int = 0,
@@ -142,6 +146,9 @@ data class CodexEntryDto(
     val isAiGenerated: Boolean = false,
     val trackMentions: Boolean = true,
     val caseSensitiveMatching: Boolean = false,
+    val usageMode: String = "everywhere",
+    val usageBookIdsJson: String = "[]",
+    val usageRoleplayIdsJson: String = "[]",
     val createdAt: Long = 0,
     val updatedAt: Long = 0,
 )

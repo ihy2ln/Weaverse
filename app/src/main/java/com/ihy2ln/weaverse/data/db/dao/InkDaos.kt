@@ -12,6 +12,7 @@ import com.ihy2ln.weaverse.data.db.entities.ChatThreadEntity
 import com.ihy2ln.weaverse.data.db.entities.CodexCategoryEntity
 import com.ihy2ln.weaverse.data.db.entities.CodexEntryEntity
 import com.ihy2ln.weaverse.data.db.entities.CodexEntryLoreEntity
+import com.ihy2ln.weaverse.data.db.entities.CodexRelationshipEntity
 import com.ihy2ln.weaverse.data.db.entities.MediaEntity
 import com.ihy2ln.weaverse.data.db.entities.PromptEntity
 import com.ihy2ln.weaverse.data.db.entities.PromptFolderEntity
@@ -20,6 +21,7 @@ import com.ihy2ln.weaverse.data.db.entities.RpChatEntity
 import com.ihy2ln.weaverse.data.db.entities.RpMessageEntity
 import com.ihy2ln.weaverse.data.db.entities.RpPersonaEntity
 import com.ihy2ln.weaverse.data.db.entities.SceneEntity
+import com.ihy2ln.weaverse.data.db.entities.SceneSnapshotEntity
 import com.ihy2ln.weaverse.data.db.entities.SeriesEntity
 import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
 import kotlinx.coroutines.flow.Flow
@@ -92,6 +94,21 @@ interface ManuscriptDao {
     @Query("SELECT * FROM scenes WHERE id = :id LIMIT 1")
     suspend fun getScene(id: String): SceneEntity?
 
+    @Query("SELECT * FROM chapters WHERE id = :id LIMIT 1")
+    suspend fun getChapter(id: String): ChapterEntity?
+
+    @Query("SELECT * FROM scene_snapshots WHERE sceneId = :sceneId ORDER BY createdAt DESC")
+    fun observeSnapshots(sceneId: String): Flow<List<SceneSnapshotEntity>>
+
+    @Query("SELECT * FROM scene_snapshots WHERE id = :id LIMIT 1")
+    suspend fun getSnapshot(id: String): SceneSnapshotEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertSnapshot(entity: SceneSnapshotEntity)
+
+    @Query("DELETE FROM scene_snapshots WHERE id = :id")
+    suspend fun deleteSnapshot(id: String)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAct(entity: ActEntity)
 
@@ -160,6 +177,15 @@ interface CodexDao {
 
     @Query("DELETE FROM codex_categories WHERE scopeId = :scopeId")
     suspend fun deleteCategoriesForScope(scopeId: String)
+
+    @Query("SELECT * FROM codex_relationships WHERE fromEntryId = :entryId OR toEntryId = :entryId")
+    fun observeRelationships(entryId: String): Flow<List<CodexRelationshipEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertRelationship(entity: CodexRelationshipEntity)
+
+    @Query("DELETE FROM codex_relationships WHERE id = :id")
+    suspend fun deleteRelationship(id: String)
 }
 
 @Dao
@@ -245,6 +271,12 @@ interface WorkshopChatDao {
     @Query("SELECT * FROM chat_threads WHERE scopeId = :scopeId ORDER BY pinned DESC, updatedAt DESC")
     suspend fun getThreads(scopeId: String): List<ChatThreadEntity>
 
+    @Query("SELECT * FROM chat_threads ORDER BY pinned DESC, updatedAt DESC")
+    fun observeAllThreads(): Flow<List<ChatThreadEntity>>
+
+    @Query("SELECT * FROM chat_threads WHERE id = :threadId LIMIT 1")
+    suspend fun getThread(threadId: String): ChatThreadEntity?
+
     @Query("SELECT * FROM chat_messages WHERE threadId = :threadId ORDER BY createdAt")
     fun observeMessages(threadId: String): Flow<List<ChatMessageEntity>>
 
@@ -259,6 +291,12 @@ interface WorkshopChatDao {
 
     @Query("DELETE FROM chat_messages WHERE id = :id")
     suspend fun deleteMessage(id: String)
+
+    @Query("DELETE FROM chat_messages WHERE threadId = :threadId")
+    suspend fun deleteMessagesForThread(threadId: String)
+
+    @Query("DELETE FROM chat_threads WHERE id = :id")
+    suspend fun deleteThread(id: String)
 }
 
 @Dao
@@ -333,6 +371,12 @@ interface RoleplayDao {
 
     @Query("DELETE FROM rp_messages WHERE id = :id")
     suspend fun deleteMessage(id: String)
+
+    @Query("DELETE FROM rp_messages WHERE chatId = :chatId")
+    suspend fun deleteMessagesForChat(chatId: String)
+
+    @Query("DELETE FROM rp_chats WHERE id = :id")
+    suspend fun deleteChat(id: String)
 }
 
 @Dao

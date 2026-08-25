@@ -16,6 +16,7 @@ import com.ihy2ln.weaverse.data.db.entities.BookEntity
 import com.ihy2ln.weaverse.data.db.entities.ChapterEntity
 import com.ihy2ln.weaverse.data.db.entities.CodexCategoryEntity
 import com.ihy2ln.weaverse.data.db.entities.CodexEntryEntity
+import com.ihy2ln.weaverse.data.db.entities.CodexRelationshipEntity
 import com.ihy2ln.weaverse.data.db.entities.PromptEntity
 import com.ihy2ln.weaverse.data.db.entities.PromptFolderEntity
 import com.ihy2ln.weaverse.data.db.entities.SceneEntity
@@ -71,7 +72,14 @@ class BookRepository @Inject constructor(
     suspend fun getBook(id: String): BookEntity? = db.bookDao().getById(id)
     fun observeBooksInSeries(seriesId: String): Flow<List<BookEntity>> = db.bookDao().observeBySeries(seriesId)
 
-    suspend fun createBook(title: String, seriesId: String? = null): BookEntity {
+    suspend fun createBook(
+        title: String,
+        seriesId: String? = null,
+        genre: String = "",
+        pov: String = "",
+        povCharacterId: String? = null,
+        premise: String = "",
+    ): BookEntity {
         val now = System.currentTimeMillis()
         val bookId = "book-${UUID.randomUUID()}"
         val actId = "act-$bookId"
@@ -81,6 +89,10 @@ class BookRepository @Inject constructor(
             id = bookId,
             seriesId = seriesId,
             title = title.ifBlank { "Untitled Book" },
+            genre = genre,
+            pov = pov,
+            povCharacterId = povCharacterId,
+            premise = premise,
             createdAt = now,
             updatedAt = now,
         )
@@ -321,6 +333,9 @@ class CodexRepository @Inject constructor(
         caseSensitiveMatching: Boolean? = null,
         imageMediaId: String? = null,
         clearImageMediaId: Boolean = false,
+        usageMode: String? = null,
+        usageBookIds: List<String>? = null,
+        usageRoleplayIds: List<String>? = null,
     ) {
         val current = db.codexDao().observeEntry(id).first() ?: return
         val doc = Document.fromPlainText(plainText)
@@ -338,6 +353,11 @@ class CodexRepository @Inject constructor(
                     imageMediaId != null -> imageMediaId
                     else -> current.imageMediaId
                 },
+                usageMode = usageMode ?: current.usageMode,
+                usageBookIdsJson = usageBookIds?.let { com.ihy2ln.weaverse.core.text.encodeAliases(it) }
+                    ?: current.usageBookIdsJson,
+                usageRoleplayIdsJson = usageRoleplayIds?.let { com.ihy2ln.weaverse.core.text.encodeAliases(it) }
+                    ?: current.usageRoleplayIdsJson,
                 updatedAt = System.currentTimeMillis(),
             ),
         )
@@ -353,6 +373,22 @@ class CodexRepository @Inject constructor(
             ),
         )
     }
+
+    fun observeRelationships(entryId: String) = db.codexDao().observeRelationships(entryId)
+
+    suspend fun addRelationship(fromEntryId: String, toEntryId: String, label: String): CodexRelationshipEntity {
+        val entity = CodexRelationshipEntity(
+            id = "relationship-${UUID.randomUUID()}",
+            fromEntryId = fromEntryId,
+            toEntryId = toEntryId,
+            label = label,
+            createdAt = System.currentTimeMillis(),
+        )
+        db.codexDao().upsertRelationship(entity)
+        return entity
+    }
+
+    suspend fun deleteRelationship(id: String) = db.codexDao().deleteRelationship(id)
 }
 
 @Singleton

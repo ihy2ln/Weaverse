@@ -4,6 +4,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -14,6 +15,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -43,13 +46,16 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.ihy2ln.weaverse.ai.ModelInfo
 import com.ihy2ln.weaverse.core.ui.components.InkCheckIconButton
 import com.ihy2ln.weaverse.core.ui.components.InkClearIconButton
+import com.ihy2ln.weaverse.core.ui.components.InkModeCapsule
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
+import com.ihy2ln.weaverse.core.ui.components.VoiceInputButton
 import com.ihy2ln.weaverse.core.ui.components.VoiceToTextField
+import com.ihy2ln.weaverse.core.ui.components.mergeSpokenText
 import com.ihy2ln.weaverse.core.ui.theme.InkAccentBlue
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 
-private const val PromptMaxHeightDp = 220f
+private const val PromptMaxHeightDp = 290f
 
 @Composable
 fun GlobalPromptOverlay(
@@ -57,6 +63,8 @@ fun GlobalPromptOverlay(
     novelDest: String? = null,
     modifier: Modifier = Modifier,
     active: Boolean = true,
+    collapsed: Boolean = false,
+    onCollapsedChange: (Boolean) -> Unit = {},
     viewModel: GlobalPromptViewModel = hiltViewModel(),
 ) {
     if (!active) return
@@ -64,6 +72,22 @@ fun GlobalPromptOverlay(
     val state by viewModel.uiState.collectAsState()
     val tokens = inkTokens()
     LaunchedEffect(context) { viewModel.updateContext(context) }
+
+    if (collapsed) {
+        Text(
+            "▴ Prompt",
+            modifier = modifier
+                .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xxs)
+                .clip(RoundedCornerShape(InkSpacing.radiusMd))
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.97f))
+                .border(1.dp, InkAccentBlue, RoundedCornerShape(InkSpacing.radiusMd))
+                .clickable { onCollapsedChange(false) }
+                .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xxs),
+            style = MaterialTheme.typography.labelSmall,
+            color = InkAccentBlue,
+        )
+        return
+    }
 
     val imagePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia(),
@@ -84,7 +108,7 @@ fun GlobalPromptOverlay(
     val placeholder = when (kind) {
         PromptEntryKind.Manual -> "Write ideas / brainstorm (no AI)…"
         PromptEntryKind.Ai -> "Describe the beat…"
-        null -> "Continue…  / AI · \\ manual"
+        null -> "Insert text"
     }
     val acceptDescription = if (kind == PromptEntryKind.Ai) "Generate" else "Accept"
     val canSubmit = state.text.isNotBlank() || state.imagePath != null
@@ -132,23 +156,18 @@ fun GlobalPromptOverlay(
             )
             Spacer(modifier = Modifier.weight(1f))
             if (expanded) {
-                InkTextButton(label = "Hide", onClick = viewModel::dismiss, compact = true)
+                InkTextButton(label = "−", onClick = viewModel::dismiss, compact = true)
             }
-            InkTextButton(
-                label = "Models",
-                onClick = { modelsOpen = true },
-                compact = true,
-                enabled = !state.isStreaming,
-            )
-            Text(
-                PromptModelSelection.shortLabel(activeModelRef, state.writingModels),
-                style = MaterialTheme.typography.labelSmall,
-                color = tokens.secondaryText,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-            )
+            InkTextButton(label = "▾", onClick = { onCollapsedChange(true) }, compact = true)
         }
+        // Action row (Models/Preview/accept/clear/mic) must always stay reachable — the
+        // text field and prompt preview below it are unbounded in content length, so this
+        // whole block scrolls internally instead of overflowing past the screen bottom.
+        Column(
+            modifier = Modifier
+                .weight(1f, fill = false)
+                .verticalScroll(rememberScrollState()),
+        ) {
         VoiceToTextField(
             value = state.text,
             onValueChange = viewModel::onTextChange,
@@ -159,26 +178,77 @@ fun GlobalPromptOverlay(
             maxLines = PromptBoxSizing.MaxLines,
             compact = true,
             colors = fieldColors,
-            extraTrailing = {
-                if (state.isStreaming) {
-                    Text(
-                        "…",
-                        color = tokens.secondaryText,
-                        modifier = Modifier.padding(end = InkSpacing.xxs),
-                    )
-                } else {
-                    InkCheckIconButton(
-                        onClick = viewModel::submit,
-                        enabled = canSubmit,
-                        contentDescription = acceptDescription,
-                    )
-                }
-                InkClearIconButton(
-                    onClick = viewModel::clearText,
-                    enabled = canClear,
-                )
-            },
+            showMic = false,
         )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = InkSpacing.xxs),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xxs),
+        ) {
+            InkModeCapsule(
+                label = "Man",
+                onClick = { viewModel.setKind(PromptEntryKind.Manual) },
+                selected = kind == PromptEntryKind.Manual,
+                enabled = !state.isStreaming,
+                compact = true,
+            )
+            InkModeCapsule(
+                label = "Gen",
+                onClick = { viewModel.setKind(PromptEntryKind.Ai) },
+                selected = kind == PromptEntryKind.Ai,
+                enabled = !state.isStreaming,
+                compact = true,
+            )
+            InkTextButton(
+                label = "Models",
+                onClick = { modelsOpen = true },
+                compact = true,
+                enabled = !state.isStreaming,
+            )
+            if (kind == PromptEntryKind.Ai) {
+                InkTextButton(
+                    label = if (state.showPreview) "Preview ▴" else "Preview",
+                    onClick = viewModel::togglePreview,
+                    compact = true,
+                    enabled = !state.isStreaming,
+                )
+            }
+            Text(
+                PromptModelSelection.shortLabel(activeModelRef, state.writingModels),
+                style = MaterialTheme.typography.labelSmall,
+                color = tokens.secondaryText,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Clip,
+                modifier = Modifier
+                    .weight(1f)
+                    .basicMarquee(iterations = Int.MAX_VALUE, repeatDelayMillis = 1_200),
+            )
+            if (state.isStreaming) {
+                Text(
+                    "…",
+                    color = tokens.secondaryText,
+                    modifier = Modifier.padding(end = InkSpacing.xxs),
+                )
+            } else {
+                InkCheckIconButton(
+                    onClick = viewModel::submit,
+                    enabled = canSubmit,
+                    contentDescription = acceptDescription,
+                )
+            }
+            InkClearIconButton(
+                onClick = viewModel::clearText,
+                enabled = canClear,
+            )
+            VoiceInputButton(
+                enabled = !state.isStreaming,
+                compact = true,
+                onSpoken = { spoken -> viewModel.onTextChange(mergeSpokenText(state.text, spoken)) },
+            )
+        }
         if (kind == PromptEntryKind.Ai) {
             Row(
                 modifier = Modifier
@@ -195,10 +265,11 @@ fun GlobalPromptOverlay(
                         viewModel.updateOutputWords(digits.toIntOrNull() ?: 750)
                     },
                     modifier = Modifier
-                        .width(52.dp)
+                        .width(60.dp)
                         .heightIn(max = 36.dp),
                     singleLine = true,
-                    textStyle = MaterialTheme.typography.bodySmall.copy(color = tokens.primaryText),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = tokens.primaryText),
+                    colors = fieldColors,
                 )
                 InkTextButton(
                     label = if (state.imagePath != null) "Image ✓" else "Add pic",
@@ -207,6 +278,24 @@ fun GlobalPromptOverlay(
                     enabled = !state.isStreaming,
                 )
             }
+        }
+        if (state.showPreview && state.promptPreview.isNotBlank()) {
+            Text(
+                state.promptPreview,
+                style = MaterialTheme.typography.labelSmall,
+                color = tokens.secondaryText,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = InkSpacing.xxs),
+            )
+        }
+        if (state.contextMeter.isNotBlank()) {
+            Text(
+                "Context · ${state.contextMeter}",
+                style = MaterialTheme.typography.labelSmall,
+                color = tokens.secondaryText,
+                modifier = Modifier.padding(top = InkSpacing.xxs),
+            )
         }
         if (state.isStreaming) {
             Text(
@@ -232,6 +321,7 @@ fun GlobalPromptOverlay(
                 modifier = Modifier.padding(top = InkSpacing.xxs),
             )
         }
+        }
     }
     if (modelsOpen) {
         PromptModelPickerDialog(
@@ -254,7 +344,7 @@ fun GlobalPromptOverlay(
 }
 
 @Composable
-private fun PromptModelPickerDialog(
+fun PromptModelPickerDialog(
     models: List<ModelInfo>,
     search: String,
     onSearchChange: (String) -> Unit,
@@ -278,7 +368,7 @@ private fun PromptModelPickerDialog(
                     placeholder = { Text("Search models") },
                 )
                 Text(
-                    "Per generation · Settings default stays unless you change it there",
+                    "Remembered for this action — Settings default stays unless you change it there",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = InkSpacing.xs, bottom = InkSpacing.xs),

@@ -92,6 +92,16 @@ class ProjectExportManager @Inject constructor(
             .take(48)
         val timestamp = System.currentTimeMillis()
         when (format) {
+            ExportFormat.Epub -> {
+                val file = File(exportDir, "$safeTitle-$timestamp.epub")
+                writeEpub(file, bundle, options)
+                file.absolutePath
+            }
+            ExportFormat.Pdf -> {
+                val file = File(exportDir, "$safeTitle-$timestamp.pdf")
+                writePdf(file, bundle, options)
+                file.absolutePath
+            }
             ExportFormat.Json -> {
                 val file = File(exportDir, "$safeTitle-$timestamp.json")
                 file.writeText(json.encodeToString(bundle))
@@ -503,15 +513,282 @@ class ProjectExportManager @Inject constructor(
             putStored("word/document.xml", documentXml.toByteArray(Charsets.UTF_8))
         }
     }
+
+    private data class EpubChapter(val id: String, val title: String, val bodyHtml: String)
+
+    private fun buildEpubChapters(bundle: ProjectBundle, options: ExportOptions): List<EpubChapter> {
+        val chaptersByAct = bundle.chapters.groupBy { it.actId }
+        val scenesByChapter = bundle.scenes.groupBy { it.chapterId }
+        val result = mutableListOf<EpubChapter>()
+        var index = 0
+        for (act in bundle.acts.sortedBy { it.sortOrder }) {
+            val chapters = chaptersByAct[act.id].orEmpty().sortedBy { it.sortOrder }
+            for (chapter in chapters) {
+                index++
+                val body = buildString {
+                    if (options.includeActTitles) {
+                        append("<p class=\"act\">").append(escapeXml(act.title)).append("</p>")
+                    }
+                    if (options.exportSummaries && chapter.summary.isNotBlank()) {
+                        append("<p class=\"summary\"><em>").append(escapeXml(chapter.summary)).append("</em></p>")
+                    }
+                    val scenes = scenesByChapter[chapter.id].orEmpty().sortedBy { it.sortOrder }
+                    scenes.forEachIndexed { i, scene ->
+                        if (i > 0 && options.sceneDivider != SceneDivider.None) {
+                            val div = options.sceneDivider.value
+                            if (div.isNotBlank()) {
+                                append("<p class=\"divider\">").append(escapeXml(div)).append("</p>")
+                            }
+                        }
+                        if (options.includeSceneSubtitles) {
+                            append("<h3>").append(escapeXml(scene.title)).append("</h3>")
+                        }
+                        if (options.exportSummaries && scene.summary.isNotBlank()) {
+                            append("<p class=\"summary\"><em>").append(escapeXml(scene.summary)).append("</em></p>")
+                        }
+                        if (options.exportProse && scene.plainText.isNotBlank()) {
+                            scene.plainText.trim().split("\n").filter { it.isNotBlank() }.forEach { para ->
+                                append("<p>").append(escapeXml(para)).append("</p>")
+                            }
+                        }
+                    }
+                }
+                result += EpubChapter(
+                    id = "chapter$index",
+                    title = chapter.title.ifBlank { "Chapter $index" },
+                    bodyHtml = body,
+                )
+            }
+        }
+        return result
+    }
+
+    /** A minimal but valid EPUB 3: mimetype (stored, uncompressed, first entry) + OCF container + one XHTML file per chapter. */
+    private fun writeEpub(file: File, bundle: ProjectBundle, options: ExportOptions) {
+        val title = bundle.book?.title?.ifBlank { "Untitled" } ?: "Untitled"
+        val chapters = buildEpubChapters(bundle, options)
+        val bookUid = "urn:uuid:${java.util.UUID.randomUUID()}"
+
+        ZipOutputStream(BufferedOutputStream(FileOutputStream(file))).use { zip ->
+            val mimeBytes = "application/epub+zip".toByteArray(Charsets.US_ASCII)
+            val crc = java.util.zip.CRC32().apply { update(mimeBytes) }
+            zip.putNextEntry(
+                ZipEntry("mimetype").apply {
+                    method = ZipEntry.STORED
+                    size = mimeBytes.size.toLong()
+                    compressedSize = mimeBytes.size.toLong()
+                    this.crc = crc.value
+                },
+            )
+            zip.write(mimeBytes)
+            zip.closeEntry()
+
+            fun putText(name: String, content: String) {
+                zip.putNextEntry(ZipEntry(name))
+                zip.write(content.toByteArray(Charsets.UTF_8))
+                zip.closeEntry()
+            }
+
+            putText(
+                "META-INF/container.xml",
+                """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <container xmlns="urn:oasis:names:tc:opendocument:xmlns:container" version="1.0">
+                  <rootfiles>
+                    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+                  </rootfiles>
+                </container>
+                """.trimIndent(),
+            )
+
+            val manifestItems = buildString {
+                append("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>")
+                chapters.forEach { ch ->
+                    append("<item id=\"${ch.id}\" href=\"${ch.id}.xhtml\" media-type=\"application/xhtml+xml\"/>")
+                }
+            }
+            val spineItems = chapters.joinToString("") { "<itemref idref=\"${it.id}\"/>" }
+            putText(
+                "OEBPS/content.opf",
+                """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid">
+                  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+                    <dc:identifier id="bookid">$bookUid</dc:identifier>
+                    <dc:title>${escapeXml(title)}</dc:title>
+                    <dc:language>en</dc:language>
+                  </metadata>
+                  <manifest>$manifestItems</manifest>
+                  <spine>$spineItems</spine>
+                </package>
+                """.trimIndent(),
+            )
+
+            val navItems = chapters.joinToString("") { "<li><a href=\"${it.id}.xhtml\">${escapeXml(it.title)}</a></li>" }
+            putText(
+                "OEBPS/nav.xhtml",
+                """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+                <head><title>Contents</title></head>
+                <body>
+                  <nav epub:type="toc" id="toc"><h1>Contents</h1><ol>$navItems</ol></nav>
+                </body></html>
+                """.trimIndent(),
+            )
+
+            chapters.forEach { ch ->
+                putText(
+                    "OEBPS/${ch.id}.xhtml",
+                    """
+                    <?xml version="1.0" encoding="UTF-8"?>
+                    <html xmlns="http://www.w3.org/1999/xhtml">
+                    <head><title>${escapeXml(ch.title)}</title></head>
+                    <body>
+                      <h2>${escapeXml(ch.title)}</h2>
+                      ${ch.bodyHtml}
+                    </body></html>
+                    """.trimIndent(),
+                )
+            }
+        }
+    }
+
+    private fun escapeXml(s: String): String =
+        s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    /** Paginated, letter-size PDF using android.graphics.pdf — no third-party dependency needed. */
+    private fun writePdf(file: File, bundle: ProjectBundle, options: ExportOptions) {
+        val pageWidth = 612
+        val pageHeight = 792
+        val margin = 54f
+        val contentWidth = pageWidth - margin * 2
+        val contentBottom = pageHeight - margin
+
+        val titlePaint = android.graphics.Paint().apply {
+            textSize = 22f
+            isAntiAlias = true
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        }
+        val headingPaint = android.graphics.Paint().apply {
+            textSize = 16f
+            isAntiAlias = true
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        }
+        val subheadingPaint = android.graphics.Paint().apply {
+            textSize = 13f
+            isAntiAlias = true
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        }
+        val bodyPaint = android.graphics.Paint().apply {
+            textSize = 11f
+            isAntiAlias = true
+            typeface = android.graphics.Typeface.DEFAULT
+        }
+        val italicPaint = android.graphics.Paint().apply {
+            textSize = 11f
+            isAntiAlias = true
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.ITALIC)
+        }
+
+        data class Block(val text: String, val paint: android.graphics.Paint, val spacingAfter: Float, val centered: Boolean = false)
+
+        val blocks = mutableListOf<Block>()
+        val title = bundle.book?.title.orEmpty()
+        if (title.isNotBlank()) blocks += Block(title, titlePaint, 24f, centered = true)
+
+        val chaptersByAct = bundle.chapters.groupBy { it.actId }
+        val scenesByChapter = bundle.scenes.groupBy { it.chapterId }
+        var firstScene = true
+        for (act in bundle.acts.sortedBy { it.sortOrder }) {
+            if (options.includeActTitles) blocks += Block(act.title, headingPaint, 14f)
+            val chapters = chaptersByAct[act.id].orEmpty().sortedBy { it.sortOrder }
+            for (chapter in chapters) {
+                blocks += Block(chapter.title, headingPaint, 12f)
+                if (options.exportSummaries && chapter.summary.isNotBlank()) {
+                    blocks += Block(chapter.summary, italicPaint, 10f)
+                }
+                val scenes = scenesByChapter[chapter.id].orEmpty().sortedBy { it.sortOrder }
+                for (scene in scenes) {
+                    if (!firstScene && options.sceneDivider != SceneDivider.None) {
+                        val div = options.sceneDivider.value
+                        if (div.isNotBlank()) blocks += Block(div, bodyPaint, 10f, centered = true)
+                    }
+                    firstScene = false
+                    if (options.includeSceneSubtitles) blocks += Block(scene.title, subheadingPaint, 8f)
+                    if (options.exportSummaries && scene.summary.isNotBlank()) {
+                        blocks += Block(scene.summary, italicPaint, 8f)
+                    }
+                    if (options.exportProse && scene.plainText.isNotBlank()) {
+                        scene.plainText.trim().split(Regex("\n+")).filter { it.isNotBlank() }.forEach { para ->
+                            blocks += Block(para.trim(), bodyPaint, 8f)
+                        }
+                    }
+                }
+            }
+        }
+
+        val document = android.graphics.pdf.PdfDocument()
+        var pageNumber = 1
+        var page = document.startPage(android.graphics.pdf.PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create())
+        var canvas = page.canvas
+        var y = margin
+
+        fun newPage() {
+            document.finishPage(page)
+            pageNumber++
+            page = document.startPage(android.graphics.pdf.PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create())
+            canvas = page.canvas
+            y = margin
+        }
+
+        for (block in blocks) {
+            val lines = wrapText(block.text, block.paint, contentWidth)
+            for (line in lines) {
+                val lineHeight = block.paint.fontSpacing
+                if (y + lineHeight > contentBottom) newPage()
+                y += lineHeight
+                val x = if (block.centered) margin + (contentWidth - block.paint.measureText(line)) / 2f else margin
+                canvas.drawText(line, x, y, block.paint)
+            }
+            y += block.spacingAfter
+            if (y > contentBottom) newPage()
+        }
+        document.finishPage(page)
+        FileOutputStream(file).use { document.writeTo(it) }
+        document.close()
+    }
+
+    private fun wrapText(text: String, paint: android.graphics.Paint, maxWidth: Float): List<String> {
+        if (text.isBlank()) return emptyList()
+        val words = text.split(" ")
+        val lines = mutableListOf<String>()
+        var current = StringBuilder()
+        for (word in words) {
+            val candidate = if (current.isEmpty()) word else "$current $word"
+            if (paint.measureText(candidate) > maxWidth && current.isNotEmpty()) {
+                lines += current.toString()
+                current = StringBuilder(word)
+            } else {
+                current = StringBuilder(candidate)
+            }
+        }
+        if (current.isNotEmpty()) lines += current.toString()
+        return lines
+    }
 }
 
 // --- Entity ↔ DTO mappers ---
 
 private fun BookEntity.toDto() = BookDto(
-    id, seriesId, title, genre, pov, tense, styleGuide, targetWordCount, coverMediaId, createdAt, updatedAt,
+    id = id, seriesId = seriesId, title = title, genre = genre, pov = pov,
+    povCharacterId = povCharacterId, premise = premise, tense = tense, styleGuide = styleGuide,
+    targetWordCount = targetWordCount, coverMediaId = coverMediaId, createdAt = createdAt, updatedAt = updatedAt,
 )
 private fun BookDto.toEntity() = BookEntity(
-    id, seriesId, title, genre, pov, tense, styleGuide, targetWordCount, coverMediaId, createdAt, updatedAt,
+    id = id, seriesId = seriesId, title = title, genre = genre, pov = pov,
+    povCharacterId = povCharacterId, premise = premise, tense = tense, styleGuide = styleGuide,
+    targetWordCount = targetWordCount, coverMediaId = coverMediaId, createdAt = createdAt, updatedAt = updatedAt,
 )
 private fun ActEntity.toDto() = ActDto(id, bookId, title, sortOrder)
 private fun ActDto.toEntity() = ActEntity(id, bookId, title, sortOrder)
@@ -532,14 +809,22 @@ private fun CodexCategoryDto.toEntity() = CodexCategoryEntity(
     id, scopeType, scopeId, name, colorHex, icon, glyph, sortOrder, isSystem, isBuiltIn,
 )
 private fun CodexEntryEntity.toDto() = CodexEntryDto(
-    id, categoryId, scopeType, scopeId, name, aliasesJson, docJson, plainText, colorHex,
-    alwaysInclude, disabled, imageMediaId, isAiGenerated, trackMentions, caseSensitiveMatching,
-    createdAt, updatedAt,
+    id = id, categoryId = categoryId, scopeType = scopeType, scopeId = scopeId, name = name,
+    aliasesJson = aliasesJson, docJson = docJson, plainText = plainText, colorHex = colorHex,
+    alwaysInclude = alwaysInclude, disabled = disabled, imageMediaId = imageMediaId,
+    isAiGenerated = isAiGenerated, trackMentions = trackMentions,
+    caseSensitiveMatching = caseSensitiveMatching, usageMode = usageMode,
+    usageBookIdsJson = usageBookIdsJson, usageRoleplayIdsJson = usageRoleplayIdsJson,
+    createdAt = createdAt, updatedAt = updatedAt,
 )
 private fun CodexEntryDto.toEntity() = CodexEntryEntity(
-    id, categoryId, scopeType, scopeId, name, aliasesJson, docJson, plainText, colorHex,
-    alwaysInclude, disabled, imageMediaId, isAiGenerated, trackMentions, caseSensitiveMatching,
-    createdAt, updatedAt,
+    id = id, categoryId = categoryId, scopeType = scopeType, scopeId = scopeId, name = name,
+    aliasesJson = aliasesJson, docJson = docJson, plainText = plainText, colorHex = colorHex,
+    alwaysInclude = alwaysInclude, disabled = disabled, imageMediaId = imageMediaId,
+    isAiGenerated = isAiGenerated, trackMentions = trackMentions,
+    caseSensitiveMatching = caseSensitiveMatching, usageMode = usageMode,
+    usageBookIdsJson = usageBookIdsJson, usageRoleplayIdsJson = usageRoleplayIdsJson,
+    createdAt = createdAt, updatedAt = updatedAt,
 )
 private fun SnippetEntity.toDto() = SnippetDto(id, scopeType, scopeId, title, body, category, pinned, createdAt)
 private fun SnippetDto.toEntity() = SnippetEntity(id, scopeType, scopeId, title, body, category, pinned, createdAt)

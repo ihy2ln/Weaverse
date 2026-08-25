@@ -10,16 +10,21 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -28,6 +33,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -78,6 +84,11 @@ fun PlanScreen(
     var viewMode by rememberSaveable { mutableStateOf(PlanViewMode.Grid.name) }
     var selectedSceneId by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingDeleteSceneId by rememberSaveable { mutableStateOf<String?>(null) }
+    var showStructurePicker by rememberSaveable { mutableStateOf(false) }
+    var editingSceneId by rememberSaveable { mutableStateOf<String?>(null) }
+    var editingChapterId by rememberSaveable { mutableStateOf<String?>(null) }
+    var editingTarget by rememberSaveable { mutableStateOf(false) }
+    var editingDateSceneId by rememberSaveable { mutableStateOf<String?>(null) }
     val state by viewModel.uiState.collectAsState()
     val focusRequester = remember { FocusRequester() }
     val contentPad = adaptiveContentPadding()
@@ -116,12 +127,44 @@ fun PlanScreen(
                 onDismiss = { pendingDeleteSceneId = null },
             )
         }
-        InkSegmentedPill(
-            options = PlanViewMode.entries.map { SegmentedOption(it.name, it.name) },
-            selectedId = viewMode,
-            onSelect = { viewMode = it },
-            modifier = Modifier.padding(bottom = InkSpacing.md),
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = InkSpacing.md),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            InkSegmentedPill(
+                options = PlanViewMode.entries.map { SegmentedOption(it.name, it.name) },
+                selectedId = viewMode,
+                onSelect = { viewMode = it },
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            InkTextButton(label = "Structure ▾", onClick = { showStructurePicker = true })
+        }
+        if (showStructurePicker) {
+            StructureTemplatePickerDialog(
+                onSelect = { template ->
+                    viewModel.applyStructureTemplate(template)
+                    showStructurePicker = false
+                },
+                onDismiss = { showStructurePicker = false },
+            )
+        }
+        WordCountProgress(
+            wordCount = state.wordCount,
+            targetWordCount = state.targetWordCount,
+            onClick = { editingTarget = true },
         )
+        if (editingTarget) {
+            EditTargetWordCountDialog(
+                initialValue = state.targetWordCount,
+                onSave = {
+                    viewModel.updateTargetWordCount(it)
+                    editingTarget = false
+                },
+                onDismiss = { editingTarget = false },
+            )
+        }
         when (PlanViewMode.valueOf(viewMode)) {
             PlanViewMode.Grid -> PlanGridView(
                 scenes = state.scenes,
@@ -148,6 +191,7 @@ fun PlanScreen(
                 onAddNewChapter = {
                     viewModel.addNewChapter(selectedSceneId) { id -> selectedSceneId = id }
                 },
+                onEditSceneSummary = { editingSceneId = it },
             )
             PlanViewMode.Outline -> PlanOutlineView(
                 outline = state.outline,
@@ -173,9 +217,215 @@ fun PlanScreen(
                 onAddNewChapter = {
                     viewModel.addNewChapter(selectedSceneId) { id -> selectedSceneId = id }
                 },
+                onEditSceneSummary = { editingSceneId = it },
+                onEditChapterSummary = { editingChapterId = it },
+            )
+            PlanViewMode.Timeline -> PlanTimelineView(
+                outline = state.outline,
+                selectedSceneId = selectedSceneId,
+                onSelectScene = { selectedSceneId = it },
+                onWrite = onWrite,
+                onEditInWorldDate = { editingDateSceneId = it },
+            )
+        }
+        editingDateSceneId?.let { id ->
+            val scene = state.scenes.firstOrNull { it.id == id }
+            if (scene != null) {
+                EditInWorldDateDialog(
+                    initialValue = scene.inWorldDate,
+                    onSave = {
+                        viewModel.updateSceneInWorldDate(id, it)
+                        editingDateSceneId = null
+                    },
+                    onDismiss = { editingDateSceneId = null },
+                )
+            } else {
+                editingDateSceneId = null
+            }
+        }
+        editingSceneId?.let { id ->
+            val scene = state.scenes.firstOrNull { it.id == id }
+            if (scene != null) {
+                EditSummaryDialog(
+                    title = "Scene summary",
+                    initialValue = scene.summary,
+                    onSave = {
+                        viewModel.updateSceneSummary(id, it)
+                        editingSceneId = null
+                    },
+                    onDismiss = { editingSceneId = null },
+                )
+            } else {
+                editingSceneId = null
+            }
+        }
+        editingChapterId?.let { id ->
+            val chapter = state.outline.flatMap { it.chapters }.map { it.chapter }.firstOrNull { it.id == id }
+            if (chapter != null) {
+                EditSummaryDialog(
+                    title = "Chapter summary",
+                    initialValue = chapter.summary,
+                    onSave = {
+                        viewModel.updateChapterSummary(id, it)
+                        editingChapterId = null
+                    },
+                    onDismiss = { editingChapterId = null },
+                )
+            } else {
+                editingChapterId = null
+            }
+        }
+    }
+}
+
+@Composable
+private fun WordCountProgress(
+    wordCount: Int,
+    targetWordCount: Int,
+    onClick: () -> Unit,
+) {
+    val tokens = inkTokens()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(bottom = InkSpacing.md),
+    ) {
+        if (targetWordCount > 0) {
+            val fraction = (wordCount.toFloat() / targetWordCount).coerceIn(0f, 1f)
+            val percent = (fraction * 100).toInt()
+            Text(
+                "${"%,d".format(wordCount)} / ${"%,d".format(targetWordCount)} words · $percent%",
+                style = MaterialTheme.typography.labelSmall,
+                color = tokens.secondaryText,
+            )
+            LinearProgressIndicator(
+                progress = { fraction },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = InkSpacing.xxs)
+                    .clip(RoundedCornerShape(999.dp)),
+            )
+        } else {
+            Text(
+                "${"%,d".format(wordCount)} words · set a goal",
+                style = MaterialTheme.typography.labelSmall,
+                color = tokens.secondaryText,
             )
         }
     }
+}
+
+@Composable
+private fun EditTargetWordCountDialog(
+    initialValue: Int,
+    onSave: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var text by remember(initialValue) {
+        mutableStateOf(if (initialValue > 0) initialValue.toString() else "")
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Word count goal") },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { value -> text = value.filter { it.isDigit() } },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("Target words") },
+                placeholder = { Text("e.g. 80000") },
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(text.toIntOrNull() ?: 0) }) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
+private fun StructureTemplatePickerDialog(
+    onSelect: (StoryStructureTemplate) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val tokens = inkTokens()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Chapter structure") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp),
+            ) {
+                Text(
+                    "Lay out chapters as story beats from a popular framework, then fill them in.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.secondaryText,
+                    modifier = Modifier.padding(bottom = InkSpacing.sm),
+                )
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                    items(StoryStructureTemplates.all, key = { it.id }) { template ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onSelect(template) }
+                                .padding(vertical = InkSpacing.sm),
+                        ) {
+                            Text(template.templateName, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                template.summary,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = tokens.secondaryText,
+                            )
+                            Text(
+                                "${template.beats.size} chapters",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = tokens.secondaryText,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
+private fun EditSummaryDialog(
+    title: String,
+    initialValue: String,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var value by remember(initialValue) { mutableStateOf(initialValue) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            OutlinedTextField(
+                value = value,
+                onValueChange = { value = it },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 3,
+                maxLines = 8,
+                placeholder = { Text("Summary") },
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(value) }) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
 
 @Composable
@@ -233,6 +483,7 @@ private fun PlanGridView(
     onAddNewScene: () -> Unit,
     onAddSceneBeat: () -> Unit,
     onAddNewChapter: () -> Unit,
+    onEditSceneSummary: (String) -> Unit,
 ) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
@@ -269,6 +520,7 @@ private fun PlanGridView(
                 SceneSummaryBox(
                     scene = scene,
                     tone = SceneSummaryTone.Grid,
+                    onClick = { onEditSceneSummary(scene.id) },
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     WriteJumpButton(
@@ -313,6 +565,8 @@ private fun PlanOutlineView(
     onAddNewScene: () -> Unit,
     onAddSceneBeat: () -> Unit,
     onAddNewChapter: () -> Unit,
+    onEditSceneSummary: (String) -> Unit,
+    onEditChapterSummary: (String) -> Unit,
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         outline.forEach { node ->
@@ -342,7 +596,18 @@ private fun PlanOutlineView(
                         Text(
                             "    ${chapterNode.chapter.summary}",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(start = 24.dp, bottom = InkSpacing.sm),
+                            modifier = Modifier
+                                .padding(start = 24.dp, bottom = InkSpacing.sm)
+                                .clickable { onEditChapterSummary(chapterNode.chapter.id) },
+                        )
+                    } else {
+                        Text(
+                            "    + Add chapter summary",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .padding(start = 24.dp, bottom = InkSpacing.sm)
+                                .clickable { onEditChapterSummary(chapterNode.chapter.id) },
                         )
                     }
                 }
@@ -386,6 +651,7 @@ private fun PlanOutlineView(
                         SceneSummaryBox(
                             scene = scene,
                             tone = SceneSummaryTone.Outline,
+                            onClick = { onEditSceneSummary(scene.id) },
                         )
                         ScenePovControls(
                             scene = scene,
@@ -407,6 +673,120 @@ private fun PlanOutlineView(
         }
         alwaysScrollEndSpacer()
     }
+}
+
+/** Scene entry paired with the chapter it belongs to, for display in the timeline. */
+private data class TimelineRow(val chapterTitle: String, val scene: SceneEntity)
+
+@Composable
+private fun PlanTimelineView(
+    outline: List<PlanOutlineNode>,
+    selectedSceneId: String?,
+    onSelectScene: (String) -> Unit,
+    onWrite: (sceneId: String, kind: WriteJumpKind) -> Unit,
+    onEditInWorldDate: (String) -> Unit,
+) {
+    val tokens = inkTokens()
+    val allRows = outline.flatMap { node ->
+        node.chapters.flatMap { chapterNode ->
+            chapterNode.scenes.map { scene -> TimelineRow(chapterNode.chapter.title, scene) }
+        }
+    }
+    val (dated, undated) = allRows.partition { it.scene.inWorldDate.isNotBlank() }
+    val rows = dated.sortedBy { it.scene.inWorldDate } + undated
+
+    if (rows.isEmpty()) {
+        Text(
+            "No scenes yet.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = tokens.secondaryText,
+            modifier = Modifier.padding(InkSpacing.md),
+        )
+        return
+    }
+
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        items(rows, key = { it.scene.id }) { row ->
+            val scene = row.scene
+            val selected = selectedSceneId == scene.id
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSelectScene(scene.id) }
+                    .background(
+                        if (selected) InkAccentBlue.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface,
+                    )
+                    .border(if (selected) 1.5.dp else 0.dp, InkAccentBlue)
+                    .padding(vertical = InkSpacing.sm, horizontal = InkSpacing.md),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    modifier = Modifier
+                        .width(96.dp)
+                        .clickable { onEditInWorldDate(scene.id) },
+                ) {
+                    Text(
+                        scene.inWorldDate.ifBlank { "Undated" },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (scene.inWorldDate.isBlank()) tokens.secondaryText else InkAccentBlue,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        scene.title,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        row.chapterTitle,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tokens.secondaryText,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                WriteJumpButton(
+                    sceneId = scene.id,
+                    chapterSceneId = scene.id,
+                    onWrite = onWrite,
+                )
+            }
+        }
+        alwaysScrollEndSpacer()
+    }
+}
+
+@Composable
+private fun EditInWorldDateDialog(
+    initialValue: String,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var value by remember(initialValue) { mutableStateOf(initialValue) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("In-world date") },
+        text = {
+            OutlinedTextField(
+                value = value,
+                onValueChange = { value = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("Date") },
+                placeholder = { Text("e.g. Day 12, or 1420-03-02") },
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(value) }) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
 
 @Composable
@@ -469,6 +849,7 @@ private fun SceneSummaryBox(
     scene: SceneEntity,
     tone: SceneSummaryTone,
     modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
 ) {
     val accent = when (tone) {
         SceneSummaryTone.Grid -> InkAccentBlue
@@ -494,6 +875,7 @@ private fun SceneSummaryBox(
             .clip(shape)
             .background(accent.copy(alpha = 0.14f))
             .border(1.5.dp, accent, shape)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
     ) {
         SceneSummaryText(

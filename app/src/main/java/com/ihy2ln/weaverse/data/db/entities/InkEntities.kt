@@ -22,6 +22,9 @@ data class BookEntity(
     val title: String,
     val genre: String = "",
     val pov: String = "",
+    /** Links to a "Characters" Codex entry rather than storing a free-text name. */
+    val povCharacterId: String? = null,
+    val premise: String = "",
     val tense: String = "",
     val styleGuide: String = "",
     val targetWordCount: Int = 0,
@@ -68,6 +71,15 @@ data class SceneEntity(
     val updatedAt: Long,
 )
 
+@Entity(tableName = "scene_snapshots", indices = [Index("sceneId")])
+data class SceneSnapshotEntity(
+    @PrimaryKey val id: String,
+    val sceneId: String,
+    val title: String,
+    val docJson: String,
+    val createdAt: Long,
+)
+
 @Entity(
     tableName = "scene_codex_links",
     primaryKeys = ["sceneId", "entryId"],
@@ -111,8 +123,25 @@ data class CodexEntryEntity(
     val trackMentions: Boolean = true,
     /** When true, mention matching requires exact case instead of case-insensitive. */
     val caseSensitiveMatching: Boolean = false,
+    /** "everywhere" (default) or "specific" — whether usageBookIds/usageRoleplayIds restrict where this entry appears. */
+    val usageMode: String = "everywhere",
+    val usageBookIdsJson: String = "[]",
+    val usageRoleplayIdsJson: String = "[]",
     val createdAt: Long,
     val updatedAt: Long,
+)
+
+@Entity(
+    tableName = "codex_relationships",
+    indices = [Index("fromEntryId"), Index("toEntryId")],
+)
+data class CodexRelationshipEntity(
+    @PrimaryKey val id: String,
+    val fromEntryId: String,
+    val toEntryId: String,
+    /** Free text, from fromEntryId's perspective, e.g. "sibling of", "rival of", "mentor to". */
+    val label: String,
+    val createdAt: Long,
 )
 
 @Entity(tableName = "codex_entries_lore")

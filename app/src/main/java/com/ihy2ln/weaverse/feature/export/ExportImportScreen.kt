@@ -185,6 +185,14 @@ fun ExportImportScreen(
                     modifier = Modifier.padding(bottom = InkSpacing.sm),
                 )
             }
+            if (state.format == ExportFormat.Epub || state.format == ExportFormat.Pdf) {
+                Text(
+                    "Not all features are supported (${if (state.format == ExportFormat.Epub) "EPUB" else "PDF"} only). Prefer JSON or Project ZIP for full round-trip.",
+                    color = tokens.secondaryText,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(bottom = InkSpacing.sm),
+                )
+            }
 
             Text("General options", style = MaterialTheme.typography.labelLarge)
             OptionCheck("Export Summaries", state.options.exportSummaries) {

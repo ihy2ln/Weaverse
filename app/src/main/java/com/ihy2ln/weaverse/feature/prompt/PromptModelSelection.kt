@@ -1,9 +1,19 @@
 package com.ihy2ln.weaverse.feature.prompt
 
 import com.ihy2ln.weaverse.ai.ModelInfo
+import com.ihy2ln.weaverse.data.settings.ActionModelKeys
+import com.ihy2ln.weaverse.feature.shell.AppMode
+import com.ihy2ln.weaverse.feature.shell.NovelDestination
 
 /** Session model pick for the shared prompt box — does not write Settings. */
 object PromptModelSelection {
+    fun dockActionKey(mode: AppMode, novelDest: String?, kind: PromptEntryKind?): String = when {
+        mode == AppMode.Roleplay -> ActionModelKeys.ROLEPLAY_SWIPE
+        mode == AppMode.Novel && novelDest == NovelDestination.Chat.name -> ActionModelKeys.WORKSHOP
+        kind == PromptEntryKind.Ai -> ActionModelKeys.SCENE_BEAT
+        else -> ActionModelKeys.PROMPT_AI
+    }
+
     fun modelRef(id: String): String {
         val trimmed = id.removePrefix("openrouter/").trim()
         return if (trimmed.isBlank()) "" else "openrouter/$trimmed"

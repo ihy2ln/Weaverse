@@ -2,6 +2,7 @@ package com.ihy2ln.weaverse.feature.novel.write.editor
 
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.MaterialTheme
@@ -11,15 +12,17 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalTextToolbar
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.TextToolbar
 import androidx.compose.ui.platform.TextToolbarStatus
 import androidx.compose.ui.text.TextLayoutResult
@@ -28,6 +31,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.withTimeoutOrNull
 import com.ihy2ln.weaverse.core.text.CodexMention
 import com.ihy2ln.weaverse.core.text.CodexMentionTag
 import com.ihy2ln.weaverse.core.text.CodexMentionTarget
@@ -76,27 +80,48 @@ fun BlockEditorField(
     }
     var layoutResult by remember(paragraph.id) { mutableStateOf<TextLayoutResult?>(null) }
 
+    // A pure re-style (Bold/Color/Font via the toolbar, Format menu, or a color/font
+    // dialog) rewrites paragraph.spans, which forces the resync effect below to assign
+    // a brand-new TextFieldValue. Compose treats that as reason to call showMenu()
+    // again — and showMenu also fires after a dialog closes while the selection
+    // handles are still on screen. A 400ms suppress window is not enough for that
+    // (canceling Text color is well past 400ms). EditMenuGate keeps the popup closed
+    // for the same selection until the caret collapses or the range changes.
+    val menuGate = remember { EditMenuGate() }
+    val haptic = LocalHapticFeedback.current
+    val touchSlop = LocalViewConfiguration.current.touchSlop
+
     // Sync external paragraph updates (undo/AI accept) without clobbering caret during typing
     LaunchedEffect(paragraph.id, plain, paragraph.spans, codexMentionTargets) {
         if (value.text != plain || codexMentionTargets.isNotEmpty()) {
+            val nextAnnotated = paragraph.spans.toAnnotatedString(
+                textColor,
+                mentions = mentionsFor(plain),
+                linkColor = InkAccentBlue,
+            )
+            if (value.text == plain && value.annotatedString == nextAnnotated) {
+                // A typing round-trip echoing back content that's already on screen —
+                // nothing to do. Reassigning value anyway would still create a new
+                // TextFieldValue object, which is exactly what can spuriously
+                // re-trigger the system's showMenu() callback mid-selection.
+                return@LaunchedEffect
+            }
             val sel = value.selection
             val capped = TextRange(
                 sel.start.coerceIn(0, plain.length),
                 sel.end.coerceIn(0, plain.length),
             )
-            value = TextFieldValue(
-                annotatedString = paragraph.spans.toAnnotatedString(
-                    textColor,
-                    mentions = mentionsFor(plain),
-                    linkColor = InkAccentBlue,
-                ),
-                selection = capped,
-            )
+            value = TextFieldValue(annotatedString = nextAnnotated, selection = capped)
         }
     }
 
-    val latestOnShow by rememberUpdatedState(onShowEditPopupChange)
-    val toolbar = remember {
+    menuGate.setSelection(value.selection)
+    menuGate.setExpanded(showEditPopup)
+    menuGate.setOpenHandler {
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        onShowEditPopupChange(true)
+    }
+    val toolbar = remember(menuGate) {
         object : TextToolbar {
             override var status: TextToolbarStatus = TextToolbarStatus.Hidden
                 private set
@@ -109,7 +134,7 @@ fun BlockEditorField(
                 onSelectAllRequested: (() -> Unit)?,
             ) {
                 status = TextToolbarStatus.Hidden
-                latestOnShow(true)
+                menuGate.onSystemShowMenu()
             }
 
             override fun hide() {
@@ -119,20 +144,61 @@ fun BlockEditorField(
     }
 
     Box(
-        modifier = modifier.pointerInput(codexMentionTargets) {
-            // PointerEventPass.Initial runs before BasicTextField's own gesture handling,
-            // so a tap landing on a codex mention can be consumed here to navigate instead
-            // of placing the text cursor / opening the keyboard.
+        modifier = modifier.pointerInput(codexMentionTargets, touchSlop) {
+            // PointerEventPass.Initial for mention hit-testing; Final for drag tracking so
+            // we never steal LazyColumn scroll. Do not treat scroll-cancel as a long-press —
+            // Format opens only via TextToolbar.showMenu or a clean tap in a highlight.
             awaitEachGesture {
-                val down = awaitFirstDown(pass = PointerEventPass.Initial)
-                val layout = layoutResult ?: return@awaitEachGesture
-                val offset = layout.getOffsetForPosition(down.position)
-                val annotation = value.annotatedString
-                    .getStringAnnotations(CodexMentionTag, offset, offset)
-                    .firstOrNull()
+                val down = awaitFirstDown(
+                    requireUnconsumed = false,
+                    pass = PointerEventPass.Initial,
+                )
+                val layout = layoutResult
+                val offset = layout?.getOffsetForPosition(down.position)
+                val annotation = if (offset != null) {
+                    value.annotatedString
+                        .getStringAnnotations(CodexMentionTag, offset, offset)
+                        .firstOrNull()
+                } else {
+                    null
+                }
                 if (annotation != null) {
-                    down.consume()
-                    onMentionClick(annotation.item)
+                    val up = withTimeoutOrNull(EditorGestures.SELECTION_TAP_MS) {
+                        waitForUpOrCancellation(PointerEventPass.Initial)
+                    }
+                    if (up != null) {
+                        down.consume()
+                        onMentionClick(annotation.item)
+                    } else {
+                        menuGate.notePointerDrag()
+                    }
+                    return@awaitEachGesture
+                }
+
+                var dragged = false
+                val downPos = down.position
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Final)
+                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                    val dx = kotlin.math.abs(change.position.x - downPos.x)
+                    val dy = kotlin.math.abs(change.position.y - downPos.y)
+                    // Vertical-dominant move = scroll intent. Ignore small long-press jitter
+                    // and horizontal drag-select so those can still open Format.
+                    if (!dragged && dy > touchSlop && dy >= dx) {
+                        dragged = true
+                        menuGate.notePointerDrag()
+                    }
+                    if (!change.pressed) break
+                }
+                if (dragged) {
+                    return@awaitEachGesture
+                }
+                if (offset != null) {
+                    val sel = value.selection
+                    val inSelection = !sel.collapsed && offset >= sel.min && offset < sel.max
+                    if (inSelection) {
+                        menuGate.onUserPressInSelection()
+                    }
                 }
             }
         },
@@ -177,6 +243,7 @@ fun BlockEditorField(
                             onBackslashDetected()
                         }
                         else -> {
+                            menuGate.onSelectionChange(next.selection)
                             value = next.copy(
                                 annotatedString = spans.toAnnotatedString(
                                     textColor,
@@ -211,7 +278,10 @@ fun BlockEditorField(
         }
         EditTextPopup(
             expanded = showEditPopup,
-            onDismiss = { onShowEditPopupChange(false) },
+            onDismiss = {
+                menuGate.onDismiss()
+                onShowEditPopupChange(false)
+            },
             onAction = { action ->
                 val nextValue = if (action == EditTextAction.SelectAll) {
                     value.copy(selection = TextRange(0, value.text.length)).also {

@@ -6,6 +6,7 @@ import com.ihy2ln.weaverse.data.db.entities.ActEntity
 import com.ihy2ln.weaverse.data.db.entities.ChapterEntity
 import com.ihy2ln.weaverse.data.db.entities.CodexEntryEntity
 import com.ihy2ln.weaverse.data.db.entities.SceneEntity
+import com.ihy2ln.weaverse.data.repo.BookRepository
 import com.ihy2ln.weaverse.data.repo.CodexRepository
 import com.ihy2ln.weaverse.data.repo.ManuscriptRepository
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
@@ -32,7 +33,7 @@ data class ChapterWithScenes(
     val scenes: List<SceneEntity>,
 )
 
-enum class PlanViewMode { Grid, Outline }
+enum class PlanViewMode { Grid, Outline, Timeline }
 
 val PlanPovOptions = listOf(
     "1st Person",
@@ -46,17 +47,22 @@ data class PlanUiState(
     val scenes: List<SceneEntity> = emptyList(),
     val outline: List<PlanOutlineNode> = emptyList(),
     val characters: List<CodexEntryEntity> = emptyList(),
-)
+    val targetWordCount: Int = 0,
+) {
+    val wordCount: Int get() = scenes.sumOf { it.wordCount }
+}
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class PlanViewModel @Inject constructor(
     private val manuscriptRepository: ManuscriptRepository,
     private val codexRepository: CodexRepository,
+    private val bookRepository: BookRepository,
     private val workspaceHistory: WorkspaceHistory,
     private val settings: SettingsRepository,
 ) : ViewModel() {
     private val bookIdFlow = settings.preferences.map { it.selectedBookId }
+    private val bookFlow = bookIdFlow.flatMapLatest { bookRepository.observeBook(it) }
 
     private val outlineSource = bookIdFlow.flatMapLatest { bookId ->
         manuscriptRepository.observeActs(bookId).flatMapLatest { acts ->
@@ -112,13 +118,26 @@ class PlanViewModel @Inject constructor(
             .sortedBy { it.name }
     }
 
-    val uiState: StateFlow<PlanUiState> = combine(outlineSource, charactersSource) { outlinePair, characters ->
+    val uiState: StateFlow<PlanUiState> = combine(
+        outlineSource,
+        charactersSource,
+        bookFlow,
+    ) { outlinePair, characters, book ->
         PlanUiState(
             scenes = outlinePair.second,
             outline = outlinePair.first,
             characters = characters,
+            targetWordCount = book?.targetWordCount ?: 0,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlanUiState())
+
+    fun updateTargetWordCount(target: Int) {
+        viewModelScope.launch {
+            val bookId = bookIdFlow.first()
+            val book = bookRepository.getBook(bookId) ?: return@launch
+            bookRepository.updateBook(book.copy(targetWordCount = target.coerceAtLeast(0)))
+        }
+    }
 
     /** Back-compat for existing collectors. */
     val scenes: StateFlow<List<SceneEntity>> = uiState
@@ -163,6 +182,46 @@ class PlanViewModel @Inject constructor(
         }
     }
 
+    fun updateSceneSummary(sceneId: String, summary: String) {
+        viewModelScope.launch {
+            val scene = uiState.value.scenes.firstOrNull { it.id == sceneId } ?: return@launch
+            val after = scene.copy(summary = summary, updatedAt = System.currentTimeMillis())
+            manuscriptRepository.saveScene(after)
+            workspaceHistory.record(
+                undo = { manuscriptRepository.saveScene(scene) },
+                redo = { manuscriptRepository.saveScene(after) },
+            )
+        }
+    }
+
+    fun updateSceneInWorldDate(sceneId: String, inWorldDate: String) {
+        viewModelScope.launch {
+            val scene = uiState.value.scenes.firstOrNull { it.id == sceneId } ?: return@launch
+            val after = scene.copy(inWorldDate = inWorldDate, updatedAt = System.currentTimeMillis())
+            manuscriptRepository.saveScene(after)
+            workspaceHistory.record(
+                undo = { manuscriptRepository.saveScene(scene) },
+                redo = { manuscriptRepository.saveScene(after) },
+            )
+        }
+    }
+
+    fun updateChapterSummary(chapterId: String, summary: String) {
+        viewModelScope.launch {
+            val chapter = uiState.value.outline
+                .flatMap { it.chapters }
+                .map { it.chapter }
+                .firstOrNull { it.id == chapterId }
+                ?: return@launch
+            val after = chapter.copy(summary = summary)
+            manuscriptRepository.saveChapter(after)
+            workspaceHistory.record(
+                undo = { manuscriptRepository.saveChapter(chapter) },
+                redo = { manuscriptRepository.saveChapter(after) },
+            )
+        }
+    }
+
     fun removeScene(sceneId: String) {
         viewModelScope.launch {
             val scene = uiState.value.scenes.firstOrNull { it.id == sceneId } ?: return@launch
@@ -200,6 +259,53 @@ class PlanViewModel @Inject constructor(
                 },
             )
             onCreated(scene.id)
+        }
+    }
+
+    fun applyStructureTemplate(template: StoryStructureTemplate, onDone: () -> Unit = {}) {
+        viewModelScope.launch {
+            val bookId = settings.preferences.first().selectedBookId
+            if (bookId.isBlank()) return@launch
+            val act = manuscriptRepository.ensureAct(bookId)
+            val existingChapters = uiState.value.outline
+                .firstOrNull { it.act.id == act.id }
+                ?.chapters
+                .orEmpty()
+            val reusable = existingChapters.singleOrNull()?.takeIf { cws ->
+                cws.scenes.all { it.plainText.isBlank() }
+            }
+
+            val beforeReused = reusable?.chapter
+            var afterReused: ChapterEntity? = null
+            val created = mutableListOf<Pair<ChapterEntity, SceneEntity>>()
+
+            template.beats.forEachIndexed { index, beat ->
+                if (index == 0 && reusable != null) {
+                    val updated = reusable.chapter.copy(title = beat.title, summary = beat.description)
+                    manuscriptRepository.saveChapter(updated)
+                    afterReused = updated
+                } else {
+                    val (chapter, scene) = manuscriptRepository.createChapter(act.id)
+                    val updatedChapter = chapter.copy(title = beat.title, summary = beat.description)
+                    manuscriptRepository.saveChapter(updatedChapter)
+                    created += updatedChapter to scene
+                }
+            }
+
+            workspaceHistory.record(
+                undo = {
+                    created.forEach { (chapter, _) -> manuscriptRepository.deleteChapter(chapter.id) }
+                    beforeReused?.let { manuscriptRepository.saveChapter(it) }
+                },
+                redo = {
+                    afterReused?.let { manuscriptRepository.saveChapter(it) }
+                    created.forEach { (chapter, scene) ->
+                        manuscriptRepository.saveChapter(chapter)
+                        manuscriptRepository.saveScene(scene)
+                    }
+                },
+            )
+            onDone()
         }
     }
 

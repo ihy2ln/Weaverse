@@ -20,6 +20,7 @@ import com.ihy2ln.weaverse.core.text.toJson
 import com.ihy2ln.weaverse.core.ui.util.UsageFormat
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
 import com.ihy2ln.weaverse.data.db.entities.ChatMessageEntity
+import com.ihy2ln.weaverse.data.settings.ActionModelKeys
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
 import com.ihy2ln.weaverse.feature.shell.WorkspaceHistory
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -80,8 +81,17 @@ class WorkshopChatViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             settings.preferences.collect { prefs ->
-                bookId = prefs.selectedBookId
-                _uiState.update { it.copy(showExtraPromptSurfaces = prefs.extraPromptSurfaces.chatComposer) }
+                // Only seeds bookId before the first thread finishes loading — once a thread is
+                // selected, bookId tracks that thread's own scopeId (see selectThread) so a later
+                // preference change elsewhere in the app can't silently retarget the AI context to
+                // whatever book happens to be globally selected while viewing a different thread.
+                if (observeJob == null) bookId = prefs.selectedBookId
+                _uiState.update {
+                    it.copy(
+                        showExtraPromptSurfaces = prefs.extraPromptSurfaces.chatComposer,
+                        modelRef = settings.modelRefForAction(prefs, ActionModelKeys.WORKSHOP),
+                    )
+                }
             }
         }
         selectThread("thread-1")
@@ -92,8 +102,9 @@ class WorkshopChatViewModel @Inject constructor(
         _uiState.update { it.copy(threadId = threadId) }
         observeJob?.cancel()
         observeJob = viewModelScope.launch {
-            val thread = db.workshopChatDao().observeThreads(bookId).first().find { it.id == threadId }
+            val thread = db.workshopChatDao().getThread(threadId)
             if (thread != null) {
+                bookId = thread.scopeId
                 _uiState.update {
                     it.copy(modelRef = thread.modelRef.ifBlank { "openrouter/deepseek/deepseek-v4-flash" })
                 }
@@ -124,7 +135,7 @@ class WorkshopChatViewModel @Inject constructor(
 
     fun openCodexPicker() {
         viewModelScope.launch {
-            val entries = db.codexDao().observeEntries(bookId).first()
+            val entries = db.codexDao().getAllEntries()
             _uiState.update {
                 it.copy(
                     showCodexPicker = true,

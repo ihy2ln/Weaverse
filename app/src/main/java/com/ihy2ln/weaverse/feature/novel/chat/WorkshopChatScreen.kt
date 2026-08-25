@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 
 import androidx.compose.foundation.layout.fillMaxWidth
 
+import androidx.compose.foundation.layout.heightIn
+
 import androidx.compose.foundation.layout.padding
 
 import androidx.compose.foundation.lazy.LazyColumn
@@ -39,6 +41,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 
 import androidx.compose.ui.text.style.LineHeightStyle
+
+import androidx.compose.ui.unit.dp
 
 import androidx.compose.ui.unit.sp
 
@@ -165,11 +169,23 @@ fun WorkshopChatScreen(
 
         if (state.showPreview && state.previewPrompt.isNotBlank()) {
 
-            InkCard(modifier = Modifier.padding(bottom = InkSpacing.sm)) {
+            InkCard(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 220.dp)
+                    .padding(bottom = InkSpacing.sm),
+            ) {
 
                 Text("Preview prompt", style = MaterialTheme.typography.labelLarge)
 
-                Text(state.previewPrompt, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    state.previewPrompt,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState())
+                        .padding(top = InkSpacing.xxs),
+                )
 
             }
 
