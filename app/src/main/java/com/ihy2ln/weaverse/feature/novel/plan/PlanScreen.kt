@@ -22,6 +22,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.TextButton
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -85,6 +86,7 @@ fun PlanScreen(
     var showStructurePicker by rememberSaveable { mutableStateOf(false) }
     var editingSceneId by rememberSaveable { mutableStateOf<String?>(null) }
     var editingChapterId by rememberSaveable { mutableStateOf<String?>(null) }
+    var editingTarget by rememberSaveable { mutableStateOf(false) }
     val state by viewModel.uiState.collectAsState()
     val focusRequester = remember { FocusRequester() }
     val contentPad = adaptiveContentPadding()
@@ -144,6 +146,21 @@ fun PlanScreen(
                     showStructurePicker = false
                 },
                 onDismiss = { showStructurePicker = false },
+            )
+        }
+        WordCountProgress(
+            wordCount = state.wordCount,
+            targetWordCount = state.targetWordCount,
+            onClick = { editingTarget = true },
+        )
+        if (editingTarget) {
+            EditTargetWordCountDialog(
+                initialValue = state.targetWordCount,
+                onSave = {
+                    viewModel.updateTargetWordCount(it)
+                    editingTarget = false
+                },
+                onDismiss = { editingTarget = false },
             )
         }
         when (PlanViewMode.valueOf(viewMode)) {
@@ -235,6 +252,75 @@ fun PlanScreen(
             }
         }
     }
+}
+
+@Composable
+private fun WordCountProgress(
+    wordCount: Int,
+    targetWordCount: Int,
+    onClick: () -> Unit,
+) {
+    val tokens = inkTokens()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(bottom = InkSpacing.md),
+    ) {
+        if (targetWordCount > 0) {
+            val fraction = (wordCount.toFloat() / targetWordCount).coerceIn(0f, 1f)
+            val percent = (fraction * 100).toInt()
+            Text(
+                "${"%,d".format(wordCount)} / ${"%,d".format(targetWordCount)} words · $percent%",
+                style = MaterialTheme.typography.labelSmall,
+                color = tokens.secondaryText,
+            )
+            LinearProgressIndicator(
+                progress = { fraction },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = InkSpacing.xxs)
+                    .clip(RoundedCornerShape(999.dp)),
+            )
+        } else {
+            Text(
+                "${"%,d".format(wordCount)} words · set a goal",
+                style = MaterialTheme.typography.labelSmall,
+                color = tokens.secondaryText,
+            )
+        }
+    }
+}
+
+@Composable
+private fun EditTargetWordCountDialog(
+    initialValue: Int,
+    onSave: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var text by remember(initialValue) {
+        mutableStateOf(if (initialValue > 0) initialValue.toString() else "")
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Word count goal") },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { value -> text = value.filter { it.isDigit() } },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("Target words") },
+                placeholder = { Text("e.g. 80000") },
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(text.toIntOrNull() ?: 0) }) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
 
 @Composable
