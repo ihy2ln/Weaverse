@@ -127,6 +127,19 @@ data class CodexEntryEntity(
     val updatedAt: Long,
 )
 
+@Entity(
+    tableName = "codex_relationships",
+    indices = [Index("fromEntryId"), Index("toEntryId")],
+)
+data class CodexRelationshipEntity(
+    @PrimaryKey val id: String,
+    val fromEntryId: String,
+    val toEntryId: String,
+    /** Free text, from fromEntryId's perspective, e.g. "sibling of", "rival of", "mentor to". */
+    val label: String,
+    val createdAt: Long,
+)
+
 @Entity(tableName = "codex_entries_lore")
 data class CodexEntryLoreEntity(
     @PrimaryKey val entryId: String,

@@ -12,6 +12,7 @@ import com.ihy2ln.weaverse.data.db.entities.ChatThreadEntity
 import com.ihy2ln.weaverse.data.db.entities.CodexCategoryEntity
 import com.ihy2ln.weaverse.data.db.entities.CodexEntryEntity
 import com.ihy2ln.weaverse.data.db.entities.CodexEntryLoreEntity
+import com.ihy2ln.weaverse.data.db.entities.CodexRelationshipEntity
 import com.ihy2ln.weaverse.data.db.entities.MediaEntity
 import com.ihy2ln.weaverse.data.db.entities.PromptEntity
 import com.ihy2ln.weaverse.data.db.entities.PromptFolderEntity
@@ -176,6 +177,15 @@ interface CodexDao {
 
     @Query("DELETE FROM codex_categories WHERE scopeId = :scopeId")
     suspend fun deleteCategoriesForScope(scopeId: String)
+
+    @Query("SELECT * FROM codex_relationships WHERE fromEntryId = :entryId OR toEntryId = :entryId")
+    fun observeRelationships(entryId: String): Flow<List<CodexRelationshipEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertRelationship(entity: CodexRelationshipEntity)
+
+    @Query("DELETE FROM codex_relationships WHERE id = :id")
+    suspend fun deleteRelationship(id: String)
 }
 
 @Dao

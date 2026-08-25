@@ -633,6 +633,7 @@ fun AppShell(
                     CodexEntryDetailScreen(
                         entryId = selectedCodexEntryId!!,
                         onBack = { selectedCodexEntryId = null },
+                        onOpenEntry = { selectedCodexEntryId = it },
                     )
                 }
             }

@@ -23,6 +23,7 @@ import com.ihy2ln.weaverse.data.db.entities.ChatThreadEntity
 import com.ihy2ln.weaverse.data.db.entities.CodexCategoryEntity
 import com.ihy2ln.weaverse.data.db.entities.CodexEntryEntity
 import com.ihy2ln.weaverse.data.db.entities.CodexEntryLoreEntity
+import com.ihy2ln.weaverse.data.db.entities.CodexRelationshipEntity
 import com.ihy2ln.weaverse.data.db.entities.MediaEntity
 import com.ihy2ln.weaverse.data.db.entities.PromptEntity
 import com.ihy2ln.weaverse.data.db.entities.PromptFolderEntity
@@ -48,6 +49,7 @@ import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
         CodexCategoryEntity::class,
         CodexEntryEntity::class,
         CodexEntryLoreEntity::class,
+        CodexRelationshipEntity::class,
         SnippetEntity::class,
         ChatThreadEntity::class,
         ChatMessageEntity::class,
@@ -60,7 +62,7 @@ import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
         PromptEntity::class,
         AiProfileEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = false,
 )
 @TypeConverters(InkTypeConverters::class)
@@ -105,6 +107,27 @@ abstract class WeaverseDatabase : RoomDatabase() {
         val MIGRATION_7_8 = object : Migration(7, 8) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE books ADD COLUMN povCharacterId TEXT")
+            }
+        }
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS codex_relationships (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        fromEntryId TEXT NOT NULL,
+                        toEntryId TEXT NOT NULL,
+                        label TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_codex_relationships_fromEntryId ON codex_relationships (fromEntryId)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_codex_relationships_toEntryId ON codex_relationships (toEntryId)",
+                )
             }
         }
     }

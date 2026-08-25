@@ -7,15 +7,26 @@ import com.ihy2ln.weaverse.core.media.CodexMediaIds
 import com.ihy2ln.weaverse.core.media.MediaRepository
 import com.ihy2ln.weaverse.core.text.decodeAliases
 import com.ihy2ln.weaverse.data.db.entities.CodexEntryEntity
+import com.ihy2ln.weaverse.data.db.entities.CodexRelationshipEntity
 import com.ihy2ln.weaverse.data.repo.CodexRepository
 import com.ihy2ln.weaverse.feature.shell.WorkspaceHistory
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+data class RelationshipRow(
+    val id: String,
+    val label: String,
+    val otherEntryId: String,
+    val otherEntryName: String,
+    /** true: this entry -> other; false: other -> this (relationship was created from the other side). */
+    val outgoing: Boolean,
+)
 
 data class CodexMediaItem(
     val id: String,
@@ -38,6 +49,10 @@ data class CodexEntryDetailUiState(
     val saved: Boolean = false,
     val statusMessage: String = "",
     val showSettingsMenu: Boolean = false,
+    val relationships: List<RelationshipRow> = emptyList(),
+    /** Every other Codex entry, offered as relationship targets. */
+    val otherEntries: List<CodexEntryEntity> = emptyList(),
+    val showAddRelationship: Boolean = false,
 )
 
 @HiltViewModel
@@ -72,6 +87,23 @@ class CodexEntryDetailViewModel @Inject constructor(
                 }
             }
         }
+        viewModelScope.launch {
+            combine(
+                codexRepository.observeRelationships(entryId),
+                codexRepository.observeAllEntries(),
+            ) { relationships, allEntries ->
+                val nameById = allEntries.associateBy({ it.id }, { it.name })
+                val rows = relationships.mapNotNull { rel ->
+                    val outgoing = rel.fromEntryId == entryId
+                    val otherId = if (outgoing) rel.toEntryId else rel.fromEntryId
+                    val otherName = nameById[otherId] ?: return@mapNotNull null
+                    RelationshipRow(rel.id, rel.label, otherId, otherName, outgoing)
+                }.sortedBy { it.otherEntryName }
+                rows to allEntries.filter { it.id != entryId }
+            }.collect { (rows, others) ->
+                _uiState.update { it.copy(relationships = rows, otherEntries = others) }
+            }
+        }
     }
 
     fun onName(value: String) = _uiState.update { it.copy(name = value, saved = false) }
@@ -83,6 +115,25 @@ class CodexEntryDetailViewModel @Inject constructor(
         _uiState.update { it.copy(caseSensitiveMatching = value, saved = false) }
 
     fun onShowSettingsMenuChange(show: Boolean) = _uiState.update { it.copy(showSettingsMenu = show) }
+    fun onShowAddRelationshipChange(show: Boolean) = _uiState.update { it.copy(showAddRelationship = show) }
+
+    fun addRelationship(toEntryId: String, label: String) {
+        if (label.isBlank()) return
+        val fromEntryId = _uiState.value.id
+        if (fromEntryId.isBlank()) return
+        viewModelScope.launch {
+            val entity = codexRepository.addRelationship(fromEntryId, toEntryId, label.trim())
+            workspaceHistory.record(
+                undo = { codexRepository.deleteRelationship(entity.id) },
+                redo = { codexRepository.addRelationship(entity.fromEntryId, entity.toEntryId, entity.label) },
+            )
+            _uiState.update { it.copy(showAddRelationship = false) }
+        }
+    }
+
+    fun removeRelationship(id: String) {
+        viewModelScope.launch { codexRepository.deleteRelationship(id) }
+    }
 
     /** Body text to insert when the caller pastes clipboard content in. */
     fun onPaste(clipboardText: String) {
