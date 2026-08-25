@@ -333,6 +333,9 @@ class CodexRepository @Inject constructor(
         caseSensitiveMatching: Boolean? = null,
         imageMediaId: String? = null,
         clearImageMediaId: Boolean = false,
+        usageMode: String? = null,
+        usageBookIds: List<String>? = null,
+        usageRoleplayIds: List<String>? = null,
     ) {
         val current = db.codexDao().observeEntry(id).first() ?: return
         val doc = Document.fromPlainText(plainText)
@@ -350,6 +353,11 @@ class CodexRepository @Inject constructor(
                     imageMediaId != null -> imageMediaId
                     else -> current.imageMediaId
                 },
+                usageMode = usageMode ?: current.usageMode,
+                usageBookIdsJson = usageBookIds?.let { com.ihy2ln.weaverse.core.text.encodeAliases(it) }
+                    ?: current.usageBookIdsJson,
+                usageRoleplayIdsJson = usageRoleplayIds?.let { com.ihy2ln.weaverse.core.text.encodeAliases(it) }
+                    ?: current.usageRoleplayIdsJson,
                 updatedAt = System.currentTimeMillis(),
             ),
         )

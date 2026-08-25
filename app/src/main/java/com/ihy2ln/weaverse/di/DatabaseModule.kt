@@ -22,6 +22,7 @@ object DatabaseModule {
                 WeaverseDatabase.MIGRATION_6_7,
                 WeaverseDatabase.MIGRATION_7_8,
                 WeaverseDatabase.MIGRATION_8_9,
+                WeaverseDatabase.MIGRATION_9_10,
             )
             .fallbackToDestructiveMigration()
             .build()

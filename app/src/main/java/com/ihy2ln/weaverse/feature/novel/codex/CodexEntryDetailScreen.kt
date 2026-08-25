@@ -43,6 +43,7 @@ import com.ihy2ln.weaverse.core.ui.components.AudioMediaPlayer
 import com.ihy2ln.weaverse.core.ui.components.InkChip
 import com.ihy2ln.weaverse.core.ui.components.InkConfirmButton
 import com.ihy2ln.weaverse.core.ui.components.InkDeleteButton
+import com.ihy2ln.weaverse.core.ui.components.InkModeCapsule
 import com.ihy2ln.weaverse.core.ui.components.InkOutlinedButton
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
 import com.ihy2ln.weaverse.core.ui.components.InkToolbar
@@ -223,6 +224,65 @@ fun CodexEntryDetailScreen(
                     onDismiss = { viewModel.onShowAddRelationshipChange(false) },
                 )
             }
+            Text(
+                "Used in",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(top = InkSpacing.lg, bottom = InkSpacing.sm),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                InkModeCapsule(
+                    label = "Everywhere",
+                    selected = state.usageMode == "everywhere",
+                    onClick = { viewModel.onUsageMode("everywhere") },
+                    compact = true,
+                )
+                InkModeCapsule(
+                    label = "Specific books",
+                    selected = state.usageMode == "specific",
+                    onClick = { viewModel.onUsageMode("specific") },
+                    compact = true,
+                )
+            }
+            if (state.usageMode == "specific") {
+                if (state.allBooks.isEmpty() && state.allRoleplayChats.isEmpty()) {
+                    Text(
+                        "No books or roleplay chats yet.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = InkSpacing.sm),
+                    )
+                }
+                if (state.allBooks.isNotEmpty()) {
+                    Text(
+                        "Books",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = InkSpacing.sm),
+                    )
+                    state.allBooks.forEach { book ->
+                        UsageCheckRow(
+                            label = book.title.ifBlank { "Untitled Book" },
+                            checked = book.id in state.usageBookIds,
+                            onToggle = { viewModel.onToggleUsageBook(book.id) },
+                        )
+                    }
+                }
+                if (state.allRoleplayChats.isNotEmpty()) {
+                    Text(
+                        "Roleplay chats",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = InkSpacing.sm),
+                    )
+                    state.allRoleplayChats.forEach { chat ->
+                        UsageCheckRow(
+                            label = chat.title.ifBlank { "Untitled chat" },
+                            checked = chat.id in state.usageRoleplayIds,
+                            onToggle = { viewModel.onToggleUsageRoleplay(chat.id) },
+                        )
+                    }
+                }
+            }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
@@ -328,6 +388,31 @@ private fun AddRelationshipDialog(
             TextButton(onClick = onDismiss) { Text("Cancel") }
         },
     )
+}
+
+@Composable
+private fun UsageCheckRow(
+    label: String,
+    checked: Boolean,
+    onToggle: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle),
+    ) {
+        Checkbox(
+            checked = checked,
+            onCheckedChange = { onToggle() },
+            colors = CheckboxDefaults.colors(
+                checkedColor = MaterialTheme.colorScheme.primary,
+                checkmarkColor = MaterialTheme.colorScheme.onPrimary,
+                uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            ),
+        )
+        Text(label, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodyMedium)
+    }
 }
 
 @Composable

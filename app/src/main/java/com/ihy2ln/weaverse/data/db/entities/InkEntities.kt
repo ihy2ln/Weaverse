@@ -123,6 +123,10 @@ data class CodexEntryEntity(
     val trackMentions: Boolean = true,
     /** When true, mention matching requires exact case instead of case-insensitive. */
     val caseSensitiveMatching: Boolean = false,
+    /** "everywhere" (default) or "specific" — whether usageBookIds/usageRoleplayIds restrict where this entry appears. */
+    val usageMode: String = "everywhere",
+    val usageBookIdsJson: String = "[]",
+    val usageRoleplayIdsJson: String = "[]",
     val createdAt: Long,
     val updatedAt: Long,
 )

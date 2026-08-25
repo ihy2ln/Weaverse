@@ -62,7 +62,7 @@ import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
         PromptEntity::class,
         AiProfileEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = false,
 )
 @TypeConverters(InkTypeConverters::class)
@@ -128,6 +128,13 @@ abstract class WeaverseDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS index_codex_relationships_toEntryId ON codex_relationships (toEntryId)",
                 )
+            }
+        }
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE codex_entries ADD COLUMN usageMode TEXT NOT NULL DEFAULT 'everywhere'")
+                db.execSQL("ALTER TABLE codex_entries ADD COLUMN usageBookIdsJson TEXT NOT NULL DEFAULT '[]'")
+                db.execSQL("ALTER TABLE codex_entries ADD COLUMN usageRoleplayIdsJson TEXT NOT NULL DEFAULT '[]'")
             }
         }
     }
