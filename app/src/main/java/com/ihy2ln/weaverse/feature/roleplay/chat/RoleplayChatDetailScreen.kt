@@ -11,6 +11,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -277,7 +278,7 @@ fun RoleplayChatDetailScreen(
                         compactStyle = compactStyle,
                         gridSize = MediaGrid.SIZE,
                         textEmphasis = false,
-                        emptyHint = "Manga canvas — add Media/Audio, then hold → Move to place on the grid. Drag corner to resize. Drop onto another picture to stack.\nPress / for AI · \\ for manual text.",
+                        emptyHint = "An empty page.\n\nAdd Media, then tap a panel to move or resize it.\nPress / for AI · \\ to write it yourself.",
                         onSelect = { msgId, blockId -> viewModel.selectMedia(msgId, blockId) },
                         onRemove = viewModel::removeMedia,
                         onSnap = viewModel::setMediaGridCell,
@@ -290,6 +291,7 @@ fun RoleplayChatDetailScreen(
                         onOverlayMove = viewModel::moveTextOverlay,
                         onOverlayResize = viewModel::resizeTextOverlay,
                         onOverlayTap = viewModel::openOverlayEditor,
+                        onClearSelection = { viewModel.selectMedia(null, null) },
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -315,7 +317,7 @@ fun RoleplayChatDetailScreen(
                         compactStyle = compactStyle,
                         gridSize = MediaGrid.DM_SIZE,
                         textEmphasis = true,
-                        emptyHint = "DM · 3×3 · text & picture · hold → Move. Prose and pictures share an invisible snap grid.\nPress / for AI · \\ for manual text.",
+                        emptyHint = "An empty scene.\n\nProse and pictures share the board — tap either to move or resize it.\nPress / for AI · \\ to write it yourself.",
                         onSelect = { msgId, blockId -> viewModel.selectMedia(msgId, blockId) },
                         onRemove = viewModel::removeMedia,
                         onSnap = viewModel::setMediaGridCell,
@@ -328,6 +330,7 @@ fun RoleplayChatDetailScreen(
                         onOverlayMove = viewModel::moveTextOverlay,
                         onOverlayResize = viewModel::resizeTextOverlay,
                         onOverlayTap = viewModel::openOverlayEditor,
+                        onClearSelection = { viewModel.selectMedia(null, null) },
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -647,6 +650,7 @@ private fun MangaSnapGrid(
     onOverlayMove: (String, String, String, Float, Float) -> Unit,
     onOverlayResize: (String, String, String, Float) -> Unit,
     onOverlayTap: (String, String, String) -> Unit,
+    onClearSelection: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val tokens = inkTokens()
@@ -663,7 +667,11 @@ private fun MangaSnapGrid(
                 .aspectRatio(1f)
                 .clip(RoundedCornerShape(inkRadiusSm()))
                 .border(1.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f), RoundedCornerShape(inkRadiusSm()))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                // Tapping bare canvas clears the selection, so nothing is stuck draggable.
+                .pointerInput(Unit) {
+                    detectTapGestures(onTap = { onClearSelection() })
+                },
         ) {
             val cellW = maxWidth / gridSize
             val cellH = maxHeight / gridSize
@@ -771,10 +779,8 @@ private fun MangaSnapPanel(
     var resizeDx by remember(panel.blockId) { mutableFloatStateOf(0f) }
     var resizeDy by remember(panel.blockId) { mutableFloatStateOf(0f) }
     var menuOpen by remember(panel.blockId) { mutableStateOf(false) }
-    var moveMode by remember(panel.blockId) { mutableStateOf(false) }
     var adjustMode by remember(panel.blockId) { mutableStateOf(false) }
     val border = when {
-        moveMode -> MaterialTheme.colorScheme.tertiary
         adjustMode -> MaterialTheme.colorScheme.secondary
         selected -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.outline
@@ -809,7 +815,6 @@ private fun MangaSnapPanel(
         }
         dragX = 0f
         dragY = 0f
-        moveMode = false
     }
     Box(
         modifier = Modifier
@@ -823,41 +828,51 @@ private fun MangaSnapPanel(
             .height(heightDp + with(density) { resizeDy.toDp() }.coerceAtLeast(0.dp))
             .padding(2.dp)
             .clip(RoundedCornerShape(inkRadiusSm()))
-            .border(if (moveMode || selected) 2.dp else 1.dp, border, RoundedCornerShape(inkRadiusSm()))
+            .border(if (selected) 2.dp else 1.dp, border, RoundedCornerShape(inkRadiusSm()))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
             .then(
-                if (moveMode) {
-                    // Immediate drag only — skip combinedClickable so it cannot steal the press.
-                    Modifier.pointerInput(panel.blockId, col, row, colSpan, rowSpan, panels) {
-                        detectDragGestures(
-                            onDragStart = {
-                                onSelect()
-                                menuOpen = false
-                                dragX = 0f
-                                dragY = 0f
-                            },
-                            onDragEnd = { commitMovePlacement() },
-                            onDragCancel = {
-                                dragX = 0f
-                                dragY = 0f
-                                moveMode = false
-                            },
-                            onDrag = { change, amount ->
-                                change.consume()
-                                dragX += amount.x
-                                dragY += amount.y
-                            },
-                        )
-                    }
-                } else if (adjustMode) {
-                    // Pinch/pan belongs to the media itself while adjusting; tap exits.
-                    Modifier
-                } else {
-                    Modifier.combinedClickable(
+                when {
+                    // Pinch/pan belongs to the media itself while adjusting.
+                    adjustMode -> Modifier
+                    // Selected panels are directly draggable — no mode to enter first.
+                    // The drag detector runs before the tap detector, so a press that
+                    // never moves still falls through to tap/long-press.
+                    selected -> Modifier
+                        .pointerInput(panel.blockId, col, row, colSpan, rowSpan, panels) {
+                            detectDragGestures(
+                                onDragStart = {
+                                    menuOpen = false
+                                    dragX = 0f
+                                    dragY = 0f
+                                },
+                                onDragEnd = { commitMovePlacement() },
+                                onDragCancel = {
+                                    dragX = 0f
+                                    dragY = 0f
+                                },
+                                onDrag = { change, amount ->
+                                    change.consume()
+                                    dragX += amount.x
+                                    dragY += amount.y
+                                },
+                            )
+                        }
+                        .pointerInput(panel.blockId, panel.collapsed, panel.stackedPaths.size) {
+                            detectTapGestures(
+                                onTap = {
+                                    when {
+                                        panel.collapsed -> onMediaEdit(MediaEditAction.Uncollapse)
+                                        panel.stackedPaths.size > 1 -> onCycleStack()
+                                        else -> Unit
+                                    }
+                                },
+                                onLongPress = { menuOpen = true },
+                            )
+                        }
+                    else -> Modifier.combinedClickable(
                         onClick = {
                             when {
                                 panel.collapsed -> onMediaEdit(MediaEditAction.Uncollapse)
-                                panel.stackedPaths.size > 1 -> onCycleStack()
                                 else -> onSelect()
                             }
                         },
@@ -928,14 +943,10 @@ private fun MangaSnapPanel(
                     initialOffsetXPercent = panel.mediaOffsetXPercent,
                     initialOffsetYPercent = panel.mediaOffsetYPercent,
                     onTransformEnd = onMediaTransform,
-                    onLongPress = if (moveMode) {
-                        null
-                    } else {
-                        {
+                    onLongPress = {
                             onSelect()
                             menuOpen = true
-                        }
-                    },
+                        },
                 )
                 if (panel.caption.isNotBlank() && panel.caption != "[media]") {
                     Text(
@@ -963,35 +974,21 @@ private fun MangaSnapPanel(
                 initialOffsetXPercent = panel.mediaOffsetXPercent,
                 initialOffsetYPercent = panel.mediaOffsetYPercent,
                 onTransformEnd = onMediaTransform,
-                onLongPress = if (moveMode) {
-                    null
-                } else {
-                    {
+                onLongPress = {
                         onSelect()
                         menuOpen = true
-                    }
-                },
+                    },
             )
         }
         if (!panel.collapsed && panel.overlays.isNotEmpty()) {
             TextOverlayLayer(
                 overlays = panel.overlays,
-                editable = !moveMode,
+                // Overlays stay draggable only once the panel itself is settled,
+                // so panel-drag and overlay-drag never compete for the same press.
+                editable = !selected,
                 onMove = { id, x, y -> onOverlayMove(id, x, y) },
                 onResize = { id, w -> onOverlayResize(id, w) },
                 onTap = { id -> onOverlayTap(id) },
-            )
-        }
-        if (moveMode) {
-            Text(
-                "Drag to place",
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.White,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(2.dp)
-                    .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.9f), RoundedCornerShape(4.dp))
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
             )
         }
         if (adjustMode) {
@@ -1045,13 +1042,14 @@ private fun MangaSnapPanel(
             onClick = onRemove,
             modifier = Modifier.align(Alignment.TopEnd),
         )
-        if (!panel.collapsed && !moveMode) {
+        // Resize grip only on the selected panel, so an unselected canvas stays clean.
+        if (!panel.collapsed && selected) {
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(2.dp)
-                    .width(18.dp)
-                    .height(18.dp)
+                    .width(22.dp)
+                    .height(22.dp)
                     .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.85f), RoundedCornerShape(4.dp))
                     .pointerInput(panel.blockId, col, row, colSpan, rowSpan, gridSize) {
                         detectDragGestures(
@@ -1093,7 +1091,8 @@ private fun MangaSnapPanel(
                 canShrink = colSpan > 1 || rowSpan > 1,
                 canExpand = colSpan < gridSize - col || rowSpan < gridSize - row,
                 showStack = !panel.isTextTile,
-                showMove = true,
+                // Move is no longer a mode — a selected panel just drags.
+                showMove = false,
                 showAdjustImage = !panel.isTextTile && !panel.isAudio,
                 showTextOverlay = !panel.isTextTile && !panel.isAudio,
             ),
@@ -1101,13 +1100,6 @@ private fun MangaSnapPanel(
                 when (action) {
                     MediaEditAction.Delete -> onRemove()
                     MediaEditAction.Stack -> onStackMenu()
-                    MediaEditAction.Move -> {
-                        onSelect()
-                        menuOpen = false
-                        moveMode = true
-                        dragX = 0f
-                        dragY = 0f
-                    }
                     MediaEditAction.AdjustImage -> {
                         onSelect()
                         menuOpen = false
