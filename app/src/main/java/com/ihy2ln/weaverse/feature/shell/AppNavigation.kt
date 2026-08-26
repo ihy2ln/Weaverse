@@ -13,6 +13,7 @@ enum class AppMode(val label: String) {
 }
 
 enum class NovelDestination(val label: String) {
+    Bookshelf("Bookshelf"),
     Plan("Plan"),
     Write("Write"),
     Read("Read"),
@@ -82,7 +83,7 @@ fun storyboardDestinationOf(id: String?): StoryboardDestination =
     StoryboardDestination.entries.firstOrNull { it.name == id } ?: StoryboardDestination.Window
 
 fun novelDestinationOf(id: String?): NovelDestination =
-    NovelDestination.entries.firstOrNull { it.name == id } ?: NovelDestination.Plan
+    NovelDestination.entries.firstOrNull { it.name == id } ?: NovelDestination.Bookshelf
 
 enum class RailTab(val label: String) {
     Manuscript("Manuscript"),

@@ -108,8 +108,8 @@ fun AppShell(
     promptViewModel: GlobalPromptViewModel = hiltViewModel(),
 ) {
     var mode by rememberSaveable { mutableStateOf(AppMode.Novel.name) }
-    var novelDest by rememberSaveable { mutableStateOf(NovelDestination.Plan.name) }
-    var rpDest by rememberSaveable { mutableStateOf(RoleplayDestination.Chats.name) }
+    var novelDest by rememberSaveable { mutableStateOf(NovelDestination.Bookshelf.name) }
+    var rpDest by rememberSaveable { mutableStateOf(RoleplayDestination.Campaign.name) }
     var chatDest by rememberSaveable { mutableStateOf(ChattingDestination.Chats.name) }
     var storyboardDest by rememberSaveable { mutableStateOf(StoryboardDestination.Window.name) }
     var storyboardChatId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -117,7 +117,7 @@ fun AppShell(
     var creatingWork by remember { mutableStateOf<CreateWorkVocabulary?>(null) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showSearch by rememberSaveable { mutableStateOf(false) }
-    var showLibrary by rememberSaveable { mutableStateOf(true) }
+    var showLibrary by rememberSaveable { mutableStateOf(false) }
     var showExport by rememberSaveable { mutableStateOf(false) }
     var workspaceFocus by rememberSaveable { mutableStateOf(WorkspaceFocus.Story.name) }
     var chromeTool by rememberSaveable { mutableStateOf<String?>(null) }
@@ -338,7 +338,18 @@ fun AppShell(
                     mode = next
                     chromeTool = null
                     selectedRpChatId = null
+                    selectedCodexEntryId = null
+                    selectedCharacterId = null
+                    selectedPersonaId = null
+                    storyboardChatId = null
+                    rpShowChatPicker = false
                     rpChrome = null
+                    when (next) {
+                        AppMode.Novel.name -> novelDest = NovelDestination.Bookshelf.name
+                        AppMode.Roleplay.name -> rpDest = RoleplayDestination.Campaign.name
+                        AppMode.Chatting.name -> chatDest = ChattingDestination.Chats.name
+                        AppMode.Storyboard.name -> storyboardDest = StoryboardDestination.Window.name
+                    }
                     if (next != AppMode.Notes.name) {
                         workspaceFocus = WorkspaceFocus.Story.name
                     }
@@ -518,7 +529,7 @@ fun AppShell(
                         .background(contentColor),
                 ) { (modeAndTool, focus, dests) ->
                     val (currentMode, tool) = modeAndTool
-                    val nd = dests[0] ?: NovelDestination.Plan.name
+                    val nd = dests[0] ?: NovelDestination.Bookshelf.name
                     val rd = dests[1] ?: RoleplayDestination.Chats.name
                     val cd = dests[2] ?: ChattingDestination.Friends.name
                     val sd = dests[3] ?: StoryboardDestination.Manga.name
@@ -570,6 +581,14 @@ fun AppShell(
                         }
                         when (currentMode) {
                             AppMode.Novel.name -> when (novelDestinationOf(nd)) {
+                                NovelDestination.Bookshelf -> WorkShelfScreen(
+                                    kind = WorkShelfKind.Novel,
+                                    onCreate = { creatingWork = CreateWorkVocabulary.Novel },
+                                    onOpen = { card ->
+                                        card.bookId?.let(shellViewModel::setSelectedBookId)
+                                        novelDest = NovelDestination.Plan.name
+                                    },
+                                )
                                 NovelDestination.Plan -> PlanScreen(
                                     onWrite = { sceneId, kind ->
                                         selectedSceneId = sceneId

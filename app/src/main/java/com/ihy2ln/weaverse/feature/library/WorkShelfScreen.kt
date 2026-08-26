@@ -49,6 +49,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 
 enum class WorkShelfKind(val workType: String, val heading: String, val emptyText: String) {
+    Novel("novel", "Bookshelf", "No novels yet. Add one to begin writing."),
     Campaign("campaign", "Campaigns", "No campaigns yet. Create one to begin an adventure."),
     Storyboard("storyboard", "Window", "No storyboards yet. Create one to build your first page."),
 }
@@ -76,7 +77,7 @@ class WorkShelfViewModel @Inject constructor(
         mediaRepository.observeAll(),
     ) { books, chats, media ->
         val mediaById = media.associateBy { it.id }
-        val typed = books.filter { it.workType == "campaign" || it.workType == "storyboard" }
+        val typed = books.filter { it.workType in setOf("novel", "campaign", "storyboard") }
             .map { book ->
                 val chat = chats.firstOrNull { it.bookId == book.id }
                 val artId = chat?.backgroundMediaId ?: book.coverMediaId
@@ -129,6 +130,7 @@ fun WorkShelfScreen(
     val allCards by viewModel.cards.collectAsState()
     val cards = allCards.filter { card ->
         when (kind) {
+            WorkShelfKind.Novel -> card.workType == "novel"
             WorkShelfKind.Campaign -> card.workType == "campaign"
             WorkShelfKind.Storyboard -> card.workType == "storyboard"
         }
@@ -143,13 +145,21 @@ fun WorkShelfScreen(
             Column(modifier = Modifier.weight(1f)) {
                 Text(kind.heading, style = MaterialTheme.typography.headlineSmall)
                 Text(
-                    if (kind == WorkShelfKind.Storyboard) "Your manga and comic library" else "Your worlds at a glance",
+                    when (kind) {
+                        WorkShelfKind.Novel -> "Choose a novel or start a new story"
+                        WorkShelfKind.Storyboard -> "Your manga and comic library"
+                        WorkShelfKind.Campaign -> "Your worlds at a glance"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = tokens.secondaryText,
                 )
             }
             InkOutlinedButton(
-                label = if (kind == WorkShelfKind.Storyboard) "+ Storyboard" else "+ Campaign",
+                label = when (kind) {
+                    WorkShelfKind.Novel -> "+ Novel"
+                    WorkShelfKind.Storyboard -> "+ Storyboard"
+                    WorkShelfKind.Campaign -> "+ Campaign"
+                },
                 onClick = onCreate,
             )
         }

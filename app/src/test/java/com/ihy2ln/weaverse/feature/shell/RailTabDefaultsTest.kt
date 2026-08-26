@@ -30,7 +30,7 @@ class RailTabDefaultsTest {
     @Test
     fun novelDestinationsIncludePremiumReader() {
         assertEquals(
-            listOf("Plan", "Write", "Read", "Chat", "Review"),
+            listOf("Bookshelf", "Plan", "Write", "Read", "Chat", "Review"),
             NovelDestination.entries.map { it.label },
         )
     }
@@ -82,7 +82,7 @@ class RailTabDefaultsTest {
         assertEquals(RoleplayDestination.Codex, roleplayDestinationOf("Codex"))
         assertEquals(ChattingDestination.Chats, chattingDestinationOf("nonsense"))
         assertEquals(StoryboardDestination.Window, storyboardDestinationOf("Pages"))
-        assertEquals(NovelDestination.Plan, novelDestinationOf("gone"))
+        assertEquals(NovelDestination.Bookshelf, novelDestinationOf("gone"))
         assertEquals(NovelDestination.Write, novelDestinationOf("Write"))
     }
 
