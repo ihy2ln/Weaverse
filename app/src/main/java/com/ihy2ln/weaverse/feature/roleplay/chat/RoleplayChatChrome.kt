@@ -9,6 +9,8 @@ data class RoleplayChatChrome(
     val title: String,
     val displayMode: String,
     val onDisplayMode: (String) -> Unit,
+    /** False when the workspace itself pins the mode (Chatting, RPG, Storyboard). */
+    val showSwitcher: Boolean = true,
 )
 
 fun roleplayModeSubtitle(displayMode: String): String = when (displayMode) {

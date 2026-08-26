@@ -139,7 +139,8 @@ object DefaultAiGuides {
 
     fun draftFor(mode: AppMode): String = when (mode) {
         AppMode.Novel -> novelDraft
-        AppMode.Roleplay -> roleplayDraft
+        // Chatting and Storyboard are roleplay surfaces: same in-character craft.
+        AppMode.Roleplay, AppMode.Chatting, AppMode.Storyboard -> roleplayDraft
         AppMode.Notes -> notesDraft
     }
 
@@ -150,7 +151,7 @@ object DefaultAiGuides {
     ): List<String> = buildList {
         when (mode) {
             AppMode.Novel -> add(sceneBeatProse)
-            AppMode.Roleplay -> {
+            AppMode.Roleplay, AppMode.Chatting, AppMode.Storyboard -> {
                 add(writingCraft)
                 add(roleplayCraft)
             }

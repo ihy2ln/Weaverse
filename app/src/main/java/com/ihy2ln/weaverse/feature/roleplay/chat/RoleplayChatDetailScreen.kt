@@ -113,9 +113,16 @@ fun RoleplayChatDetailScreen(
     onOpenAiPrompt: () -> Unit = {},
     onOpenManualPrompt: () -> Unit = {},
     promptOverlayOpen: Boolean = false,
+    /** Workspaces that own one view (Storyboard, RPG) pin the chat to that mode. */
+    forceDisplayMode: String? = null,
+    /** Hidden when the surrounding workspace already decides the mode. */
+    showModeSwitcher: Boolean = true,
     viewModel: RoleplayChatViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(chatId) { viewModel.bindChat(chatId) }
+    LaunchedEffect(chatId, forceDisplayMode) {
+        if (forceDisplayMode != null) viewModel.setDisplayMode(forceDisplayMode)
+    }
     val state by viewModel.uiState.collectAsState()
     val clipboard = LocalClipboardManager.current
     val tokens = inkTokens()
@@ -131,12 +138,13 @@ fun RoleplayChatDetailScreen(
     val listState = rememberLazyListState()
     val mediaFocus = remember { FocusRequester() }
 
-    LaunchedEffect(state.title, state.displayMode) {
+    LaunchedEffect(state.title, state.displayMode, showModeSwitcher) {
         onChromeChange(
             RoleplayChatChrome(
                 title = state.title.ifBlank { "Chat" },
                 displayMode = state.displayMode,
                 onDisplayMode = viewModel::setDisplayMode,
+                showSwitcher = showModeSwitcher,
             ),
         )
     }

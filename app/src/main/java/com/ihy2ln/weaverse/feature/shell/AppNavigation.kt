@@ -1,9 +1,15 @@
 package com.ihy2ln.weaverse.feature.shell
 
-enum class AppMode {
-    Novel,
-    Roleplay,
-    Notes,
+/**
+ * Top-level workspaces. `Roleplay` is labelled "RPG" in the UI; the constant is
+ * kept because it is persisted in shell state and in the launchMode preference.
+ */
+enum class AppMode(val label: String) {
+    Novel("Novel"),
+    Roleplay("RPG"),
+    Chatting("Chatting"),
+    Storyboard("Storyboard"),
+    Notes("Notes"),
 }
 
 enum class NovelDestination(val label: String) {
@@ -36,11 +42,21 @@ enum class WriteJumpKind(val label: String) {
  */
 enum class RoleplayDestination(val label: String) {
     Chats("Play"),
-    Friends("Friends"),
     Characters("Party"),
     Codex("Journal"),
     Personas("Personas"),
     Presets("Presets"),
+}
+
+/** The messenger workspace: who you talk to, and the conversations themselves. */
+enum class ChattingDestination(val label: String) {
+    Friends("Friends"),
+    Chats("Chats"),
+}
+
+/** The comic workspace: pages of panels, built from layout templates. */
+enum class StoryboardDestination(val label: String) {
+    Pages("Pages"),
 }
 
 enum class NotesDestination(val label: String) {
@@ -78,10 +94,15 @@ fun railTabsFor(mode: AppMode): List<RailTab> = when (mode) {
     )
     AppMode.Notes -> listOf(RailTab.Codex, RailTab.Prompts, RailTab.Notes, RailTab.Pictures)
     AppMode.Roleplay -> listOf(RailTab.Codex, RailTab.Prompts, RailTab.Notes, RailTab.Pictures, RailTab.Snippets, RailTab.Chats)
+    AppMode.Chatting -> listOf(RailTab.Codex, RailTab.Prompts, RailTab.Notes, RailTab.Pictures)
+    // Pictures first: a comic page is built out of the media library.
+    AppMode.Storyboard -> listOf(RailTab.Pictures, RailTab.Codex, RailTab.Prompts, RailTab.Notes, RailTab.Snippets)
 }
 
 fun defaultRailTab(mode: AppMode): RailTab = when (mode) {
     AppMode.Novel -> RailTab.Manuscript
     AppMode.Notes -> RailTab.Notes
     AppMode.Roleplay -> RailTab.Codex
+    AppMode.Chatting -> RailTab.Codex
+    AppMode.Storyboard -> RailTab.Pictures
 }

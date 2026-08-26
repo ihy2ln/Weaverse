@@ -103,6 +103,8 @@ fun AppShell(
     var mode by rememberSaveable { mutableStateOf(AppMode.Novel.name) }
     var novelDest by rememberSaveable { mutableStateOf(NovelDestination.Plan.name) }
     var rpDest by rememberSaveable { mutableStateOf(RoleplayDestination.Chats.name) }
+    var chatDest by rememberSaveable { mutableStateOf(ChattingDestination.Friends.name) }
+    var storyboardChatId by rememberSaveable { mutableStateOf<String?>(null) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showSearch by rememberSaveable { mutableStateOf(false) }
     var showLibrary by rememberSaveable { mutableStateOf(true) }
@@ -145,7 +147,7 @@ fun AppShell(
 
     val bookTitle = shellInfo.book?.title ?: "Weaverse"
     val seriesTitle = shellInfo.series?.title ?: "Library"
-    val inRpChat = selectedRpChatId != null && rpChrome != null
+    val inRpChat = (selectedRpChatId != null || storyboardChatId != null) && rpChrome != null
     val inNotes = mode == AppMode.Notes.name
     val toolbarTitle = when {
         inRpChat -> rpChrome!!.title
@@ -200,11 +202,15 @@ fun AppShell(
             val modeOptions = when (currentMode) {
                 AppMode.Novel -> NovelDestination.entries.map { SegmentedOption(it.name, it.label) }
                 AppMode.Roleplay -> RoleplayDestination.entries.map { SegmentedOption(it.name, it.label) }
+                AppMode.Chatting -> ChattingDestination.entries.map { SegmentedOption(it.name, it.label) }
+                AppMode.Storyboard -> StoryboardDestination.entries.map { SegmentedOption(it.name, it.label) }
                 AppMode.Notes -> NotesDestination.entries.map { SegmentedOption(it.name, it.label) }
             }
             val modeId = when (currentMode) {
                 AppMode.Novel -> novelDest
                 AppMode.Roleplay -> rpDest
+                AppMode.Chatting -> chatDest
+                AppMode.Storyboard -> StoryboardDestination.Pages.name
                 AppMode.Notes -> NotesDestination.Board.name
             }
             val chromeTitle = when {
@@ -228,9 +234,11 @@ fun AppShell(
                 bookTitle = chromeTitle,
                 seriesTitle = chromeSubtitle,
                 workspaceOptions = listOf(
-                    SegmentedOption(AppMode.Novel.name, "Novel"),
-                    SegmentedOption(AppMode.Roleplay.name, "RPG"),
-                    SegmentedOption(AppMode.Notes.name, "Notes"),
+                    SegmentedOption(AppMode.Novel.name, AppMode.Novel.label),
+                    SegmentedOption(AppMode.Roleplay.name, AppMode.Roleplay.label),
+                    SegmentedOption(AppMode.Chatting.name, AppMode.Chatting.label),
+                    SegmentedOption(AppMode.Storyboard.name, AppMode.Storyboard.label),
+                    SegmentedOption(AppMode.Notes.name, AppMode.Notes.label),
                 ),
                 workspaceId = mode,
                 modeOptions = modeOptions,
@@ -297,6 +305,12 @@ fun AppShell(
                             selectedRpChatId = null
                             rpChrome = null
                         }
+                        AppMode.Chatting -> {
+                            chatDest = id
+                            selectedRpChatId = null
+                            rpChrome = null
+                        }
+                        AppMode.Storyboard -> storyboardChatId = null
                         AppMode.Notes -> Unit
                     }
                 },
@@ -361,7 +375,7 @@ fun AppShell(
                     PersonaDetailScreen(personaId = selectedPersonaId!!, onBack = { selectedPersonaId = null })
                 }
                 else -> {
-            if (inRpChat) {
+            if (inRpChat && rpChrome!!.showSwitcher) {
                 RoleplayDisplayModeBar(
                     displayMode = rpChrome!!.displayMode,
                     onSelect = rpChrome!!.onDisplayMode,
@@ -422,17 +436,26 @@ fun AppShell(
                     )
                 }
                 Crossfade(
-                    targetState = Triple(mode to chromeTool, workspaceFocus, novelDest to (rpDest to selectedRpChatId)),
+                    // Every piece of state that selects a screen must be in this key,
+                    // or switching workspace/destination will not recompose the content.
+                    targetState = Triple(
+                        mode to chromeTool,
+                        workspaceFocus,
+                        listOf(novelDest, rpDest, chatDest, selectedRpChatId, storyboardChatId),
+                    ),
                     animationSpec = tween(durationMillis = 120),
                     label = "modeSwitch",
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
                         .background(contentColor),
-                ) { (modeAndTool, focus, destPair) ->
+                ) { (modeAndTool, focus, dests) ->
                     val (currentMode, tool) = modeAndTool
-                    val (nd, rpPair) = destPair
-                    val (rd, chatId) = rpPair
+                    val nd = dests[0] ?: NovelDestination.Plan.name
+                    val rd = dests[1] ?: RoleplayDestination.Chats.name
+                    val cd = dests[2] ?: ChattingDestination.Friends.name
+                    val chatId = dests[3]
+                    val boardId = dests[4]
                     Box(modifier = Modifier.fillMaxSize()) {
                         if (tool != null) {
                             when (runCatching { RailTab.valueOf(tool) }.getOrNull()) {
@@ -496,13 +519,55 @@ fun AppShell(
                                 NovelDestination.Review -> ReviewScreen()
                             }
                             AppMode.Notes.name -> NotesScreen(viewModel = notesViewModel)
-                            else -> when (RoleplayDestination.valueOf(rd)) {
-                                RoleplayDestination.Friends -> FriendsScreen(
+                            AppMode.Chatting.name -> when (ChattingDestination.valueOf(cd)) {
+                                ChattingDestination.Friends -> FriendsScreen(
                                     onOpenChat = {
                                         selectedRpChatId = it
-                                        rpDest = RoleplayDestination.Chats.name
+                                        chatDest = ChattingDestination.Chats.name
                                     },
                                 )
+                                ChattingDestination.Chats -> {
+                                    if (chatId != null) {
+                                        RoleplayChatDetailScreen(
+                                            chatId = chatId,
+                                            onBack = {
+                                                selectedRpChatId = null
+                                                rpChrome = null
+                                            },
+                                            onChromeChange = { rpChrome = it },
+                                            onOpenAiPrompt = { shellViewModel.openPrompt(PromptEntryKind.Ai) },
+                                            onOpenManualPrompt = { shellViewModel.openPrompt(PromptEntryKind.Manual) },
+                                            promptOverlayOpen = promptOverlayOpen,
+                                            // Chatting owns the messenger view only.
+                                            forceDisplayMode = "messenger",
+                                            showModeSwitcher = false,
+                                        )
+                                    } else {
+                                        RoleplayChatsScreen(onChatClick = { selectedRpChatId = it })
+                                    }
+                                }
+                            }
+                            AppMode.Storyboard.name -> {
+                                if (boardId != null) {
+                                    RoleplayChatDetailScreen(
+                                        chatId = boardId,
+                                        onBack = {
+                                            storyboardChatId = null
+                                            rpChrome = null
+                                        },
+                                        onChromeChange = { rpChrome = it },
+                                        onOpenAiPrompt = { shellViewModel.openPrompt(PromptEntryKind.Ai) },
+                                        onOpenManualPrompt = { shellViewModel.openPrompt(PromptEntryKind.Manual) },
+                                        promptOverlayOpen = promptOverlayOpen,
+                                        // Storyboard is always the comic canvas.
+                                        forceDisplayMode = "roleplay",
+                                        showModeSwitcher = false,
+                                    )
+                                } else {
+                                    RoleplayChatsScreen(onChatClick = { storyboardChatId = it })
+                                }
+                            }
+                            else -> when (RoleplayDestination.valueOf(rd)) {
                                 RoleplayDestination.Chats -> {
                                     if (chatId != null) {
                                         RoleplayChatDetailScreen(
@@ -515,6 +580,9 @@ fun AppShell(
                                             onOpenAiPrompt = { shellViewModel.openPrompt(PromptEntryKind.Ai) },
                                             onOpenManualPrompt = { shellViewModel.openPrompt(PromptEntryKind.Manual) },
                                             promptOverlayOpen = promptOverlayOpen,
+                                            // Play is the DM board.
+                                            forceDisplayMode = "dungeonMaster",
+                                            showModeSwitcher = false,
                                         )
                                     } else {
                                         RoleplayChatsScreen(onChatClick = { selectedRpChatId = it })

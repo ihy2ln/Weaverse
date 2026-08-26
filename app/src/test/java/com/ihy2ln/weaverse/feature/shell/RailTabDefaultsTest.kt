@@ -36,8 +36,39 @@ class RailTabDefaultsTest {
     }
 
     @Test
-    fun roleplayAndNotesAreTopLevelModes() {
-        assertEquals(listOf("Novel", "Roleplay", "Notes"), AppMode.entries.map { it.name })
+    fun theFourWorkspacesPlusNotesAreTopLevelModes() {
+        // Constants are persisted in shell state and the launchMode preference, so
+        // Roleplay keeps its name and only carries the "RPG" label.
+        assertEquals(
+            listOf("Novel", "Roleplay", "Chatting", "Storyboard", "Notes"),
+            AppMode.entries.map { it.name },
+        )
+        assertEquals(
+            listOf("Novel", "RPG", "Chatting", "Storyboard", "Notes"),
+            AppMode.entries.map { it.label },
+        )
+    }
+
+    @Test
+    fun everyModeHasRailTabsAndAValidDefault() {
+        AppMode.entries.forEach { mode ->
+            val tabs = railTabsFor(mode)
+            assertTrue(tabs.isNotEmpty(), "$mode has no rail tabs")
+            assertTrue(
+                defaultRailTab(mode) in tabs,
+                "$mode default rail tab is not among its own tabs",
+            )
+        }
+    }
+
+    @Test
+    fun rpgAndChattingDestinationsAreDistinct() {
+        assertEquals(
+            listOf("Play", "Party", "Journal", "Personas", "Presets"),
+            RoleplayDestination.entries.map { it.label },
+        )
+        assertEquals(listOf("Friends", "Chats"), ChattingDestination.entries.map { it.label })
+        assertEquals(listOf("Pages"), StoryboardDestination.entries.map { it.label })
     }
 
     @Test
