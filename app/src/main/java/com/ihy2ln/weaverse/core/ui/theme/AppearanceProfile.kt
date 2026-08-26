@@ -29,6 +29,7 @@ enum class AppearanceProfile(
     Arcade("Arcade", "8-bit: hard pixel corners and a monospace HUD."),
     Synthwave("Synthwave", "Neon on deep violet, wide and glowing."),
     Chill("Chill", "Soft, muted and roomy — easy on the eyes."),
+    Tabletop("Tabletop", "Rulebook dark — near-black, crimson, serif headings."),
     ;
 
     /** Styled profiles fix their own mood; only Classic honours all four modes. */
@@ -40,6 +41,7 @@ enum class AppearanceProfile(
         Arcade -> if (mode.isDark) ArcadeDark else ArcadeLight
         Synthwave -> if (mode.isDark) SynthwaveDark else SynthwaveLight
         Chill -> if (mode.isDark) ChillDark else ChillLight
+        Tabletop -> if (mode.isDark) TabletopDark else TabletopLight
     }
 
     val typography: Typography get() = when (this) {
@@ -48,6 +50,7 @@ enum class AppearanceProfile(
         Arcade -> ArcadeTypography
         Synthwave -> SynthwaveTypography
         Chill -> ChillTypography
+        Tabletop -> TabletopTypography
     }
 
     /** Corner rounding is the cheapest, loudest shape signal: 0dp reads as pixel art. */
@@ -57,6 +60,8 @@ enum class AppearanceProfile(
         Arcade -> 0.dp
         Synthwave -> 14.dp
         Chill -> 20.dp
+        // Rulebook apps keep corners tight so panels read as printed plates.
+        Tabletop -> 3.dp
     }
 
     val shapes: Shapes get() = Shapes(
@@ -172,6 +177,30 @@ private val ChillDark = InkThemeTokens(
     activePillLabel = Color(0xFF181D1C),
 )
 
+private val TabletopLight = InkThemeTokens(
+    background = Color(0xFFEDEAE4),
+    panel = Color(0xFFF7F5F1),
+    page = Color(0xFFFFFFFF),
+    hairline = Color(0xFFB9B2A6),
+    hover = Color(0xFFE0DCD3),
+    primaryText = Color(0xFF1B1A18),
+    secondaryText = Color(0xFF6B665D),
+    activePill = Color(0xFF9E2A2B),
+    activePillLabel = Color(0xFFFFFFFF),
+)
+
+private val TabletopDark = InkThemeTokens(
+    background = Color(0xFF0E0E10),
+    panel = Color(0xFF17171A),
+    page = Color(0xFF121215),
+    hairline = Color(0xFF3A3A40),
+    hover = Color(0xFF202026),
+    primaryText = Color(0xFFE8E6E3),
+    secondaryText = Color(0xFF9A9AA2),
+    activePill = Color(0xFFC53131),
+    activePillLabel = Color(0xFFFFFFFF),
+)
+
 // ---------------------------------------------------------------------------
 // Typography
 // ---------------------------------------------------------------------------
@@ -257,6 +286,15 @@ private val SynthwaveTypography = typographyOf(
     headingWeight = FontWeight.Bold,
     headingSpacing = 2.sp,
     bodyLineHeight = 26.sp,
+)
+
+/** Serif names over a sans body with wide small-caps labels, like a rulebook app. */
+private val TabletopTypography = typographyOf(
+    display = FontFamily.Serif,
+    body = FontFamily.SansSerif,
+    headingWeight = FontWeight.Bold,
+    headingSpacing = 1.sp,
+    bodyLineHeight = 24.sp,
 )
 
 private val ChillTypography = typographyOf(
