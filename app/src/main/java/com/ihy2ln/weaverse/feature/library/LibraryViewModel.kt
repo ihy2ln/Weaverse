@@ -3,6 +3,7 @@ package com.ihy2ln.weaverse.feature.library
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ihy2ln.weaverse.core.ui.components.NewWorkDetails
 import com.ihy2ln.weaverse.core.media.MediaRepository
 import com.ihy2ln.weaverse.data.db.entities.BookEntity
 import com.ihy2ln.weaverse.data.db.entities.SeriesEntity
@@ -130,11 +131,22 @@ class LibraryViewModel @Inject constructor(
     fun onNewSeriesTitle(value: String) = _uiState.update { it.copy(newSeriesTitle = value) }
     fun onAssignSeriesId(value: String) = _uiState.update { it.copy(assignSeriesId = value) }
 
-    fun createBook(onOpened: (bookId: String, sceneId: String?) -> Unit = { _, _ -> }) {
+    fun createBook(
+        details: NewWorkDetails? = null,
+        onOpened: (bookId: String, sceneId: String?) -> Unit = { _, _ -> },
+    ) {
         viewModelScope.launch {
-            val title = _uiState.value.newBookTitle.ifBlank { "Untitled Book" }
+            val title = details?.title
+                ?: _uiState.value.newBookTitle.ifBlank { "Untitled Book" }
             val seriesId = _uiState.value.assignSeriesId.ifBlank { null }
-            val book = bookRepository.createBook(title, seriesId)
+            val book = bookRepository.createBook(
+                title = title,
+                seriesId = seriesId,
+                genre = details?.genre.orEmpty(),
+                pov = details?.pov.orEmpty(),
+                tense = details?.tense.orEmpty(),
+                styleGuide = details?.styleGuide.orEmpty(),
+            )
             settings.setSelectedBookId(book.id)
             val sceneId = bookRepository.firstSceneId(book.id)
             _uiState.update { it.copy(newBookTitle = "", assignSeriesId = "") }

@@ -2,6 +2,11 @@ package com.ihy2ln.weaverse.feature.shell
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ihy2ln.weaverse.core.ui.components.CreateWorkVocabulary
+import com.ihy2ln.weaverse.core.ui.components.NewWorkDetails
+import com.ihy2ln.weaverse.data.db.entities.RpChatEntity
+import com.ihy2ln.weaverse.data.db.entities.RpPageMeta
+import com.ihy2ln.weaverse.data.db.entities.encodePages
 import com.ihy2ln.weaverse.core.media.MediaRepository
 import com.ihy2ln.weaverse.data.db.entities.BookEntity
 import com.ihy2ln.weaverse.data.db.entities.SeriesEntity
@@ -29,13 +34,55 @@ data class ShellBookInfo(
 @HiltViewModel
 class AppShellViewModel @Inject constructor(
     private val settings: SettingsRepository,
-    bookRepository: BookRepository,
+    private val bookRepository: BookRepository,
     seriesRepository: SeriesRepository,
     mediaRepository: MediaRepository,
+    private val db: com.ihy2ln.weaverse.data.db.WeaverseDatabase,
     private val promptEntryBus: PromptEntryBus,
     private val workspaceHistory: WorkspaceHistory,
 ) : ViewModel() {
     val preferences = settings.preferences
+
+    /**
+     * Creates a novel, campaign or storyboard. All three are a manuscript
+     * underneath — a storyboard additionally gets a chat pinned to the comic
+     * canvas, which is the thing its pages hang off.
+     */
+    fun createWork(
+        vocabulary: CreateWorkVocabulary,
+        details: NewWorkDetails,
+        onCreated: (bookId: String, chatId: String?) -> Unit,
+    ) {
+        viewModelScope.launch {
+            val book = bookRepository.createBook(
+                title = details.title,
+                genre = details.genre,
+                pov = details.pov,
+                tense = details.tense,
+                styleGuide = details.styleGuide,
+            )
+            settings.setSelectedBookId(book.id)
+            var chatId: String? = null
+            if (vocabulary == CreateWorkVocabulary.Storyboard) {
+                val now = System.currentTimeMillis()
+                val id = "rp-chat-${java.util.UUID.randomUUID()}"
+                db.roleplayDao().upsertChat(
+                    RpChatEntity(
+                        id = id,
+                        characterId = null,
+                        personaId = "persona-default",
+                        title = details.title,
+                        displayMode = "roleplay",
+                        pagesJson = encodePages(listOf(RpPageMeta(id = "page-1", order = 0))),
+                        createdAt = now,
+                        updatedAt = now,
+                    ),
+                )
+                chatId = id
+            }
+            onCreated(book.id, chatId)
+        }
+    }
     val historyState = workspaceHistory.state
 
     fun undo() {

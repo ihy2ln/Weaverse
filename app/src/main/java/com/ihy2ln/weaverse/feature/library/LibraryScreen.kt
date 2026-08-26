@@ -1,5 +1,10 @@
 package com.ihy2ln.weaverse.feature.library
 
+import com.ihy2ln.weaverse.core.ui.components.CreateWorkVocabulary
+import com.ihy2ln.weaverse.core.ui.components.CreateWorkDialog
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -62,6 +67,17 @@ fun LibraryScreen(
     val state by viewModel.uiState.collectAsState()
     val tokens = inkTokens()
     val contentPad = adaptiveContentPadding()
+    var creating by remember { mutableStateOf<CreateWorkVocabulary?>(null) }
+
+    creating?.let { vocabulary ->
+        CreateWorkDialog(
+            vocabulary = vocabulary,
+            onDismiss = { creating = null },
+            onCreate = { details ->
+                viewModel.createBook(details) { bookId, sceneId -> onWriteBook(bookId, sceneId) }
+            },
+        )
+    }
 
     Column(
         modifier = modifier
@@ -77,9 +93,7 @@ fun LibraryScreen(
         )
         InkOutlinedButton(
             label = "+ Create Novel",
-            onClick = {
-                viewModel.createBook { bookId, sceneId -> onWriteBook(bookId, sceneId) }
-            },
+            onClick = { creating = CreateWorkVocabulary.Novel },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = InkSpacing.sm, bottom = InkSpacing.md),

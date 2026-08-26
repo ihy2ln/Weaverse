@@ -53,6 +53,9 @@ fun RoleplayChatsScreen(
     onChatClick: (String) -> Unit,
     showFilters: Boolean = false,
     onNewChat: (() -> Unit)? = null,
+    /** Shown above the list when this workspace can start a new work. */
+    createLabel: String? = null,
+    onCreate: (() -> Unit)? = null,
     viewModel: RoleplayChatsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -64,6 +67,21 @@ fun RoleplayChatsScreen(
                 value = state.query,
                 onValueChange = viewModel::onQueryChange,
             )
+
+            if (createLabel != null && onCreate != null) {
+                Text(
+                    createLabel,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = tokens.activePill,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = InkSpacing.md)
+                        .clip(RoundedCornerShape(inkRadiusSm()))
+                        .clickable(onClick = onCreate)
+                        .padding(vertical = InkSpacing.sm),
+                    textAlign = TextAlign.Center,
+                )
+            }
 
             if (showFilters) {
                 Row(

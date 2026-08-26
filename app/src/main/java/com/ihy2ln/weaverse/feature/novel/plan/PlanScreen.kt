@@ -76,6 +76,8 @@ import com.ihy2ln.weaverse.feature.shell.WriteJumpKind
 fun PlanScreen(
     onWrite: (sceneId: String, kind: WriteJumpKind) -> Unit = { _, _ -> },
     vocabulary: PlanVocabulary = PlanVocabulary.Novel,
+    /** When set, an action to start a whole new work appears above the outline. */
+    onNewWork: (() -> Unit)? = null,
     viewModel: PlanViewModel = hiltViewModel(),
 ) {
     var viewMode by rememberSaveable { mutableStateOf(PlanViewMode.Grid.name) }
@@ -117,6 +119,16 @@ fun PlanScreen(
                     pendingDeleteSceneId = null
                 },
                 onDismiss = { pendingDeleteSceneId = null },
+            )
+        }
+        // RPG has no Library shelf to start a campaign from, so the outline offers it.
+        if (onNewWork != null) {
+            InkOutlinedButton(
+                label = "+ New ${vocabulary.book.lowercase()}",
+                onClick = onNewWork,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = InkSpacing.sm),
             )
         }
         InkSegmentedPill(

@@ -48,6 +48,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import com.ihy2ln.weaverse.core.ui.LocalPromptShortcutHandler
 import com.ihy2ln.weaverse.core.ui.PromptShortcutKind
+import com.ihy2ln.weaverse.core.ui.components.CreateWorkDialog
+import com.ihy2ln.weaverse.core.ui.components.CreateWorkVocabulary
 import com.ihy2ln.weaverse.core.ui.components.InkSegmentedPill
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
 import com.ihy2ln.weaverse.core.ui.components.SegmentedOption
@@ -109,6 +111,7 @@ fun AppShell(
     var storyboardDest by rememberSaveable { mutableStateOf(StoryboardDestination.Manga.name) }
     var storyboardChatId by rememberSaveable { mutableStateOf<String?>(null) }
     var rpShowChatPicker by rememberSaveable { mutableStateOf(false) }
+    var creatingWork by remember { mutableStateOf<CreateWorkVocabulary?>(null) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showSearch by rememberSaveable { mutableStateOf(false) }
     var showLibrary by rememberSaveable { mutableStateOf(true) }
@@ -140,6 +143,35 @@ fun AppShell(
         shellViewModel.openPrompt(kind)
         return true
     }
+    creatingWork?.let { vocabulary ->
+        CreateWorkDialog(
+            vocabulary = vocabulary,
+            onDismiss = { creatingWork = null },
+            onCreate = { details ->
+                // Campaigns and storyboards are both manuscripts underneath, so one
+                // path creates all three and only the landing screen differs.
+                shellViewModel.createWork(vocabulary, details) { bookId, chatId ->
+                    showLibrary = false
+                    when (vocabulary) {
+                        CreateWorkVocabulary.Storyboard -> {
+                            mode = AppMode.Storyboard.name
+                            storyboardChatId = chatId
+                        }
+                        CreateWorkVocabulary.Campaign -> {
+                            mode = AppMode.Roleplay.name
+                            rpDest = RoleplayDestination.Chats.name
+                            rpShowChatPicker = false
+                        }
+                        else -> {
+                            mode = AppMode.Novel.name
+                            novelDest = NovelDestination.Plan.name
+                        }
+                    }
+                }
+            },
+        )
+    }
+
     val tokens = inkTokens()
     val density = LocalDensity.current
     val configuration = LocalConfiguration.current
@@ -247,7 +279,7 @@ fun AppShell(
                 workspaceId = mode,
                 modeOptions = modeOptions,
                 modeId = modeId,
-                focusOptions = WorkspaceFocus.entries.map { SegmentedOption(it.name, it.label) },
+                focusOptions = emptyList(),
                 focusId = workspaceFocus,
                 // "Extra" row: the app-wide tools that are not tied to one workspace.
                 toolOptions = workspaceChromeTools().map { SegmentedOption(it.name, it.label) },
@@ -279,7 +311,12 @@ fun AppShell(
                     showSearch = false
                     if (id == RailTab.Pictures.name) {
                         chromeTool = null
-                        workspaceFocus = WorkspaceFocus.Pictures.name
+                        // Toggle, since the Focus chip that used to switch back is gone.
+                        workspaceFocus = if (workspaceFocus == WorkspaceFocus.Pictures.name) {
+                            WorkspaceFocus.Story.name
+                        } else {
+                            WorkspaceFocus.Pictures.name
+                        }
                     } else {
                         chromeTool = id
                         if (id != null) workspaceFocus = WorkspaceFocus.Story.name
@@ -586,7 +623,11 @@ fun AppShell(
                                         rightToLeft = storyboardDestinationOf(sd) == StoryboardDestination.Manga,
                                     )
                                 } else {
-                                    RoleplayChatsScreen(onChatClick = { storyboardChatId = it })
+                                    RoleplayChatsScreen(
+                                        onChatClick = { storyboardChatId = it },
+                                        createLabel = "+ New storyboard",
+                                        onCreate = { creatingWork = CreateWorkVocabulary.Storyboard },
+                                    )
                                 }
                             }
                             else -> when (roleplayDestinationOf(rd)) {
@@ -616,6 +657,7 @@ fun AppShell(
                                         // Event, over the same manuscript entities Novel uses.
                                         PlanScreen(
                                             vocabulary = PlanVocabulary.Rpg,
+                                            onNewWork = { creatingWork = CreateWorkVocabulary.Campaign },
                                             onWrite = { sceneId, _ ->
                                                 selectedSceneId = sceneId
                                                 rpShowChatPicker = true
