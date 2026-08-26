@@ -54,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -74,6 +75,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ihy2ln.weaverse.core.text.MediaGrid
+import com.ihy2ln.weaverse.core.text.PanelTemplates
 import com.ihy2ln.weaverse.data.db.entities.RpPageMeta
 import com.ihy2ln.weaverse.core.ui.components.CollapsibleUsageStrip
 import com.ihy2ln.weaverse.core.ui.components.EditTextAction
@@ -265,6 +267,7 @@ fun RoleplayChatDetailScreen(
                     onAddPage = viewModel::addPage,
                     onRenamePage = viewModel::renamePage,
                     onDeletePage = viewModel::deletePage,
+                    onApplyTemplate = viewModel::applyPanelTemplate,
                 )
                 ScrollGutterBackdrop(
                     modifier = Modifier
@@ -304,6 +307,7 @@ fun RoleplayChatDetailScreen(
                     onAddPage = viewModel::addPage,
                     onRenamePage = viewModel::renamePage,
                     onDeletePage = viewModel::deletePage,
+                    onApplyTemplate = viewModel::applyPanelTemplate,
                 )
                 ScrollGutterBackdrop(
                     modifier = Modifier
@@ -663,12 +667,14 @@ private fun PageStrip(
     onAddPage: () -> Unit,
     onRenamePage: (String, String) -> Unit,
     onDeletePage: (String) -> Unit,
+    onApplyTemplate: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val tokens = inkTokens()
     var menuForPageId by remember { mutableStateOf<String?>(null) }
     var renamingPageId by remember { mutableStateOf<String?>(null) }
     var renameDraft by remember { mutableStateOf("") }
+    var templateMenuOpen by remember { mutableStateOf(false) }
 
     Row(
         modifier = modifier
@@ -735,6 +741,32 @@ private fun PageStrip(
                 .clickable { onAddPage() }
                 .padding(horizontal = InkSpacing.md, vertical = 4.dp),
         )
+        Box {
+            Text(
+                text = "Layout ▾",
+                style = MaterialTheme.typography.labelMedium,
+                color = tokens.secondaryText,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(inkRadiusSm()))
+                    .border(1.dp, tokens.hairline, RoundedCornerShape(inkRadiusSm()))
+                    .clickable { templateMenuOpen = true }
+                    .padding(horizontal = InkSpacing.sm, vertical = 4.dp),
+            )
+            DropdownMenu(
+                expanded = templateMenuOpen,
+                onDismissRequest = { templateMenuOpen = false },
+            ) {
+                PanelTemplates.all.forEach { template ->
+                    DropdownMenuItem(
+                        text = { Text("${template.label} · ${template.panelCount}") },
+                        onClick = {
+                            templateMenuOpen = false
+                            onApplyTemplate(template.id)
+                        },
+                    )
+                }
+            }
+        }
     }
 
     if (renamingPageId != null) {
@@ -960,6 +992,8 @@ private fun MangaSnapPanel(
             .width(widthDp + with(density) { resizeDx.toDp() }.coerceAtLeast(0.dp))
             .height(heightDp + with(density) { resizeDy.toDp() }.coerceAtLeast(0.dp))
             .padding(2.dp)
+            // Template-driven tilt: a slanted gutter, the way a comic paces action.
+            .rotate(panel.panelRotationDeg)
             .clip(RoundedCornerShape(inkRadiusSm()))
             .border(if (selected) 2.dp else 1.dp, border, RoundedCornerShape(inkRadiusSm()))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))

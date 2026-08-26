@@ -112,6 +112,8 @@ data class MediaBlock(
     val mediaOffsetXPercent: Float = 0f,
     val mediaOffsetYPercent: Float = 0f,
     val overlays: List<TextOverlay> = emptyList(),
+    /** Tilts the whole panel frame — comic pages use slanted gutters for pace. */
+    val panelRotationDeg: Float = 0f,
 ) : Block
 
 @Serializable
@@ -147,6 +149,8 @@ data class MediaStackBlock(
     val mediaOffsetXPercent: Float = 0f,
     val mediaOffsetYPercent: Float = 0f,
     val overlays: List<TextOverlay> = emptyList(),
+    /** Tilts the whole panel frame — comic pages use slanted gutters for pace. */
+    val panelRotationDeg: Float = 0f,
 ) : Block
 
 @Serializable

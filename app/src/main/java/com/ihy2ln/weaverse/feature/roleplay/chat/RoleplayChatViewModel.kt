@@ -23,6 +23,7 @@ import com.ihy2ln.weaverse.core.text.Paragraph
 import com.ihy2ln.weaverse.core.text.Span
 import com.ihy2ln.weaverse.core.text.TextOverlay
 import com.ihy2ln.weaverse.core.text.MediaGrid
+import com.ihy2ln.weaverse.core.text.PanelTemplates
 import com.ihy2ln.weaverse.core.text.documentFromJson
 import com.ihy2ln.weaverse.core.text.plainText
 import com.ihy2ln.weaverse.core.text.stackMediaOnto
@@ -91,6 +92,7 @@ data class RpMediaRef(
     val mediaOffsetXPercent: Float = 0f,
     val mediaOffsetYPercent: Float = 0f,
     val overlays: List<TextOverlay> = emptyList(),
+    val panelRotationDeg: Float = 0f,
 )
 
 data class RpMessageUi(
@@ -319,6 +321,7 @@ class RoleplayChatViewModel @Inject constructor(
                                     mediaOffsetXPercent = block.mediaOffsetXPercent,
                                     mediaOffsetYPercent = block.mediaOffsetYPercent,
                                     overlays = block.overlays,
+                                    panelRotationDeg = block.panelRotationDeg,
                                 )
                             }
                         }
@@ -355,6 +358,7 @@ class RoleplayChatViewModel @Inject constructor(
                                     mediaOffsetXPercent = block.mediaOffsetXPercent,
                                     mediaOffsetYPercent = block.mediaOffsetYPercent,
                                     overlays = block.overlays,
+                                    panelRotationDeg = block.panelRotationDeg,
                                 )
                             }
                         }
@@ -843,6 +847,44 @@ class RoleplayChatViewModel @Inject constructor(
                 it.copy(pages = remaining, activePageId = nextActive, selectedMediaKey = null)
             }
             publishMessages()
+        }
+    }
+
+    /**
+     * Snap this page's panels into a comic layout. Panels are filled in their
+     * existing order, and any beyond the template's slot count keep their current
+     * placement — applying a template never drops artwork off the page.
+     */
+    fun applyPanelTemplate(templateId: String) {
+        val template = PanelTemplates.byId(templateId) ?: return
+        val gridSize = activeGridSize()
+        val pagePanels = _uiState.value.mediaPanels
+        if (pagePanels.isEmpty()) {
+            _uiState.update { it.copy(errorMessage = "Add some media before applying a layout.") }
+            return
+        }
+        viewModelScope.launch {
+            pagePanels.forEachIndexed { index, panel ->
+                val slot = template.slots.getOrNull(index) ?: return@forEachIndexed
+                val current = rawMessages.find { it.id == panel.messageId } ?: return@forEachIndexed
+                val blocks = documentFromJson(current.contentJson).blocks.toMutableList()
+                val at = blocks.indexOfFirst { it.id == panel.blockId }
+                if (at < 0) return@forEachIndexed
+                val placed = blocks[at].withGridPlacement(
+                    slot.col,
+                    slot.row,
+                    slot.colSpan,
+                    slot.rowSpan,
+                    gridSize,
+                )
+                blocks[at] = when (placed) {
+                    is MediaBlock -> placed.copy(panelRotationDeg = slot.rotationDeg)
+                    is MediaStackBlock -> placed.copy(panelRotationDeg = slot.rotationDeg)
+                    else -> placed
+                }
+                persistMessageBlocks(current, blocks)
+            }
+            _uiState.update { it.copy(errorMessage = "", selectedMediaKey = null) }
         }
     }
 
