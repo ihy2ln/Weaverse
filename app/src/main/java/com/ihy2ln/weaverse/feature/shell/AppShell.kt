@@ -78,7 +78,6 @@ import com.ihy2ln.weaverse.feature.novel.snippets.SnippetsRailScreen
 import com.ihy2ln.weaverse.feature.novel.write.WriteScreen
 import com.ihy2ln.weaverse.feature.prompts.PromptsScreen
 import com.ihy2ln.weaverse.feature.roleplay.characters.CharacterDetailScreen
-import com.ihy2ln.weaverse.feature.roleplay.characters.CharactersScreen
 import com.ihy2ln.weaverse.feature.roleplay.chat.RoleplayChatChrome
 import com.ihy2ln.weaverse.feature.roleplay.chat.RoleplayChatDetailScreen
 import com.ihy2ln.weaverse.feature.roleplay.chat.RoleplayChatsScreen
@@ -86,6 +85,7 @@ import com.ihy2ln.weaverse.feature.roleplay.chat.roleplayModeSubtitle
 import com.ihy2ln.weaverse.feature.roleplay.friends.FriendsScreen
 import com.ihy2ln.weaverse.feature.roleplay.lorebook.LorebookScreen
 import com.ihy2ln.weaverse.feature.roleplay.personas.PersonaDetailScreen
+import com.ihy2ln.weaverse.feature.roleplay.party.PartyScreen
 import com.ihy2ln.weaverse.feature.roleplay.personas.PersonasScreen
 import com.ihy2ln.weaverse.feature.roleplay.presets.PresetsScreen
 import com.ihy2ln.weaverse.feature.search.GlobalSearchScreen
@@ -229,7 +229,7 @@ fun AppShell(
                 seriesTitle = chromeSubtitle,
                 workspaceOptions = listOf(
                     SegmentedOption(AppMode.Novel.name, "Novel"),
-                    SegmentedOption(AppMode.Roleplay.name, "Roleplay"),
+                    SegmentedOption(AppMode.Roleplay.name, "RPG"),
                     SegmentedOption(AppMode.Notes.name, "Notes"),
                 ),
                 workspaceId = mode,
@@ -520,8 +520,9 @@ fun AppShell(
                                         RoleplayChatsScreen(onChatClick = { selectedRpChatId = it })
                                     }
                                 }
-                                RoleplayDestination.Characters -> CharactersScreen(
-                                    onCharacterClick = { selectedCharacterId = it },
+                                RoleplayDestination.Characters -> PartyScreen(
+                                    onOpenPersona = { selectedPersonaId = it },
+                                    onOpenCharacter = { selectedCharacterId = it },
                                 )
                                 RoleplayDestination.Personas -> PersonasScreen(
                                     onPersonaClick = { selectedPersonaId = it },

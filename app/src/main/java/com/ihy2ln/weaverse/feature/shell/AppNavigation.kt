@@ -26,12 +26,20 @@ enum class WriteJumpKind(val label: String) {
     }
 }
 
+/**
+ * RPG workspace sections, mirroring how Novel is organised:
+ * Play is the adventure itself, Party is who is in it, Journal is what you have
+ * gathered along the way. Friends/Chats stay for the messenger side.
+ *
+ * Enum constant names are persisted in shell state, so they are kept stable —
+ * only the labels are user-facing.
+ */
 enum class RoleplayDestination(val label: String) {
+    Chats("Play"),
     Friends("Friends"),
-    Chats("Chats"),
-    Characters("Characters"),
+    Characters("Party"),
+    Codex("Journal"),
     Personas("Personas"),
-    Codex("Codex"),
     Presets("Presets"),
 }
 
