@@ -151,6 +151,10 @@ class SettingsViewModel @Inject constructor(
         syncCoordinator.setAutoSync(enabled)
     }
 
+    fun setDailyCharactersEnabled(enabled: Boolean) {
+        viewModelScope.launch { settings.setDailyCharactersEnabled(enabled) }
+    }
+
     fun pushSyncToPeer() {
         viewModelScope.launch { syncCoordinator.pushToPeer() }
     }

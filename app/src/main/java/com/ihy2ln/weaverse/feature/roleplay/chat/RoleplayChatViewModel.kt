@@ -12,6 +12,7 @@ import com.ihy2ln.weaverse.ai.prompt.RoleplayPromptBuilder
 import com.ihy2ln.weaverse.core.media.MediaClipboard
 import com.ihy2ln.weaverse.core.media.MediaClipboardPayload
 import com.ihy2ln.weaverse.core.media.MediaRepository
+import com.ihy2ln.weaverse.core.roleplay.avatarColorHexFor
 import com.ihy2ln.weaverse.core.ui.components.MediaEditAction
 import com.ihy2ln.weaverse.core.text.Block
 import com.ihy2ln.weaverse.core.text.Document
@@ -100,6 +101,9 @@ data class RpMessageUi(
     val speaker: String,
     val text: String,
     val role: String,
+    val createdAt: Long = 0L,
+    /** Monogram tint for the messenger avatar gutter. */
+    val avatarColorHex: String = "",
     val mediaPaths: List<String> = emptyList(),
     val mediaBlockIds: List<String> = emptyList(),
     val mediaIsAudio: List<Boolean> = emptyList(),
@@ -119,8 +123,6 @@ data class RoleplayChatUiState(
     val isStreaming: Boolean = false,
     val errorMessage: String = "",
     val lastUsage: String = "",
-    val userBubbleColor: Color = InkAccentBlue,
-    val characterBubbleColor: Color = Color(0xFF4A90D9),
     val mediaPickRequestId: Long = 0L,
     val audioPickRequestId: Long = 0L,
     val composerMinLines: Int = 1,
@@ -186,10 +188,6 @@ class RoleplayChatViewModel @Inject constructor(
                         boundPersona = chat.personaId.takeIf { it.isNotBlank() }?.let { id ->
                             db.roleplayDao().getPersona(id)
                         }
-                        val charColor = parseHexColor(
-                            character?.colorHex,
-                            Color(0xFF4A90D9),
-                        )
                         val preset = chat.presetId?.takeIf { it.isNotBlank() }
                             ?: _uiState.value.presetId
                         var pages = decodePages(chat.pagesJson)
@@ -206,7 +204,6 @@ class RoleplayChatViewModel @Inject constructor(
                             it.copy(
                                 title = chat.title,
                                 displayMode = chat.displayMode.ifBlank { "messenger" },
-                                characterBubbleColor = charColor,
                                 presetId = preset,
                                 pages = pages,
                                 activePageId = activePage,
@@ -256,7 +253,20 @@ class RoleplayChatViewModel @Inject constructor(
             val stackPaths = mutableMapOf<String, List<String>>()
             val collapsedMap = mutableMapOf<String, Boolean>()
             val caption = doc.plainText()
-            val speaker = if (m.role == "user") "You" else "Character"
+            val isUser = m.role == "user"
+            // Real names read like a messenger; fall back only when nothing is bound.
+            val speaker = if (isUser) {
+                boundPersona?.name?.takeIf { it.isNotBlank() } ?: "You"
+            } else {
+                boundCharacter?.name?.takeIf { it.isNotBlank() }
+                    ?: boundChat?.title?.takeIf { it.isNotBlank() }
+                    ?: "Character"
+            }
+            val avatarColorHex = if (isUser) {
+                avatarColorHexFor(speaker, null)
+            } else {
+                avatarColorHexFor(speaker, boundCharacter?.colorHex)
+            }
             doc.blocks.forEach { block ->
                 when (block) {
                     is MediaBlock -> {
@@ -360,6 +370,8 @@ class RoleplayChatViewModel @Inject constructor(
                 speaker = speaker,
                 text = caption,
                 role = m.role,
+                createdAt = m.createdAt,
+                avatarColorHex = avatarColorHex,
                 mediaPaths = paths,
                 mediaBlockIds = blockIds,
                 mediaIsAudio = isAudioFlags,

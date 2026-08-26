@@ -27,6 +27,7 @@ enum class WriteJumpKind(val label: String) {
 }
 
 enum class RoleplayDestination(val label: String) {
+    Friends("Friends"),
     Chats("Chats"),
     Characters("Characters"),
     Personas("Personas"),

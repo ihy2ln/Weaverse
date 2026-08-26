@@ -79,6 +79,10 @@ data class UserPreferences(
     val syncPassword: String = "",
     val autoSync: Boolean = true,
     val lastSyncAt: Long = 0L,
+    /** Epoch-day of the last auto-generated "new person"; 0 = never. */
+    val lastDailyCharacterEpochDay: Long = 0L,
+    /** Whether to auto-generate one new character per day (needs an API key). */
+    val dailyCharactersEnabled: Boolean = true,
     /**
      * Extra generators besides the compact PROMPT box. Each flag is independent;
      * all default off. The PROMPT box itself is always available.
@@ -120,6 +124,8 @@ class SettingsRepository @Inject constructor(
             syncPassword = prefs[KEY_SYNC_PASSWORD] ?: "",
             autoSync = prefs[KEY_AUTO_SYNC] ?: true,
             lastSyncAt = prefs[KEY_LAST_SYNC_AT] ?: 0L,
+            lastDailyCharacterEpochDay = prefs[KEY_LAST_DAILY_CHARACTER_DAY] ?: 0L,
+            dailyCharactersEnabled = prefs[KEY_DAILY_CHARACTERS_ENABLED] ?: true,
             extraPromptSurfaces = ExtraPromptSurfaces(
                 inlineWriting = extraFlag(prefs, KEY_PROMPT_INLINE_WRITING),
                 sceneBeatCard = extraFlag(prefs, KEY_PROMPT_SCENE_BEAT_CARD),
@@ -206,6 +212,14 @@ class SettingsRepository @Inject constructor(
         context.dataStore.edit { it[KEY_LAST_SYNC_AT] = value }
     }
 
+    suspend fun setLastDailyCharacterEpochDay(value: Long) {
+        context.dataStore.edit { it[KEY_LAST_DAILY_CHARACTER_DAY] = value }
+    }
+
+    suspend fun setDailyCharactersEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[KEY_DAILY_CHARACTERS_ENABLED] = enabled }
+    }
+
     suspend fun setAppBrightnessPercent(percent: Int) {
         context.dataStore.edit {
             it[KEY_APP_BRIGHTNESS] = percent.coerceIn(5, 100)
@@ -277,6 +291,8 @@ class SettingsRepository @Inject constructor(
         private val KEY_SYNC_PASSWORD = stringPreferencesKey("sync_password")
         private val KEY_AUTO_SYNC = booleanPreferencesKey("auto_sync")
         private val KEY_LAST_SYNC_AT = longPreferencesKey("last_sync_at")
+        private val KEY_LAST_DAILY_CHARACTER_DAY = longPreferencesKey("last_daily_character_day")
+        private val KEY_DAILY_CHARACTERS_ENABLED = booleanPreferencesKey("daily_characters_enabled")
         private val KEY_SHOW_EXTRA_PROMPT_SURFACES = booleanPreferencesKey("show_extra_prompt_surfaces")
         private val KEY_PROMPT_INLINE_WRITING = booleanPreferencesKey("prompt_inline_writing")
         private val KEY_PROMPT_SCENE_BEAT_CARD = booleanPreferencesKey("prompt_scene_beat_card")

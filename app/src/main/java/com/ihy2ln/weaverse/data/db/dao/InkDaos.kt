@@ -284,6 +284,17 @@ interface RoleplayDao {
     @Query("SELECT * FROM rp_chats ORDER BY updatedAt DESC")
     suspend fun getChats(): List<RpChatEntity>
 
+    /** Most recently touched chat for a character, if one exists. */
+    @Query("SELECT * FROM rp_chats WHERE characterId = :characterId ORDER BY updatedAt DESC LIMIT 1")
+    suspend fun getChatForCharacter(characterId: String): RpChatEntity?
+
+    /** Newest message across all modes, for friends-list previews. */
+    @Query("SELECT * FROM rp_messages WHERE chatId = :chatId ORDER BY createdAt DESC LIMIT 1")
+    suspend fun getLatestMessage(chatId: String): RpMessageEntity?
+
+    @Query("SELECT COUNT(*) FROM rp_characters")
+    suspend fun countCharacters(): Int
+
     @Query(
         "SELECT * FROM rp_messages WHERE chatId = :chatId AND displayMode = :displayMode ORDER BY createdAt",
     )

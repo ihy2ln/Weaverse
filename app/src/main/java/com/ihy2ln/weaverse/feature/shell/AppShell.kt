@@ -83,6 +83,7 @@ import com.ihy2ln.weaverse.feature.roleplay.chat.RoleplayChatChrome
 import com.ihy2ln.weaverse.feature.roleplay.chat.RoleplayChatDetailScreen
 import com.ihy2ln.weaverse.feature.roleplay.chat.RoleplayChatsScreen
 import com.ihy2ln.weaverse.feature.roleplay.chat.roleplayModeSubtitle
+import com.ihy2ln.weaverse.feature.roleplay.friends.FriendsScreen
 import com.ihy2ln.weaverse.feature.roleplay.lorebook.LorebookScreen
 import com.ihy2ln.weaverse.feature.roleplay.personas.PersonaDetailScreen
 import com.ihy2ln.weaverse.feature.roleplay.personas.PersonasScreen
@@ -495,6 +496,12 @@ fun AppShell(
                             }
                             AppMode.Notes.name -> NotesScreen(viewModel = notesViewModel)
                             else -> when (RoleplayDestination.valueOf(rd)) {
+                                RoleplayDestination.Friends -> FriendsScreen(
+                                    onOpenChat = {
+                                        selectedRpChatId = it
+                                        rpDest = RoleplayDestination.Chats.name
+                                    },
+                                )
                                 RoleplayDestination.Chats -> {
                                     if (chatId != null) {
                                         RoleplayChatDetailScreen(

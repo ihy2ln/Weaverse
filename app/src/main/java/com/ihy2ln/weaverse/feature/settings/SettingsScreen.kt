@@ -239,6 +239,32 @@ fun SettingsScreen(
             )
 
             Text(
+                "Friends",
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(top = InkSpacing.md),
+            )
+            Text(
+                "Write one new person into your friends list each day. Needs an " +
+                    "OpenRouter key; skipped silently when you're offline.",
+                style = MaterialTheme.typography.bodySmall,
+                color = inkTokens().secondaryText,
+            )
+            Row(modifier = Modifier.padding(top = InkSpacing.sm)) {
+                if (state.prefs.dailyCharactersEnabled) {
+                    InkOutlinedButton(
+                        label = "Daily people on",
+                        onClick = { viewModel.setDailyCharactersEnabled(false) },
+                    )
+                } else {
+                    InkConfirmButton(
+                        onClick = { viewModel.setDailyCharactersEnabled(true) },
+                        label = "Daily people off",
+                        contentDescription = "Generate one new character per day",
+                    )
+                }
+            }
+
+            Text(
                 "Background media",
                 style = MaterialTheme.typography.labelLarge,
                 modifier = Modifier.padding(top = InkSpacing.md),

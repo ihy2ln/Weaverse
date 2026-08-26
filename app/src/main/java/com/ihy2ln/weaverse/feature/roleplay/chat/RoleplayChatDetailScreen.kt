@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -64,6 +65,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -84,12 +86,14 @@ import com.ihy2ln.weaverse.core.ui.components.MediaEditPopup
 import com.ihy2ln.weaverse.core.ui.components.MediaEditPopupConfig
 import com.ihy2ln.weaverse.core.ui.components.TextOverlayEditSheet
 import com.ihy2ln.weaverse.core.ui.components.TextOverlayLayer
+import com.ihy2ln.weaverse.feature.roleplay.friends.CharacterAvatar
 import com.ihy2ln.weaverse.core.ui.components.VoiceToTextField
 import com.ihy2ln.weaverse.core.ui.components.ZoomableMedia
 import com.ihy2ln.weaverse.core.ui.components.mergeSpokenText
 import com.ihy2ln.weaverse.core.ui.components.rememberSpeechToText
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
+import com.ihy2ln.weaverse.core.ui.util.parseHexColor
 import com.ihy2ln.weaverse.core.ui.util.ScrollGutterBackdrop
 import com.ihy2ln.weaverse.core.ui.util.alwaysScrollEndSpacer
 import com.ihy2ln.weaverse.core.ui.util.scrollGutterPadding
@@ -331,25 +335,26 @@ fun RoleplayChatDetailScreen(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = scrollGutterPadding(),
-                verticalArrangement = Arrangement.spacedBy(InkSpacing.xs),
             ) {
-                items(state.messages, key = { it.id }) { message ->
-                    val bubbleColor = if (message.role == "user") {
-                        state.userBubbleColor.copy(alpha = 0.15f)
-                    } else {
-                        state.characterBubbleColor.copy(alpha = 0.15f)
+                itemsIndexed(state.messages, key = { _, it -> it.id }) { index, message ->
+                    val previous = state.messages.getOrNull(index - 1)
+                    // Discord-style grouping: repeat the avatar/name header only when the
+                    // speaker changes or enough time has passed.
+                    val grouped = previous != null &&
+                        previous.speaker == message.speaker &&
+                        previous.role == message.role &&
+                        (message.createdAt - previous.createdAt) in 0 until GROUPING_WINDOW_MS
+                    val showDayDivider = previous != null &&
+                        !isSameDay(previous.createdAt, message.createdAt)
+                    if (showDayDivider) {
+                        DayDivider(message.createdAt)
                     }
-                    val align = if (message.role == "user") Alignment.End else Alignment.Start
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalAlignment = align,
-                    ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
                         Box {
-                            MessengerBubble(
+                            MessengerRow(
                                 message = message,
-                                bubbleColor = bubbleColor,
+                                grouped = grouped && !showDayDivider,
                                 compactStyle = compactStyle,
-                                userAlign = message.role == "user",
                                 selectedMediaKey = state.selectedMediaKey,
                                 onLongPress = { popupMessageId = message.id },
                                 canPasteMedia = state.canPasteMedia,
@@ -421,7 +426,7 @@ fun RoleplayChatDetailScreen(
                             )
                         }
                         if (message.role == "char" && message.swipeCount > 1) {
-                            Row {
+                            Row(modifier = Modifier.padding(start = MessengerGutterWidth)) {
                                 InkTextButton(label = "◀", onClick = { viewModel.swipe(message.id, -1) })
                                 Text(
                                     "${message.swipeIndex + 1}/${message.swipeCount}",
@@ -435,15 +440,31 @@ fun RoleplayChatDetailScreen(
                 }
                 if (state.isStreaming && state.streamingText.isNotBlank()) {
                     item("streaming") {
-                        Column(
+                        val speaker = state.messages.lastOrNull { it.role != "user" }?.speaker
+                            ?: state.title.ifBlank { "Character" }
+                        Row(
                             modifier = Modifier
-                                .fillMaxWidth(0.85f)
-                                .clip(RoundedCornerShape(InkSpacing.radiusMd))
-                                .background(state.characterBubbleColor.copy(alpha = 0.15f))
-                                .padding(InkSpacing.sm),
+                                .fillMaxWidth()
+                                .padding(horizontal = InkSpacing.md, vertical = InkSpacing.xs),
                         ) {
-                            Text("Character · typing…", style = MaterialTheme.typography.labelSmall)
-                            Text(state.streamingText, style = compactStyle, modifier = Modifier.padding(top = 2.dp))
+                            CharacterAvatar(
+                                name = speaker,
+                                colorHex = state.messages.lastOrNull { it.role != "user" }
+                                    ?.avatarColorHex
+                                    .orEmpty(),
+                            )
+                            Column(modifier = Modifier.padding(start = InkSpacing.sm)) {
+                                Text(
+                                    "$speaker · typing…",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Text(
+                                    state.streamingText,
+                                    style = compactStyle,
+                                    modifier = Modifier.padding(top = 2.dp),
+                                )
+                            }
                         }
                     }
                 }
@@ -1105,13 +1126,80 @@ private fun MangaSnapPanel(
     }
 }
 
+/** Width of the avatar gutter, so grouped messages line up under the first one. */
+private val MessengerGutterWidth = 44.dp
+
+/** Consecutive messages from one speaker inside this window share a header. */
+private const val GROUPING_WINDOW_MS = 5 * 60 * 1000L
+
+private fun isSameDay(a: Long, b: Long): Boolean {
+    if (a == 0L || b == 0L) return true
+    val zone = java.time.ZoneId.systemDefault()
+    return java.time.Instant.ofEpochMilli(a).atZone(zone).toLocalDate() ==
+        java.time.Instant.ofEpochMilli(b).atZone(zone).toLocalDate()
+}
+
+private fun formatClock(epochMillis: Long): String {
+    if (epochMillis == 0L) return ""
+    return java.time.Instant.ofEpochMilli(epochMillis)
+        .atZone(java.time.ZoneId.systemDefault())
+        .format(java.time.format.DateTimeFormatter.ofPattern("h:mm a"))
+}
+
+private fun formatDay(epochMillis: Long): String {
+    if (epochMillis == 0L) return ""
+    val date = java.time.Instant.ofEpochMilli(epochMillis)
+        .atZone(java.time.ZoneId.systemDefault())
+        .toLocalDate()
+    val today = java.time.LocalDate.now()
+    return when (date) {
+        today -> "Today"
+        today.minusDays(1) -> "Yesterday"
+        else -> date.format(java.time.format.DateTimeFormatter.ofPattern("MMMM d, yyyy"))
+    }
+}
+
+@Composable
+private fun DayDivider(epochMillis: Long) {
+    val tokens = inkTokens()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = InkSpacing.md, vertical = InkSpacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(tokens.hairline),
+        )
+        Text(
+            formatDay(epochMillis),
+            style = MaterialTheme.typography.labelSmall,
+            color = tokens.secondaryText,
+            modifier = Modifier.padding(horizontal = InkSpacing.sm),
+        )
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(tokens.hairline),
+        )
+    }
+}
+
+/**
+ * One message in the messenger transcript, laid out like a modern chat client:
+ * an avatar gutter on the left, a bold name plus timestamp, then flat text.
+ * When [grouped] the header and avatar are omitted so runs of messages read as one block.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MessengerBubble(
+private fun MessengerRow(
     message: RpMessageUi,
-    bubbleColor: Color,
+    grouped: Boolean,
     compactStyle: androidx.compose.ui.text.TextStyle,
-    userAlign: Boolean,
     selectedMediaKey: String?,
     canPasteMedia: Boolean,
     onLongPress: () -> Unit,
@@ -1123,38 +1211,75 @@ private fun MessengerBubble(
     onCycleStack: (String) -> Unit,
     onMediaEdit: (String, MediaEditAction) -> Unit,
 ) {
-    Column(
+    val tokens = inkTokens()
+    Row(
         modifier = Modifier
-            .fillMaxWidth(if (userAlign) 0.78f else 0.85f)
-            .clip(RoundedCornerShape(InkSpacing.radiusMd))
-            .background(bubbleColor)
+            .fillMaxWidth()
             .combinedClickable(onClick = {}, onLongClick = onLongPress)
-            .padding(InkSpacing.sm),
+            .padding(
+                start = InkSpacing.md,
+                end = InkSpacing.md,
+                top = if (grouped) 1.dp else InkSpacing.sm,
+                bottom = 1.dp,
+            ),
     ) {
-        Text(message.speaker, style = MaterialTheme.typography.labelSmall)
-        if (message.text.isNotBlank()) {
-            Text(message.text, style = compactStyle, modifier = Modifier.padding(top = 2.dp))
+        Box(modifier = Modifier.width(MessengerGutterWidth)) {
+            if (!grouped) {
+                CharacterAvatar(name = message.speaker, colorHex = message.avatarColorHex)
+            }
         }
-        message.mediaPaths.zip(message.mediaBlockIds).forEachIndexed { index, (path, blockId) ->
-            RemovableMedia(
-                path = path,
-                blockId = blockId,
-                selected = selectedMediaKey == "${message.id}::$blockId",
-                maxHeight = 200.dp,
-                contentScale = ContentScale.FillWidth,
-                stacked = (message.mediaStackPaths[blockId]?.size ?: 0) > 1,
-                siblingBlockIds = message.mediaBlockIds,
-                isAudio = message.mediaIsAudio.getOrElse(index) { false },
-                canPaste = canPasteMedia,
-                collapsed = message.mediaCollapsed[blockId] == true,
-                onSelect = { onSelectMedia(blockId) },
-                onRemove = { onRemoveMedia(blockId) },
-                onMove = { onMoveMedia(blockId, it) },
-                onStack = { onStackMedia(blockId) },
-                onStackOnto = onStackOnto,
-                onCycle = { onCycleStack(blockId) },
-                onMediaEdit = { onMediaEdit(blockId, it) },
-            )
+        Column(modifier = Modifier.weight(1f)) {
+            if (!grouped) {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    // Name carries the character's color, the way role colors work in Discord.
+                    Text(
+                        message.speaker,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = parseHexColor(
+                            message.avatarColorHex,
+                            MaterialTheme.colorScheme.onSurface,
+                        ),
+                    )
+                    val clock = formatClock(message.createdAt)
+                    if (clock.isNotBlank()) {
+                        Text(
+                            clock,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = tokens.secondaryText,
+                            modifier = Modifier.padding(start = InkSpacing.xs),
+                        )
+                    }
+                }
+            }
+            if (message.text.isNotBlank()) {
+                Text(
+                    message.text,
+                    style = compactStyle,
+                    modifier = Modifier.padding(top = if (grouped) 0.dp else 2.dp),
+                )
+            }
+            message.mediaPaths.zip(message.mediaBlockIds).forEachIndexed { index, (path, blockId) ->
+                RemovableMedia(
+                    path = path,
+                    blockId = blockId,
+                    selected = selectedMediaKey == "${message.id}::$blockId",
+                    maxHeight = 260.dp,
+                    contentScale = ContentScale.FillWidth,
+                    stacked = (message.mediaStackPaths[blockId]?.size ?: 0) > 1,
+                    siblingBlockIds = message.mediaBlockIds,
+                    isAudio = message.mediaIsAudio.getOrElse(index) { false },
+                    canPaste = canPasteMedia,
+                    collapsed = message.mediaCollapsed[blockId] == true,
+                    onSelect = { onSelectMedia(blockId) },
+                    onRemove = { onRemoveMedia(blockId) },
+                    onMove = { onMoveMedia(blockId, it) },
+                    onStack = { onStackMedia(blockId) },
+                    onStackOnto = onStackOnto,
+                    onCycle = { onCycleStack(blockId) },
+                    onMediaEdit = { onMediaEdit(blockId, it) },
+                )
+            }
         }
     }
 }

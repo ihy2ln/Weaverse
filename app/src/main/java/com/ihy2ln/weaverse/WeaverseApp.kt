@@ -1,6 +1,7 @@
 package com.ihy2ln.weaverse
 
 import android.app.Application
+import com.ihy2ln.weaverse.core.roleplay.DailyCharacterGenerator
 import com.ihy2ln.weaverse.data.export.SampleBookImporter
 import com.ihy2ln.weaverse.data.seed.DatabaseSeeder
 import com.ihy2ln.weaverse.data.sync.SyncCoordinator
@@ -16,6 +17,7 @@ class WeaverseApp : Application() {
     @Inject lateinit var seeder: DatabaseSeeder
     @Inject lateinit var syncCoordinator: SyncCoordinator
     @Inject lateinit var sampleBookImporter: SampleBookImporter
+    @Inject lateinit var dailyCharacterGenerator: DailyCharacterGenerator
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -25,6 +27,8 @@ class WeaverseApp : Application() {
             seeder.seedIfEmpty()
             sampleBookImporter.importBundledIsekaiGachaIfMissing()
             syncCoordinator.suggestedWebUrl()
+            // Needs the network, so it must not block or break the offline-first startup above.
+            runCatching { dailyCharacterGenerator.generateIfDue() }
         }
     }
 }
