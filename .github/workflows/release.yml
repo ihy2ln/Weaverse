@@ -28,8 +28,13 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "${{ inputs.version }}"
-          git push origin "${{ inputs.version }}"
+          git fetch --tags --force
+          if git show-ref --verify --quiet "refs/tags/${{ inputs.version }}"; then
+            echo "Tag ${{ inputs.version }} already exists; reusing it."
+          else
+            git tag "${{ inputs.version }}"
+            git push origin "${{ inputs.version }}"
+          fi
 
       - name: Resolve release tag
         id: tag
