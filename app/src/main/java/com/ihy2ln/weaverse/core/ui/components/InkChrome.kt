@@ -184,11 +184,14 @@ fun WorkspaceChrome(
                 selectedId = focusId,
                 onSelect = onFocus,
             )
-            toolOptions.forEach { tab ->
-                InkTextTab(
-                    label = tab.label,
-                    selected = activeToolId == tab.id,
-                    onClick = { onTool(if (activeToolId == tab.id) null else tab.id) },
+            // App-wide tools, grouped behind one "Extra" chip rather than spilling
+            // six tabs across the row.
+            if (toolOptions.isNotEmpty()) {
+                InkMenuChip(
+                    label = "Extra",
+                    options = toolOptions,
+                    selectedId = activeToolId.orEmpty(),
+                    onSelect = { onTool(if (activeToolId == it) null else it) },
                 )
             }
             InkTextButton(label = "Import", onClick = onImport)

@@ -3,7 +3,10 @@ package com.ihy2ln.weaverse.feature.roleplay.party
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
+import com.ihy2ln.weaverse.data.db.entities.RpEquipSlot
 import com.ihy2ln.weaverse.data.db.entities.RpItem
+import com.ihy2ln.weaverse.data.db.entities.decodeEquipment
+import com.ihy2ln.weaverse.data.db.entities.encodeEquipment
 import com.ihy2ln.weaverse.data.db.entities.decodeItems
 import com.ihy2ln.weaverse.data.db.entities.encodeItems
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -18,6 +21,8 @@ data class CarrierUi(
     val characterId: String,
     val name: String,
     val items: List<RpItem>,
+    /** RpEquipSlot.name -> item name. */
+    val equipment: Map<String, String> = emptyMap(),
 )
 
 data class InventoryUiState(
@@ -41,6 +46,7 @@ class InventoryViewModel @Inject constructor(
                             characterId = it.id,
                             name = it.name,
                             items = decodeItems(it.inventoryJson),
+                            equipment = decodeEquipment(it.equipmentJson),
                         )
                     },
                     loading = false,
@@ -63,6 +69,16 @@ class InventoryViewModel @Inject constructor(
 
     fun removeItem(characterId: String, itemId: String) {
         editItems(characterId) { items -> items.filterNot { it.id == itemId } }
+    }
+
+    /** Equips [itemName] in [slot]; a blank name clears the slot. */
+    fun setEquipment(characterId: String, slot: RpEquipSlot, itemName: String) {
+        viewModelScope.launch {
+            val character = db.roleplayDao().getCharacter(characterId) ?: return@launch
+            val next = decodeEquipment(character.equipmentJson).toMutableMap()
+            if (itemName.isBlank()) next.remove(slot.name) else next[slot.name] = itemName.trim()
+            db.roleplayDao().upsertCharacter(character.copy(equipmentJson = encodeEquipment(next)))
+        }
     }
 
     private fun editItems(characterId: String, transform: (List<RpItem>) -> List<RpItem>) {

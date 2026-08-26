@@ -197,6 +197,10 @@ data class RpCharacterEntity(
     val createdAt: Long,
     /** JSON-encoded List<RpItem> this character is carrying. */
     val inventoryJson: String = "[]",
+    /** In the player's immediate team. The wider cast lives in Lore. */
+    val inParty: Boolean = false,
+    /** Equipped item per slot, keyed by RpEquipSlot.name. */
+    val equipmentJson: String = "{}",
 )
 
 /** One carried item. System-agnostic on purpose — no rules engine behind it. */
@@ -214,6 +218,23 @@ fun decodeItems(json: String): List<RpItem> =
     runCatching { itemsJsonCodec.decodeFromString<List<RpItem>>(json) }.getOrDefault(emptyList())
 
 fun encodeItems(items: List<RpItem>): String = itemsJsonCodec.encodeToString(items)
+
+/** The equipment slots a character plate shows. */
+enum class RpEquipSlot(val label: String) {
+    Head("Head"),
+    Torso("Torso"),
+    Arms("Arms"),
+    Legs("Legs"),
+    Weapon("Weapon"),
+    Accessory("Accessory"),
+}
+
+fun decodeEquipment(json: String): Map<String, String> =
+    runCatching { itemsJsonCodec.decodeFromString<Map<String, String>>(json) }
+        .getOrDefault(emptyMap())
+
+fun encodeEquipment(equipment: Map<String, String>): String =
+    itemsJsonCodec.encodeToString(equipment.filterValues { it.isNotBlank() })
 
 @Entity(tableName = "rp_personas")
 data class RpPersonaEntity(
@@ -255,6 +276,8 @@ data class RpPageMeta(
     val id: String,
     val order: Int,
     val title: String? = null,
+    /** Layout whose slot outlines this page shows; media drops into the slots. */
+    val templateId: String = "classic-6",
 )
 
 private val pagesJsonCodec = Json { ignoreUnknownKeys = true }

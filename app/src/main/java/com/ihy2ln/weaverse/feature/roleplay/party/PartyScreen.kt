@@ -20,6 +20,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,8 +49,18 @@ fun PartyScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val tokens = inkTokens()
+    var recruiting by remember { mutableStateOf(false) }
 
-    if (!state.loading && state.players.isEmpty() && state.cast.isEmpty()) {
+    if (recruiting) {
+        RecruitDialog(
+            inTeam = state.cast,
+            bench = state.bench,
+            onToggle = { id, inParty -> viewModel.setInParty(id, inParty) },
+            onDismiss = { recruiting = false },
+        )
+    }
+
+    if (!state.loading && state.players.isEmpty() && state.cast.isEmpty() && state.bench.isEmpty()) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -70,11 +83,20 @@ fun PartyScreen(
                 PartyRow(member) { onOpenPersona(member.id) }
             }
         }
-        if (state.cast.isNotEmpty()) {
-            item(key = "hdr-cast") { PartyHeader("Cast", state.cast.size) }
-            items(state.cast, key = { "c-${it.id}" }) { member ->
-                PartyRow(member) { onOpenCharacter(member.id) }
-            }
+        item(key = "hdr-team") { PartyHeader("Team", state.cast.size) }
+        items(state.cast, key = { "c-${it.id}" }) { member ->
+            PartyRow(member) { onOpenCharacter(member.id) }
+        }
+        item(key = "recruit") {
+            Text(
+                if (state.cast.isEmpty()) "+ Add someone to your team" else "+ Add / remove",
+                style = MaterialTheme.typography.labelMedium,
+                color = tokens.activePill,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { recruiting = true }
+                    .padding(horizontal = InkSpacing.lg, vertical = InkSpacing.sm),
+            )
         }
         alwaysScrollEndSpacer()
     }
@@ -213,5 +235,61 @@ private fun StatChip(label: String, value: String) {
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+    }
+}
+
+/** Pick who is on the immediate team; everyone else stays in the Lore cast. */
+@Composable
+private fun RecruitDialog(
+    inTeam: List<PartyMemberUi>,
+    bench: List<PartyMemberUi>,
+    onToggle: (String, Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val tokens = inkTokens()
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Your team") },
+        text = {
+            if (inTeam.isEmpty() && bench.isEmpty()) {
+                Text(
+                    "No characters yet. Add one in Lore first.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = tokens.secondaryText,
+                )
+            } else {
+                LazyColumn {
+                    items(inTeam, key = { "in-${it.id}" }) { member ->
+                        RecruitRow(member.name, onTeam = true) { onToggle(member.id, false) }
+                    }
+                    items(bench, key = { "out-${it.id}" }) { member ->
+                        RecruitRow(member.name, onTeam = false) { onToggle(member.id, true) }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Done") }
+        },
+    )
+}
+
+@Composable
+private fun RecruitRow(name: String, onTeam: Boolean, onClick: () -> Unit) {
+    val tokens = inkTokens()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = InkSpacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            if (onTeam) "✓" else "+",
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (onTeam) tokens.activePill else tokens.secondaryText,
+            modifier = Modifier.padding(end = InkSpacing.sm),
+        )
+        Text(name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }

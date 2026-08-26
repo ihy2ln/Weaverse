@@ -27,6 +27,8 @@ data class PartyMemberUi(
 data class PartyUiState(
     val players: List<PartyMemberUi> = emptyList(),
     val cast: List<PartyMemberUi> = emptyList(),
+    /** Everyone not currently in the team, offered when recruiting. */
+    val bench: List<PartyMemberUi> = emptyList(),
     val loading: Boolean = true,
 )
 
@@ -34,6 +36,14 @@ data class PartyUiState(
 class PartyViewModel @Inject constructor(
     private val db: WeaverseDatabase,
 ) : ViewModel() {
+    /** Adds or removes someone from the immediate team. */
+    fun setInParty(characterId: String, inParty: Boolean) {
+        viewModelScope.launch {
+            val character = db.roleplayDao().getCharacter(characterId) ?: return@launch
+            db.roleplayDao().upsertCharacter(character.copy(inParty = inParty))
+        }
+    }
+
     private val _uiState = MutableStateFlow(PartyUiState())
     val uiState: StateFlow<PartyUiState> = _uiState.asStateFlow()
 
@@ -55,13 +65,24 @@ class PartyViewModel @Inject constructor(
                             isDefaultPersona = persona.isDefault,
                         )
                     },
-                    cast = characters.map { character ->
+                    // Roster is the immediate team only — the wider cast lives in Lore.
+                    cast = characters.filter { it.inParty }.map { character ->
                         PartyMemberUi(
                             id = character.id,
                             name = character.name,
                             avatarColorHex = avatarColorHexFor(character.name, character.colorHex),
                             summary = character.description.lineSequence().firstOrNull()?.trim().orEmpty(),
                             personality = character.personality.lineSequence().firstOrNull()?.trim().orEmpty(),
+                            isPlayer = false,
+                        )
+                    },
+                    bench = characters.filterNot { it.inParty }.map { character ->
+                        PartyMemberUi(
+                            id = character.id,
+                            name = character.name,
+                            avatarColorHex = avatarColorHexFor(character.name, character.colorHex),
+                            summary = character.description.lineSequence().firstOrNull()?.trim().orEmpty(),
+                            personality = "",
                             isPlayer = false,
                         )
                     },

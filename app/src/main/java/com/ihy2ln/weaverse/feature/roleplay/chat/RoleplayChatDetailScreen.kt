@@ -291,6 +291,7 @@ fun RoleplayChatDetailScreen(
                         canPaste = state.canPasteMedia,
                         compactStyle = compactStyle,
                         gridSize = MediaGrid.SIZE,
+                        templateId = state.activeTemplateId,
                         textEmphasis = false,
                         emptyHint = "An empty page.\n\nAdd Media, then tap a panel to move or resize it.\nPress / for AI · \\ to write it yourself.",
                         onSelect = { msgId, blockId -> viewModel.selectMedia(msgId, blockId) },
@@ -332,6 +333,7 @@ fun RoleplayChatDetailScreen(
                         canPaste = state.canPasteMedia,
                         compactStyle = compactStyle,
                         gridSize = MediaGrid.DM_SIZE,
+                        templateId = state.activeTemplateId,
                         textEmphasis = true,
                         emptyHint = "An empty scene.\n\nProse and pictures share the board — tap either to move or resize it.\nPress / for AI · \\ to write it yourself.",
                         onSelect = { msgId, blockId -> viewModel.selectMedia(msgId, blockId) },
@@ -819,6 +821,7 @@ private fun MangaSnapGrid(
     canPaste: Boolean,
     compactStyle: androidx.compose.ui.text.TextStyle,
     gridSize: Int = MediaGrid.SIZE,
+    templateId: String = "",
     textEmphasis: Boolean = false,
     emptyHint: String,
     onSelect: (String, String) -> Unit,
@@ -858,8 +861,37 @@ private fun MangaSnapGrid(
         ) {
             val cellW = maxWidth / gridSize
             val cellH = maxHeight / gridSize
+            // The chosen layout's slots, drawn as empty frames so the page reads as
+            // a comic page before any media is dropped in.
+            PanelTemplates.byId(templateId)?.slots?.forEachIndexed { index, slot ->
+                val filled = panels.any { p ->
+                    p.gridCol == slot.col && p.gridRow == slot.row
+                }
+                if (!filled) {
+                    Box(
+                        modifier = Modifier
+                            .offset(x = cellW * slot.col, y = cellH * slot.row)
+                            .width(cellW * slot.colSpan)
+                            .height(cellH * slot.rowSpan)
+                            .padding(2.dp)
+                            .rotate(slot.rotationDeg)
+                            .border(
+                                1.dp,
+                                MaterialTheme.colorScheme.outline.copy(alpha = 0.55f),
+                                RoundedCornerShape(inkRadiusSm()),
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            "${index + 1}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = tokens.secondaryText,
+                        )
+                    }
+                }
+            }
             // Snap grid stays active for move/resize/stack, but lines are hidden.
-            if (panels.isEmpty()) {
+            if (panels.isEmpty() && PanelTemplates.byId(templateId) == null) {
                 Text(
                     emptyHint,
                     style = MaterialTheme.typography.bodyMedium,

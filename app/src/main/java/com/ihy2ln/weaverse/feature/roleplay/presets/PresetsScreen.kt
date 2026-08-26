@@ -24,12 +24,53 @@ import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.InkHairline
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 
-data class RpPreset(val id: String, val name: String, val description: String, val temperature: Float)
+/**
+ * Difficulty rather than a raw sampler setting: [directive] is injected into the
+ * system prompt so the world actually pushes back the chosen amount, and
+ * [temperature] follows it (harsher settings stay more disciplined).
+ */
+data class RpPreset(
+    val id: String,
+    val name: String,
+    val description: String,
+    val temperature: Float,
+    val directive: String,
+)
 
 val defaultPresets = listOf(
-    RpPreset("preset-balanced", "Balanced", "General roleplay — temp 0.8", 0.8f),
-    RpPreset("preset-creative", "Creative", "More varied replies — temp 1.0", 1.0f),
-    RpPreset("preset-precise", "Precise", "Stays on-script — temp 0.5", 0.5f),
+    RpPreset(
+        id = "preset-slice",
+        name = "Slice of life",
+        description = "Warm and low-stakes. Setbacks are small and nobody really loses.",
+        temperature = 0.95f,
+        directive = "Keep the stakes gentle. Conflicts resolve kindly, injuries are minor, " +
+            "and the story favours warmth, humour and everyday moments over danger.",
+    ),
+    RpPreset(
+        id = "preset-balanced",
+        name = "Normal",
+        description = "A fair world. Effort is usually rewarded, mistakes usually recoverable.",
+        temperature = 0.8f,
+        directive = "Let outcomes follow effort. Reasonable plans tend to work, mistakes cost " +
+            "something but are recoverable, and danger is real without being punishing.",
+    ),
+    RpPreset(
+        id = "preset-hard",
+        name = "Hard",
+        description = "The world pushes back. Plans need thought and mistakes hurt.",
+        temperature = 0.7f,
+        directive = "Make the world push back. Careless choices fail, resources run short, " +
+            "and opponents act intelligently. Success must be earned.",
+    ),
+    RpPreset(
+        id = "preset-ruthless",
+        name = "Ruthless",
+        description = "Unforgiving. Bad decisions can end the run.",
+        temperature = 0.6f,
+        directive = "Be unforgiving. Enemies exploit every weakness, luck does not rescue bad " +
+            "decisions, and lasting loss — including death — is on the table. Never soften an " +
+            "outcome to spare the player.",
+    ),
 )
 
 @Composable

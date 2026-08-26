@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
+import com.ihy2ln.weaverse.data.db.entities.RpEquipSlot
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
@@ -48,6 +49,8 @@ fun InventoryScreen(viewModel: InventoryViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsState()
     val tokens = inkTokens()
     var addingForCharacterId by remember { mutableStateOf<String?>(null) }
+    var equippingFor by remember { mutableStateOf<Pair<String, RpEquipSlot>?>(null) }
+    var openCharacterId by remember { mutableStateOf<String?>(null) }
     var draftName by remember { mutableStateOf("") }
     var draftQty by remember { mutableStateOf("1") }
 
@@ -86,7 +89,18 @@ fun InventoryScreen(viewModel: InventoryViewModel = hiltViewModel()) {
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 2.sp,
-                        color = tokens.secondaryText,
+                        color = if (openCharacterId == carrier.characterId) {
+                            tokens.activePill
+                        } else {
+                            tokens.secondaryText
+                        },
+                        modifier = Modifier.clickable {
+                            openCharacterId = if (openCharacterId == carrier.characterId) {
+                                null
+                            } else {
+                                carrier.characterId
+                            }
+                        },
                     )
                     Box(
                         modifier = Modifier
@@ -102,6 +116,14 @@ fun InventoryScreen(viewModel: InventoryViewModel = hiltViewModel()) {
                             draftQty = "1"
                             addingForCharacterId = carrier.characterId
                         },
+                    )
+                }
+            }
+            if (openCharacterId == carrier.characterId) {
+                item(key = "equip-${carrier.characterId}") {
+                    EquipmentPlate(
+                        equipment = carrier.equipment,
+                        onSlotClick = { slot -> equippingFor = carrier.characterId to slot },
                     )
                 }
             }
@@ -162,6 +184,48 @@ fun InventoryScreen(viewModel: InventoryViewModel = hiltViewModel()) {
         alwaysScrollEndSpacer()
     }
 
+    equippingFor?.let { (characterId, slot) ->
+        val carried = state.carriers.firstOrNull { it.characterId == characterId }?.items.orEmpty()
+        AlertDialog(
+            onDismissRequest = { equippingFor = null },
+            title = { Text("Equip ${slot.label.lowercase()}") },
+            text = {
+                if (carried.isEmpty()) {
+                    Text(
+                        "Nothing to equip yet — add an item with + Item first.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = tokens.secondaryText,
+                    )
+                } else {
+                    Column {
+                        carried.forEach { item ->
+                            Text(
+                                item.name,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        viewModel.setEquipment(characterId, slot, item.name)
+                                        equippingFor = null
+                                    }
+                                    .padding(vertical = InkSpacing.sm),
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.setEquipment(characterId, slot, "")
+                    equippingFor = null
+                }) { Text("Clear slot") }
+            },
+            dismissButton = {
+                TextButton(onClick = { equippingFor = null }) { Text("Cancel") }
+            },
+        )
+    }
+
     addingForCharacterId?.let { characterId ->
         AlertDialog(
             onDismissRequest = { addingForCharacterId = null },
@@ -201,5 +265,60 @@ fun InventoryScreen(viewModel: InventoryViewModel = hiltViewModel()) {
                 TextButton(onClick = { addingForCharacterId = null }) { Text("Cancel") }
             },
         )
+    }
+}
+
+/**
+ * The equipped-gear plate: one small square per slot, labelled and showing what
+ * is in it. Tapping a square picks from what the character is carrying.
+ */
+@Composable
+private fun EquipmentPlate(
+    equipment: Map<String, String>,
+    onSlotClick: (RpEquipSlot) -> Unit,
+) {
+    val tokens = inkTokens()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = InkSpacing.lg, vertical = InkSpacing.xs),
+        verticalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+    ) {
+        RpEquipSlot.entries.chunked(3).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                row.forEach { slot ->
+                    val equipped = equipment[slot.name].orEmpty()
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(inkRadiusSm()))
+                            .background(tokens.panel)
+                            .border(
+                                1.dp,
+                                if (equipped.isBlank()) tokens.hairline else tokens.activePill,
+                                RoundedCornerShape(inkRadiusSm()),
+                            )
+                            .clickable { onSlotClick(slot) }
+                            .padding(InkSpacing.sm),
+                    ) {
+                        Text(
+                            slot.label.uppercase(),
+                            style = MaterialTheme.typography.labelSmall,
+                            letterSpacing = 1.sp,
+                            color = tokens.secondaryText,
+                        )
+                        Text(
+                            equipped.ifBlank { "—" },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (equipped.isBlank()) tokens.secondaryText else tokens.primaryText,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                // Keep the last row aligned when the slot count is not a multiple of three.
+                repeat(3 - row.size) { Box(modifier = Modifier.weight(1f)) }
+            }
+        }
     }
 }

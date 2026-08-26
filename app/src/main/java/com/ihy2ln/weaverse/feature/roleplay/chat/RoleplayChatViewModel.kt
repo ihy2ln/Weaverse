@@ -141,6 +141,8 @@ data class RoleplayChatUiState(
     /** Storyboard pages for the DM/Roleplay canvas, in display order. */
     val pages: List<RpPageMeta> = emptyList(),
     val activePageId: String = "",
+    /** Layout of the active page; its slots are drawn as empty frames. */
+    val activeTemplateId: String = "classic-6",
     /** (messageId, blockId, overlayId) currently open in the text-overlay editor. */
     val editingOverlay: Triple<String, String, String>? = null,
 )
@@ -202,6 +204,8 @@ class RoleplayChatViewModel @Inject constructor(
                         val activePage = _uiState.value.activePageId
                             .takeIf { id -> pages.any { it.id == id } }
                             ?: pages.first().id
+                        val activeTemplate = pages.firstOrNull { it.id == activePage }?.templateId
+                            ?: "classic-6"
                         _uiState.update {
                             it.copy(
                                 title = chat.title,
@@ -209,6 +213,7 @@ class RoleplayChatViewModel @Inject constructor(
                                 presetId = preset,
                                 pages = pages,
                                 activePageId = activePage,
+                                activeTemplateId = activeTemplate,
                             )
                         }
                         publishMessages()
@@ -714,11 +719,27 @@ class RoleplayChatViewModel @Inject constructor(
                 gridSize,
             )
         }
+        // Prefer the page layout's empty slots, so dropped media lands in a panel
+        // rather than a bare 1x1 cell somewhere in the corner.
+        val slots = PanelTemplates.byId(_uiState.value.activeTemplateId)?.slots.orEmpty()
         val updates = mutableListOf<Triple<String, String, Pair<Int, Int>>>()
         panels.forEach { panel ->
             if (!MediaGrid.isPlaced(panel.gridCol, panel.gridRow, gridSize)) {
-                val cell = MediaGrid.nextFreeCell(occupied, gridSize)
-                occupied += MediaGrid.cellsCovered(cell.first, cell.second, 1, 1, gridSize)
+                val freeSlot = slots.firstOrNull { slot ->
+                    MediaGrid.cellsCovered(
+                        slot.col, slot.row, slot.colSpan, slot.rowSpan, gridSize,
+                    ).none { it in occupied }
+                }
+                val cell = if (freeSlot != null) {
+                    occupied += MediaGrid.cellsCovered(
+                        freeSlot.col, freeSlot.row, freeSlot.colSpan, freeSlot.rowSpan, gridSize,
+                    )
+                    freeSlot.col to freeSlot.row
+                } else {
+                    val next = MediaGrid.nextFreeCell(occupied, gridSize)
+                    occupied += MediaGrid.cellsCovered(next.first, next.second, 1, 1, gridSize)
+                    next
+                }
                 updates += Triple(panel.messageId, panel.blockId, cell)
             }
         }
@@ -729,7 +750,14 @@ class RoleplayChatViewModel @Inject constructor(
                 (it is MediaBlock && it.id == blockId) || (it is MediaStackBlock && it.id == blockId)
             }
             if (index < 0) return@forEach
-            blocks[index] = blocks[index].withGridCell(cell.first, cell.second, gridSize)
+            val slot = slots.firstOrNull { it.col == cell.first && it.row == cell.second }
+            blocks[index] = if (slot != null) {
+                blocks[index].withGridPlacement(
+                    slot.col, slot.row, slot.colSpan, slot.rowSpan, gridSize,
+                )
+            } else {
+                blocks[index].withGridCell(cell.first, cell.second, gridSize)
+            }
             db.roleplayDao().upsertMessage(
                 current.copy(contentJson = Document(blocks = blocks).toJson()),
             )
@@ -792,7 +820,11 @@ class RoleplayChatViewModel @Inject constructor(
 
     fun switchPage(pageId: String) {
         if (_uiState.value.activePageId == pageId) return
-        _uiState.update { it.copy(activePageId = pageId, selectedMediaKey = null) }
+        val template = _uiState.value.pages.firstOrNull { it.id == pageId }?.templateId
+            ?: "classic-6"
+        _uiState.update {
+            it.copy(activePageId = pageId, activeTemplateId = template, selectedMediaKey = null)
+        }
         viewModelScope.launch { publishMessages() }
     }
 
@@ -809,7 +841,12 @@ class RoleplayChatViewModel @Inject constructor(
             db.roleplayDao().upsertChat(updated)
             boundChat = updated
             _uiState.update {
-                it.copy(pages = pages + next, activePageId = next.id, selectedMediaKey = null)
+                it.copy(
+                    pages = pages + next,
+                    activePageId = next.id,
+                    activeTemplateId = next.templateId,
+                    selectedMediaKey = null,
+                )
             }
             publishMessages()
         }
@@ -859,11 +896,19 @@ class RoleplayChatViewModel @Inject constructor(
         val template = PanelTemplates.byId(templateId) ?: return
         val gridSize = activeGridSize()
         val pagePanels = _uiState.value.mediaPanels
-        if (pagePanels.isEmpty()) {
-            _uiState.update { it.copy(errorMessage = "Add some media before applying a layout.") }
-            return
-        }
         viewModelScope.launch {
+            // Record the layout first so its frames show even on an empty page.
+            val chat = boundChat
+            val activeId = _uiState.value.activePageId
+            if (chat != null && activeId.isNotBlank()) {
+                val pages = _uiState.value.pages.map {
+                    if (it.id == activeId) it.copy(templateId = templateId) else it
+                }
+                val updated = chat.copy(pagesJson = encodePages(pages))
+                db.roleplayDao().upsertChat(updated)
+                boundChat = updated
+                _uiState.update { it.copy(pages = pages, activeTemplateId = templateId) }
+            }
             pagePanels.forEachIndexed { index, panel ->
                 val slot = template.slots.getOrNull(index) ?: return@forEachIndexed
                 val current = rawMessages.find { it.id == panel.messageId } ?: return@forEachIndexed
@@ -1118,11 +1163,8 @@ class RoleplayChatViewModel @Inject constructor(
             val groupId = "sw-$now"
             val userText = state.input
             val maxTokens = (state.outputWords * 1.5).toInt().coerceIn(64, 8192)
-            val temperature = defaultPresets
-                .find { it.id == state.presetId }
-                ?.temperature
-                ?.toDouble()
-                ?: 0.8
+            val difficulty = defaultPresets.find { it.id == state.presetId }
+            val temperature = difficulty?.temperature?.toDouble() ?: 0.8
             val mode = currentDisplayMode()
             val userMessage = RpMessageEntity(
                 id = "rpm-$now",
@@ -1159,11 +1201,13 @@ class RoleplayChatViewModel @Inject constructor(
                 aiGeneration.stream(
                     userMessage = userText,
                     assembled = AssembledPrompt(
+                        // Difficulty is a world rule, so it belongs in the system prompt
+                        // rather than only nudging the sampler.
                         systemBlocks = RoleplayPromptBuilder.systemBlocks(
                             character = boundCharacter,
                             persona = boundPersona,
                             outputWords = state.outputWords,
-                        ),
+                        ) + listOfNotNull(difficulty?.directive),
                         messages = history,
                         usedEntries = emptyList(),
                         tokenBreakdown = emptyList(),
@@ -1247,11 +1291,8 @@ class RoleplayChatViewModel @Inject constructor(
             }
             val siblings = rawMessages.filter { it.swipeGroupId == current.swipeGroupId && it.role == "char" }
             val words = _uiState.value.outputWords
-            val temperature = defaultPresets
-                .find { it.id == _uiState.value.presetId }
-                ?.temperature
-                ?.toDouble()
-                ?: 0.8
+            val difficulty = defaultPresets.find { it.id == _uiState.value.presetId }
+            val temperature = difficulty?.temperature?.toDouble() ?: 0.8
             _uiState.update { it.copy(isStreaming = true, errorMessage = "") }
             val history = rawMessages
                 .filter { it.isActiveSwipe && it.displayMode == current.displayMode && it.id != messageId }
@@ -1267,7 +1308,7 @@ class RoleplayChatViewModel @Inject constructor(
                             character = boundCharacter,
                             persona = boundPersona,
                             outputWords = words,
-                        ),
+                        ) + listOfNotNull(difficulty?.directive),
                         messages = history,
                         usedEntries = emptyList(),
                         tokenBreakdown = emptyList(),

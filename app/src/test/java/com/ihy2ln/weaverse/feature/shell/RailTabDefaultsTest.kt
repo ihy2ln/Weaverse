@@ -64,7 +64,7 @@ class RailTabDefaultsTest {
     @Test
     fun eachWorkspaceHasItsOwnSubModes() {
         assertEquals(
-            listOf("Play", "Roster", "Inventory", "Lore", "Presets"),
+            listOf("Adventure", "Roster", "Inventory", "Lore", "Presets"),
             RoleplayDestination.entries.map { it.label },
         )
         assertEquals(listOf("Contacts", "Chats"), ChattingDestination.entries.map { it.label })

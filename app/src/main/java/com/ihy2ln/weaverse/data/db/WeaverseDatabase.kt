@@ -58,7 +58,7 @@ import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
         PromptEntity::class,
         AiProfileEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = false,
 )
 @TypeConverters(InkTypeConverters::class)
@@ -88,6 +88,18 @@ abstract class WeaverseDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "ALTER TABLE rp_chats ADD COLUMN lastReadAt INTEGER NOT NULL DEFAULT 0",
+                )
+            }
+        }
+
+        /** Party membership and equipment slots for the RPG Roster/Inventory. */
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE rp_characters ADD COLUMN inParty INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE rp_characters ADD COLUMN equipmentJson TEXT NOT NULL DEFAULT '{}'",
                 )
             }
         }

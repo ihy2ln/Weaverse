@@ -249,9 +249,9 @@ fun AppShell(
                 modeId = modeId,
                 focusOptions = WorkspaceFocus.entries.map { SegmentedOption(it.name, it.label) },
                 focusId = workspaceFocus,
-                // Third row removed: Lore and Pictures now live inside the modes.
-                toolOptions = emptyList(),
-                activeToolId = null,
+                // "Extra" row: the app-wide tools that are not tied to one workspace.
+                toolOptions = workspaceChromeTools().map { SegmentedOption(it.name, it.label) },
+                activeToolId = chromeTool,
                 onLibrary = {
                     if (showLibrary) {
                         if (shellInfo.book != null) showLibrary = false

@@ -63,7 +63,7 @@ enum class ExtraPromptSurface {
 }
 
 data class UserPreferences(
-    val themeMode: AppThemeMode = AppThemeMode.Dark,
+    val themeMode: AppThemeMode = AppThemeMode.Light,
     /** Whole visual identity (palette + typography + shape); Classic = the original look. */
     val appearanceProfile: AppearanceProfile = AppearanceProfile.Classic,
     val fontSizeSp: Int = 16,
@@ -100,7 +100,7 @@ class SettingsRepository @Inject constructor(
 ) {
     val preferences: Flow<UserPreferences> = context.dataStore.data.map { prefs ->
         UserPreferences(
-            themeMode = AppThemeMode.entries.find { it.name == prefs[KEY_THEME] } ?: AppThemeMode.Dark,
+            themeMode = AppThemeMode.entries.find { it.name == prefs[KEY_THEME] } ?: AppThemeMode.Light,
             appearanceProfile = AppearanceProfile.entries
                 .find { it.name == prefs[KEY_APPEARANCE_PROFILE] }
                 ?: AppearanceProfile.Classic,
