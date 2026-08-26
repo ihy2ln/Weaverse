@@ -62,13 +62,28 @@ class RailTabDefaultsTest {
     }
 
     @Test
-    fun rpgAndChattingDestinationsAreDistinct() {
+    fun eachWorkspaceHasItsOwnSubModes() {
         assertEquals(
-            listOf("Play", "Party", "Journal", "Personas", "Presets"),
+            listOf("Play", "Roster", "Inventory", "Lore"),
             RoleplayDestination.entries.map { it.label },
         )
-        assertEquals(listOf("Friends", "Chats"), ChattingDestination.entries.map { it.label })
-        assertEquals(listOf("Pages"), StoryboardDestination.entries.map { it.label })
+        assertEquals(listOf("Contacts", "Chats"), ChattingDestination.entries.map { it.label })
+        assertEquals(listOf("Manga", "Comic"), StoryboardDestination.entries.map { it.label })
+        assertEquals(listOf("Board"), NotesDestination.entries.map { it.label })
+    }
+
+    @Test
+    fun destinationLookupsSurviveStaleSavedState() {
+        // Personas and Presets were removed as destinations; shell state saved by an
+        // older build still names them, and must fall back rather than throw.
+        assertEquals(RoleplayDestination.Chats, roleplayDestinationOf("Personas"))
+        assertEquals(RoleplayDestination.Chats, roleplayDestinationOf("Presets"))
+        assertEquals(RoleplayDestination.Chats, roleplayDestinationOf(null))
+        assertEquals(RoleplayDestination.Codex, roleplayDestinationOf("Codex"))
+        assertEquals(ChattingDestination.Friends, chattingDestinationOf("nonsense"))
+        assertEquals(StoryboardDestination.Manga, storyboardDestinationOf("Pages"))
+        assertEquals(NovelDestination.Plan, novelDestinationOf("gone"))
+        assertEquals(NovelDestination.Write, novelDestinationOf("Write"))
     }
 
     @Test

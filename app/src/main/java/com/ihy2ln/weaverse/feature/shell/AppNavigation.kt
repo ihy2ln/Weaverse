@@ -42,26 +42,43 @@ enum class WriteJumpKind(val label: String) {
  */
 enum class RoleplayDestination(val label: String) {
     Chats("Play"),
-    Characters("Party"),
-    Codex("Journal"),
-    Personas("Personas"),
-    Presets("Presets"),
+    Characters("Roster"),
+    Inventory("Inventory"),
+    Codex("Lore"),
 }
 
-/** The messenger workspace: who you talk to, and the conversations themselves. */
+/** The messenger workspace: who you can talk to, and the conversations themselves. */
 enum class ChattingDestination(val label: String) {
-    Friends("Friends"),
+    Friends("Contacts"),
     Chats("Chats"),
 }
 
-/** The comic workspace: pages of panels, built from layout templates. */
+/** The comic workspace — the same page canvas, read right-to-left or left-to-right. */
 enum class StoryboardDestination(val label: String) {
-    Pages("Pages"),
+    Manga("Manga"),
+    Comic("Comic"),
 }
 
 enum class NotesDestination(val label: String) {
     Board("Board"),
 }
+
+/**
+ * Saved shell state can name a destination that no longer exists (Personas and
+ * Presets were folded into Roster and Settings), so every lookup falls back to
+ * the workspace's first section rather than throwing.
+ */
+fun roleplayDestinationOf(id: String?): RoleplayDestination =
+    RoleplayDestination.entries.firstOrNull { it.name == id } ?: RoleplayDestination.Chats
+
+fun chattingDestinationOf(id: String?): ChattingDestination =
+    ChattingDestination.entries.firstOrNull { it.name == id } ?: ChattingDestination.Friends
+
+fun storyboardDestinationOf(id: String?): StoryboardDestination =
+    StoryboardDestination.entries.firstOrNull { it.name == id } ?: StoryboardDestination.Manga
+
+fun novelDestinationOf(id: String?): NovelDestination =
+    NovelDestination.entries.firstOrNull { it.name == id } ?: NovelDestination.Plan
 
 enum class RailTab(val label: String) {
     Manuscript("Manuscript"),

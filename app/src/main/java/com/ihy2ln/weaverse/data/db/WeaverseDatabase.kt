@@ -58,7 +58,7 @@ import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
         PromptEntity::class,
         AiProfileEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 @TypeConverters(InkTypeConverters::class)
@@ -79,6 +79,15 @@ abstract class WeaverseDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "ALTER TABLE rp_chats ADD COLUMN pagesJson TEXT NOT NULL DEFAULT '[]'",
+                )
+            }
+        }
+
+        /** Gives each character a carried-items list for the RPG Inventory. */
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE rp_characters ADD COLUMN inventoryJson TEXT NOT NULL DEFAULT '[]'",
                 )
             }
         }

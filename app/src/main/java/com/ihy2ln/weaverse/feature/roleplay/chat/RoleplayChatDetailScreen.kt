@@ -117,6 +117,8 @@ fun RoleplayChatDetailScreen(
     forceDisplayMode: String? = null,
     /** Hidden when the surrounding workspace already decides the mode. */
     showModeSwitcher: Boolean = true,
+    /** Manga pages read right-to-left, so page tabs run that way too. */
+    rightToLeft: Boolean = false,
     viewModel: RoleplayChatViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(chatId) { viewModel.bindChat(chatId) }
@@ -276,6 +278,7 @@ fun RoleplayChatDetailScreen(
                     onRenamePage = viewModel::renamePage,
                     onDeletePage = viewModel::deletePage,
                     onApplyTemplate = viewModel::applyPanelTemplate,
+                    rightToLeft = rightToLeft,
                 )
                 ScrollGutterBackdrop(
                     modifier = Modifier
@@ -316,6 +319,7 @@ fun RoleplayChatDetailScreen(
                     onRenamePage = viewModel::renamePage,
                     onDeletePage = viewModel::deletePage,
                     onApplyTemplate = viewModel::applyPanelTemplate,
+                    rightToLeft = rightToLeft,
                 )
                 ScrollGutterBackdrop(
                     modifier = Modifier
@@ -676,6 +680,7 @@ private fun PageStrip(
     onRenamePage: (String, String) -> Unit,
     onDeletePage: (String) -> Unit,
     onApplyTemplate: (String) -> Unit,
+    rightToLeft: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val tokens = inkTokens()
@@ -689,7 +694,12 @@ private fun PageStrip(
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState())
             .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
-        horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+        // Manga reads right-to-left, so page 1 sits on the right.
+        horizontalArrangement = if (rightToLeft) {
+            Arrangement.spacedBy(InkSpacing.xs, Alignment.End)
+        } else {
+            Arrangement.spacedBy(InkSpacing.xs)
+        },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         pages.forEachIndexed { index, page ->

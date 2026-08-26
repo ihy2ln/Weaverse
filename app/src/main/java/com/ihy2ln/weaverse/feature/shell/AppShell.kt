@@ -85,6 +85,7 @@ import com.ihy2ln.weaverse.feature.roleplay.chat.roleplayModeSubtitle
 import com.ihy2ln.weaverse.feature.roleplay.friends.FriendsScreen
 import com.ihy2ln.weaverse.feature.roleplay.lorebook.LorebookScreen
 import com.ihy2ln.weaverse.feature.roleplay.personas.PersonaDetailScreen
+import com.ihy2ln.weaverse.feature.roleplay.party.InventoryScreen
 import com.ihy2ln.weaverse.feature.roleplay.party.PartyScreen
 import com.ihy2ln.weaverse.feature.roleplay.personas.PersonasScreen
 import com.ihy2ln.weaverse.feature.roleplay.presets.PresetsScreen
@@ -104,6 +105,7 @@ fun AppShell(
     var novelDest by rememberSaveable { mutableStateOf(NovelDestination.Plan.name) }
     var rpDest by rememberSaveable { mutableStateOf(RoleplayDestination.Chats.name) }
     var chatDest by rememberSaveable { mutableStateOf(ChattingDestination.Friends.name) }
+    var storyboardDest by rememberSaveable { mutableStateOf(StoryboardDestination.Manga.name) }
     var storyboardChatId by rememberSaveable { mutableStateOf<String?>(null) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showSearch by rememberSaveable { mutableStateOf(false) }
@@ -210,7 +212,7 @@ fun AppShell(
                 AppMode.Novel -> novelDest
                 AppMode.Roleplay -> rpDest
                 AppMode.Chatting -> chatDest
-                AppMode.Storyboard -> StoryboardDestination.Pages.name
+                AppMode.Storyboard -> storyboardDest
                 AppMode.Notes -> NotesDestination.Board.name
             }
             val chromeTitle = when {
@@ -245,8 +247,9 @@ fun AppShell(
                 modeId = modeId,
                 focusOptions = WorkspaceFocus.entries.map { SegmentedOption(it.name, it.label) },
                 focusId = workspaceFocus,
-                toolOptions = workspaceChromeTools().map { SegmentedOption(it.name, it.label) },
-                activeToolId = chromeTool,
+                // Third row removed: Lore and Pictures now live inside the modes.
+                toolOptions = emptyList(),
+                activeToolId = null,
                 onLibrary = {
                     if (showLibrary) {
                         if (shellInfo.book != null) showLibrary = false
@@ -310,7 +313,10 @@ fun AppShell(
                             selectedRpChatId = null
                             rpChrome = null
                         }
-                        AppMode.Storyboard -> storyboardChatId = null
+                        AppMode.Storyboard -> {
+                            storyboardDest = id
+                            storyboardChatId = null
+                        }
                         AppMode.Notes -> Unit
                     }
                 },
@@ -441,7 +447,7 @@ fun AppShell(
                     targetState = Triple(
                         mode to chromeTool,
                         workspaceFocus,
-                        listOf(novelDest, rpDest, chatDest, selectedRpChatId, storyboardChatId),
+                        listOf(novelDest, rpDest, chatDest, storyboardDest, selectedRpChatId, storyboardChatId),
                     ),
                     animationSpec = tween(durationMillis = 120),
                     label = "modeSwitch",
@@ -454,8 +460,9 @@ fun AppShell(
                     val nd = dests[0] ?: NovelDestination.Plan.name
                     val rd = dests[1] ?: RoleplayDestination.Chats.name
                     val cd = dests[2] ?: ChattingDestination.Friends.name
-                    val chatId = dests[3]
-                    val boardId = dests[4]
+                    val sd = dests[3] ?: StoryboardDestination.Manga.name
+                    val chatId = dests[4]
+                    val boardId = dests[5]
                     Box(modifier = Modifier.fillMaxSize()) {
                         if (tool != null) {
                             when (runCatching { RailTab.valueOf(tool) }.getOrNull()) {
@@ -501,7 +508,7 @@ fun AppShell(
                             return@Crossfade
                         }
                         when (currentMode) {
-                            AppMode.Novel.name -> when (NovelDestination.valueOf(nd)) {
+                            AppMode.Novel.name -> when (novelDestinationOf(nd)) {
                                 NovelDestination.Plan -> PlanScreen(
                                     onWrite = { sceneId, kind ->
                                         selectedSceneId = sceneId
@@ -519,7 +526,7 @@ fun AppShell(
                                 NovelDestination.Review -> ReviewScreen()
                             }
                             AppMode.Notes.name -> NotesScreen(viewModel = notesViewModel)
-                            AppMode.Chatting.name -> when (ChattingDestination.valueOf(cd)) {
+                            AppMode.Chatting.name -> when (chattingDestinationOf(cd)) {
                                 ChattingDestination.Friends -> FriendsScreen(
                                     onOpenChat = {
                                         selectedRpChatId = it
@@ -562,12 +569,13 @@ fun AppShell(
                                         // Storyboard is always the comic canvas.
                                         forceDisplayMode = "roleplay",
                                         showModeSwitcher = false,
+                                        rightToLeft = storyboardDestinationOf(sd) == StoryboardDestination.Manga,
                                     )
                                 } else {
                                     RoleplayChatsScreen(onChatClick = { storyboardChatId = it })
                                 }
                             }
-                            else -> when (RoleplayDestination.valueOf(rd)) {
+                            else -> when (roleplayDestinationOf(rd)) {
                                 RoleplayDestination.Chats -> {
                                     if (chatId != null) {
                                         RoleplayChatDetailScreen(
@@ -592,13 +600,10 @@ fun AppShell(
                                     onOpenPersona = { selectedPersonaId = it },
                                     onOpenCharacter = { selectedCharacterId = it },
                                 )
-                                RoleplayDestination.Personas -> PersonasScreen(
-                                    onPersonaClick = { selectedPersonaId = it },
-                                )
+                                RoleplayDestination.Inventory -> InventoryScreen()
                                 RoleplayDestination.Codex -> LorebookScreen(
                                     onEntryClick = { selectedCodexEntryId = it },
                                 )
-                                RoleplayDestination.Presets -> PresetsScreen()
                             }
                         }
                     }

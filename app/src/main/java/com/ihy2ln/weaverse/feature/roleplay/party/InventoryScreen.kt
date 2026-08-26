@@ -1,0 +1,205 @@
+package com.ihy2ln.weaverse.feature.roleplay.party
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.ihy2ln.weaverse.core.ui.components.InkTextButton
+import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
+import com.ihy2ln.weaverse.core.ui.theme.inkTokens
+import com.ihy2ln.weaverse.core.ui.util.alwaysScrollEndSpacer
+
+/**
+ * What the party is carrying, grouped by who carries it. Items are plain
+ * name/quantity/notes — deliberately system-agnostic, with no rules behind them.
+ */
+@Composable
+fun InventoryScreen(viewModel: InventoryViewModel = hiltViewModel()) {
+    val state by viewModel.uiState.collectAsState()
+    val tokens = inkTokens()
+    var addingForCharacterId by remember { mutableStateOf<String?>(null) }
+    var draftName by remember { mutableStateOf("") }
+    var draftQty by remember { mutableStateOf("1") }
+
+    if (!state.loading && state.carriers.isEmpty()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(InkSpacing.lg),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                "No one to carry anything yet. Add a character in Roster first.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = tokens.secondaryText,
+            )
+        }
+        return
+    }
+
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        state.carriers.forEach { carrier ->
+            item(key = "hdr-${carrier.characterId}") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            start = InkSpacing.lg,
+                            end = InkSpacing.lg,
+                            top = InkSpacing.lg,
+                            bottom = InkSpacing.sm,
+                        ),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        carrier.name.uppercase(),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 2.sp,
+                        color = tokens.secondaryText,
+                    )
+                    Box(
+                        modifier = Modifier
+                            .padding(horizontal = InkSpacing.sm)
+                            .weight(1f)
+                            .height(1.dp)
+                            .background(tokens.hairline),
+                    )
+                    InkTextButton(
+                        label = "+ Item",
+                        onClick = {
+                            draftName = ""
+                            draftQty = "1"
+                            addingForCharacterId = carrier.characterId
+                        },
+                    )
+                }
+            }
+            if (carrier.items.isEmpty()) {
+                item(key = "empty-${carrier.characterId}") {
+                    Text(
+                        "Carrying nothing.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = tokens.secondaryText,
+                        modifier = Modifier.padding(
+                            horizontal = InkSpacing.lg,
+                            vertical = InkSpacing.xs,
+                        ),
+                    )
+                }
+            }
+            items(carrier.items, key = { "${carrier.characterId}-${it.id}" }) { item ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = InkSpacing.lg, vertical = InkSpacing.xs)
+                        .clip(RoundedCornerShape(inkRadiusSm()))
+                        .background(tokens.panel)
+                        .border(1.dp, tokens.hairline, RoundedCornerShape(inkRadiusSm()))
+                        .padding(InkSpacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            item.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (item.notes.isNotBlank()) {
+                            Text(
+                                item.notes,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = tokens.secondaryText,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    Text(
+                        "×${item.quantity}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = tokens.secondaryText,
+                    )
+                    InkTextButton(
+                        label = "−",
+                        onClick = { viewModel.removeItem(carrier.characterId, item.id) },
+                    )
+                }
+            }
+        }
+        alwaysScrollEndSpacer()
+    }
+
+    addingForCharacterId?.let { characterId ->
+        AlertDialog(
+            onDismissRequest = { addingForCharacterId = null },
+            title = { Text("Add item") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
+                    OutlinedTextField(
+                        value = draftName,
+                        onValueChange = { draftName = it },
+                        label = { Text("Item") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = draftQty,
+                        onValueChange = { draftQty = it.filter(Char::isDigit).take(4) },
+                        label = { Text("Quantity") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = draftName.isNotBlank(),
+                    onClick = {
+                        viewModel.addItem(
+                            characterId = characterId,
+                            name = draftName,
+                            quantity = draftQty.toIntOrNull()?.coerceAtLeast(1) ?: 1,
+                        )
+                        addingForCharacterId = null
+                    },
+                ) { Text("Add") }
+            },
+            dismissButton = {
+                TextButton(onClick = { addingForCharacterId = null }) { Text("Cancel") }
+            },
+        )
+    }
+}

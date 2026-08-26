@@ -195,7 +195,25 @@ data class RpCharacterEntity(
     val defaultCodexId: String? = null,
     val colorHex: String? = null,
     val createdAt: Long,
+    /** JSON-encoded List<RpItem> this character is carrying. */
+    val inventoryJson: String = "[]",
 )
+
+/** One carried item. System-agnostic on purpose — no rules engine behind it. */
+@Serializable
+data class RpItem(
+    val id: String,
+    val name: String,
+    val quantity: Int = 1,
+    val notes: String = "",
+)
+
+private val itemsJsonCodec = Json { ignoreUnknownKeys = true }
+
+fun decodeItems(json: String): List<RpItem> =
+    runCatching { itemsJsonCodec.decodeFromString<List<RpItem>>(json) }.getOrDefault(emptyList())
+
+fun encodeItems(items: List<RpItem>): String = itemsJsonCodec.encodeToString(items)
 
 @Entity(tableName = "rp_personas")
 data class RpPersonaEntity(
