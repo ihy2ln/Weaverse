@@ -56,6 +56,29 @@ class PanelTemplatesTest {
     }
 
     @Test
+    fun templatesDoNotFitTheCoarserDmGrid() {
+        // Templates are authored against MediaGrid.SIZE. On the DM board they would
+        // overflow, which is why the canvas and auto-placement both refuse them
+        // there — this pins the assumption behind that guard.
+        val overflowing = PanelTemplates.all.filter { template ->
+            template.slots.any { slot ->
+                slot.col + slot.colSpan > MediaGrid.DM_SIZE ||
+                    slot.row + slot.rowSpan > MediaGrid.DM_SIZE
+            }
+        }
+        assertTrue(
+            overflowing.isNotEmpty(),
+            "templates now fit DM_SIZE; the grid-size guard may no longer be needed",
+        )
+    }
+
+    @Test
+    fun defaultPageTemplateExists() {
+        // RpPageMeta defaults every page to this id, so it must resolve.
+        assertNotNull(PanelTemplates.byId("classic-6"))
+    }
+
+    @Test
     fun splashCoversThePageAndPanelCountMatchesSlots() {
         val splash = PanelTemplates.byId("splash")!!
         assertEquals(1, splash.panelCount)

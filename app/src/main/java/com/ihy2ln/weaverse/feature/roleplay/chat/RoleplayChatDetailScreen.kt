@@ -863,9 +863,18 @@ private fun MangaSnapGrid(
             val cellH = maxHeight / gridSize
             // The chosen layout's slots, drawn as empty frames so the page reads as
             // a comic page before any media is dropped in.
-            PanelTemplates.byId(templateId)?.slots?.forEachIndexed { index, slot ->
+            val template = PanelTemplates.byId(templateId)?.takeIf { gridSize == MediaGrid.SIZE }
+            template?.slots?.forEachIndexed { index, slot ->
+                // A slot counts as filled when any panel overlaps it, not just when a
+                // panel starts exactly on it — a resized panel can cover several slots.
+                val slotCells = MediaGrid.cellsCovered(
+                    slot.col, slot.row, slot.colSpan, slot.rowSpan, gridSize,
+                )
                 val filled = panels.any { p ->
-                    p.gridCol == slot.col && p.gridRow == slot.row
+                    MediaGrid.isPlaced(p.gridCol, p.gridRow, gridSize) &&
+                        MediaGrid.cellsCovered(
+                            p.gridCol, p.gridRow, p.gridColSpan, p.gridRowSpan, gridSize,
+                        ).any { it in slotCells }
                 }
                 if (!filled) {
                     Box(
@@ -891,7 +900,7 @@ private fun MangaSnapGrid(
                 }
             }
             // Snap grid stays active for move/resize/stack, but lines are hidden.
-            if (panels.isEmpty() && PanelTemplates.byId(templateId) == null) {
+            if (panels.isEmpty() && template == null) {
                 Text(
                     emptyHint,
                     style = MaterialTheme.typography.bodyMedium,

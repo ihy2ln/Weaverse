@@ -721,7 +721,13 @@ class RoleplayChatViewModel @Inject constructor(
         }
         // Prefer the page layout's empty slots, so dropped media lands in a panel
         // rather than a bare 1x1 cell somewhere in the corner.
-        val slots = PanelTemplates.byId(_uiState.value.activeTemplateId)?.slots.orEmpty()
+        // Templates are authored against MediaGrid.SIZE, so they only apply to the
+        // full-resolution storyboard canvas — never the coarser DM board.
+        val slots = if (gridSize == MediaGrid.SIZE) {
+            PanelTemplates.byId(_uiState.value.activeTemplateId)?.slots.orEmpty()
+        } else {
+            emptyList()
+        }
         val updates = mutableListOf<Triple<String, String, Pair<Int, Int>>>()
         panels.forEach { panel ->
             if (!MediaGrid.isPlaced(panel.gridCol, panel.gridRow, gridSize)) {
