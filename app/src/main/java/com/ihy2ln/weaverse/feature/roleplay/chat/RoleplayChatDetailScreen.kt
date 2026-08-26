@@ -4,6 +4,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -58,6 +59,10 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -76,6 +81,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ihy2ln.weaverse.core.text.MediaGrid
 import com.ihy2ln.weaverse.core.text.PanelTemplates
+import com.ihy2ln.weaverse.core.text.PanelTemplate
 import com.ihy2ln.weaverse.data.db.entities.RpPageMeta
 import com.ihy2ln.weaverse.core.ui.components.CollapsibleUsageStrip
 import com.ihy2ln.weaverse.core.ui.components.EditTextAction
@@ -763,7 +769,22 @@ private fun PageStrip(
             ) {
                 PanelTemplates.all.forEach { template ->
                     DropdownMenuItem(
-                        text = { Text("${template.label} · ${template.panelCount}") },
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
+                            ) {
+                                PanelTemplatePreview(template)
+                                Column {
+                                    Text(template.label, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        "${template.panelCount} panels",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = tokens.secondaryText,
+                                    )
+                                }
+                            }
+                        },
                         onClick = {
                             templateMenuOpen = false
                             onApplyTemplate(template.id)
@@ -796,6 +817,42 @@ private fun PageStrip(
                 TextButton(onClick = { renamingPageId = null }) { Text("Cancel") }
             },
         )
+    }
+}
+
+/** A literal miniature of the selected 12×12 comic grid, not a text-only preset. */
+@Composable
+private fun PanelTemplatePreview(template: PanelTemplate) {
+    val tokens = inkTokens()
+    Canvas(
+        modifier = Modifier
+            .width(54.dp)
+            .height(68.dp)
+            .clip(RoundedCornerShape(3.dp))
+            .background(tokens.background),
+    ) {
+        val cellW = size.width / MediaGrid.SIZE
+        val cellH = size.height / MediaGrid.SIZE
+        template.slots.forEach { slot ->
+            val left = slot.col * cellW + 1.5f
+            val top = slot.row * cellH + 1.5f
+            val width = slot.colSpan * cellW - 3f
+            val height = slot.rowSpan * cellH - 3f
+            val center = Offset(left + width / 2f, top + height / 2f)
+            rotate(slot.rotationDeg, pivot = center) {
+                drawRect(
+                    color = tokens.activePill.copy(alpha = .16f),
+                    topLeft = Offset(left, top),
+                    size = Size(width, height),
+                )
+                drawRect(
+                    color = tokens.primaryText.copy(alpha = .72f),
+                    topLeft = Offset(left, top),
+                    size = Size(width, height),
+                    style = Stroke(width = 1.5f),
+                )
+            }
+        }
     }
 }
 
@@ -835,7 +892,9 @@ private fun MangaSnapGrid(
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(1f)
+                // A real comic/manga page is portrait; the former square canvas
+                // made complete templates look cropped and compressed.
+                .aspectRatio(2f / 3f)
                 .clip(RoundedCornerShape(inkRadiusSm()))
                 .border(1.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f), RoundedCornerShape(inkRadiusSm()))
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
@@ -850,38 +909,32 @@ private fun MangaSnapGrid(
             // a comic page before any media is dropped in.
             val template = PanelTemplates.byId(templateId)?.takeIf { gridSize == MediaGrid.SIZE }
             template?.slots?.forEachIndexed { index, slot ->
-                // A slot counts as filled when any panel overlaps it, not just when a
-                // panel starts exactly on it — a resized panel can cover several slots.
-                val slotCells = MediaGrid.cellsCovered(
-                    slot.col, slot.row, slot.colSpan, slot.rowSpan, gridSize,
-                )
-                val filled = panels.any { p ->
-                    MediaGrid.isPlaced(p.gridCol, p.gridRow, gridSize) &&
-                        MediaGrid.cellsCovered(
-                            p.gridCol, p.gridRow, p.gridColSpan, p.gridRowSpan, gridSize,
-                        ).any { it in slotCells }
-                }
-                if (!filled) {
-                    Box(
-                        modifier = Modifier
-                            .offset(x = cellW * slot.col, y = cellH * slot.row)
-                            .width(cellW * slot.colSpan)
-                            .height(cellH * slot.rowSpan)
-                            .padding(2.dp)
-                            .rotate(slot.rotationDeg)
-                            .border(
-                                1.dp,
-                                MaterialTheme.colorScheme.outline.copy(alpha = 0.55f),
-                                RoundedCornerShape(inkRadiusSm()),
-                            ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            "${index + 1}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = tokens.secondaryText,
+                // Always construct the complete template underneath the artwork.
+                // Existing media fills these frames; missing media leaves a numbered
+                // panel behind, so selecting a six-panel layout visibly creates six.
+                Box(
+                    modifier = Modifier
+                        .offset(x = cellW * slot.col, y = cellH * slot.row)
+                        .width(cellW * slot.colSpan)
+                        .height(cellH * slot.rowSpan)
+                        .padding(2.dp)
+                        .rotate(slot.rotationDeg)
+                        .background(
+                            MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                            RoundedCornerShape(inkRadiusSm()),
                         )
-                    }
+                        .border(
+                            1.5.dp,
+                            MaterialTheme.colorScheme.outline.copy(alpha = 0.72f),
+                            RoundedCornerShape(inkRadiusSm()),
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "Panel ${index + 1}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tokens.secondaryText,
+                    )
                 }
             }
             // Snap grid stays active for move/resize/stack, but lines are hidden.

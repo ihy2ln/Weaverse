@@ -78,6 +78,7 @@ class BookRepository @Inject constructor(
         pov: String = "",
         tense: String = "",
         styleGuide: String = "",
+        workType: String = "novel",
     ): BookEntity {
         val now = System.currentTimeMillis()
         val bookId = "book-${UUID.randomUUID()}"
@@ -94,6 +95,7 @@ class BookRepository @Inject constructor(
             styleGuide = styleGuide,
             createdAt = now,
             updatedAt = now,
+            workType = workType,
         )
         db.bookDao().upsert(book)
         db.manuscriptDao().upsertAct(ActEntity(actId, bookId, "Act I", 0))

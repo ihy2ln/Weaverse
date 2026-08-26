@@ -63,6 +63,25 @@ fun RoleplayChatsScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
+            if (showFilters) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = InkSpacing.md, end = InkSpacing.md, top = InkSpacing.md),
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("Chats", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    val unread = state.chats.sumOf { it.unreadCount }
+                    if (unread > 0) {
+                        Text(
+                            "$unread unread",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MessengerAccent,
+                        )
+                    }
+                }
+            }
             SearchPill(
                 value = state.query,
                 onValueChange = viewModel::onQueryChange,
@@ -175,7 +194,7 @@ private fun SearchPill(value: String, onValueChange: (String) -> Unit) {
         Box(modifier = Modifier.padding(start = InkSpacing.sm)) {
             if (value.isEmpty()) {
                 Text(
-                    "Search",
+                    "Search or start a new chat",
                     style = MaterialTheme.typography.bodyMedium,
                     color = tokens.secondaryText,
                 )
@@ -187,6 +206,17 @@ private fun SearchPill(value: String, onValueChange: (String) -> Unit) {
                 textStyle = MaterialTheme.typography.bodyMedium.copy(color = tokens.primaryText),
                 cursorBrush = SolidColor(tokens.primaryText),
                 modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        if (value.isNotEmpty()) {
+            Text(
+                "×",
+                style = MaterialTheme.typography.titleMedium,
+                color = tokens.secondaryText,
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable(onClickLabel = "Clear search") { onValueChange("") }
+                    .padding(horizontal = InkSpacing.xs),
             )
         }
     }
@@ -228,15 +258,13 @@ private fun ChatRow(chat: RpChatRowUi, onClick: () -> Unit) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (chat.preview.isNotBlank()) {
-                Text(
-                    chat.preview,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (unread) tokens.primaryText else tokens.secondaryText,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            Text(
+                chat.preview.ifBlank { "No messages yet" },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (unread) tokens.primaryText else tokens.secondaryText,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
         Column(horizontalAlignment = Alignment.End) {
             val stamp = relativeStamp(chat.updatedAt)

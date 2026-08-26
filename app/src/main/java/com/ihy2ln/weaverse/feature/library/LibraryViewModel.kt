@@ -87,16 +87,17 @@ class LibraryViewModel @Inject constructor(
                 settings.preferences,
                 mediaRepository.observeAll(),
             ) { books, series, prefs, media ->
+                val novels = books.filter { it.workType == "novel" }
                 val groups = buildList {
                     series.forEach { s ->
-                        add(SeriesGroup(s, books.filter { it.seriesId == s.id }))
+                        add(SeriesGroup(s, novels.filter { it.seriesId == s.id }))
                     }
-                    val unassigned = books.filter { it.seriesId.isNullOrBlank() }
+                    val unassigned = novels.filter { it.seriesId.isNullOrBlank() }
                     if (unassigned.isNotEmpty()) {
                         add(SeriesGroup(null, unassigned))
                     }
                 }
-                val cards = books.map { book ->
+                val cards = novels.map { book ->
                     val cover = book.coverMediaId
                         ?.let { id -> media.find { it.id == id } }
                         ?.let { entity ->
@@ -110,7 +111,7 @@ class LibraryViewModel @Inject constructor(
                 }
                 LibraryUiState(
                     tab = _uiState.value.tab,
-                    books = books,
+                    books = novels,
                     cards = cards,
                     series = series,
                     seriesGroups = groups,
@@ -120,7 +121,7 @@ class LibraryViewModel @Inject constructor(
                     assignSeriesId = _uiState.value.assignSeriesId,
                     status = _uiState.value.status,
                     busy = _uiState.value.busy,
-                    hasIsekaiGacha = books.any { it.title.equals(SampleBookImporter.BOOK_TITLE, ignoreCase = true) },
+                    hasIsekaiGacha = novels.any { it.title.equals(SampleBookImporter.BOOK_TITLE, ignoreCase = true) },
                 )
             }.collect { _uiState.value = it }
         }

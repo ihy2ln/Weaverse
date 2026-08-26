@@ -13,7 +13,7 @@ data class DesktopConfig(
     val deviceName: String = "Weaverse Desktop",
     val port: Int = DEFAULT_SYNC_PORT,
     val pairPin: String = SyncAuth.newPairPin(),
-    val appVersion: String = "0.5.2",
+    val appVersion: String = "1.2.0-beta",
     val openBrowser: Boolean = true,
     val allowRemote: Boolean = true,
 )

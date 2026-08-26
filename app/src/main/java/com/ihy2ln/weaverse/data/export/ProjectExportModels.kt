@@ -76,6 +76,7 @@ data class BookDto(
     val coverMediaId: String? = null,
     val createdAt: Long = 0,
     val updatedAt: Long = 0,
+    val workType: String = "novel",
 )
 
 @Serializable
@@ -257,6 +258,8 @@ data class RpChatDto(
     val updatedAt: Long = 0,
     /** JSON-encoded storyboard page list; empty for exports predating pages. */
     val pagesJson: String = "[]",
+    val lastReadAt: Long = 0,
+    val bookId: String? = null,
 )
 
 @Serializable

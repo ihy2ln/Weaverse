@@ -28,9 +28,9 @@ class RailTabDefaultsTest {
     }
 
     @Test
-    fun novelDestinationsStayPlanWriteChatReview() {
+    fun novelDestinationsIncludePremiumReader() {
         assertEquals(
-            listOf("Plan", "Write", "Chat", "Review"),
+            listOf("Plan", "Write", "Read", "Chat", "Review"),
             NovelDestination.entries.map { it.label },
         )
     }
@@ -64,11 +64,11 @@ class RailTabDefaultsTest {
     @Test
     fun eachWorkspaceHasItsOwnSubModes() {
         assertEquals(
-            listOf("Inventory", "Adventure", "Roster", "Lore", "Presets"),
+            listOf("Inventory", "Adventure", "Campaign", "Roster", "Lore", "Presets"),
             RoleplayDestination.entries.map { it.label },
         )
-        assertEquals(listOf("Contacts", "Chats"), ChattingDestination.entries.map { it.label })
-        assertEquals(listOf("Manga", "Comic"), StoryboardDestination.entries.map { it.label })
+        assertEquals(listOf("Chats", "Contacts"), ChattingDestination.entries.map { it.label })
+        assertEquals(listOf("Window", "Manga", "Comic"), StoryboardDestination.entries.map { it.label })
         assertEquals(listOf("Board"), NotesDestination.entries.map { it.label })
     }
 
@@ -80,8 +80,8 @@ class RailTabDefaultsTest {
         assertEquals(RoleplayDestination.Chats, roleplayDestinationOf(null))
         assertEquals(RoleplayDestination.Presets, roleplayDestinationOf("Presets"))
         assertEquals(RoleplayDestination.Codex, roleplayDestinationOf("Codex"))
-        assertEquals(ChattingDestination.Friends, chattingDestinationOf("nonsense"))
-        assertEquals(StoryboardDestination.Manga, storyboardDestinationOf("Pages"))
+        assertEquals(ChattingDestination.Chats, chattingDestinationOf("nonsense"))
+        assertEquals(StoryboardDestination.Window, storyboardDestinationOf("Pages"))
         assertEquals(NovelDestination.Plan, novelDestinationOf("gone"))
         assertEquals(NovelDestination.Write, novelDestinationOf("Write"))
     }

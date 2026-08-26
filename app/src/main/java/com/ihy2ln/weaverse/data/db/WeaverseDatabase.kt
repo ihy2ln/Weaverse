@@ -58,7 +58,7 @@ import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
         PromptEntity::class,
         AiProfileEntity::class,
     ],
-    version = 10,
+    version = 11,
     exportSchema = false,
 )
 @TypeConverters(InkTypeConverters::class)
@@ -74,6 +74,16 @@ abstract class WeaverseDatabase : RoomDatabase() {
     abstract fun promptDao(): PromptDao
 
     companion object {
+        /** Separates novel/campaign/storyboard shelves and links canvas chats to their work. */
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE books ADD COLUMN workType TEXT NOT NULL DEFAULT 'novel'",
+                )
+                db.execSQL("ALTER TABLE rp_chats ADD COLUMN bookId TEXT")
+            }
+        }
+
         /** Adds storyboard page metadata to roleplay chats — additive, no data loss. */
         val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {

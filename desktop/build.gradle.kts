@@ -95,7 +95,7 @@ tasks.register<Exec>("packageAppImage") {
         "--main-jar", "Weaverse.jar",
         "--main-class", "com.ihy2ln.weaverse.desktop.MainKt",
         "--dest", out.absolutePath,
-        "--app-version", "0.5.2",
+        "--app-version", "1.2.0",
         "--description", "Weaverse Desktop — write companion with Wi‑Fi / remote sync",
         "--vendor", "Weaverse",
     )
@@ -105,7 +105,7 @@ tasks.register<Zip>("packageDesktopZip") {
     group = "distribution"
     description = "Zip desktop fat JAR + launchers for Windows/Linux."
     dependsOn("stageDesktopDist")
-    archiveFileName.set("Weaverse-Desktop-0.5.2.zip")
+    archiveFileName.set("Weaverse-Desktop-v1.2.0-beta.zip")
     destinationDirectory.set(rootProject.layout.projectDirectory.dir("releases/desktop"))
     from(packageDir)
 }

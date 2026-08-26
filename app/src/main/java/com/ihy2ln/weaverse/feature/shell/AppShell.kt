@@ -60,6 +60,8 @@ import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import com.ihy2ln.weaverse.core.ui.util.resolveSectionColor
 import com.ihy2ln.weaverse.feature.export.ExportImportScreen
 import com.ihy2ln.weaverse.feature.library.LibraryScreen
+import com.ihy2ln.weaverse.feature.library.WorkShelfKind
+import com.ihy2ln.weaverse.feature.library.WorkShelfScreen
 import com.ihy2ln.weaverse.feature.media.MediaGalleryScreen
 import com.ihy2ln.weaverse.feature.media.PicturesRailScreen
 import com.ihy2ln.weaverse.feature.notes.NotesRailScreen
@@ -76,6 +78,7 @@ import com.ihy2ln.weaverse.feature.novel.codex.CodexRailScreen
 import com.ihy2ln.weaverse.feature.novel.manuscript.ManuscriptRailScreen
 import com.ihy2ln.weaverse.feature.novel.plan.PlanScreen
 import com.ihy2ln.weaverse.feature.novel.plan.PlanVocabulary
+import com.ihy2ln.weaverse.feature.novel.read.ReaderScreen
 import com.ihy2ln.weaverse.feature.novel.review.ReviewScreen
 import com.ihy2ln.weaverse.feature.novel.snippets.SnippetsRailScreen
 import com.ihy2ln.weaverse.feature.novel.write.WriteScreen
@@ -107,8 +110,8 @@ fun AppShell(
     var mode by rememberSaveable { mutableStateOf(AppMode.Novel.name) }
     var novelDest by rememberSaveable { mutableStateOf(NovelDestination.Plan.name) }
     var rpDest by rememberSaveable { mutableStateOf(RoleplayDestination.Chats.name) }
-    var chatDest by rememberSaveable { mutableStateOf(ChattingDestination.Friends.name) }
-    var storyboardDest by rememberSaveable { mutableStateOf(StoryboardDestination.Manga.name) }
+    var chatDest by rememberSaveable { mutableStateOf(ChattingDestination.Chats.name) }
+    var storyboardDest by rememberSaveable { mutableStateOf(StoryboardDestination.Window.name) }
     var storyboardChatId by rememberSaveable { mutableStateOf<String?>(null) }
     var rpShowChatPicker by rememberSaveable { mutableStateOf(false) }
     var creatingWork by remember { mutableStateOf<CreateWorkVocabulary?>(null) }
@@ -156,6 +159,7 @@ fun AppShell(
                         CreateWorkVocabulary.Storyboard -> {
                             mode = AppMode.Storyboard.name
                             storyboardChatId = chatId
+                            storyboardDest = StoryboardDestination.Manga.name
                         }
                         CreateWorkVocabulary.Campaign -> {
                             mode = AppMode.Roleplay.name
@@ -354,7 +358,7 @@ fun AppShell(
                         }
                         AppMode.Storyboard -> {
                             storyboardDest = id
-                            storyboardChatId = null
+                            if (id == StoryboardDestination.Window.name) storyboardChatId = null
                         }
                         AppMode.Notes -> Unit
                     }
@@ -410,6 +414,12 @@ fun AppShell(
                         writeJumpKind = WriteJumpKind.Scene.name
                         showLibrary = false
                         novelDest = NovelDestination.Write.name
+                        mode = AppMode.Novel.name
+                    },
+                    onReadBook = { _, sceneId ->
+                        if (sceneId != null) selectedSceneId = sceneId
+                        showLibrary = false
+                        novelDest = NovelDestination.Read.name
                         mode = AppMode.Novel.name
                     },
                     onOpenExport = { showExport = true },
@@ -569,6 +579,7 @@ fun AppShell(
                                     jumpKind = writeJumpKind,
                                     onOpenCodexEntry = { selectedCodexEntryId = it },
                                 )
+                                NovelDestination.Read -> ReaderScreen()
                                 NovelDestination.Chat -> WorkshopChatScreen(threadId = selectedThreadId)
                                 NovelDestination.Review -> ReviewScreen()
                             }
@@ -606,12 +617,23 @@ fun AppShell(
                                 }
                             }
                             AppMode.Storyboard.name -> {
-                                if (boardId != null) {
+                                if (storyboardDestinationOf(sd) == StoryboardDestination.Window) {
+                                    WorkShelfScreen(
+                                        kind = WorkShelfKind.Storyboard,
+                                        onCreate = { creatingWork = CreateWorkVocabulary.Storyboard },
+                                        onOpen = { card ->
+                                            card.bookId?.let(shellViewModel::setSelectedBookId)
+                                            storyboardChatId = card.chatId
+                                            storyboardDest = StoryboardDestination.Manga.name
+                                        },
+                                    )
+                                } else if (boardId != null) {
                                     RoleplayChatDetailScreen(
                                         chatId = boardId,
                                         onBack = {
                                             storyboardChatId = null
                                             rpChrome = null
+                                            storyboardDest = StoryboardDestination.Window.name
                                         },
                                         onChromeChange = { rpChrome = it },
                                         onOpenAiPrompt = { shellViewModel.openPrompt(PromptEntryKind.Ai) },
@@ -623,10 +645,10 @@ fun AppShell(
                                         rightToLeft = storyboardDestinationOf(sd) == StoryboardDestination.Manga,
                                     )
                                 } else {
-                                    RoleplayChatsScreen(
-                                        onChatClick = { storyboardChatId = it },
-                                        createLabel = "+ New storyboard",
+                                    WorkShelfScreen(
+                                        kind = WorkShelfKind.Storyboard,
                                         onCreate = { creatingWork = CreateWorkVocabulary.Storyboard },
+                                        onOpen = { card -> storyboardChatId = card.chatId },
                                     )
                                 }
                             }
@@ -665,6 +687,15 @@ fun AppShell(
                                         )
                                     }
                                 }
+                                RoleplayDestination.Campaign -> WorkShelfScreen(
+                                    kind = WorkShelfKind.Campaign,
+                                    onCreate = { creatingWork = CreateWorkVocabulary.Campaign },
+                                    onOpen = { card ->
+                                        card.bookId?.let(shellViewModel::setSelectedBookId)
+                                        rpDest = RoleplayDestination.Chats.name
+                                        rpShowChatPicker = false
+                                    },
+                                )
                                 RoleplayDestination.Characters -> PartyScreen(
                                     onOpenPersona = { selectedPersonaId = it },
                                     onOpenCharacter = { selectedCharacterId = it },

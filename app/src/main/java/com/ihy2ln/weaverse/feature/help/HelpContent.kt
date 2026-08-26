@@ -50,6 +50,11 @@ object HelpContent {
             entries = listOf(
                 HelpEntry("Plan", "The outline: Book, Chapter, Scene, Scene beat."),
                 HelpEntry("Write", "The scene editor, with media blocks and codex highlighting."),
+                HelpEntry(
+                    "Read",
+                    "A distraction-free reader with saved position, contents, bookmarks, " +
+                        "Paper/Sepia/Night themes, typography controls, and read-aloud.",
+                ),
                 HelpEntry("Chat", "A workshop conversation about the book."),
                 HelpEntry("Review", "A read-through pass."),
             ),
@@ -57,11 +62,12 @@ object HelpContent {
         HelpSection(
             id = "rpg",
             title = "RPG",
-            summary = "Inventory · Adventure · Roster · Lore · Presets",
+            summary = "Inventory · Adventure · Campaign · Roster · Lore · Presets",
             entries = listOf(
                 HelpEntry(
                     "A campaign is shaped like a book",
-                    "Adventure = Book, Day = Chapter, Mission = Scene, " +
+                    "Campaign is the high-level shelf for all adventures. " +
+                        "Adventure = Book, Day = Chapter, Mission = Scene, " +
                         "Event/Battle = Scene beat. RPG reuses the same outline, so every " +
                         "Plan feature works on a campaign too.",
                 ),
@@ -93,7 +99,7 @@ object HelpContent {
         HelpSection(
             id = "chatting",
             title = "Chatting",
-            summary = "Contacts · Chats",
+            summary = "Chats · Contacts",
             entries = listOf(
                 HelpEntry(
                     "Contacts",
@@ -116,12 +122,13 @@ object HelpContent {
         HelpSection(
             id = "storyboard",
             title = "Storyboard",
-            summary = "Manga · Comic",
+            summary = "Window · Manga · Comic",
             entries = listOf(
                 HelpEntry(
                     "Pages",
                     "Page tabs sit above the canvas. Plus adds a page; long-press a tab " +
-                        "to rename or delete. Manga reads right-to-left, Comic the other way.",
+                        "to rename or delete. Window is the cover-art shelf for every storyboard. " +
+                        "Manga reads right-to-left, Comic the other way.",
                 ),
                 HelpEntry(
                     "Layouts",

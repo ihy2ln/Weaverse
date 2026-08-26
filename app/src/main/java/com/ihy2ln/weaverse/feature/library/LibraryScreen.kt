@@ -58,6 +58,7 @@ import java.util.Date
 fun LibraryScreen(
     onOpenBook: (bookId: String, sceneId: String?) -> Unit,
     onWriteBook: (bookId: String, sceneId: String?) -> Unit = onOpenBook,
+    onReadBook: (bookId: String, sceneId: String?) -> Unit = onOpenBook,
     onOpenExport: (bookId: String?) -> Unit = {},
     /** Home doubles as the way into every workspace, not just novels. */
     onOpenMode: (String) -> Unit = {},
@@ -138,6 +139,9 @@ fun LibraryScreen(
                 onOpen = { book ->
                     viewModel.openBook(book.id) { sceneId -> onOpenBook(book.id, sceneId) }
                 },
+                onRead = { book ->
+                    viewModel.openBook(book.id) { sceneId -> onReadBook(book.id, sceneId) }
+                },
                 onDelete = viewModel::deleteBook,
                 onExport = { bookId ->
                     viewModel.openBook(bookId) { onOpenExport(bookId) }
@@ -163,6 +167,7 @@ private fun NovelsTab(
     state: LibraryUiState,
     onTitle: (String) -> Unit,
     onOpen: (BookEntity) -> Unit,
+    onRead: (BookEntity) -> Unit,
     onDelete: (String) -> Unit,
     onExport: (String) -> Unit,
 ) {
@@ -189,6 +194,7 @@ private fun NovelsTab(
                     card = card,
                     selected = card.book.id == state.selectedBookId,
                     onOpen = { onOpen(card.book) },
+                    onRead = { onRead(card.book) },
                     onDelete = { onDelete(card.book.id) },
                     onExport = { onExport(card.book.id) },
                 )
@@ -202,6 +208,7 @@ private fun NovelCard(
     card: LibraryBookCard,
     selected: Boolean,
     onOpen: () -> Unit,
+    onRead: () -> Unit,
     onDelete: () -> Unit,
     onExport: () -> Unit,
 ) {
@@ -269,6 +276,7 @@ private fun NovelCard(
                 .padding(top = InkSpacing.sm),
             horizontalArrangement = Arrangement.End,
         ) {
+            InkTextButton(label = "Read", onClick = onRead)
             InkTextButton(label = "Export", onClick = onExport)
             InkDeleteButton(itemName = card.book.title, onConfirmedDelete = onDelete)
         }

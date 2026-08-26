@@ -15,6 +15,7 @@ enum class AppMode(val label: String) {
 enum class NovelDestination(val label: String) {
     Plan("Plan"),
     Write("Write"),
+    Read("Read"),
     Chat("Chat"),
     Review("Review"),
 }
@@ -43,6 +44,7 @@ enum class WriteJumpKind(val label: String) {
 enum class RoleplayDestination(val label: String) {
     Inventory("Inventory"),
     Chats("Adventure"),
+    Campaign("Campaign"),
     Characters("Roster"),
     Codex("Lore"),
     Presets("Presets"),
@@ -50,12 +52,13 @@ enum class RoleplayDestination(val label: String) {
 
 /** The messenger workspace: who you can talk to, and the conversations themselves. */
 enum class ChattingDestination(val label: String) {
-    Friends("Contacts"),
     Chats("Chats"),
+    Friends("Contacts"),
 }
 
 /** The comic workspace — the same page canvas, read right-to-left or left-to-right. */
 enum class StoryboardDestination(val label: String) {
+    Window("Window"),
     Manga("Manga"),
     Comic("Comic"),
 }
@@ -73,10 +76,10 @@ fun roleplayDestinationOf(id: String?): RoleplayDestination =
     RoleplayDestination.entries.firstOrNull { it.name == id } ?: RoleplayDestination.Chats
 
 fun chattingDestinationOf(id: String?): ChattingDestination =
-    ChattingDestination.entries.firstOrNull { it.name == id } ?: ChattingDestination.Friends
+    ChattingDestination.entries.firstOrNull { it.name == id } ?: ChattingDestination.Chats
 
 fun storyboardDestinationOf(id: String?): StoryboardDestination =
-    StoryboardDestination.entries.firstOrNull { it.name == id } ?: StoryboardDestination.Manga
+    StoryboardDestination.entries.firstOrNull { it.name == id } ?: StoryboardDestination.Window
 
 fun novelDestinationOf(id: String?): NovelDestination =
     NovelDestination.entries.firstOrNull { it.name == id } ?: NovelDestination.Plan

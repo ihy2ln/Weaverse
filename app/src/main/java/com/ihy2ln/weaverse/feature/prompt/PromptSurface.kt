@@ -1,6 +1,7 @@
 package com.ihy2ln.weaverse.feature.prompt
 
 import com.ihy2ln.weaverse.feature.shell.AppMode
+import com.ihy2ln.weaverse.feature.shell.NovelDestination
 
 /**
  * Shared prompt bar is available on every generative workspace
@@ -8,6 +9,6 @@ import com.ihy2ln.weaverse.feature.shell.AppMode
  */
 object PromptSurface {
     fun usesGlobalOverlay(mode: AppMode, novelDest: String?): Boolean {
-        return true
+        return mode != AppMode.Novel || novelDest != NovelDestination.Read.name
     }
 }

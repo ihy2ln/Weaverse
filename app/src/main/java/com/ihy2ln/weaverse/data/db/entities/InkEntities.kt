@@ -32,6 +32,8 @@ data class BookEntity(
     val coverMediaId: String? = null,
     val createdAt: Long,
     val updatedAt: Long,
+    /** novel | campaign | storyboard — keeps each workspace's library distinct. */
+    val workType: String = "novel",
 )
 
 @Entity(tableName = "acts", indices = [Index("bookId")])
@@ -271,6 +273,8 @@ data class RpChatEntity(
     val pagesJson: String = "[]",
     /** When the user last opened this chat — drives the unread badge. */
     val lastReadAt: Long = 0L,
+    /** Manuscript that owns this campaign/storyboard chat, when applicable. */
+    val bookId: String? = null,
 )
 
 /** One storyboard page within a roleplay chat's DM/Roleplay canvas. */

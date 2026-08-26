@@ -60,6 +60,11 @@ class AppShellViewModel @Inject constructor(
                 pov = details.pov,
                 tense = details.tense,
                 styleGuide = details.styleGuide,
+                workType = when (vocabulary) {
+                    CreateWorkVocabulary.Campaign -> "campaign"
+                    CreateWorkVocabulary.Storyboard -> "storyboard"
+                    else -> "novel"
+                },
             )
             settings.setSelectedBookId(book.id)
             var chatId: String? = null
@@ -76,6 +81,7 @@ class AppShellViewModel @Inject constructor(
                         pagesJson = encodePages(listOf(RpPageMeta(id = "page-1", order = 0))),
                         createdAt = now,
                         updatedAt = now,
+                        bookId = book.id,
                     ),
                 )
                 chatId = id

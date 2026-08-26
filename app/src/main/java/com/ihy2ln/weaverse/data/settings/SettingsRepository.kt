@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.ihy2ln.weaverse.ai.openrouter.WritingModelSeeds
 import com.ihy2ln.weaverse.core.ui.theme.AppThemeMode
@@ -68,6 +69,8 @@ data class UserPreferences(
     val appearanceProfile: AppearanceProfile = AppearanceProfile.Classic,
     val fontSizeSp: Int = 16,
     val lineHeight: Float = 1.6f,
+    /** Paper | Sepia | Night — dedicated reader palette, independent of app chrome. */
+    val readerTheme: String = "Paper",
     val defaultModelRef: String = WritingModelSeeds.DEFAULT_MODEL_REF,
     val launchMode: String = "novel",
     val colorCodingEnabled: Boolean = true,
@@ -93,6 +96,11 @@ data class UserPreferences(
     val extraPromptSurfaces: ExtraPromptSurfaces = ExtraPromptSurfaces(),
 )
 
+data class ReaderSavedState(
+    val lastSceneId: String = "",
+    val bookmarkedSceneIds: Set<String> = emptySet(),
+)
+
 @Singleton
 class SettingsRepository @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -106,6 +114,7 @@ class SettingsRepository @Inject constructor(
                 ?: AppearanceProfile.Classic,
             fontSizeSp = prefs[KEY_FONT_SIZE] ?: 16,
             lineHeight = prefs[KEY_LINE_HEIGHT] ?: 1.6f,
+            readerTheme = prefs[KEY_READER_THEME] ?: "Paper",
             defaultModelRef = prefs[KEY_DEFAULT_MODEL] ?: WritingModelSeeds.DEFAULT_MODEL_REF,
             launchMode = prefs[KEY_LAUNCH_MODE] ?: "novel",
             colorCodingEnabled = prefs[KEY_COLOR_CODING] ?: true,
@@ -156,6 +165,30 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setLineHeight(value: Float) {
         context.dataStore.edit { it[KEY_LINE_HEIGHT] = value.coerceIn(1.2f, 2.2f) }
+    }
+
+    suspend fun setReaderTheme(theme: String) {
+        context.dataStore.edit { it[KEY_READER_THEME] = theme }
+    }
+
+    fun readerState(bookId: String): Flow<ReaderSavedState> = context.dataStore.data.map { prefs ->
+        ReaderSavedState(
+            lastSceneId = prefs[stringPreferencesKey("reader_last_$bookId")].orEmpty(),
+            bookmarkedSceneIds = prefs[stringSetPreferencesKey("reader_bookmarks_$bookId")].orEmpty(),
+        )
+    }
+
+    suspend fun setReaderPosition(bookId: String, sceneId: String) {
+        context.dataStore.edit { it[stringPreferencesKey("reader_last_$bookId")] = sceneId }
+    }
+
+    suspend fun toggleReaderBookmark(bookId: String, sceneId: String) {
+        val key = stringSetPreferencesKey("reader_bookmarks_$bookId")
+        context.dataStore.edit { prefs ->
+            val next = prefs[key].orEmpty().toMutableSet()
+            if (!next.add(sceneId)) next.remove(sceneId)
+            prefs[key] = next
+        }
     }
 
     suspend fun setDefaultModel(ref: String) {
@@ -287,6 +320,7 @@ class SettingsRepository @Inject constructor(
         private val KEY_APPEARANCE_PROFILE = stringPreferencesKey("appearance_profile")
         private val KEY_FONT_SIZE = intPreferencesKey("font_size_sp")
         private val KEY_LINE_HEIGHT = floatPreferencesKey("line_height")
+        private val KEY_READER_THEME = stringPreferencesKey("reader_theme")
         private val KEY_DEFAULT_MODEL = stringPreferencesKey("default_model")
         private val KEY_LAUNCH_MODE = stringPreferencesKey("launch_mode")
         private val KEY_COLOR_CODING = booleanPreferencesKey("color_coding")
