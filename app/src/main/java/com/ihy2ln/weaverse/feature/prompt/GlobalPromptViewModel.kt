@@ -45,6 +45,7 @@ import javax.inject.Inject
 data class GlobalPromptUiState(
     val kind: PromptEntryKind? = null,
     val text: String = "",
+    val minimumOutputWords: Int = 500,
     val outputWords: Int = 750,
     val streamingText: String = "",
     val isStreaming: Boolean = false,
@@ -117,6 +118,7 @@ class GlobalPromptViewModel @Inject constructor(
                 isStreaming = false,
                 imageMediaId = null,
                 imagePath = null,
+                minimumOutputWords = if (kind == PromptEntryKind.Ai) 500 else it.minimumOutputWords,
                 outputWords = if (kind == PromptEntryKind.Ai) 750 else it.outputWords,
             )
         }
@@ -137,7 +139,13 @@ class GlobalPromptViewModel @Inject constructor(
     }
 
     fun updateOutputWords(words: Int) {
-        _uiState.update { it.copy(outputWords = words.coerceIn(50, 4000)) }
+        if (words !in PromptWordLimit.Minimum..PromptWordLimit.Maximum) return
+        _uiState.update { it.copy(outputWords = words) }
+    }
+
+    fun updateMinimumOutputWords(words: Int) {
+        if (words !in PromptWordLimit.Minimum..PromptWordLimit.Maximum) return
+        _uiState.update { it.copy(minimumOutputWords = words) }
     }
 
     fun selectModel(modelId: String) {
@@ -176,6 +184,10 @@ class GlobalPromptViewModel @Inject constructor(
         val state = _uiState.value
         val kind = state.kind ?: PromptEntryKind.Manual
         if (state.text.isBlank() && state.imageMediaId == null) return
+        if (kind == PromptEntryKind.Ai && state.minimumOutputWords > state.outputWords) {
+            _uiState.update { it.copy(errorMessage = "Minimum words must not exceed maximum words") }
+            return
+        }
         when (kind) {
             PromptEntryKind.Manual -> submitManual(state.text)
             PromptEntryKind.Ai -> generateAi(state)
@@ -229,7 +241,7 @@ class GlobalPromptViewModel @Inject constructor(
                 aiGeneration.stream(
                     userMessage = userMessage,
                     assembled = AssembledPrompt(
-                        systemBlocks = assembleSystemBlocks(state.outputWords),
+                        systemBlocks = assembleSystemBlocks(state.minimumOutputWords, state.outputWords),
                         messages = emptyList(),
                         usedEntries = emptyList(),
                         tokenBreakdown = emptyList(),
@@ -304,7 +316,7 @@ class GlobalPromptViewModel @Inject constructor(
         }
     }
 
-    private suspend fun assembleSystemBlocks(outputWords: Int): List<String> {
+    private suspend fun assembleSystemBlocks(minimumWords: Int, outputWords: Int): List<String> {
         val chatId = context.rpChatId
         if (context.mode != AppMode.Roleplay || chatId.isNullOrBlank()) {
             val book = context.bookId.takeIf { it.isNotBlank() }?.let { db.bookDao().getById(it) }
@@ -318,12 +330,13 @@ class GlobalPromptViewModel @Inject constructor(
                     seriesTitle = series?.title.orEmpty(),
                     seriesDescription = series?.description.orEmpty(),
                 ),
-            )
+            ) + PromptWordLimit.instruction(minimumWords, outputWords)
         }
         val chat = db.roleplayDao().getChat(chatId)
         val character = chat?.characterId?.let { db.roleplayDao().getCharacter(it) }
         val persona = chat?.personaId?.let { db.roleplayDao().getPersona(it) }
-        return RoleplayPromptBuilder.systemBlocks(character, persona, outputWords)
+        return RoleplayPromptBuilder.systemBlocks(character, persona, outputWords) +
+            PromptWordLimit.instruction(minimumWords, outputWords)
     }
 
     private suspend fun activeRpDisplayMode(chatId: String): String =
