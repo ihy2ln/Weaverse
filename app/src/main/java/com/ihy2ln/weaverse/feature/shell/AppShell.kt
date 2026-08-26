@@ -361,11 +361,12 @@ fun AppShell(
                     PersonaDetailScreen(personaId = selectedPersonaId!!, onBack = { selectedPersonaId = null })
                 }
                 else -> {
-            if (inRpChat && !rpModeBarCollapsed) {
+            if (inRpChat) {
                 RoleplayDisplayModeBar(
                     displayMode = rpChrome!!.displayMode,
                     onSelect = rpChrome!!.onDisplayMode,
-                    onCollapse = { rpModeBarCollapsed = true },
+                    collapsed = rpModeBarCollapsed,
+                    onToggleCollapsed = { rpModeBarCollapsed = !rpModeBarCollapsed },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -566,7 +567,8 @@ fun AppShell(
 private fun RoleplayDisplayModeBar(
     displayMode: String,
     onSelect: (String) -> Unit,
-    onCollapse: () -> Unit,
+    collapsed: Boolean,
+    onToggleCollapsed: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -575,20 +577,29 @@ private fun RoleplayDisplayModeBar(
             .padding(horizontal = InkSpacing.md, vertical = InkSpacing.xxs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        InkSegmentedPill(
-            options = listOf(
-                SegmentedOption("messenger", "Messenger"),
-                SegmentedOption("dungeonMaster", "DM"),
-                SegmentedOption("roleplay", "Roleplay"),
-            ),
-            selectedId = displayMode,
-            onSelect = onSelect,
-        )
-        InkTextButton(
-            label = "Hide modes",
-            onClick = onCollapse,
-            modifier = Modifier.padding(start = InkSpacing.sm),
-        )
+        if (collapsed) {
+            // Must stay reachable: hiding this bar used to be permanent, which left
+            // DM and the Roleplay storyboard with no way back.
+            InkTextButton(
+                label = "${roleplayModeSubtitle(displayMode)} ▾",
+                onClick = onToggleCollapsed,
+            )
+        } else {
+            InkSegmentedPill(
+                options = listOf(
+                    SegmentedOption("messenger", "Messenger"),
+                    SegmentedOption("dungeonMaster", "DM"),
+                    SegmentedOption("roleplay", "Storyboard"),
+                ),
+                selectedId = displayMode,
+                onSelect = onSelect,
+            )
+            InkTextButton(
+                label = "Hide",
+                onClick = onToggleCollapsed,
+                modifier = Modifier.padding(start = InkSpacing.sm),
+            )
+        }
     }
 }
 

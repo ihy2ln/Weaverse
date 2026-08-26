@@ -490,33 +490,166 @@ fun RoleplayChatDetailScreen(
             modifier = Modifier.padding(horizontal = InkSpacing.lg),
         )
 
-        // Prompt entry is global: / = AI, \ = manual. Keep Media/Audio here.
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = InkSpacing.md, vertical = InkSpacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            InkTextButton(label = "Media", onClick = viewModel::requestMediaPick)
-            InkTextButton(label = "Audio", onClick = viewModel::requestAudioPick)
-            InkTextButton(label = "Mic", onClick = startDictateNew)
-            if (state.showExtraPromptSurfaces && !promptOverlayOpen) {
+        if (state.showExtraPromptSurfaces && !promptOverlayOpen) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = InkSpacing.md),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 PromptCommandButtons(
                     onAi = onOpenAiPrompt,
                     onManual = onOpenManualPrompt,
                     enabled = !state.isStreaming,
-                    modifier = Modifier.padding(start = InkSpacing.xs),
-                )
-            }
-            if (state.isStreaming) {
-                Text(
-                    "Generating…",
-                    style = MaterialTheme.typography.labelSmall,
-                    modifier = Modifier.padding(start = InkSpacing.sm),
                 )
             }
         }
+
+        MessageComposer(
+            value = state.input,
+            onValueChange = viewModel::onInputChange,
+            placeholder = "Message ${state.title.ifBlank { "chat" }}",
+            entryMode = state.entryMode,
+            isStreaming = state.isStreaming,
+            onSend = viewModel::send,
+            onPickMedia = viewModel::requestMediaPick,
+            onPickAudio = viewModel::requestAudioPick,
+            onDictate = startDictateNew,
+            onToggleEntryMode = {
+                viewModel.setEntryMode(if (state.entryMode == "ai") "nai" else "ai")
+            },
+        )
+    }
+}
+
+/**
+ * Chat composer in the shape a messenger app uses: a rounded bar with a `+` for
+ * attachments, the text field inline, and mic/send on the right. Previously the
+ * messenger had no input at all — typing went through the global `/` overlay,
+ * which is what made a chat screen feel like anything but a chat screen.
+ */
+@Composable
+private fun MessageComposer(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    entryMode: String,
+    isStreaming: Boolean,
+    onSend: () -> Unit,
+    onPickMedia: () -> Unit,
+    onPickAudio: () -> Unit,
+    onDictate: () -> Unit,
+    onToggleEntryMode: () -> Unit,
+) {
+    val tokens = inkTokens()
+    var attachOpen by remember { mutableStateOf(false) }
+    val canSend = value.isNotBlank() && !isStreaming
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+    ) {
+        Box {
+            ComposerIconButton(
+                glyph = "+",
+                contentDescription = "Add media or audio",
+                onClick = { attachOpen = true },
+                background = tokens.hover,
+                tint = tokens.primaryText,
+            )
+            DropdownMenu(expanded = attachOpen, onDismissRequest = { attachOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text("Picture or video") },
+                    onClick = { attachOpen = false; onPickMedia() },
+                )
+                DropdownMenuItem(
+                    text = { Text("Audio") },
+                    onClick = { attachOpen = false; onPickAudio() },
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(percent = 50))
+                .background(tokens.hover)
+                .padding(horizontal = InkSpacing.md, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(modifier = Modifier.weight(1f)) {
+                if (value.isEmpty()) {
+                    Text(
+                        placeholder,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = tokens.secondaryText,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                androidx.compose.foundation.text.BasicTextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = tokens.primaryText),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(tokens.primaryText),
+                    maxLines = 6,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            // AI vs manual entry, kept where it affects what Send does.
+            Text(
+                if (entryMode == "nai") "NAI" else "AI",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (entryMode == "nai") tokens.secondaryText else tokens.activePill,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(inkRadiusSm()))
+                    .clickable(onClick = onToggleEntryMode)
+                    .padding(horizontal = InkSpacing.xs, vertical = 2.dp),
+            )
+        }
+
+        if (canSend) {
+            ComposerIconButton(
+                glyph = "➤",
+                contentDescription = "Send",
+                onClick = onSend,
+                background = tokens.activePill,
+                tint = tokens.activePillLabel,
+            )
+        } else {
+            ComposerIconButton(
+                glyph = "🎙",
+                contentDescription = "Dictate",
+                onClick = onDictate,
+                background = tokens.hover,
+                tint = tokens.primaryText,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ComposerIconButton(
+    glyph: String,
+    contentDescription: String,
+    onClick: () -> Unit,
+    background: Color,
+    tint: Color,
+) {
+    Box(
+        modifier = Modifier
+            .width(36.dp)
+            .height(36.dp)
+            .clip(RoundedCornerShape(percent = 50))
+            .background(background)
+            .clickable(onClickLabel = contentDescription, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(glyph, style = MaterialTheme.typography.titleMedium, color = tint)
     }
 }
 

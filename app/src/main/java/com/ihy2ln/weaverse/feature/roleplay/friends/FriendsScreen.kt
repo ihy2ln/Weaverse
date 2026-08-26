@@ -20,6 +20,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -100,17 +103,38 @@ fun FriendsScreen(
             return@Column
         }
 
+        var dmOpen by rememberSaveable { mutableStateOf(true) }
+        var allOpen by rememberSaveable { mutableStateOf(true) }
+
         LazyColumn(modifier = Modifier.fillMaxSize()) {
             if (state.directMessages.isNotEmpty()) {
-                item(key = "hdr-dm") { SectionHeader("Direct messages — ${state.directMessages.size}") }
-                items(state.directMessages, key = { it.characterId }) { friend ->
-                    FriendRow(friend) { viewModel.openChatWith(friend.characterId, onOpenChat) }
+                item(key = "hdr-dm") {
+                    SectionHeader(
+                        label = "Direct messages",
+                        count = state.directMessages.size,
+                        expanded = dmOpen,
+                        onToggle = { dmOpen = !dmOpen },
+                    )
+                }
+                if (dmOpen) {
+                    items(state.directMessages, key = { it.characterId }) { friend ->
+                        FriendRow(friend) { viewModel.openChatWith(friend.characterId, onOpenChat) }
+                    }
                 }
             }
             if (state.everyoneElse.isNotEmpty()) {
-                item(key = "hdr-all") { SectionHeader("Everyone else — ${state.everyoneElse.size}") }
-                items(state.everyoneElse, key = { it.characterId }) { friend ->
-                    FriendRow(friend) { viewModel.openChatWith(friend.characterId, onOpenChat) }
+                item(key = "hdr-all") {
+                    SectionHeader(
+                        label = "Everyone else",
+                        count = state.everyoneElse.size,
+                        expanded = allOpen,
+                        onToggle = { allOpen = !allOpen },
+                    )
+                }
+                if (allOpen) {
+                    items(state.everyoneElse, key = { it.characterId }) { friend ->
+                        FriendRow(friend) { viewModel.openChatWith(friend.characterId, onOpenChat) }
+                    }
                 }
             }
             alwaysScrollEndSpacer()
@@ -118,20 +142,39 @@ fun FriendsScreen(
     }
 }
 
+/** Collapsible uppercase category header, the way a channel list groups things. */
 @Composable
-private fun SectionHeader(label: String) {
-    Text(
-        label.uppercase(),
-        style = MaterialTheme.typography.labelSmall,
-        fontWeight = FontWeight.Bold,
-        color = inkTokens().secondaryText,
-        modifier = Modifier.padding(
-            start = InkSpacing.lg,
-            end = InkSpacing.lg,
-            top = InkSpacing.md,
-            bottom = InkSpacing.xs,
-        ),
-    )
+private fun SectionHeader(
+    label: String,
+    count: Int,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle)
+            .padding(
+                start = InkSpacing.lg,
+                end = InkSpacing.lg,
+                top = InkSpacing.md,
+                bottom = InkSpacing.xs,
+            ),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            if (expanded) "⌄" else "›",
+            style = MaterialTheme.typography.labelSmall,
+            color = inkTokens().secondaryText,
+            modifier = Modifier.padding(end = InkSpacing.xs),
+        )
+        Text(
+            "${label.uppercase()} — $count",
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = inkTokens().secondaryText,
+        )
+    }
 }
 
 @Composable
@@ -145,7 +188,13 @@ private fun FriendRow(friend: FriendUi, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
     ) {
-        MonogramAvatar(friend.monogram, friend.avatarColorHex)
+        // Anyone you have an open conversation with reads as "around".
+        CharacterAvatar(
+            name = friend.name,
+            colorHex = friend.avatarColorHex,
+            size = 40.dp,
+            present = friend.hasChat,
+        )
         Column(modifier = Modifier.weight(1f)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -201,15 +250,33 @@ private fun MonogramAvatar(monogram: String, colorHex: String, size: androidx.co
     }
 }
 
-/** Shared with the messenger transcript so a character looks the same everywhere. */
+/**
+ * Shared with the messenger transcript and the chats list so a character looks
+ * the same everywhere. [present] draws the small status dot a contact list uses.
+ */
 @Composable
 fun CharacterAvatar(
     name: String,
     colorHex: String,
     modifier: Modifier = Modifier,
     size: androidx.compose.ui.unit.Dp = 36.dp,
+    present: Boolean = false,
 ) {
     Box(modifier = modifier) {
         MonogramAvatar(monogramOf(name), colorHex, size)
+        if (present) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(size * 0.32f)
+                    .clip(CircleShape)
+                    .background(inkTokens().panel)
+                    .padding(1.5.dp)
+                    .clip(CircleShape)
+                    .background(PresenceGreen),
+            )
+        }
     }
 }
+
+private val PresenceGreen = Color(0xFF3BA55D)
