@@ -93,6 +93,9 @@ fun GlobalPromptOverlay(
     val canClear = !state.isStreaming && (state.text.isNotBlank() || state.streamingText.isNotBlank())
     var modelsOpen by remember { mutableStateOf(false) }
     var modelSearch by rememberSaveable { mutableStateOf("") }
+    // Collapsed keeps the dock to a single header line, so it stops covering the
+    // page while still being one tap from writing.
+    var collapsed by rememberSaveable { mutableStateOf(false) }
     val activeModelRef = PromptModelSelection.effectiveModelRef(
         state.selectedModelRef,
         state.defaultModelRef,
@@ -133,6 +136,11 @@ fun GlobalPromptOverlay(
                 color = InkAccentBlue,
             )
             Spacer(modifier = Modifier.weight(1f))
+            InkTextButton(
+                label = if (collapsed) "▴" else "▾",
+                onClick = { collapsed = !collapsed },
+                compact = true,
+            )
             if (expanded) {
                 InkTextButton(label = "Hide", onClick = viewModel::dismiss, compact = true)
             }
@@ -151,6 +159,7 @@ fun GlobalPromptOverlay(
                 modifier = Modifier.weight(1f, fill = false),
             )
         }
+        if (collapsed) return@Column
         VoiceToTextField(
             value = state.text,
             onValueChange = viewModel::onTextChange,

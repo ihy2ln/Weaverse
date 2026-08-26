@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -44,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ihy2ln.weaverse.ai.ModelInfo
 import com.ihy2ln.weaverse.data.settings.ExtraPromptSurface
+import com.ihy2ln.weaverse.feature.help.HelpScreen
 import com.ihy2ln.weaverse.core.ui.components.ExpandableSection
 import com.ihy2ln.weaverse.core.ui.components.AppearanceSection
 import com.ihy2ln.weaverse.core.ui.components.InkCard
@@ -85,6 +87,7 @@ fun SettingsScreen(
     var peerHost by rememberSaveable { mutableStateOf("") }
     var peerPin by rememberSaveable { mutableStateOf("") }
     var selectedSection by rememberSaveable { mutableStateOf(AppearanceSection.Chrome.name) }
+    var showHelp by rememberSaveable { mutableStateOf(false) }
 
     val backgroundPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
@@ -307,6 +310,30 @@ fun SettingsScreen(
                 onClick = viewModel::resetAppearanceColors,
                 modifier = Modifier.padding(top = InkSpacing.sm),
             )
+
+            Text(
+                "Help",
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(top = InkSpacing.md),
+            )
+            Text(
+                "The full guide to every mode, searchable.",
+                style = MaterialTheme.typography.bodySmall,
+                color = inkTokens().secondaryText,
+            )
+            Row(modifier = Modifier.padding(top = InkSpacing.sm)) {
+                InkOutlinedButton(
+                    label = if (showHelp) "Hide guide" else "Open guide",
+                    onClick = { showHelp = !showHelp },
+                )
+            }
+            if (showHelp) {
+                HelpScreen(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 520.dp),
+                )
+            }
 
             Text(
                 "Friends",

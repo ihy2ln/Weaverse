@@ -357,6 +357,11 @@ fun AppShell(
                     modifier = Modifier.weight(1f).fillMaxSize(),
                 )
                 showLibrary -> LibraryScreen(
+                    onOpenMode = { modeId ->
+                        showLibrary = false
+                        mode = modeId
+                        chromeTool = null
+                    },
                     onOpenBook = { _, sceneId ->
                         if (sceneId != null) selectedSceneId = sceneId
                         showLibrary = false

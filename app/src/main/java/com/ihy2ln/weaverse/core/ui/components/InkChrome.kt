@@ -178,12 +178,17 @@ fun WorkspaceChrome(
                 selectedId = modeId,
                 onSelect = onMode,
             )
-            InkMenuChip(
-                label = "Focus",
-                options = focusOptions,
-                selectedId = focusId,
-                onSelect = onFocus,
-            )
+            // Focus chip removed: "Story" was the default view anyway and Pictures
+            // is reachable under Extra. Kept as a no-op parameter so callers that
+            // still drive focus state (the Pictures gallery) keep working.
+            if (focusOptions.isNotEmpty()) {
+                InkMenuChip(
+                    label = "Focus",
+                    options = focusOptions,
+                    selectedId = focusId,
+                    onSelect = onFocus,
+                )
+            }
             // App-wide tools, grouped behind one "Extra" chip rather than spilling
             // six tabs across the row.
             if (toolOptions.isNotEmpty()) {

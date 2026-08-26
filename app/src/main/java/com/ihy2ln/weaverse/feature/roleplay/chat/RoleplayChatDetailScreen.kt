@@ -82,7 +82,6 @@ import com.ihy2ln.weaverse.core.ui.components.EditTextAction
 import com.ihy2ln.weaverse.core.ui.components.EditTextPopup
 import com.ihy2ln.weaverse.core.ui.components.EditTextPopupConfig
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
-import com.ihy2ln.weaverse.core.ui.components.PromptCommandButtons
 import com.ihy2ln.weaverse.core.ui.components.AudioMediaPlayer
 import com.ihy2ln.weaverse.core.ui.components.MediaEditAction
 import com.ihy2ln.weaverse.core.ui.components.MediaEditPopup
@@ -508,22 +507,8 @@ fun RoleplayChatDetailScreen(
             modifier = Modifier.padding(horizontal = InkSpacing.lg),
         )
 
-        if (state.showExtraPromptSurfaces && !promptOverlayOpen) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = InkSpacing.md),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                PromptCommandButtons(
-                    onAi = onOpenAiPrompt,
-                    onManual = onOpenManualPrompt,
-                    enabled = !state.isStreaming,
-                )
-            }
-        }
-
+        // The composer already carries attach / mic / send / AI-manual, so the old
+        // extra button row would only make the dock taller.
         MessageComposer(
             value = state.input,
             onValueChange = viewModel::onInputChange,

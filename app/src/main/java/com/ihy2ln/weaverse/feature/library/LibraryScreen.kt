@@ -1,5 +1,7 @@
 package com.ihy2ln.weaverse.feature.library
 
+import androidx.compose.foundation.border
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -52,6 +54,8 @@ fun LibraryScreen(
     onOpenBook: (bookId: String, sceneId: String?) -> Unit,
     onWriteBook: (bookId: String, sceneId: String?) -> Unit = onOpenBook,
     onOpenExport: (bookId: String?) -> Unit = {},
+    /** Home doubles as the way into every workspace, not just novels. */
+    onOpenMode: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
@@ -64,7 +68,13 @@ fun LibraryScreen(
             .fillMaxSize()
             .padding(contentPad),
     ) {
-        Text("Your Novels", style = MaterialTheme.typography.headlineSmall)
+        Text("Weaverse", style = MaterialTheme.typography.headlineSmall)
+        ModeShelf(onOpenMode = onOpenMode)
+        Text(
+            "Your Novels",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(top = InkSpacing.lg),
+        )
         InkOutlinedButton(
             label = "+ Create Novel",
             onClick = {
@@ -354,6 +364,49 @@ private fun SeriesTab(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Home is the way into every workspace, not just novels. One card per mode,
+ * in the same bordered-card language the book list uses.
+ */
+@Composable
+private fun ModeShelf(onOpenMode: (String) -> Unit) {
+    val tokens = inkTokens()
+    val modes = listOf(
+        Triple("Novel", "Novel", "Plan, write and review a book"),
+        Triple("Roleplay", "RPG", "Run a campaign: adventures, party, lore"),
+        Triple("Chatting", "Chatting", "Message the cast like a messenger app"),
+        Triple("Storyboard", "Storyboard", "Build comic and manga pages"),
+        Triple("Notes", "Notes", "One shared board across every mode"),
+    )
+    Column(
+        modifier = Modifier.padding(top = InkSpacing.sm),
+        verticalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+    ) {
+        modes.forEach { (id, label, blurb) ->
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(inkRadiusSm()))
+                    .background(tokens.panel)
+                    .border(1.dp, tokens.hairline, RoundedCornerShape(inkRadiusSm()))
+                    .clickable { onOpenMode(id) }
+                    .padding(InkSpacing.md),
+            ) {
+                Text(
+                    label,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    blurb,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = tokens.secondaryText,
+                )
             }
         }
     }
