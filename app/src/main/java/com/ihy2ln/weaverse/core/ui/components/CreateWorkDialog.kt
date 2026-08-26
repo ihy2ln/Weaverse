@@ -40,6 +40,7 @@ data class CreateWorkVocabulary(
     val povLabel: String,
     val styleLabel: String,
     val styleHint: String,
+    val storyboardSpecific: Boolean = false,
 ) {
     companion object {
         val Novel = CreateWorkVocabulary(
@@ -62,12 +63,13 @@ data class CreateWorkVocabulary(
         )
         val Storyboard = CreateWorkVocabulary(
             what = "storyboard",
-            titleLabel = "Title",
-            titlePlaceholder = "Untitled Storyboard",
-            genreLabel = "Genre",
-            povLabel = "Point of view",
+            titleLabel = "Series title",
+            titlePlaceholder = "Untitled Manga",
+            genreLabel = "Visual genre",
+            povLabel = "Reading direction",
             styleLabel = "Art direction",
-            styleHint = "Linework, palette, panel rhythm.",
+            styleHint = "Linework, palette, character design, lettering, and panel rhythm.",
+            storyboardSpecific = true,
         )
     }
 }
@@ -85,8 +87,8 @@ fun CreateWorkDialog(
     val tokens = inkTokens()
     var title by remember { mutableStateOf("") }
     var genre by remember { mutableStateOf("") }
-    var pov by remember { mutableStateOf("") }
-    var tense by remember { mutableStateOf("") }
+    var pov by remember { mutableStateOf(if (vocabulary.storyboardSpecific) "Right to left" else "") }
+    var tense by remember { mutableStateOf(if (vocabulary.storyboardSpecific) "Manga" else "") }
     var styleGuide by remember { mutableStateOf("") }
 
     AlertDialog(
@@ -105,29 +107,65 @@ fun CreateWorkDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                OutlinedTextField(
-                    value = genre,
-                    onValueChange = { genre = it },
-                    label = { Text(vocabulary.genreLabel) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = pov,
-                    onValueChange = { pov = it },
-                    label = { Text(vocabulary.povLabel) },
-                    placeholder = { Text("First person, third limited…") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = tense,
-                    onValueChange = { tense = it },
-                    label = { Text("Tense") },
-                    placeholder = { Text("Past, present…") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                if (vocabulary.storyboardSpecific) {
+                    Text(
+                        "Set up the visual language of the series. You can change layouts page by page later.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = tokens.secondaryText,
+                    )
+                    Text("Format", style = MaterialTheme.typography.labelMedium)
+                    InkSegmentedPill(
+                        options = listOf(
+                            SegmentedOption("Manga", "Manga"),
+                            SegmentedOption("Comic", "Comic"),
+                            SegmentedOption("Webtoon", "Webtoon"),
+                        ),
+                        selectedId = tense,
+                        onSelect = { tense = it },
+                    )
+                    Text("Reading direction", style = MaterialTheme.typography.labelMedium)
+                    InkSegmentedPill(
+                        options = listOf(
+                            SegmentedOption("Right to left", "Right → left"),
+                            SegmentedOption("Left to right", "Left → right"),
+                            SegmentedOption("Vertical", "Vertical"),
+                        ),
+                        selectedId = pov,
+                        onSelect = { pov = it },
+                    )
+                    OutlinedTextField(
+                        value = genre,
+                        onValueChange = { genre = it },
+                        label = { Text(vocabulary.genreLabel) },
+                        placeholder = { Text("Shōnen action, noir, romance, superhero…") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                } else {
+                    OutlinedTextField(
+                        value = genre,
+                        onValueChange = { genre = it },
+                        label = { Text(vocabulary.genreLabel) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = pov,
+                        onValueChange = { pov = it },
+                        label = { Text(vocabulary.povLabel) },
+                        placeholder = { Text("First person, third limited…") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = tense,
+                        onValueChange = { tense = it },
+                        label = { Text("Tense") },
+                        placeholder = { Text("Past, present…") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 OutlinedTextField(
                     value = styleGuide,
                     onValueChange = { styleGuide = it },
@@ -142,8 +180,12 @@ fun CreateWorkDialog(
                     color = tokens.secondaryText,
                 )
                 Text(
-                    "Only the title is needed now — the rest can be filled in later, " +
-                        "and a cover is set from the editor.",
+                    if (vocabulary.storyboardSpecific) {
+                        "Only the series title is required. Main art can be set later and appears in Window."
+                    } else {
+                        "Only the title is needed now — the rest can be filled in later, " +
+                            "and a cover is set from the editor."
+                    },
                     style = MaterialTheme.typography.labelSmall,
                     color = tokens.secondaryText,
                 )

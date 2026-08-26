@@ -42,9 +42,9 @@ enum class WriteJumpKind(val label: String) {
  * only the labels are user-facing.
  */
 enum class RoleplayDestination(val label: String) {
+    Campaign("Campaign"),
     Inventory("Inventory"),
     Chats("Adventure"),
-    Campaign("Campaign"),
     Characters("Roster"),
     Codex("Lore"),
     Presets("Presets"),

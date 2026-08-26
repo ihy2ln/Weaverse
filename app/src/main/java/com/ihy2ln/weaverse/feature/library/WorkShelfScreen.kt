@@ -61,6 +61,7 @@ data class WorkShelfCard(
     val title: String,
     val subtitle: String,
     val artPath: String?,
+    val preferredStoryboardMode: String = "Manga",
 )
 
 @HiltViewModel
@@ -86,6 +87,11 @@ class WorkShelfViewModel @Inject constructor(
                     chatId = chat?.id,
                     title = book.title,
                     subtitle = book.genre,
+                    preferredStoryboardMode = if (
+                        book.tense.equals("Comic", true) ||
+                        book.tense.equals("Webtoon", true) ||
+                        book.pov.equals("Left to right", true)
+                    ) "Comic" else "Manga",
                     artPath = artId?.let(mediaById::get)
                         ?.let(mediaRepository::resolveFile)
                         ?.takeIf(File::exists)?.absolutePath,
@@ -105,6 +111,7 @@ class WorkShelfViewModel @Inject constructor(
                 artPath = chat.backgroundMediaId?.let(mediaById::get)
                     ?.let(mediaRepository::resolveFile)
                     ?.takeIf(File::exists)?.absolutePath,
+                preferredStoryboardMode = "Manga",
             )
         }
         typed + legacyBoards

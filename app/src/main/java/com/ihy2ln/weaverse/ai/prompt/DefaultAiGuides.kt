@@ -157,7 +157,10 @@ object DefaultAiGuides {
             }
             AppMode.Notes -> add(notesDraft)
         }
-        add("Aim for about $outputWords words unless the user asks for a different length.")
+        add(
+            "Write no more than $outputWords words. Treat this as a hard maximum; " +
+                "finish naturally below it and never exceed it, even if the user asks for more.",
+        )
     }.map { PromptTokens.apply(it, tokens) }
 
     fun characterSystemPrompt(

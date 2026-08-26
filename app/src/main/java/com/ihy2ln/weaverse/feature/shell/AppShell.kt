@@ -159,7 +159,11 @@ fun AppShell(
                         CreateWorkVocabulary.Storyboard -> {
                             mode = AppMode.Storyboard.name
                             storyboardChatId = chatId
-                            storyboardDest = StoryboardDestination.Manga.name
+                            storyboardDest = if (
+                                details.tense.equals("Comic", true) ||
+                                details.tense.equals("Webtoon", true) ||
+                                details.pov.equals("Left to right", true)
+                            ) StoryboardDestination.Comic.name else StoryboardDestination.Manga.name
                         }
                         CreateWorkVocabulary.Campaign -> {
                             mode = AppMode.Roleplay.name
@@ -624,7 +628,7 @@ fun AppShell(
                                         onOpen = { card ->
                                             card.bookId?.let(shellViewModel::setSelectedBookId)
                                             storyboardChatId = card.chatId
-                                            storyboardDest = StoryboardDestination.Manga.name
+                                            storyboardDest = card.preferredStoryboardMode
                                         },
                                     )
                                 } else if (boardId != null) {

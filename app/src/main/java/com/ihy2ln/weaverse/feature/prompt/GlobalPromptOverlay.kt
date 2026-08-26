@@ -7,17 +7,19 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -92,6 +94,7 @@ fun GlobalPromptOverlay(
     val canSubmit = state.text.isNotBlank() || state.imagePath != null
     val canClear = !state.isStreaming && (state.text.isNotBlank() || state.streamingText.isNotBlank())
     var modelsOpen by remember { mutableStateOf(false) }
+    var wordsOpen by remember { mutableStateOf(false) }
     var modelSearch by rememberSaveable { mutableStateOf("") }
     // Collapsed keeps the dock to a single header line, so it stops covering the
     // page while still being one tap from writing.
@@ -198,18 +201,37 @@ fun GlobalPromptOverlay(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
             ) {
-                Text("Words", style = MaterialTheme.typography.labelSmall, color = tokens.primaryText)
-                OutlinedTextField(
-                    value = state.outputWords.toString(),
-                    onValueChange = { raw ->
-                        val digits = raw.filter { it.isDigit() }.take(4)
-                        viewModel.updateOutputWords(digits.toIntOrNull() ?: 750)
-                    },
-                    modifier = Modifier
-                        .width(52.dp)
-                        .heightIn(max = 36.dp),
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.bodySmall.copy(color = tokens.primaryText),
+                Text("Maximum", style = MaterialTheme.typography.labelSmall, color = tokens.primaryText)
+                Box {
+                    InkTextButton(
+                        label = "${state.outputWords} words ▾",
+                        onClick = { wordsOpen = true },
+                        compact = true,
+                        enabled = !state.isStreaming,
+                    )
+                    DropdownMenu(
+                        expanded = wordsOpen,
+                        onDismissRequest = { wordsOpen = false },
+                    ) {
+                        PromptWordLimit.presets.forEach { words ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        "$words words${if (words == state.outputWords) " ✓" else ""}",
+                                    )
+                                },
+                                onClick = {
+                                    viewModel.updateOutputWords(words)
+                                    wordsOpen = false
+                                },
+                            )
+                        }
+                    }
+                }
+                Text(
+                    "Hard cap",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.secondaryText,
                 )
                 InkTextButton(
                     label = if (state.imagePath != null) "Image ✓" else "Add pic",

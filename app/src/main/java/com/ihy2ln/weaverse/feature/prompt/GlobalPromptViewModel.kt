@@ -242,7 +242,9 @@ class GlobalPromptViewModel @Inject constructor(
                     when (chunk) {
                         is AIChunk.Delta -> {
                             builder.append(chunk.text)
-                            _uiState.update { it.copy(streamingText = builder.toString()) }
+                            _uiState.update {
+                                it.copy(streamingText = PromptWordLimit.trim(builder.toString(), state.outputWords))
+                            }
                         }
                         is AIChunk.Usage -> {
                             usage = UsageFormat.formatUsage(
@@ -261,7 +263,9 @@ class GlobalPromptViewModel @Inject constructor(
                 }
                 return@launch
             }
-            val result = builder.toString()
+            // Providers treat maxTokens as an approximate ceiling. Enforce the
+            // selected word budget locally before anything reaches the document.
+            val result = PromptWordLimit.trim(builder.toString(), state.outputWords)
             runCatching {
                 // Roleplay: keep user prompt + character reply; others get AI text only.
                 if (context.mode == AppMode.Roleplay && !context.rpChatId.isNullOrBlank()) {
@@ -292,7 +296,7 @@ class GlobalPromptViewModel @Inject constructor(
                     isStreaming = false,
                     streamingText = result,
                     usageText = usage,
-                    statusMessage = "Inserted",
+                    statusMessage = "Inserted · ${PromptWordLimit.count(result)}/${state.outputWords} words",
                     text = "",
                 )
             }
