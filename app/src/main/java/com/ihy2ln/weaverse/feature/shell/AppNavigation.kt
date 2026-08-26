@@ -45,6 +45,7 @@ enum class RoleplayDestination(val label: String) {
     Characters("Roster"),
     Inventory("Inventory"),
     Codex("Lore"),
+    Presets("Presets"),
 }
 
 /** The messenger workspace: who you can talk to, and the conversations themselves. */

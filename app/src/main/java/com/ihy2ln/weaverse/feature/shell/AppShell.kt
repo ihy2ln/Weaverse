@@ -73,6 +73,7 @@ import com.ihy2ln.weaverse.feature.novel.codex.CodexEntryDetailScreen
 import com.ihy2ln.weaverse.feature.novel.codex.CodexRailScreen
 import com.ihy2ln.weaverse.feature.novel.manuscript.ManuscriptRailScreen
 import com.ihy2ln.weaverse.feature.novel.plan.PlanScreen
+import com.ihy2ln.weaverse.feature.novel.plan.PlanVocabulary
 import com.ihy2ln.weaverse.feature.novel.review.ReviewScreen
 import com.ihy2ln.weaverse.feature.novel.snippets.SnippetsRailScreen
 import com.ihy2ln.weaverse.feature.novel.write.WriteScreen
@@ -107,6 +108,7 @@ fun AppShell(
     var chatDest by rememberSaveable { mutableStateOf(ChattingDestination.Friends.name) }
     var storyboardDest by rememberSaveable { mutableStateOf(StoryboardDestination.Manga.name) }
     var storyboardChatId by rememberSaveable { mutableStateOf<String?>(null) }
+    var rpShowChatPicker by rememberSaveable { mutableStateOf(false) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showSearch by rememberSaveable { mutableStateOf(false) }
     var showLibrary by rememberSaveable { mutableStateOf(true) }
@@ -447,7 +449,10 @@ fun AppShell(
                     targetState = Triple(
                         mode to chromeTool,
                         workspaceFocus,
-                        listOf(novelDest, rpDest, chatDest, storyboardDest, selectedRpChatId, storyboardChatId),
+                        listOf(
+                            novelDest, rpDest, chatDest, storyboardDest,
+                            selectedRpChatId, storyboardChatId, rpShowChatPicker.toString(),
+                        ),
                     ),
                     animationSpec = tween(durationMillis = 120),
                     label = "modeSwitch",
@@ -550,7 +555,11 @@ fun AppShell(
                                             showModeSwitcher = false,
                                         )
                                     } else {
-                                        RoleplayChatsScreen(onChatClick = { selectedRpChatId = it })
+                                        RoleplayChatsScreen(
+                                            onChatClick = { selectedRpChatId = it },
+                                            showFilters = true,
+                                            onNewChat = { chatDest = ChattingDestination.Friends.name },
+                                        )
                                     }
                                 }
                             }
@@ -592,8 +601,21 @@ fun AppShell(
                                             forceDisplayMode = "dungeonMaster",
                                             showModeSwitcher = false,
                                         )
+                                    } else if (rpShowChatPicker) {
+                                        RoleplayChatsScreen(onChatClick = {
+                                            selectedRpChatId = it
+                                            rpShowChatPicker = false
+                                        })
                                     } else {
-                                        RoleplayChatsScreen(onChatClick = { selectedRpChatId = it })
+                                        // The campaign outline: Adventure > Day > Mission >
+                                        // Event, over the same manuscript entities Novel uses.
+                                        PlanScreen(
+                                            vocabulary = PlanVocabulary.Rpg,
+                                            onWrite = { sceneId, _ ->
+                                                selectedSceneId = sceneId
+                                                rpShowChatPicker = true
+                                            },
+                                        )
                                     }
                                 }
                                 RoleplayDestination.Characters -> PartyScreen(
@@ -604,6 +626,7 @@ fun AppShell(
                                 RoleplayDestination.Codex -> LorebookScreen(
                                     onEntryClick = { selectedCodexEntryId = it },
                                 )
+                                RoleplayDestination.Presets -> PresetsScreen()
                             }
                         }
                     }

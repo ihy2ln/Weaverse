@@ -64,7 +64,7 @@ class RailTabDefaultsTest {
     @Test
     fun eachWorkspaceHasItsOwnSubModes() {
         assertEquals(
-            listOf("Play", "Roster", "Inventory", "Lore"),
+            listOf("Play", "Roster", "Inventory", "Lore", "Presets"),
             RoleplayDestination.entries.map { it.label },
         )
         assertEquals(listOf("Contacts", "Chats"), ChattingDestination.entries.map { it.label })
@@ -74,11 +74,11 @@ class RailTabDefaultsTest {
 
     @Test
     fun destinationLookupsSurviveStaleSavedState() {
-        // Personas and Presets were removed as destinations; shell state saved by an
-        // older build still names them, and must fall back rather than throw.
+        // Personas was removed as a destination; shell state saved by an older build
+        // still names it, and must fall back rather than throw.
         assertEquals(RoleplayDestination.Chats, roleplayDestinationOf("Personas"))
-        assertEquals(RoleplayDestination.Chats, roleplayDestinationOf("Presets"))
         assertEquals(RoleplayDestination.Chats, roleplayDestinationOf(null))
+        assertEquals(RoleplayDestination.Presets, roleplayDestinationOf("Presets"))
         assertEquals(RoleplayDestination.Codex, roleplayDestinationOf("Codex"))
         assertEquals(ChattingDestination.Friends, chattingDestinationOf("nonsense"))
         assertEquals(StoryboardDestination.Manga, storyboardDestinationOf("Pages"))

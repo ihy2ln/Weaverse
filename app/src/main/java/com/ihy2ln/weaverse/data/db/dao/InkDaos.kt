@@ -295,6 +295,13 @@ interface RoleplayDao {
     @Query("SELECT COUNT(*) FROM rp_characters")
     suspend fun countCharacters(): Int
 
+    /** Character messages that arrived after the chat was last opened. */
+    @Query(
+        "SELECT COUNT(*) FROM rp_messages WHERE chatId = :chatId AND role != 'user' " +
+            "AND isActiveSwipe = 1 AND createdAt > :since",
+    )
+    suspend fun countUnread(chatId: String, since: Long): Int
+
     @Query(
         "SELECT * FROM rp_messages WHERE chatId = :chatId AND displayMode = :displayMode ORDER BY createdAt",
     )

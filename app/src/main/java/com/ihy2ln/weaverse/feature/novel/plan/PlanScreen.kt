@@ -75,6 +75,7 @@ import com.ihy2ln.weaverse.feature.shell.WriteJumpKind
 @Composable
 fun PlanScreen(
     onWrite: (sceneId: String, kind: WriteJumpKind) -> Unit = { _, _ -> },
+    vocabulary: PlanVocabulary = PlanVocabulary.Novel,
     viewModel: PlanViewModel = hiltViewModel(),
 ) {
     var viewMode by rememberSaveable { mutableStateOf(PlanViewMode.Grid.name) }
@@ -126,6 +127,7 @@ fun PlanScreen(
         )
         when (PlanViewMode.valueOf(viewMode)) {
             PlanViewMode.Grid -> PlanGridView(
+                vocabulary = vocabulary,
                 scenes = state.scenes,
                 outline = state.outline,
                 characters = state.characters,
@@ -152,6 +154,7 @@ fun PlanScreen(
                 },
             )
             PlanViewMode.Outline -> PlanOutlineView(
+                vocabulary = vocabulary,
                 outline = state.outline,
                 characters = state.characters,
                 selectedSceneId = selectedSceneId,
@@ -192,6 +195,7 @@ private fun firstSceneInChapter(outline: List<PlanOutlineNode>, chapterId: Strin
 @Composable
 private fun WriteJumpButton(
     sceneId: String?,
+    vocabulary: PlanVocabulary,
     chapterSceneId: String?,
     onWrite: (sceneId: String, kind: WriteJumpKind) -> Unit,
 ) {
@@ -201,7 +205,7 @@ private fun WriteJumpButton(
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             if (sceneId != null) {
                 DropdownMenuItem(
-                    text = { Text("Scene beat") },
+                    text = { Text(vocabulary.sceneBeat) },
                     onClick = {
                         open = false
                         onWrite(sceneId, WriteJumpKind.SceneBeat)
@@ -210,7 +214,7 @@ private fun WriteJumpButton(
             }
             if (chapterSceneId != null) {
                 DropdownMenuItem(
-                    text = { Text("Chapter") },
+                    text = { Text(vocabulary.chapter) },
                     onClick = {
                         open = false
                         onWrite(chapterSceneId, WriteJumpKind.Chapter)
@@ -224,6 +228,7 @@ private fun WriteJumpButton(
 @Composable
 private fun PlanGridView(
     scenes: List<SceneEntity>,
+    vocabulary: PlanVocabulary,
     outline: List<PlanOutlineNode>,
     characters: List<CodexEntryEntity>,
     selectedSceneId: String?,
@@ -274,6 +279,7 @@ private fun PlanGridView(
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     WriteJumpButton(
+                        vocabulary = vocabulary,
                         sceneId = scene.id,
                         chapterSceneId = firstSceneInChapter(outline, scene.chapterId) ?: scene.id,
                         onWrite = onWrite,
@@ -293,6 +299,7 @@ private fun PlanGridView(
         }
         item(key = "__plan_add") {
             PlanAddTile(
+                vocabulary = vocabulary,
                 onNewScene = onAddNewScene,
                 onSceneBeat = onAddSceneBeat,
                 onNewChapter = onAddNewChapter,
@@ -305,6 +312,7 @@ private fun PlanGridView(
 @Composable
 private fun PlanOutlineView(
     outline: List<PlanOutlineNode>,
+    vocabulary: PlanVocabulary,
     characters: List<CodexEntryEntity>,
     selectedSceneId: String?,
     onSelectScene: (String) -> Unit,
@@ -335,6 +343,7 @@ private fun PlanOutlineView(
                             modifier = Modifier.weight(1f),
                         )
                         WriteJumpButton(
+                            vocabulary = vocabulary,
                             sceneId = chapterNode.scenes.firstOrNull()?.id,
                             chapterSceneId = chapterNode.scenes.firstOrNull()?.id,
                             onWrite = onWrite,
@@ -376,6 +385,7 @@ private fun PlanOutlineView(
                                 overflow = TextOverflow.Ellipsis,
                             )
                             WriteJumpButton(
+                                vocabulary = vocabulary,
                                 sceneId = scene.id,
                                 chapterSceneId = chapterNode.scenes.firstOrNull()?.id ?: scene.id,
                                 onWrite = onWrite,
@@ -401,6 +411,7 @@ private fun PlanOutlineView(
         }
         item(key = "__plan_add") {
             PlanAddTile(
+                vocabulary = vocabulary,
                 onNewScene = onAddNewScene,
                 onSceneBeat = onAddSceneBeat,
                 onNewChapter = onAddNewChapter,
@@ -416,6 +427,7 @@ private fun PlanAddTile(
     onNewScene: () -> Unit,
     onSceneBeat: () -> Unit,
     onNewChapter: () -> Unit,
+    vocabulary: PlanVocabulary,
     modifier: Modifier = Modifier,
 ) {
     var open by remember { mutableStateOf(false) }
@@ -447,7 +459,7 @@ private fun PlanAddTile(
                 },
             )
             DropdownMenuItem(
-                text = { Text("Scene beat") },
+                text = { Text(vocabulary.sceneBeat) },
                 onClick = {
                     open = false
                     onSceneBeat()

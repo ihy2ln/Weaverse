@@ -245,6 +245,8 @@ data class RpChatEntity(
     val updatedAt: Long,
     /** JSON-encoded List<RpPageMeta> — storyboard pages for the DM/Roleplay canvases. */
     val pagesJson: String = "[]",
+    /** When the user last opened this chat — drives the unread badge. */
+    val lastReadAt: Long = 0L,
 )
 
 /** One storyboard page within a roleplay chat's DM/Roleplay canvas. */
