@@ -54,6 +54,8 @@ import com.ihy2ln.weaverse.core.ui.components.InkOutlinedButton
 import com.ihy2ln.weaverse.core.ui.components.InkSegmentedPill
 import com.ihy2ln.weaverse.core.ui.components.SegmentedOption
 import com.ihy2ln.weaverse.core.ui.theme.AppThemeMode
+import com.ihy2ln.weaverse.core.ui.theme.AppearanceProfile
+import com.ihy2ln.weaverse.core.ui.theme.isDark
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import com.ihy2ln.weaverse.core.ui.theme.toHexString
@@ -116,11 +118,79 @@ fun SettingsScreen(
 
         ) {
 
+            Text("Profile", style = MaterialTheme.typography.labelLarge)
+
+            Text(
+
+                "A whole look — colors, lettering and corners together.",
+
+                style = MaterialTheme.typography.bodySmall,
+
+                color = inkTokens().secondaryText,
+
+            )
+
             InkSegmentedPill(
 
-                options = AppThemeMode.entries.map { SegmentedOption(it.name, it.name) },
+                options = AppearanceProfile.entries.map { SegmentedOption(it.name, it.label) },
 
-                selectedId = state.prefs.themeMode.name,
+                selectedId = state.prefs.appearanceProfile.name,
+
+                onSelect = { viewModel.setAppearanceProfile(AppearanceProfile.valueOf(it)) },
+
+                modifier = Modifier.padding(vertical = InkSpacing.sm),
+
+            )
+
+            Text(
+
+                state.prefs.appearanceProfile.blurb,
+
+                style = MaterialTheme.typography.bodySmall,
+
+                color = inkTokens().secondaryText,
+
+            )
+
+            val profile = state.prefs.appearanceProfile
+
+            Text(
+
+                if (profile.usesThemeModes) "Theme" else "Theme — ${profile.label} uses light or dark",
+
+                style = MaterialTheme.typography.labelLarge,
+
+                modifier = Modifier.padding(top = InkSpacing.md),
+
+            )
+
+            InkSegmentedPill(
+
+                options = if (profile.usesThemeModes) {
+
+                    AppThemeMode.entries.map { SegmentedOption(it.name, it.name) }
+
+                } else {
+
+                    listOf(
+
+                        SegmentedOption(AppThemeMode.Light.name, "Light"),
+
+                        SegmentedOption(AppThemeMode.Dark.name, "Dark"),
+
+                    )
+
+                },
+
+                selectedId = if (profile.usesThemeModes) {
+
+                    state.prefs.themeMode.name
+
+                } else {
+
+                    if (state.prefs.themeMode.isDark) AppThemeMode.Dark.name else AppThemeMode.Light.name
+
+                },
 
                 onSelect = { viewModel.setTheme(AppThemeMode.valueOf(it)) },
 

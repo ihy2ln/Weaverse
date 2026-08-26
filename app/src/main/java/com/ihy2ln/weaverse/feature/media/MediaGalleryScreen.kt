@@ -33,6 +33,8 @@ import androidx.lifecycle.viewModelScope
 import coil3.compose.AsyncImage
 import com.ihy2ln.weaverse.core.media.MediaRepository
 import com.ihy2ln.weaverse.core.ui.components.ZoomableMedia
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import com.ihy2ln.weaverse.data.db.entities.MediaEntity
@@ -80,7 +82,7 @@ fun MediaGalleryScreen(
                     val file = viewModel.fileFor(entity)
                     Column(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(InkSpacing.radiusMd))
+                            .clip(RoundedCornerShape(inkRadiusMd()))
                             .clickable { focused = entity },
                     ) {
                         AsyncImage(
@@ -90,7 +92,7 @@ fun MediaGalleryScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .aspectRatio(3f / 4f)
-                                .clip(RoundedCornerShape(InkSpacing.radiusMd)),
+                                .clip(RoundedCornerShape(inkRadiusMd())),
                         )
                         Text(
                             text = entity.id.removePrefix("art-").replace('-', ' '),

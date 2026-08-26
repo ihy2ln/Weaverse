@@ -91,6 +91,8 @@ import com.ihy2ln.weaverse.core.ui.components.VoiceToTextField
 import com.ihy2ln.weaverse.core.ui.components.ZoomableMedia
 import com.ihy2ln.weaverse.core.ui.components.mergeSpokenText
 import com.ihy2ln.weaverse.core.ui.components.rememberSpeechToText
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import com.ihy2ln.weaverse.core.ui.util.parseHexColor
@@ -548,15 +550,15 @@ private fun PageStrip(
                     style = MaterialTheme.typography.labelMedium,
                     color = if (active) tokens.activePillLabel else tokens.secondaryText,
                     modifier = Modifier
-                        .clip(RoundedCornerShape(InkSpacing.radiusSm))
+                        .clip(RoundedCornerShape(inkRadiusSm()))
                         .background(
                             if (active) tokens.activePill else Color.Transparent,
-                            RoundedCornerShape(InkSpacing.radiusSm),
+                            RoundedCornerShape(inkRadiusSm()),
                         )
                         .border(
                             1.dp,
                             if (active) Color.Transparent else tokens.hairline,
-                            RoundedCornerShape(InkSpacing.radiusSm),
+                            RoundedCornerShape(inkRadiusSm()),
                         )
                         .combinedClickable(
                             onClick = { onSelect(page.id) },
@@ -592,8 +594,8 @@ private fun PageStrip(
             style = MaterialTheme.typography.labelMedium,
             color = tokens.secondaryText,
             modifier = Modifier
-                .clip(RoundedCornerShape(InkSpacing.radiusSm))
-                .border(1.dp, tokens.hairline, RoundedCornerShape(InkSpacing.radiusSm))
+                .clip(RoundedCornerShape(inkRadiusSm()))
+                .border(1.dp, tokens.hairline, RoundedCornerShape(inkRadiusSm()))
                 .clickable { onAddPage() }
                 .padding(horizontal = InkSpacing.md, vertical = 4.dp),
         )
@@ -659,8 +661,8 @@ private fun MangaSnapGrid(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1f)
-                .clip(RoundedCornerShape(InkSpacing.radiusSm))
-                .border(1.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f), RoundedCornerShape(InkSpacing.radiusSm))
+                .clip(RoundedCornerShape(inkRadiusSm()))
+                .border(1.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f), RoundedCornerShape(inkRadiusSm()))
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
         ) {
             val cellW = maxWidth / gridSize
@@ -820,8 +822,8 @@ private fun MangaSnapPanel(
             .width(widthDp + with(density) { resizeDx.toDp() }.coerceAtLeast(0.dp))
             .height(heightDp + with(density) { resizeDy.toDp() }.coerceAtLeast(0.dp))
             .padding(2.dp)
-            .clip(RoundedCornerShape(InkSpacing.radiusSm))
-            .border(if (moveMode || selected) 2.dp else 1.dp, border, RoundedCornerShape(InkSpacing.radiusSm))
+            .clip(RoundedCornerShape(inkRadiusSm()))
+            .border(if (moveMode || selected) 2.dp else 1.dp, border, RoundedCornerShape(inkRadiusSm()))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
             .then(
                 if (moveMode) {
@@ -1314,7 +1316,7 @@ private fun RemovableMedia(
             .border(
                 if (selected) 2.dp else 0.dp,
                 MaterialTheme.colorScheme.primary,
-                RoundedCornerShape(InkSpacing.radiusSm),
+                RoundedCornerShape(inkRadiusSm()),
             )
             .combinedClickable(
                 onClick = {

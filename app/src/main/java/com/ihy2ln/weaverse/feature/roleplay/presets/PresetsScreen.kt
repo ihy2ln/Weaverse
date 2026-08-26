@@ -19,6 +19,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.InkHairline
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 
@@ -53,8 +55,8 @@ fun PresetsScreen(viewModel: PresetsViewModel = hiltViewModel()) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = InkSpacing.sm)
-                        .clip(RoundedCornerShape(InkSpacing.radiusMd))
-                        .border(if (selected) 2.dp else 1.dp, border, RoundedCornerShape(InkSpacing.radiusMd))
+                        .clip(RoundedCornerShape(inkRadiusMd()))
+                        .border(if (selected) 2.dp else 1.dp, border, RoundedCornerShape(inkRadiusMd()))
                         .background(hue)
                         .clickable { viewModel.selectPreset(preset.id) }
                         .padding(InkSpacing.lg),

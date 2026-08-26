@@ -12,6 +12,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 
 data class SlashCommand(val id: String, val label: String, val description: String)
@@ -41,7 +43,7 @@ fun SlashCommandOverlay(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(InkSpacing.radiusMd))
+            .clip(RoundedCornerShape(inkRadiusMd()))
             .background(MaterialTheme.colorScheme.surface)
             .padding(InkSpacing.sm),
     ) {

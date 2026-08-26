@@ -39,7 +39,7 @@ class MainActivity : ComponentActivity() {
             val prefs by settingsRepository.preferences.collectAsState(
                 initial = com.ihy2ln.weaverse.data.settings.UserPreferences(),
             )
-            WeaverseTheme(themeMode = prefs.themeMode) {
+            WeaverseTheme(themeMode = prefs.themeMode, profile = prefs.appearanceProfile) {
                 val tokens = inkTokens()
                 val themed = resolveSectionColor(prefs.appearance.chrome, tokens.panel)
                 val barColor = if (themed.alpha < 0.4f) tokens.panel else themed.copy(alpha = 1f)

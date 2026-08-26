@@ -40,6 +40,8 @@ import com.ihy2ln.weaverse.core.ui.components.InkFilledButton
 import com.ihy2ln.weaverse.core.ui.components.InkModeCapsule
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
 import com.ihy2ln.weaverse.core.ui.components.VoiceToTextField
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.InkAccentBlue
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
@@ -65,7 +67,7 @@ fun SceneBeatBlockView(
     codexNames: List<String> = emptyList(),
 ) {
     val tokens = inkTokens()
-    val shape = RoundedCornerShape(InkSpacing.radiusMd)
+    val shape = RoundedCornerShape(inkRadiusMd())
     val mentionColor = InkAccentBlue
     val transformation = remember(codexNames, mentionColor) {
         CodexMentionVisualTransformation(codexNames, mentionColor)

@@ -27,6 +27,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import com.ihy2ln.weaverse.core.ui.util.horizontalScrollIfNeeded
@@ -118,7 +120,7 @@ fun InkOutlineButton(
     Text(
         text = label,
         modifier = modifier
-            .border(1.dp, inkTokens().hairline, RoundedCornerShape(InkSpacing.radiusSm))
+            .border(1.dp, inkTokens().hairline, RoundedCornerShape(inkRadiusSm()))
             .clickable(onClick = onClick)
             .padding(horizontal = InkSpacing.md, vertical = InkSpacing.sm),
         color = inkTokens().primaryText,

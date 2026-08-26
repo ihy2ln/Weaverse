@@ -10,6 +10,7 @@ import com.ihy2ln.weaverse.ai.openrouter.OpenRouterModelCache
 import com.ihy2ln.weaverse.ai.openrouter.OpenRouterRepository
 import com.ihy2ln.weaverse.core.media.MediaRepository
 import com.ihy2ln.weaverse.core.ui.theme.AppThemeMode
+import com.ihy2ln.weaverse.core.ui.theme.AppearanceProfile
 import com.ihy2ln.weaverse.data.backup.BackupManager
 import com.ihy2ln.weaverse.data.settings.ExtraPromptSurface
 import com.ihy2ln.weaverse.data.settings.SecureKeyStore
@@ -304,6 +305,10 @@ class SettingsViewModel @Inject constructor(
 
     fun setTheme(mode: AppThemeMode) {
         viewModelScope.launch { settings.setThemeMode(mode) }
+    }
+
+    fun setAppearanceProfile(profile: AppearanceProfile) {
+        viewModelScope.launch { settings.setAppearanceProfile(profile) }
     }
 
     fun setFontSize(sp: Int) {

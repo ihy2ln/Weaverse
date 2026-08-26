@@ -37,6 +37,8 @@ import com.ihy2ln.weaverse.core.ui.components.InkOutlinedButton
 import com.ihy2ln.weaverse.core.ui.components.InkSegmentedPill
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
 import com.ihy2ln.weaverse.core.ui.components.SegmentedOption
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import com.ihy2ln.weaverse.core.ui.util.adaptiveContentPadding
@@ -199,7 +201,7 @@ private fun NovelCard(
                     modifier = Modifier
                         .width(56.dp)
                         .aspectRatio(2f / 3f)
-                        .clip(RoundedCornerShape(InkSpacing.radiusSm)),
+                        .clip(RoundedCornerShape(inkRadiusSm())),
                 )
             }
             Column(

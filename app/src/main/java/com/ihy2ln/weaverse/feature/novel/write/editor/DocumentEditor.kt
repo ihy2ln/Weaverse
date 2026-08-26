@@ -24,6 +24,8 @@ import com.ihy2ln.weaverse.core.ui.components.EditTextPopupConfig
 import com.ihy2ln.weaverse.core.ui.components.InkConfirmButton
 import com.ihy2ln.weaverse.core.ui.components.MediaEditAction
 import com.ihy2ln.weaverse.core.ui.components.VoiceToTextField
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.InkAccentBlue
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
@@ -195,7 +197,7 @@ private fun ContinuationInput(
     onSubmit: (String) -> Unit,
 ) {
     var text by remember { mutableStateOf("") }
-    val shape = RoundedCornerShape(InkSpacing.radiusMd)
+    val shape = RoundedCornerShape(inkRadiusMd())
     Column(
         modifier = Modifier
             .fillMaxWidth()

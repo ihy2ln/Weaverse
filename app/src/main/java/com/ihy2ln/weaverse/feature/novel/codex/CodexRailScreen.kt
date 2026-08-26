@@ -34,6 +34,8 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ihy2ln.weaverse.core.ui.components.InkDeleteButton
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.InkThemeTokens
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
@@ -114,7 +116,7 @@ fun CodexRailScreen(
                                 Box(
                                     modifier = Modifier
                                         .size(InkSpacing.iconTile)
-                                        .clip(RoundedCornerShape(InkSpacing.radiusSm))
+                                        .clip(RoundedCornerShape(inkRadiusSm()))
                                         .background(tint.copy(alpha = 0.15f)),
                                 )
                                 Column(modifier = Modifier.padding(start = InkSpacing.md).weight(1f)) {

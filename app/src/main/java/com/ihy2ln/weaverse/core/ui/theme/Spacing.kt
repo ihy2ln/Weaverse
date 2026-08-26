@@ -21,6 +21,10 @@ object InkSpacing {
     val entryRowHeight = 64.dp
     val iconTile = 36.dp
     val touchTarget = 48.dp
+    /**
+     * Classic's corner rounding. UI code should call `inkRadiusSm()` / `inkRadiusMd()`
+     * instead so the active [AppearanceProfile]'s shape language applies.
+     */
     val radiusSm = 6.dp
     val radiusMd = 8.dp
 }

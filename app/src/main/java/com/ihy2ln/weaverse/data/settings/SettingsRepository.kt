@@ -12,6 +12,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.ihy2ln.weaverse.ai.openrouter.WritingModelSeeds
 import com.ihy2ln.weaverse.core.ui.theme.AppThemeMode
+import com.ihy2ln.weaverse.core.ui.theme.AppearanceProfile
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -63,6 +64,8 @@ enum class ExtraPromptSurface {
 
 data class UserPreferences(
     val themeMode: AppThemeMode = AppThemeMode.Dark,
+    /** Whole visual identity (palette + typography + shape); Classic = the original look. */
+    val appearanceProfile: AppearanceProfile = AppearanceProfile.Classic,
     val fontSizeSp: Int = 16,
     val lineHeight: Float = 1.6f,
     val defaultModelRef: String = WritingModelSeeds.DEFAULT_MODEL_REF,
@@ -98,6 +101,9 @@ class SettingsRepository @Inject constructor(
     val preferences: Flow<UserPreferences> = context.dataStore.data.map { prefs ->
         UserPreferences(
             themeMode = AppThemeMode.entries.find { it.name == prefs[KEY_THEME] } ?: AppThemeMode.Dark,
+            appearanceProfile = AppearanceProfile.entries
+                .find { it.name == prefs[KEY_APPEARANCE_PROFILE] }
+                ?: AppearanceProfile.Classic,
             fontSizeSp = prefs[KEY_FONT_SIZE] ?: 16,
             lineHeight = prefs[KEY_LINE_HEIGHT] ?: 1.6f,
             defaultModelRef = prefs[KEY_DEFAULT_MODEL] ?: WritingModelSeeds.DEFAULT_MODEL_REF,
@@ -138,6 +144,10 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setThemeMode(mode: AppThemeMode) {
         context.dataStore.edit { it[KEY_THEME] = mode.name }
+    }
+
+    suspend fun setAppearanceProfile(profile: AppearanceProfile) {
+        context.dataStore.edit { it[KEY_APPEARANCE_PROFILE] = profile.name }
     }
 
     suspend fun setFontSize(sp: Int) {
@@ -274,6 +284,7 @@ class SettingsRepository @Inject constructor(
 
     companion object {
         private val KEY_THEME = stringPreferencesKey("theme_mode")
+        private val KEY_APPEARANCE_PROFILE = stringPreferencesKey("appearance_profile")
         private val KEY_FONT_SIZE = intPreferencesKey("font_size_sp")
         private val KEY_LINE_HEIGHT = floatPreferencesKey("line_height")
         private val KEY_DEFAULT_MODEL = stringPreferencesKey("default_model")

@@ -46,6 +46,8 @@ import com.ihy2ln.weaverse.core.ui.components.InkSegmentedPill
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
 import com.ihy2ln.weaverse.core.ui.components.SegmentedOption
 import com.ihy2ln.weaverse.core.ui.components.VoiceToTextField
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 
@@ -316,7 +318,7 @@ private fun PromptMessageEditor(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .border(1.dp, tokens.hairline, RoundedCornerShape(InkSpacing.radiusSm))
+            .border(1.dp, tokens.hairline, RoundedCornerShape(inkRadiusSm()))
             .padding(InkSpacing.sm),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {

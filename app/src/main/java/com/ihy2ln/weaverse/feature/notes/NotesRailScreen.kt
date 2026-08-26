@@ -26,6 +26,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.ihy2ln.weaverse.core.ui.components.InkConfirmButton
 import com.ihy2ln.weaverse.core.ui.components.InkDeleteButton
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import com.ihy2ln.weaverse.core.ui.util.alwaysScrollEndSpacer
@@ -80,7 +82,7 @@ fun NotesRailScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(InkSpacing.radiusSm))
+                        .clip(RoundedCornerShape(inkRadiusSm()))
                         .background(
                             if (selected) {
                                 MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
@@ -91,7 +93,7 @@ fun NotesRailScreen(
                         .border(
                             width = if (selected) 1.5.dp else 0.dp,
                             color = MaterialTheme.colorScheme.primary,
-                            shape = RoundedCornerShape(InkSpacing.radiusSm),
+                            shape = RoundedCornerShape(inkRadiusSm()),
                         )
                         .clickable { viewModel.selectNote(note.id) }
                         .padding(InkSpacing.sm),

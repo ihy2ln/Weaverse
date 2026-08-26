@@ -59,6 +59,8 @@ import com.ihy2ln.weaverse.core.ui.components.InkOutlinedButton
 import com.ihy2ln.weaverse.core.ui.components.InkSegmentedPill
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
 import com.ihy2ln.weaverse.core.ui.components.SegmentedOption
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.CodexCharacters
 import com.ihy2ln.weaverse.core.ui.theme.InkAccentBlue
 import com.ihy2ln.weaverse.core.ui.theme.InkAccentGold
@@ -248,12 +250,12 @@ private fun PlanGridView(
                     .fillMaxWidth()
                     .background(
                         MaterialTheme.colorScheme.surface,
-                        RoundedCornerShape(InkSpacing.radiusMd),
+                        RoundedCornerShape(inkRadiusMd()),
                     )
                     .border(
                         if (selected) 2.dp else 1.5.dp,
                         if (selected) InkAccentBlue else inkTokens().hairline,
-                        RoundedCornerShape(InkSpacing.radiusMd),
+                        RoundedCornerShape(inkRadiusMd()),
                     )
                     .clickable { onSelectScene(scene.id) }
                     .padding(InkSpacing.sm),
@@ -358,7 +360,7 @@ private fun PlanOutlineView(
                                     Modifier.border(
                                         2.dp,
                                         InkAccentGold,
-                                        RoundedCornerShape(InkSpacing.radiusMd),
+                                        RoundedCornerShape(inkRadiusMd()),
                                     )
                                 } else {
                                     Modifier
@@ -417,7 +419,7 @@ private fun PlanAddTile(
     modifier: Modifier = Modifier,
 ) {
     var open by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(InkSpacing.radiusMd)
+    val shape = RoundedCornerShape(inkRadiusMd())
     Box(modifier = modifier.fillMaxWidth()) {
         Box(
             modifier = Modifier
@@ -486,7 +488,7 @@ private fun SceneSummaryBox(
         SceneSummaryTone.Grid -> 64.dp
         SceneSummaryTone.Outline -> 96.dp
     }
-    val shape = RoundedCornerShape(InkSpacing.radiusSm)
+    val shape = RoundedCornerShape(inkRadiusSm())
     Box(
         modifier = modifier
             .fillMaxWidth()

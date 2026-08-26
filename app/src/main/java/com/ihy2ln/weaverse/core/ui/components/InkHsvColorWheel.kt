@@ -33,6 +33,8 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.toHexString
 import kotlin.math.roundToInt
@@ -100,9 +102,9 @@ fun InkHsvColorWheel(
                 .fillMaxWidth()
                 .padding(top = InkSpacing.sm)
                 .height(40.dp)
-                .clip(RoundedCornerShape(InkSpacing.radiusSm))
+                .clip(RoundedCornerShape(inkRadiusSm()))
                 .background(preview.copy(alpha = 1f))
-                .border(1.dp, Color.Gray.copy(alpha = 0.4f), RoundedCornerShape(InkSpacing.radiusSm)),
+                .border(1.dp, Color.Gray.copy(alpha = 0.4f), RoundedCornerShape(inkRadiusSm())),
             contentAlignment = Alignment.Center,
         ) {
             Text(preview.toHexString())
@@ -124,7 +126,7 @@ private fun HueStrip(
     }
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(InkSpacing.radiusSm))
+            .clip(RoundedCornerShape(inkRadiusSm()))
             .onSizeChanged { size = it.width.toFloat().coerceAtLeast(1f) }
             .pointerInput(size) {
                 detectTapGestures { pos ->
@@ -165,7 +167,7 @@ private fun SatValueSquare(
     val pure = hsvToColor(hue, 1f, 1f, 100)
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(InkSpacing.radiusSm))
+            .clip(RoundedCornerShape(inkRadiusSm()))
             .onSizeChanged { boxSize = it }
             .pointerInput(boxSize, hue) {
                 if (boxSize.width == 0 || boxSize.height == 0) return@pointerInput
