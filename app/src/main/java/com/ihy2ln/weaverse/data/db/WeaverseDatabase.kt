@@ -58,7 +58,7 @@ import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
         PromptEntity::class,
         AiProfileEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = false,
 )
 @TypeConverters(InkTypeConverters::class)
@@ -88,6 +88,18 @@ abstract class WeaverseDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "ALTER TABLE rp_chats ADD COLUMN lastReadAt INTEGER NOT NULL DEFAULT 0",
+                )
+            }
+        }
+
+        /** Personas carry gear too, so You has a real inventory row. */
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE rp_personas ADD COLUMN inventoryJson TEXT NOT NULL DEFAULT '[]'",
+                )
+                db.execSQL(
+                    "ALTER TABLE rp_personas ADD COLUMN equipmentJson TEXT NOT NULL DEFAULT '{}'",
                 )
             }
         }

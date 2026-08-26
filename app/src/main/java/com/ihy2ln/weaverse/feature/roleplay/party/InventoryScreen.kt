@@ -24,6 +24,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,6 +52,8 @@ fun InventoryScreen(viewModel: InventoryViewModel = hiltViewModel()) {
     var addingForCharacterId by remember { mutableStateOf<String?>(null) }
     var equippingFor by remember { mutableStateOf<Pair<String, RpEquipSlot>?>(null) }
     var openCharacterId by remember { mutableStateOf<String?>(null) }
+    // Each group collapses independently; all open to start.
+    var collapsedGroups by rememberSaveable { mutableStateOf(setOf<String>()) }
     var draftName by remember { mutableStateOf("") }
     var draftQty by remember { mutableStateOf("1") }
 
@@ -71,7 +74,50 @@ fun InventoryScreen(viewModel: InventoryViewModel = hiltViewModel()) {
     }
 
     LazyColumn(modifier = Modifier.fillMaxSize()) {
-        state.carriers.forEach { carrier ->
+        state.carriers.groupBy { it.kind }.forEach { (kind, carriers) ->
+            val groupOpen = kind.name !in collapsedGroups
+            item(key = "group-${kind.name}") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            collapsedGroups = if (groupOpen) {
+                                collapsedGroups + kind.name
+                            } else {
+                                collapsedGroups - kind.name
+                            }
+                        }
+                        .padding(
+                            start = InkSpacing.md,
+                            end = InkSpacing.lg,
+                            top = InkSpacing.md,
+                            bottom = InkSpacing.xs,
+                        ),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        if (groupOpen) "⌄" else "›",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = tokens.secondaryText,
+                        modifier = Modifier.padding(end = InkSpacing.xs),
+                    )
+                    Text(
+                        kind.label.uppercase(),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 2.sp,
+                        color = tokens.primaryText,
+                    )
+                    Text(
+                        "${carriers.size}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tokens.secondaryText,
+                        modifier = Modifier.padding(start = InkSpacing.sm),
+                    )
+                }
+            }
+            if (!groupOpen) return@forEach
+            carriers.forEach { carrier ->
             item(key = "hdr-${carrier.characterId}") {
                 Row(
                     modifier = Modifier
@@ -179,6 +225,7 @@ fun InventoryScreen(viewModel: InventoryViewModel = hiltViewModel()) {
                         onClick = { viewModel.removeItem(carrier.characterId, item.id) },
                     )
                 }
+            }
             }
         }
         alwaysScrollEndSpacer()

@@ -243,6 +243,9 @@ data class RpPersonaEntity(
     val avatarMediaId: String? = null,
     val description: String = "",
     val isDefault: Boolean = false,
+    /** You carry gear the same way the rest of the team does. */
+    val inventoryJson: String = "[]",
+    val equipmentJson: String = "{}",
 )
 
 @Entity(tableName = "rp_chats")
