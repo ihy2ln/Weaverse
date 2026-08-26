@@ -3,6 +3,10 @@ package com.ihy2ln.weaverse.data.db.entities
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 @Entity(tableName = "series")
 data class SeriesEntity(
@@ -221,7 +225,26 @@ data class RpChatEntity(
     val oocColorHex: String? = null,
     val createdAt: Long,
     val updatedAt: Long,
+    /** JSON-encoded List<RpPageMeta> — storyboard pages for the DM/Roleplay canvases. */
+    val pagesJson: String = "[]",
 )
+
+/** One storyboard page within a roleplay chat's DM/Roleplay canvas. */
+@Serializable
+data class RpPageMeta(
+    val id: String,
+    val order: Int,
+    val title: String? = null,
+)
+
+private val pagesJsonCodec = Json { ignoreUnknownKeys = true }
+
+fun decodePages(json: String): List<RpPageMeta> =
+    runCatching { pagesJsonCodec.decodeFromString<List<RpPageMeta>>(json) }
+        .getOrDefault(emptyList())
+        .sortedBy { it.order }
+
+fun encodePages(pages: List<RpPageMeta>): String = pagesJsonCodec.encodeToString(pages)
 
 @Entity(tableName = "rp_messages", indices = [Index("chatId"), Index(value = ["chatId", "displayMode"])])
 data class RpMessageEntity(

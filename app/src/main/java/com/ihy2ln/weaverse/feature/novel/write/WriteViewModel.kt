@@ -503,6 +503,8 @@ class WriteViewModel @Inject constructor(
             MediaEditAction.Uncollapse -> setMediaCollapsed(index, false)
             MediaEditAction.Stack -> stackMediaWithAdjacent(index)
             MediaEditAction.Move -> Unit
+            // Panel-canvas only (Roleplay/DM storyboard).
+            MediaEditAction.AdjustImage, MediaEditAction.AddTextOverlay -> Unit
         }
     }
 

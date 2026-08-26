@@ -3,6 +3,8 @@ package com.ihy2ln.weaverse.data.db
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.ihy2ln.weaverse.data.db.dao.BookDao
 import com.ihy2ln.weaverse.data.db.dao.CodexDao
 import com.ihy2ln.weaverse.data.db.dao.MediaDao
@@ -56,7 +58,7 @@ import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
         PromptEntity::class,
         AiProfileEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 @TypeConverters(InkTypeConverters::class)
@@ -70,4 +72,15 @@ abstract class WeaverseDatabase : RoomDatabase() {
     abstract fun roleplayDao(): RoleplayDao
     abstract fun mediaDao(): MediaDao
     abstract fun promptDao(): PromptDao
+
+    companion object {
+        /** Adds storyboard page metadata to roleplay chats — additive, no data loss. */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE rp_chats ADD COLUMN pagesJson TEXT NOT NULL DEFAULT '[]'",
+                )
+            }
+        }
+    }
 }

@@ -578,12 +578,12 @@ private fun RpPersonaDto.toEntity() = RpPersonaEntity(id, name, avatarMediaId, d
 private fun RpChatEntity.toDto() = RpChatDto(
     id, characterId, groupId, personaId, title, backgroundMediaId, authorsNote, authorsNoteDepth,
     presetId, promptTemplateId, branchOfChatId, displayMode, narrationColorHex, speechColorHex,
-    oocColorHex, createdAt, updatedAt,
+    oocColorHex, createdAt, updatedAt, pagesJson,
 )
 private fun RpChatDto.toEntity() = RpChatEntity(
     id, characterId, groupId, personaId, title, backgroundMediaId, authorsNote, authorsNoteDepth,
     presetId, promptTemplateId, branchOfChatId, displayMode, narrationColorHex, speechColorHex,
-    oocColorHex, createdAt, updatedAt,
+    oocColorHex, createdAt, updatedAt, pagesJson,
 )
 private fun RpMessageEntity.toDto() = RpMessageDto(
     id, chatId, swipeGroupId, swipeIndex, isActiveSwipe, role, speakerCharacterId, contentJson,

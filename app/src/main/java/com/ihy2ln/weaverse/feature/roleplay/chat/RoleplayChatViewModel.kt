@@ -20,6 +20,7 @@ import com.ihy2ln.weaverse.core.text.MediaKind
 import com.ihy2ln.weaverse.core.text.MediaStackBlock
 import com.ihy2ln.weaverse.core.text.Paragraph
 import com.ihy2ln.weaverse.core.text.Span
+import com.ihy2ln.weaverse.core.text.TextOverlay
 import com.ihy2ln.weaverse.core.text.MediaGrid
 import com.ihy2ln.weaverse.core.text.documentFromJson
 import com.ihy2ln.weaverse.core.text.plainText
@@ -39,7 +40,10 @@ import com.ihy2ln.weaverse.data.db.WeaverseDatabase
 import com.ihy2ln.weaverse.data.db.entities.RpCharacterEntity
 import com.ihy2ln.weaverse.data.db.entities.RpChatEntity
 import com.ihy2ln.weaverse.data.db.entities.RpMessageEntity
+import com.ihy2ln.weaverse.data.db.entities.RpPageMeta
 import com.ihy2ln.weaverse.data.db.entities.RpPersonaEntity
+import com.ihy2ln.weaverse.data.db.entities.decodePages
+import com.ihy2ln.weaverse.data.db.entities.encodePages
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
 import com.ihy2ln.weaverse.feature.roleplay.presets.defaultPresets
 import com.ihy2ln.weaverse.feature.shell.WorkspaceHistory
@@ -82,6 +86,10 @@ data class RpMediaRef(
         com.ihy2ln.weaverse.core.text.MediaKind.Image,
     /** DM prose tile (no picture). */
     val isTextTile: Boolean = false,
+    val mediaScale: Float = 1f,
+    val mediaOffsetXPercent: Float = 0f,
+    val mediaOffsetYPercent: Float = 0f,
+    val overlays: List<TextOverlay> = emptyList(),
 )
 
 data class RpMessageUi(
@@ -126,6 +134,11 @@ data class RoleplayChatUiState(
     val canPasteMedia: Boolean = false,
     val presetId: String = "preset-balanced",
     val showExtraPromptSurfaces: Boolean = false,
+    /** Storyboard pages for the DM/Roleplay canvas, in display order. */
+    val pages: List<RpPageMeta> = emptyList(),
+    val activePageId: String = "",
+    /** (messageId, blockId, overlayId) currently open in the text-overlay editor. */
+    val editingOverlay: Triple<String, String, String>? = null,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -179,14 +192,27 @@ class RoleplayChatViewModel @Inject constructor(
                         )
                         val preset = chat.presetId?.takeIf { it.isNotBlank() }
                             ?: _uiState.value.presetId
+                        var pages = decodePages(chat.pagesJson)
+                        if (pages.isEmpty()) {
+                            pages = listOf(RpPageMeta(id = "page-1", order = 0))
+                            val backfilled = chat.copy(pagesJson = encodePages(pages))
+                            boundChat = backfilled
+                            db.roleplayDao().upsertChat(backfilled)
+                        }
+                        val activePage = _uiState.value.activePageId
+                            .takeIf { id -> pages.any { it.id == id } }
+                            ?: pages.first().id
                         _uiState.update {
                             it.copy(
                                 title = chat.title,
                                 displayMode = chat.displayMode.ifBlank { "messenger" },
                                 characterBubbleColor = charColor,
                                 presetId = preset,
+                                pages = pages,
+                                activePageId = activePage,
                             )
                         }
+                        publishMessages()
                     }
                 }
             }
@@ -217,6 +243,10 @@ class RoleplayChatViewModel @Inject constructor(
     private suspend fun publishMessages() {
         val active = rawMessages.filter { it.isActiveSwipe }
         val panels = mutableListOf<RpMediaRef>()
+        val statePages = _uiState.value.pages
+        val defaultPageId = statePages.firstOrNull()?.id ?: "page-1"
+        val activePageId = _uiState.value.activePageId.ifBlank { defaultPageId }
+        fun onActivePage(pageId: String?): Boolean = (pageId ?: defaultPageId) == activePageId
         val ui = active.map { m ->
             val groupCount = rawMessages.count { it.swipeGroupId == m.swipeGroupId && it.role == m.role }
             val doc = documentFromJson(m.contentJson)
@@ -231,22 +261,24 @@ class RoleplayChatViewModel @Inject constructor(
                 when (block) {
                     is MediaBlock -> {
                         if (block.mediaId == DM_TEXT_TILE_MEDIA_ID) {
-                            panels += RpMediaRef(
-                                messageId = m.id,
-                                blockId = block.id,
-                                path = "",
-                                caption = caption,
-                                speaker = speaker,
-                                role = m.role,
-                                gridCol = block.gridCol,
-                                gridRow = block.gridRow,
-                                gridColSpan = block.gridColSpan,
-                                gridRowSpan = block.gridRowSpan,
-                                collapsed = block.collapsed,
-                                mediaId = block.mediaId,
-                                mediaKind = MediaKind.Image,
-                                isTextTile = true,
-                            )
+                            if (onActivePage(block.pageId)) {
+                                panels += RpMediaRef(
+                                    messageId = m.id,
+                                    blockId = block.id,
+                                    path = "",
+                                    caption = caption,
+                                    speaker = speaker,
+                                    role = m.role,
+                                    gridCol = block.gridCol,
+                                    gridRow = block.gridRow,
+                                    gridColSpan = block.gridColSpan,
+                                    gridRowSpan = block.gridRowSpan,
+                                    collapsed = block.collapsed,
+                                    mediaId = block.mediaId,
+                                    mediaKind = MediaKind.Image,
+                                    isTextTile = true,
+                                )
+                            }
                             return@forEach
                         }
                         val entity = mediaRepository.getById(block.mediaId)
@@ -257,22 +289,28 @@ class RoleplayChatViewModel @Inject constructor(
                             blockIds += block.id
                             isAudioFlags += audio
                             collapsedMap[block.id] = block.collapsed
-                            panels += RpMediaRef(
-                                messageId = m.id,
-                                blockId = block.id,
-                                path = path,
-                                caption = caption,
-                                speaker = speaker,
-                                role = m.role,
-                                gridCol = block.gridCol,
-                                gridRow = block.gridRow,
-                                gridColSpan = block.gridColSpan,
-                                gridRowSpan = block.gridRowSpan,
-                                collapsed = block.collapsed,
-                                isAudio = audio,
-                                mediaId = block.mediaId,
-                                mediaKind = block.kind,
-                            )
+                            if (onActivePage(block.pageId)) {
+                                panels += RpMediaRef(
+                                    messageId = m.id,
+                                    blockId = block.id,
+                                    path = path,
+                                    caption = caption,
+                                    speaker = speaker,
+                                    role = m.role,
+                                    gridCol = block.gridCol,
+                                    gridRow = block.gridRow,
+                                    gridColSpan = block.gridColSpan,
+                                    gridRowSpan = block.gridRowSpan,
+                                    collapsed = block.collapsed,
+                                    isAudio = audio,
+                                    mediaId = block.mediaId,
+                                    mediaKind = block.kind,
+                                    mediaScale = block.mediaScale,
+                                    mediaOffsetXPercent = block.mediaOffsetXPercent,
+                                    mediaOffsetYPercent = block.mediaOffsetYPercent,
+                                    overlays = block.overlays,
+                                )
+                            }
                         }
                     }
                     is MediaStackBlock -> {
@@ -286,23 +324,29 @@ class RoleplayChatViewModel @Inject constructor(
                             isAudioFlags += false
                             stackPaths[block.id] = resolved
                             collapsedMap[block.id] = block.collapsed
-                            panels += RpMediaRef(
-                                messageId = m.id,
-                                blockId = block.id,
-                                path = resolved[idx],
-                                caption = caption,
-                                speaker = speaker,
-                                role = m.role,
-                                stackedPaths = resolved,
-                                gridCol = block.gridCol,
-                                gridRow = block.gridRow,
-                                gridColSpan = block.gridColSpan,
-                                gridRowSpan = block.gridRowSpan,
-                                collapsed = block.collapsed,
-                                isAudio = false,
-                                mediaId = block.mediaIds.getOrNull(idx).orEmpty(),
-                                mediaKind = MediaKind.Image,
-                            )
+                            if (onActivePage(block.pageId)) {
+                                panels += RpMediaRef(
+                                    messageId = m.id,
+                                    blockId = block.id,
+                                    path = resolved[idx],
+                                    caption = caption,
+                                    speaker = speaker,
+                                    role = m.role,
+                                    stackedPaths = resolved,
+                                    gridCol = block.gridCol,
+                                    gridRow = block.gridRow,
+                                    gridColSpan = block.gridColSpan,
+                                    gridRowSpan = block.gridRowSpan,
+                                    collapsed = block.collapsed,
+                                    isAudio = false,
+                                    mediaId = block.mediaIds.getOrNull(idx).orEmpty(),
+                                    mediaKind = MediaKind.Image,
+                                    mediaScale = block.mediaScale,
+                                    mediaOffsetXPercent = block.mediaOffsetXPercent,
+                                    mediaOffsetYPercent = block.mediaOffsetYPercent,
+                                    overlays = block.overlays,
+                                )
+                            }
                         }
                     }
                     else -> Unit
@@ -343,6 +387,8 @@ class RoleplayChatViewModel @Inject constructor(
             MediaEditAction.Uncollapse -> setMediaCollapsed(messageId, blockId, false)
             MediaEditAction.Stack -> stackMedia(messageId, blockId)
             MediaEditAction.Move -> Unit // manga grid handles Move in UI
+            MediaEditAction.AdjustImage -> Unit // manga grid handles Adjust image in UI
+            MediaEditAction.AddTextOverlay -> addTextOverlay(messageId, blockId)
         }
     }
 
@@ -375,12 +421,14 @@ class RoleplayChatViewModel @Inject constructor(
         viewModelScope.launch {
             val current = rawMessages.find { it.id == messageId } ?: return@launch
             val doc = documentFromJson(current.contentJson)
+            val pageId = _uiState.value.activePageId
             val block = if (payload.stackedMediaIds.size > 1) {
                 MediaStackBlock(
                     id = "msb-${UUID.randomUUID()}",
                     mediaIds = payload.stackedMediaIds,
                     gridColSpan = payload.gridColSpan,
                     gridRowSpan = payload.gridRowSpan,
+                    pageId = pageId,
                 )
             } else {
                 MediaBlock(
@@ -390,6 +438,7 @@ class RoleplayChatViewModel @Inject constructor(
                     widthPercent = payload.widthPercent,
                     gridColSpan = payload.gridColSpan,
                     gridRowSpan = payload.gridRowSpan,
+                    pageId = pageId,
                 )
             }
             persistMessageBlocks(current, doc.blocks + block)
@@ -723,6 +772,177 @@ class RoleplayChatViewModel @Inject constructor(
         }
     }
 
+    // --- Storyboard pages ---------------------------------------------------
+
+    fun switchPage(pageId: String) {
+        if (_uiState.value.activePageId == pageId) return
+        _uiState.update { it.copy(activePageId = pageId, selectedMediaKey = null) }
+        viewModelScope.launch { publishMessages() }
+    }
+
+    fun addPage() {
+        val chat = boundChat ?: return
+        viewModelScope.launch {
+            val pages = _uiState.value.pages
+            val next = RpPageMeta(
+                id = "page-${UUID.randomUUID()}",
+                order = (pages.maxOfOrNull { it.order } ?: -1) + 1,
+                title = "Page ${pages.size + 1}",
+            )
+            val updated = chat.copy(pagesJson = encodePages(pages + next))
+            db.roleplayDao().upsertChat(updated)
+            boundChat = updated
+            _uiState.update {
+                it.copy(pages = pages + next, activePageId = next.id, selectedMediaKey = null)
+            }
+            publishMessages()
+        }
+    }
+
+    fun renamePage(pageId: String, title: String) {
+        val chat = boundChat ?: return
+        viewModelScope.launch {
+            val pages = _uiState.value.pages.map {
+                if (it.id == pageId) it.copy(title = title.ifBlank { null }) else it
+            }
+            val updated = chat.copy(pagesJson = encodePages(pages))
+            db.roleplayDao().upsertChat(updated)
+            boundChat = updated
+            _uiState.update { it.copy(pages = pages) }
+        }
+    }
+
+    /** Deleting a page leaves its media orphaned under the default page (never data loss). */
+    fun deletePage(pageId: String) {
+        val chat = boundChat ?: return
+        val pages = _uiState.value.pages
+        if (pages.size <= 1) return
+        viewModelScope.launch {
+            val remaining = pages.filterNot { it.id == pageId }
+            val updated = chat.copy(pagesJson = encodePages(remaining))
+            db.roleplayDao().upsertChat(updated)
+            boundChat = updated
+            val nextActive = if (_uiState.value.activePageId == pageId) {
+                remaining.first().id
+            } else {
+                _uiState.value.activePageId
+            }
+            _uiState.update {
+                it.copy(pages = remaining, activePageId = nextActive, selectedMediaKey = null)
+            }
+            publishMessages()
+        }
+    }
+
+    // --- Media transform (pan/zoom within a panel) --------------------------
+
+    fun setMediaTransform(
+        messageId: String,
+        blockId: String,
+        scale: Float,
+        offsetXPercent: Float,
+        offsetYPercent: Float,
+    ) {
+        viewModelScope.launch {
+            val current = rawMessages.find { it.id == messageId } ?: return@launch
+            val blocks = documentFromJson(current.contentJson).blocks.toMutableList()
+            val index = blocks.indexOfFirst { it.id == blockId }
+            if (index < 0) return@launch
+            blocks[index] = when (val block = blocks[index]) {
+                is MediaBlock -> block.copy(
+                    mediaScale = scale,
+                    mediaOffsetXPercent = offsetXPercent,
+                    mediaOffsetYPercent = offsetYPercent,
+                )
+                is MediaStackBlock -> block.copy(
+                    mediaScale = scale,
+                    mediaOffsetXPercent = offsetXPercent,
+                    mediaOffsetYPercent = offsetYPercent,
+                )
+                else -> return@launch
+            }
+            persistMessageBlocks(current, blocks)
+        }
+    }
+
+    // --- Text overlays --------------------------------------------------------
+
+    fun addTextOverlay(messageId: String, blockId: String) {
+        viewModelScope.launch {
+            val current = rawMessages.find { it.id == messageId } ?: return@launch
+            val blocks = documentFromJson(current.contentJson).blocks.toMutableList()
+            val index = blocks.indexOfFirst { it.id == blockId }
+            if (index < 0) return@launch
+            val overlay = TextOverlay(id = "ov-${UUID.randomUUID()}", text = "Text")
+            blocks[index] = when (val block = blocks[index]) {
+                is MediaBlock -> block.copy(overlays = block.overlays + overlay)
+                is MediaStackBlock -> block.copy(overlays = block.overlays + overlay)
+                else -> return@launch
+            }
+            persistMessageBlocks(current, blocks)
+            _uiState.update {
+                it.copy(editingOverlay = Triple(messageId, blockId, overlay.id))
+            }
+        }
+    }
+
+    fun openOverlayEditor(messageId: String, blockId: String, overlayId: String) {
+        _uiState.update { it.copy(editingOverlay = Triple(messageId, blockId, overlayId)) }
+    }
+
+    fun closeOverlayEditor() {
+        _uiState.update { it.copy(editingOverlay = null) }
+    }
+
+    fun moveTextOverlay(messageId: String, blockId: String, overlayId: String, xPercent: Float, yPercent: Float) {
+        updateTextOverlay(messageId, blockId, overlayId) { it.copy(xPercent = xPercent, yPercent = yPercent) }
+    }
+
+    fun resizeTextOverlay(messageId: String, blockId: String, overlayId: String, widthPercent: Float) {
+        updateTextOverlay(messageId, blockId, overlayId) { it.copy(widthPercent = widthPercent) }
+    }
+
+    fun saveTextOverlay(messageId: String, blockId: String, overlay: TextOverlay) {
+        updateTextOverlay(messageId, blockId, overlay.id) { overlay }
+    }
+
+    fun deleteTextOverlay(messageId: String, blockId: String, overlayId: String) {
+        viewModelScope.launch {
+            val current = rawMessages.find { it.id == messageId } ?: return@launch
+            val blocks = documentFromJson(current.contentJson).blocks.toMutableList()
+            val index = blocks.indexOfFirst { it.id == blockId }
+            if (index < 0) return@launch
+            blocks[index] = when (val block = blocks[index]) {
+                is MediaBlock -> block.copy(overlays = block.overlays.filterNot { it.id == overlayId })
+                is MediaStackBlock -> block.copy(overlays = block.overlays.filterNot { it.id == overlayId })
+                else -> return@launch
+            }
+            persistMessageBlocks(current, blocks)
+        }
+    }
+
+    private fun updateTextOverlay(
+        messageId: String,
+        blockId: String,
+        overlayId: String,
+        transform: (TextOverlay) -> TextOverlay,
+    ) {
+        viewModelScope.launch {
+            val current = rawMessages.find { it.id == messageId } ?: return@launch
+            val blocks = documentFromJson(current.contentJson).blocks.toMutableList()
+            val index = blocks.indexOfFirst { it.id == blockId }
+            if (index < 0) return@launch
+            fun applyTo(overlays: List<TextOverlay>) =
+                overlays.map { if (it.id == overlayId) transform(it) else it }
+            blocks[index] = when (val block = blocks[index]) {
+                is MediaBlock -> block.copy(overlays = applyTo(block.overlays))
+                is MediaStackBlock -> block.copy(overlays = applyTo(block.overlays))
+                else -> return@launch
+            }
+            persistMessageBlocks(current, blocks)
+        }
+    }
+
     fun speakText(text: String) {
         val trimmed = text.trim()
         if (trimmed.isBlank()) return
@@ -762,12 +982,14 @@ class RoleplayChatViewModel @Inject constructor(
                             listOf(Span(caption)),
                         ),
                     )
+                    val pageId = _uiState.value.activePageId
                     mediaList.forEach { media ->
                         add(
                             MediaBlock(
                                 id = UUID.randomUUID().toString(),
                                 mediaId = media.id,
                                 kind = MediaRepository.kindForType(media.type),
+                                pageId = pageId,
                             ),
                         )
                     }

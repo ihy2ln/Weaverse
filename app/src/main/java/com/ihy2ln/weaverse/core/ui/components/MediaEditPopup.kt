@@ -29,6 +29,8 @@ enum class MediaEditAction {
     Uncollapse,
     Stack,
     Move,
+    AdjustImage,
+    AddTextOverlay,
 }
 
 data class MediaEditPopupConfig(
@@ -38,6 +40,8 @@ data class MediaEditPopupConfig(
     val canExpand: Boolean = true,
     val showStack: Boolean = true,
     val showMove: Boolean = false,
+    val showAdjustImage: Boolean = false,
+    val showTextOverlay: Boolean = false,
 )
 
 /** Place the media menu at the long-press point inside its parent. */
@@ -106,6 +110,20 @@ fun MediaEditPopup(
         if (config.showStack) {
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
             Item("Stack pictures", labelColor) { onAction(MediaEditAction.Stack); onDismiss() }
+        }
+
+        if (config.showAdjustImage || config.showTextOverlay) {
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            if (config.showAdjustImage) {
+                Item("Adjust image", labelColor) {
+                    onAction(MediaEditAction.AdjustImage); onDismiss()
+                }
+            }
+            if (config.showTextOverlay) {
+                Item("Add text", labelColor) {
+                    onAction(MediaEditAction.AddTextOverlay); onDismiss()
+                }
+            }
         }
         }
     }

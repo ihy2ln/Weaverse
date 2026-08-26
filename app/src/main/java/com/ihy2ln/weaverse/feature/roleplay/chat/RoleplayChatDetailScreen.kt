@@ -6,6 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -32,6 +33,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -68,6 +71,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ihy2ln.weaverse.core.text.MediaGrid
+import com.ihy2ln.weaverse.data.db.entities.RpPageMeta
 import com.ihy2ln.weaverse.core.ui.components.CollapsibleUsageStrip
 import com.ihy2ln.weaverse.core.ui.components.EditTextAction
 import com.ihy2ln.weaverse.core.ui.components.EditTextPopup
@@ -78,6 +82,8 @@ import com.ihy2ln.weaverse.core.ui.components.AudioMediaPlayer
 import com.ihy2ln.weaverse.core.ui.components.MediaEditAction
 import com.ihy2ln.weaverse.core.ui.components.MediaEditPopup
 import com.ihy2ln.weaverse.core.ui.components.MediaEditPopupConfig
+import com.ihy2ln.weaverse.core.ui.components.TextOverlayEditSheet
+import com.ihy2ln.weaverse.core.ui.components.TextOverlayLayer
 import com.ihy2ln.weaverse.core.ui.components.VoiceToTextField
 import com.ihy2ln.weaverse.core.ui.components.ZoomableMedia
 import com.ihy2ln.weaverse.core.ui.components.mergeSpokenText
@@ -206,6 +212,21 @@ fun RoleplayChatDetailScreen(
         )
     }
 
+    state.editingOverlay?.let { (msgId, blockId, overlayId) ->
+        val overlay = state.mediaPanels
+            .find { it.messageId == msgId && it.blockId == blockId }
+            ?.overlays
+            ?.find { it.id == overlayId }
+        if (overlay != null) {
+            TextOverlayEditSheet(
+                overlay = overlay,
+                onDismiss = viewModel::closeOverlayEditor,
+                onSave = { viewModel.saveTextOverlay(msgId, blockId, it) },
+                onDelete = { viewModel.deleteTextOverlay(msgId, blockId, overlayId) },
+            )
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -229,53 +250,81 @@ fun RoleplayChatDetailScreen(
     ) {
         // Title + Messenger|DM|Roleplay live in AppShell WorkspaceChrome (collapsible).
         when (state.displayMode) {
-            "roleplay" -> ScrollGutterBackdrop(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = InkSpacing.sm),
-            ) {
-                MangaSnapGrid(
-                    panels = state.mediaPanels,
-                    selectedKey = state.selectedMediaKey,
-                    canPaste = state.canPasteMedia,
-                    compactStyle = compactStyle,
-                    gridSize = MediaGrid.SIZE,
-                    textEmphasis = false,
-                    emptyHint = "Manga canvas — add Media/Audio, then hold → Move to place on the grid. Drag corner to resize. Drop onto another picture to stack.\nPress / for AI · \\ for manual text.",
-                    onSelect = { msgId, blockId -> viewModel.selectMedia(msgId, blockId) },
-                    onRemove = viewModel::removeMedia,
-                    onSnap = viewModel::setMediaGridCell,
-                    onResizeSpan = viewModel::setMediaGridSpan,
-                    onStackOnto = viewModel::stackMediaOnto,
-                    onStackMenu = viewModel::stackMedia,
-                    onCycleStack = viewModel::cycleMediaStack,
-                    onMediaEdit = viewModel::onMediaEditAction,
-                    modifier = Modifier.fillMaxSize(),
+            "roleplay" -> Column(modifier = Modifier.weight(1f)) {
+                PageStrip(
+                    pages = state.pages,
+                    activePageId = state.activePageId,
+                    onSelect = viewModel::switchPage,
+                    onAddPage = viewModel::addPage,
+                    onRenamePage = viewModel::renamePage,
+                    onDeletePage = viewModel::deletePage,
                 )
+                ScrollGutterBackdrop(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = InkSpacing.sm),
+                ) {
+                    MangaSnapGrid(
+                        panels = state.mediaPanels,
+                        selectedKey = state.selectedMediaKey,
+                        canPaste = state.canPasteMedia,
+                        compactStyle = compactStyle,
+                        gridSize = MediaGrid.SIZE,
+                        textEmphasis = false,
+                        emptyHint = "Manga canvas — add Media/Audio, then hold → Move to place on the grid. Drag corner to resize. Drop onto another picture to stack.\nPress / for AI · \\ for manual text.",
+                        onSelect = { msgId, blockId -> viewModel.selectMedia(msgId, blockId) },
+                        onRemove = viewModel::removeMedia,
+                        onSnap = viewModel::setMediaGridCell,
+                        onResizeSpan = viewModel::setMediaGridSpan,
+                        onStackOnto = viewModel::stackMediaOnto,
+                        onStackMenu = viewModel::stackMedia,
+                        onCycleStack = viewModel::cycleMediaStack,
+                        onMediaEdit = viewModel::onMediaEditAction,
+                        onMediaTransform = viewModel::setMediaTransform,
+                        onOverlayMove = viewModel::moveTextOverlay,
+                        onOverlayResize = viewModel::resizeTextOverlay,
+                        onOverlayTap = viewModel::openOverlayEditor,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
-            "dungeonMaster" -> ScrollGutterBackdrop(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = InkSpacing.sm),
-            ) {
-                MangaSnapGrid(
-                    panels = state.mediaPanels,
-                    selectedKey = state.selectedMediaKey,
-                    canPaste = state.canPasteMedia,
-                    compactStyle = compactStyle,
-                    gridSize = MediaGrid.DM_SIZE,
-                    textEmphasis = true,
-                    emptyHint = "DM · 3×3 · text & picture · hold → Move. Prose and pictures share an invisible snap grid.\nPress / for AI · \\ for manual text.",
-                    onSelect = { msgId, blockId -> viewModel.selectMedia(msgId, blockId) },
-                    onRemove = viewModel::removeMedia,
-                    onSnap = viewModel::setMediaGridCell,
-                    onResizeSpan = viewModel::setMediaGridSpan,
-                    onStackOnto = viewModel::stackMediaOnto,
-                    onStackMenu = viewModel::stackMedia,
-                    onCycleStack = viewModel::cycleMediaStack,
-                    onMediaEdit = viewModel::onMediaEditAction,
-                    modifier = Modifier.fillMaxSize(),
+            "dungeonMaster" -> Column(modifier = Modifier.weight(1f)) {
+                PageStrip(
+                    pages = state.pages,
+                    activePageId = state.activePageId,
+                    onSelect = viewModel::switchPage,
+                    onAddPage = viewModel::addPage,
+                    onRenamePage = viewModel::renamePage,
+                    onDeletePage = viewModel::deletePage,
                 )
+                ScrollGutterBackdrop(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = InkSpacing.sm),
+                ) {
+                    MangaSnapGrid(
+                        panels = state.mediaPanels,
+                        selectedKey = state.selectedMediaKey,
+                        canPaste = state.canPasteMedia,
+                        compactStyle = compactStyle,
+                        gridSize = MediaGrid.DM_SIZE,
+                        textEmphasis = true,
+                        emptyHint = "DM · 3×3 · text & picture · hold → Move. Prose and pictures share an invisible snap grid.\nPress / for AI · \\ for manual text.",
+                        onSelect = { msgId, blockId -> viewModel.selectMedia(msgId, blockId) },
+                        onRemove = viewModel::removeMedia,
+                        onSnap = viewModel::setMediaGridCell,
+                        onResizeSpan = viewModel::setMediaGridSpan,
+                        onStackOnto = viewModel::stackMediaOnto,
+                        onStackMenu = viewModel::stackMedia,
+                        onCycleStack = viewModel::cycleMediaStack,
+                        onMediaEdit = viewModel::onMediaEditAction,
+                        onMediaTransform = viewModel::setMediaTransform,
+                        onOverlayMove = viewModel::moveTextOverlay,
+                        onOverlayResize = viewModel::resizeTextOverlay,
+                        onOverlayTap = viewModel::openOverlayEditor,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
             else -> ScrollGutterBackdrop(modifier = Modifier.weight(1f)) {
             LazyColumn(
@@ -445,6 +494,115 @@ fun RoleplayChatDetailScreen(
     }
 }
 
+/** Comic-book page tabs: tap to flip, `+` to add, long-press for rename/delete. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun PageStrip(
+    pages: List<RpPageMeta>,
+    activePageId: String,
+    onSelect: (String) -> Unit,
+    onAddPage: () -> Unit,
+    onRenamePage: (String, String) -> Unit,
+    onDeletePage: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tokens = inkTokens()
+    var menuForPageId by remember { mutableStateOf<String?>(null) }
+    var renamingPageId by remember { mutableStateOf<String?>(null) }
+    var renameDraft by remember { mutableStateOf("") }
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
+        horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        pages.forEachIndexed { index, page ->
+            val active = page.id == activePageId
+            Box {
+                Text(
+                    text = page.title ?: "Page ${index + 1}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (active) tokens.activePillLabel else tokens.secondaryText,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(InkSpacing.radiusSm))
+                        .background(
+                            if (active) tokens.activePill else Color.Transparent,
+                            RoundedCornerShape(InkSpacing.radiusSm),
+                        )
+                        .border(
+                            1.dp,
+                            if (active) Color.Transparent else tokens.hairline,
+                            RoundedCornerShape(InkSpacing.radiusSm),
+                        )
+                        .combinedClickable(
+                            onClick = { onSelect(page.id) },
+                            onLongClick = { menuForPageId = page.id },
+                        )
+                        .padding(horizontal = InkSpacing.sm, vertical = 4.dp),
+                )
+                DropdownMenu(
+                    expanded = menuForPageId == page.id,
+                    onDismissRequest = { menuForPageId = null },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Rename…") },
+                        onClick = {
+                            renameDraft = page.title ?: "Page ${index + 1}"
+                            renamingPageId = page.id
+                            menuForPageId = null
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Delete page") },
+                        enabled = pages.size > 1,
+                        onClick = {
+                            onDeletePage(page.id)
+                            menuForPageId = null
+                        },
+                    )
+                }
+            }
+        }
+        Text(
+            text = "+",
+            style = MaterialTheme.typography.labelMedium,
+            color = tokens.secondaryText,
+            modifier = Modifier
+                .clip(RoundedCornerShape(InkSpacing.radiusSm))
+                .border(1.dp, tokens.hairline, RoundedCornerShape(InkSpacing.radiusSm))
+                .clickable { onAddPage() }
+                .padding(horizontal = InkSpacing.md, vertical = 4.dp),
+        )
+    }
+
+    if (renamingPageId != null) {
+        AlertDialog(
+            onDismissRequest = { renamingPageId = null },
+            title = { Text("Rename page") },
+            text = {
+                OutlinedTextField(
+                    value = renameDraft,
+                    onValueChange = { renameDraft = it },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onRenamePage(renamingPageId!!, renameDraft)
+                    renamingPageId = null
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { renamingPageId = null }) { Text("Cancel") }
+            },
+        )
+    }
+}
+
 @Composable
 private fun MangaSnapGrid(
     panels: List<RpMediaRef>,
@@ -462,6 +620,10 @@ private fun MangaSnapGrid(
     onStackMenu: (String, String) -> Unit,
     onCycleStack: (String, String) -> Unit,
     onMediaEdit: (String, String, MediaEditAction) -> Unit,
+    onMediaTransform: (String, String, Float, Float, Float) -> Unit,
+    onOverlayMove: (String, String, String, Float, Float) -> Unit,
+    onOverlayResize: (String, String, String, Float) -> Unit,
+    onOverlayTap: (String, String, String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val tokens = inkTokens()
@@ -533,6 +695,18 @@ private fun MangaSnapGrid(
                     onStackMenu = { onStackMenu(panel.messageId, panel.blockId) },
                     onCycleStack = { onCycleStack(panel.messageId, panel.blockId) },
                     onMediaEdit = { onMediaEdit(panel.messageId, panel.blockId, it) },
+                    onMediaTransform = { s, ox, oy ->
+                        onMediaTransform(panel.messageId, panel.blockId, s, ox, oy)
+                    },
+                    onOverlayMove = { overlayId, x, y ->
+                        onOverlayMove(panel.messageId, panel.blockId, overlayId, x, y)
+                    },
+                    onOverlayResize = { overlayId, w ->
+                        onOverlayResize(panel.messageId, panel.blockId, overlayId, w)
+                    },
+                    onOverlayTap = { overlayId ->
+                        onOverlayTap(panel.messageId, panel.blockId, overlayId)
+                    },
                 )
             }
         }
@@ -564,6 +738,10 @@ private fun MangaSnapPanel(
     onStackMenu: () -> Unit,
     onCycleStack: () -> Unit,
     onMediaEdit: (MediaEditAction) -> Unit,
+    onMediaTransform: (Float, Float, Float) -> Unit,
+    onOverlayMove: (String, Float, Float) -> Unit,
+    onOverlayResize: (String, Float) -> Unit,
+    onOverlayTap: (String) -> Unit,
 ) {
     var dragX by remember(panel.blockId) { mutableFloatStateOf(0f) }
     var dragY by remember(panel.blockId) { mutableFloatStateOf(0f) }
@@ -571,8 +749,10 @@ private fun MangaSnapPanel(
     var resizeDy by remember(panel.blockId) { mutableFloatStateOf(0f) }
     var menuOpen by remember(panel.blockId) { mutableStateOf(false) }
     var moveMode by remember(panel.blockId) { mutableStateOf(false) }
+    var adjustMode by remember(panel.blockId) { mutableStateOf(false) }
     val border = when {
         moveMode -> MaterialTheme.colorScheme.tertiary
+        adjustMode -> MaterialTheme.colorScheme.secondary
         selected -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.outline
     }
@@ -646,6 +826,9 @@ private fun MangaSnapPanel(
                             },
                         )
                     }
+                } else if (adjustMode) {
+                    // Pinch/pan belongs to the media itself while adjusting; tap exits.
+                    Modifier
                 } else {
                     Modifier.combinedClickable(
                         onClick = {
@@ -718,6 +901,10 @@ private fun MangaSnapPanel(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f),
+                    initialScale = panel.mediaScale,
+                    initialOffsetXPercent = panel.mediaOffsetXPercent,
+                    initialOffsetYPercent = panel.mediaOffsetYPercent,
+                    onTransformEnd = onMediaTransform,
                     onLongPress = if (moveMode) {
                         null
                     } else {
@@ -749,6 +936,10 @@ private fun MangaSnapPanel(
                 decodeOriginal = true,
                 fillPanel = true,
                 modifier = Modifier.fillMaxSize(),
+                initialScale = panel.mediaScale,
+                initialOffsetXPercent = panel.mediaOffsetXPercent,
+                initialOffsetYPercent = panel.mediaOffsetYPercent,
+                onTransformEnd = onMediaTransform,
                 onLongPress = if (moveMode) {
                     null
                 } else {
@@ -757,6 +948,15 @@ private fun MangaSnapPanel(
                         menuOpen = true
                     }
                 },
+            )
+        }
+        if (!panel.collapsed && panel.overlays.isNotEmpty()) {
+            TextOverlayLayer(
+                overlays = panel.overlays,
+                editable = !moveMode,
+                onMove = { id, x, y -> onOverlayMove(id, x, y) },
+                onResize = { id, w -> onOverlayResize(id, w) },
+                onTap = { id -> onOverlayTap(id) },
             )
         }
         if (moveMode) {
@@ -768,6 +968,19 @@ private fun MangaSnapPanel(
                     .align(Alignment.TopCenter)
                     .padding(2.dp)
                     .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.9f), RoundedCornerShape(4.dp))
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            )
+        }
+        if (adjustMode) {
+            Text(
+                "Pinch/drag image · tap to finish",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(2.dp)
+                    .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.9f), RoundedCornerShape(4.dp))
+                    .clickable { adjustMode = false }
                     .padding(horizontal = 6.dp, vertical = 2.dp),
             )
         }
@@ -858,6 +1071,8 @@ private fun MangaSnapPanel(
                 canExpand = colSpan < gridSize - col || rowSpan < gridSize - row,
                 showStack = !panel.isTextTile,
                 showMove = true,
+                showAdjustImage = !panel.isTextTile && !panel.isAudio,
+                showTextOverlay = !panel.isTextTile && !panel.isAudio,
             ),
             onAction = { action ->
                 when (action) {
@@ -869,6 +1084,11 @@ private fun MangaSnapPanel(
                         moveMode = true
                         dragX = 0f
                         dragY = 0f
+                    }
+                    MediaEditAction.AdjustImage -> {
+                        onSelect()
+                        menuOpen = false
+                        adjustMode = true
                     }
                     MediaEditAction.Expand -> onResizeSpan(
                         (colSpan + 1).coerceAtMost(gridSize - col),
