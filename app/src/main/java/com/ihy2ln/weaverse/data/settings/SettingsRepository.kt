@@ -85,6 +85,8 @@ data class UserPreferences(
     val colorCodingEnabled: Boolean = true,
     val selectedBookId: String = "book-adams-haven-1",
     val backgroundMediaId: String = "",
+    /** Media id of the RPG town backdrop; blank draws the built-in fallback. */
+    val townBackgroundMediaId: String = "",
     val roleplayPresetId: String = "preset-balanced",
     val layout: LayoutPreferences = LayoutPreferences(),
     val appearance: AppearanceOverrides = AppearanceOverrides(),
@@ -130,6 +132,7 @@ class SettingsRepository @Inject constructor(
             colorCodingEnabled = prefs[KEY_COLOR_CODING] ?: true,
             selectedBookId = prefs[KEY_SELECTED_BOOK] ?: "book-adams-haven-1",
             backgroundMediaId = prefs[KEY_BACKGROUND_MEDIA] ?: "",
+            townBackgroundMediaId = prefs[KEY_TOWN_BACKGROUND_MEDIA] ?: "",
             roleplayPresetId = prefs[KEY_RP_PRESET] ?: "preset-balanced",
             layout = LayoutPreferences(
                 railWidthDp = prefs[KEY_RAIL_WIDTH] ?: 320f,
@@ -223,6 +226,10 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setSelectedBookId(bookId: String) {
         context.dataStore.edit { it[KEY_SELECTED_BOOK] = bookId }
+    }
+
+    suspend fun setTownBackgroundMediaId(mediaId: String) {
+        context.dataStore.edit { it[KEY_TOWN_BACKGROUND_MEDIA] = mediaId }
     }
 
     suspend fun setBackgroundMediaId(mediaId: String) {
@@ -365,6 +372,7 @@ class SettingsRepository @Inject constructor(
         private val KEY_COLOR_CODING = booleanPreferencesKey("color_coding")
         private val KEY_SELECTED_BOOK = stringPreferencesKey("selected_book_id")
         private val KEY_BACKGROUND_MEDIA = stringPreferencesKey("background_media_id")
+        private val KEY_TOWN_BACKGROUND_MEDIA = stringPreferencesKey("town_background_media_id")
         private val KEY_RP_PRESET = stringPreferencesKey("roleplay_preset_id")
         private val KEY_RAIL_WIDTH = floatPreferencesKey("rail_width_dp")
         private val KEY_RAIL_COLLAPSED = booleanPreferencesKey("rail_collapsed")

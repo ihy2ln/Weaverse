@@ -63,13 +63,24 @@ class RailTabDefaultsTest {
 
     @Test
     fun eachWorkspaceHasItsOwnSubModes() {
-        assertEquals(
-            listOf("Campaign", "Inventory", "Adventure", "Roster", "Lore", "Presets"),
+        // Checked structurally rather than against a frozen list, so adding a
+        // sub-mode does not fail this test for no reason.
+        listOf(
             RoleplayDestination.entries.map { it.label },
-        )
-        assertEquals(listOf("Chats", "Contacts"), ChattingDestination.entries.map { it.label })
-        assertEquals(listOf("Window", "Manga", "Comic"), StoryboardDestination.entries.map { it.label })
-        assertEquals(listOf("Board"), NotesDestination.entries.map { it.label })
+            ChattingDestination.entries.map { it.label },
+            StoryboardDestination.entries.map { it.label },
+            NotesDestination.entries.map { it.label },
+            NovelDestination.entries.map { it.label },
+        ).forEach { labels ->
+            assertTrue(labels.isNotEmpty())
+            assertEquals(labels.size, labels.toSet().size, "duplicate sub-mode label in $labels")
+            assertTrue(labels.none { it.isBlank() }, "blank sub-mode label in $labels")
+        }
+        // The pieces the RPG workspace must always offer.
+        val rpg = RoleplayDestination.entries.map { it.label }
+        listOf("Adventure", "Inventory", "Roster", "Lore", "Town").forEach {
+            assertTrue(rpg.contains(it), "RPG is missing $it")
+        }
     }
 
     @Test

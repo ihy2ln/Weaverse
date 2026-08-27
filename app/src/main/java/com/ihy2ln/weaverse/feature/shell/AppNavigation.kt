@@ -46,6 +46,7 @@ enum class RoleplayDestination(val label: String) {
     Campaign("Campaign"),
     Inventory("Inventory"),
     Chats("Adventure"),
+    Town("Town"),
     Characters("Roster"),
     Codex("Lore"),
     Presets("Presets"),

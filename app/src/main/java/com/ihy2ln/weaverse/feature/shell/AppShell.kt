@@ -93,6 +93,7 @@ import com.ihy2ln.weaverse.feature.roleplay.lorebook.LorebookScreen
 import com.ihy2ln.weaverse.feature.roleplay.personas.PersonaDetailScreen
 import com.ihy2ln.weaverse.feature.roleplay.party.InventoryScreen
 import com.ihy2ln.weaverse.feature.roleplay.party.PartyScreen
+import com.ihy2ln.weaverse.feature.roleplay.town.TownScreen
 import com.ihy2ln.weaverse.feature.roleplay.personas.PersonasScreen
 import com.ihy2ln.weaverse.feature.roleplay.presets.PresetsScreen
 import com.ihy2ln.weaverse.feature.search.GlobalSearchScreen
@@ -737,6 +738,7 @@ fun AppShell(
                                     onOpenPersona = { selectedPersonaId = it },
                                     onOpenCharacter = { selectedCharacterId = it },
                                 )
+                                RoleplayDestination.Town -> TownScreen()
                                 RoleplayDestination.Inventory -> InventoryScreen()
                                 RoleplayDestination.Codex -> LorebookScreen(
                                     onEntryClick = { selectedCodexEntryId = it },
