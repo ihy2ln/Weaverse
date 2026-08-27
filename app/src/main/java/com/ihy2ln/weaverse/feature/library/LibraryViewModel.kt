@@ -6,7 +6,9 @@ import androidx.lifecycle.viewModelScope
 import com.ihy2ln.weaverse.core.media.MediaRepository
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
 import com.ihy2ln.weaverse.data.db.entities.BookEntity
+import com.ihy2ln.weaverse.data.db.entities.RpChatEntity
 import com.ihy2ln.weaverse.data.db.entities.SeriesEntity
+import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
 import com.ihy2ln.weaverse.data.export.ProjectExportManager
 import com.ihy2ln.weaverse.data.export.SampleBookImporter
 import com.ihy2ln.weaverse.data.repo.BookRepository
@@ -106,7 +108,9 @@ class LibraryViewModel @Inject constructor(
                 combine(
                     db.roleplayDao().observeChats(),
                     db.snippetDao().observeCategory(NotesViewModel.CATEGORY),
-                ) { rpChats, notes -> rpChats to notes },
+                ) { rpChats: List<RpChatEntity>, notes: List<SnippetEntity> ->
+                    rpChats to notes
+                },
             ) { books, series, prefs, media, chatsAndNotes ->
                 val (rpChats, notes) = chatsAndNotes
                 val groups = buildList {
@@ -135,7 +139,7 @@ class LibraryViewModel @Inject constructor(
                 val latestThread = threads.maxByOrNull { it.updatedAt }
                 val latestRpChat = rpChats.maxByOrNull { it.updatedAt }
                 val notesInScope = notes.filter { it.scopeId == NotesViewModel.SCOPE_ID }
-                val latestNote = notesInScope.maxByOrNull { it.updatedAt }
+                val latestNote = notesInScope.maxByOrNull { it.createdAt }
                 val modeWorks = buildMap {
                     selectedCard?.let { card ->
                         put(
