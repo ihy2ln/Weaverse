@@ -20,13 +20,3 @@ data class HomeRecentWork(
 )
 
 enum class LibraryPane { Home, Bookshelf }
-
-enum class ItemAdminAction {
-    Export,
-    Copy,
-    AddCover,
-    Delete,
-    SelectToRemove,
-    Rename,
-    Pin,
-}

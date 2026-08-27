@@ -47,6 +47,7 @@ import com.ihy2ln.weaverse.core.ui.components.InkDeleteButton
 import com.ihy2ln.weaverse.core.ui.components.InkOutlinedButton
 import com.ihy2ln.weaverse.core.ui.components.InkSegmentedPill
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
+import com.ihy2ln.weaverse.core.ui.components.ItemAdminAction
 import com.ihy2ln.weaverse.core.ui.components.ItemAdminMenu
 import com.ihy2ln.weaverse.core.ui.components.SegmentedOption
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing

@@ -9,7 +9,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
-import com.ihy2ln.weaverse.feature.library.ItemAdminAction
+
+enum class ItemAdminAction {
+    Export,
+    Copy,
+    AddCover,
+    Delete,
+    SelectToRemove,
+    Rename,
+    Pin,
+}
 
 @Composable
 fun ItemAdminMenu(

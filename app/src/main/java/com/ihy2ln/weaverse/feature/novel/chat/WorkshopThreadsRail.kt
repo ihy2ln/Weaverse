@@ -44,11 +44,11 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ihy2ln.weaverse.core.ui.components.InkConfirmDeleteDialog
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
+import com.ihy2ln.weaverse.core.ui.components.ItemAdminAction
 import com.ihy2ln.weaverse.core.ui.components.ItemAdminMenu
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import com.ihy2ln.weaverse.core.ui.util.alwaysScrollEndSpacer
-import com.ihy2ln.weaverse.feature.library.ItemAdminAction
 import java.text.DateFormat
 import java.util.Date
 
