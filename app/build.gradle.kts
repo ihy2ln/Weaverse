@@ -11,7 +11,7 @@ plugins {
 
 android {
     namespace = "com.ihy2ln.weaverse"
-    compileSdk = 36
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.ihy2ln.weaverse"
