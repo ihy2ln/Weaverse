@@ -123,6 +123,7 @@ JUnit 5 + Turbine (app), a Go launcher for the Windows `.exe` shim.
 ## Docs
 
 - Build notes / working log: [BUILD_NOTES.md](BUILD_NOTES.md)
+- Checkpoint of shipped **v1.2.5-beta**: [docs/CHECKPOINT-v1.2.5-beta.md](docs/CHECKPOINT-v1.2.5-beta.md)
 - **Rebuild documentation** (architecture, data model, protocols — detailed
   enough to reconstruct this app from scratch): [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - Same content, wiki-formatted: the [repo Wiki](https://github.com/ihy2ln/weaverse/wiki)

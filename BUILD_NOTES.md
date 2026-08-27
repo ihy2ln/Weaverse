@@ -3,6 +3,20 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## Resume state (2026-08-27)
+
+**Checkpoint: [v1.2.5-beta](https://github.com/ihy2ln/Weaverse/releases/tag/v1.2.5-beta)**
+(`fec9e85`, `versionName` `1.2.5-beta`, `versionCode` `46`).
+
+New work starts from that tag. GitHub `main` may still be the older InkForge
+transplant (`0.5.17`); do not branch from it. Full snapshot:
+[docs/CHECKPOINT-v1.2.5-beta.md](docs/CHECKPOINT-v1.2.5-beta.md).
+
+**First update on this checkpoint:** pictures added in Novel → Write must
+also appear in Novel → Read, in document order, with the same width /
+alignment as the editor. The reader at the checkpoint only renders
+`plainText()`, which drops media blocks.
+
 ## Resume state (2026-08-16)
 
 **The app codebase in this repo was replaced today.** Everything under
