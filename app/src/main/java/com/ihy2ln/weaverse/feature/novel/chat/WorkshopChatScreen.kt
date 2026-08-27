@@ -61,6 +61,7 @@ fun WorkshopChatScreen(
             onThreadClick = { id ->
                 onThreadSelected(id)
                 chatExpanded = true
+                sidebarExpanded = false
             },
             expanded = sidebarExpanded,
             onToggleExpanded = {

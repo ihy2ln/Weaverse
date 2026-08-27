@@ -137,7 +137,6 @@ class LibraryViewModel @Inject constructor(
                 val selectedCard = cards.find { it.book.id == prefs.selectedBookId } ?: cards.firstOrNull()
                 val threads = db.workshopChatDao().getThreads(prefs.selectedBookId)
                 val latestThread = threads.maxByOrNull { it.updatedAt }
-                val latestRpChat = rpChats.maxByOrNull { it.updatedAt }
                 val notesInScope = notes.filter { it.scopeId == NotesViewModel.SCOPE_ID }
                 val latestNote = notesInScope.maxByOrNull { it.createdAt }
                 val modeWorks = buildMap {
@@ -153,30 +152,22 @@ class LibraryViewModel @Inject constructor(
                             ),
                         )
                     }
-                    latestRpChat?.let { chat ->
-                        put(
-                            "Roleplay",
-                            ModeActiveWork(
-                                modeId = "Roleplay",
-                                title = chat.title,
-                                subtitle = "RPG campaign",
-                                coverPath = chat.backgroundMediaId?.let { id ->
-                                    media.find { it.id == id }?.let(mediaRepository::resolveFile)
-                                        ?.takeIf(File::exists)?.absolutePath
-                                },
-                                chatId = chat.id,
-                            ),
-                        )
-                        put(
-                            "Chatting",
-                            ModeActiveWork(
-                                modeId = "Chatting",
-                                title = chat.title,
-                                subtitle = "Messenger chat",
-                                coverPath = null,
-                                chatId = chat.id,
-                            ),
-                        )
+                    listOf("Roleplay", "Chatting", "Storyboard").forEach { modeId ->
+                        HomeModeRouting.latestChatForHomeMode(modeId, rpChats)?.let { chat ->
+                            put(
+                                modeId,
+                                ModeActiveWork(
+                                    modeId = modeId,
+                                    title = chat.title,
+                                    subtitle = HomeModeRouting.subtitleForHome(modeId),
+                                    coverPath = chat.backgroundMediaId?.let { id ->
+                                        media.find { it.id == id }?.let(mediaRepository::resolveFile)
+                                            ?.takeIf(File::exists)?.absolutePath
+                                    },
+                                    chatId = chat.id,
+                                ),
+                            )
+                        }
                     }
                     latestThread?.let { thread ->
                         put(

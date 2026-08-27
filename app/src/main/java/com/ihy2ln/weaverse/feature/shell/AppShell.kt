@@ -57,6 +57,7 @@ import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import com.ihy2ln.weaverse.core.ui.util.resolveSectionColor
 import com.ihy2ln.weaverse.feature.export.ExportImportScreen
+import com.ihy2ln.weaverse.feature.library.HomeModeRouting
 import com.ihy2ln.weaverse.feature.library.LibraryScreen
 import com.ihy2ln.weaverse.feature.library.ModeActiveWork
 import com.ihy2ln.weaverse.feature.media.MediaGalleryScreen
@@ -111,6 +112,8 @@ fun AppShell(
     var workspaceFocus by rememberSaveable { mutableStateOf(WorkspaceFocus.Story.name) }
     var chromeTool by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedRpChatId by rememberSaveable { mutableStateOf<String?>(null) }
+    var rpPreferredDisplayMode by rememberSaveable { mutableStateOf<String?>(null) }
+    var rpPreferredDisplayModeKey by rememberSaveable { mutableStateOf(0) }
     var selectedCodexEntryId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedCharacterId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedPersonaId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -179,14 +182,12 @@ fun AppShell(
                         novelDest = NovelDestination.Plan.name
                     }
             }
-            "Roleplay", "Chatting" -> {
+            "Roleplay", "Chatting", "Storyboard" -> {
                 mode = AppMode.Roleplay.name
                 rpDest = RoleplayDestination.Chats.name
                 work?.chatId?.let { selectedRpChatId = it }
-            }
-            "Storyboard" -> {
-                mode = AppMode.Roleplay.name
-                rpDest = RoleplayDestination.Chats.name
+                rpPreferredDisplayMode = HomeModeRouting.displayModeForHome(modeId)
+                rpPreferredDisplayModeKey += 1
             }
             "Notes" -> {
                 mode = AppMode.Notes.name
@@ -444,6 +445,11 @@ fun AppShell(
                             mode = AppMode.valueOf(mode),
                             selectedThreadId = selectedThreadId,
                             onThreadClick = { selectedThreadId = it; novelDest = NovelDestination.Chat.name },
+                            onRpChatClick = {
+                                selectedRpChatId = it
+                                rpDest = RoleplayDestination.Chats.name
+                            },
+                            selectedRpChatId = selectedRpChatId,
                             onSceneClick = { selectedSceneId = it; novelDest = NovelDestination.Write.name },
                             onCodexEntryClick = { selectedCodexEntryId = it },
                             onOpenPictures = { workspaceFocus = WorkspaceFocus.Pictures.name },
@@ -495,14 +501,26 @@ fun AppShell(
                                     )
                                 }
                                 RailTab.Snippets -> SnippetsRailScreen()
-                                RailTab.Chats -> WorkshopThreadsRail(
-                                    selectedThreadId = selectedThreadId,
-                                    onThreadClick = { id ->
-                                        selectedThreadId = id
-                                        novelDest = NovelDestination.Chat.name
-                                        chromeTool = null
-                                    },
-                                )
+                                RailTab.Chats -> if (currentMode == AppMode.Roleplay.name) {
+                                    RoleplayChatsScreen(
+                                        onChatClick = { id ->
+                                            selectedRpChatId = id
+                                            rpDest = RoleplayDestination.Chats.name
+                                            chromeTool = null
+                                        },
+                                        selectedChatId = selectedRpChatId,
+                                        compact = true,
+                                    )
+                                } else {
+                                    WorkshopThreadsRail(
+                                        selectedThreadId = selectedThreadId,
+                                        onThreadClick = { id ->
+                                            selectedThreadId = id
+                                            novelDest = NovelDestination.Chat.name
+                                            chromeTool = null
+                                        },
+                                    )
+                                }
                                 RailTab.Pictures -> MediaGalleryScreen(modifier = Modifier.fillMaxSize())
                                 RailTab.Manuscript -> ManuscriptRailScreen(onSceneClick = {
                                     selectedSceneId = it
@@ -553,6 +571,9 @@ fun AppShell(
                                             onOpenAiPrompt = { shellViewModel.openPrompt(PromptEntryKind.Ai) },
                                             onOpenManualPrompt = { shellViewModel.openPrompt(PromptEntryKind.Manual) },
                                             promptOverlayOpen = promptOverlayOpen,
+                                            preferredDisplayMode = rpPreferredDisplayMode,
+                                            preferredDisplayModeKey = rpPreferredDisplayModeKey,
+                                            onPreferredDisplayModeConsumed = { rpPreferredDisplayMode = null },
                                         )
                                     } else {
                                         RoleplayChatsScreen(onChatClick = { selectedRpChatId = it })
@@ -636,6 +657,8 @@ private fun RailPanel(
     mode: AppMode,
     selectedThreadId: String,
     onThreadClick: (String) -> Unit,
+    onRpChatClick: (String) -> Unit,
+    selectedRpChatId: String?,
     onSceneClick: (String) -> Unit,
     onCodexEntryClick: (String) -> Unit,
     onOpenPictures: () -> Unit,
@@ -673,7 +696,15 @@ private fun RailPanel(
                 RailTab.Prompts -> PromptsScreen(modifier = Modifier.fillMaxSize())
                 RailTab.Snippets -> SnippetsRailScreen()
                 RailTab.Manuscript -> ManuscriptRailScreen(onSceneClick = onSceneClick)
-                RailTab.Chats -> WorkshopThreadsRail(selectedThreadId, onThreadClick)
+                RailTab.Chats -> if (mode == AppMode.Roleplay) {
+                    RoleplayChatsScreen(
+                        onChatClick = onRpChatClick,
+                        selectedChatId = selectedRpChatId,
+                        compact = true,
+                    )
+                } else {
+                    WorkshopThreadsRail(selectedThreadId, onThreadClick)
+                }
                 RailTab.Notes -> NotesRailScreen(
                     viewModel = notesViewModel,
                     modifier = Modifier.fillMaxSize(),

@@ -352,6 +352,12 @@ interface RoleplayDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertChat(entity: RpChatEntity)
 
+    @Query("DELETE FROM rp_chats WHERE id = :id")
+    suspend fun deleteChat(id: String)
+
+    @Query("DELETE FROM rp_messages WHERE chatId = :chatId")
+    suspend fun deleteMessagesForChat(chatId: String)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertMessage(entity: RpMessageEntity)
 

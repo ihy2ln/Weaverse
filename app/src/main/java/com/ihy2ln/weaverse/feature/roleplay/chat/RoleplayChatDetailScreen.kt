@@ -98,9 +98,15 @@ fun RoleplayChatDetailScreen(
     onOpenAiPrompt: () -> Unit = {},
     onOpenManualPrompt: () -> Unit = {},
     promptOverlayOpen: Boolean = false,
+    preferredDisplayMode: String? = null,
+    preferredDisplayModeKey: Int = 0,
+    onPreferredDisplayModeConsumed: () -> Unit = {},
     viewModel: RoleplayChatViewModel = hiltViewModel(),
 ) {
-    LaunchedEffect(chatId) { viewModel.bindChat(chatId) }
+    LaunchedEffect(chatId, preferredDisplayMode, preferredDisplayModeKey) {
+        viewModel.bindChat(chatId, preferredDisplayMode)
+        if (preferredDisplayMode != null) onPreferredDisplayModeConsumed()
+    }
     val state by viewModel.uiState.collectAsState()
     val clipboard = LocalClipboardManager.current
     val tokens = inkTokens()

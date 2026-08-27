@@ -47,6 +47,8 @@ data class NotesUiState(
     val audioPickRequestId: Long = 0L,
     val status: String = "",
     val canPasteMedia: Boolean = false,
+    val selectionMode: Boolean = false,
+    val selectedForRemoval: Set<String> = emptySet(),
 )
 
 @HiltViewModel
@@ -70,7 +72,13 @@ class NotesViewModel @Inject constructor(
                 val currentId = _uiState.value.selectedId
                 val keep = currentId?.takeIf { id -> list.any { it.id == id } }
                 _uiState.update {
-                    it.copy(notes = list, canPasteMedia = mediaClipboard.hasPayload)
+                    it.copy(
+                        notes = list,
+                        canPasteMedia = mediaClipboard.hasPayload,
+                        selectedForRemoval = it.selectedForRemoval.filter { id ->
+                            list.any { note -> note.id == id }
+                        }.toSet(),
+                    )
                 }
                 when {
                     keep != null -> Unit
@@ -147,6 +155,29 @@ class NotesViewModel @Inject constructor(
     fun onBodyChange(value: String) {
         captureNotesDraft()
         _uiState.update { it.copy(body = value) }
+    }
+
+    fun enterSelectionMode() = _uiState.update {
+        it.copy(selectionMode = true, selectedForRemoval = emptySet())
+    }
+
+    fun exitSelectionMode() = _uiState.update {
+        it.copy(selectionMode = false, selectedForRemoval = emptySet())
+    }
+
+    fun toggleSelectedForRemoval(noteId: String) = _uiState.update { state ->
+        val next = state.selectedForRemoval.toMutableSet()
+        if (!next.add(noteId)) next.remove(noteId)
+        state.copy(selectedForRemoval = next)
+    }
+
+    fun removeSelected() {
+        val ids = _uiState.value.selectedForRemoval.toList()
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            ids.forEach { deleteNote(it) }
+            _uiState.update { it.copy(selectionMode = false, selectedForRemoval = emptySet()) }
+        }
     }
 
     fun createNote() {
