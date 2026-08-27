@@ -153,3 +153,47 @@ fun Document.wordCount(): Int {
     val words = plainText().trim().split(Regex("\\s+")).filter { it.isNotBlank() }
     return words.size
 }
+
+/** Media ids referenced by this block, in display order. */
+fun Block.referencedMediaIds(): List<String> = when (this) {
+    is MediaBlock -> listOf(mediaId)
+    is MediaStackBlock -> mediaIds
+    is MediaGridBlock -> mediaIds
+    else -> emptyList()
+}
+
+fun Document.referencedMediaIds(): List<String> =
+    blocks.flatMap { it.referencedMediaIds() }.distinct()
+
+/**
+ * Insert [media] after [afterIndex]. [afterIndex] of -1 appends at the end.
+ * Slash-command residue (`/image`) on the target paragraph is cleared so the
+ * picture sits next to surrounding prose instead of replacing it.
+ */
+fun List<Block>.insertMediaAfter(afterIndex: Int, media: Block): List<Block> {
+    val next = toMutableList()
+    if (afterIndex in next.indices) {
+        val target = next[afterIndex]
+        if (target is Paragraph) {
+            val text = target.spans.joinToString("") { it.text }.trim()
+            if (text.startsWith("/") && !text.contains('\n')) {
+                next[afterIndex] = target.copy(spans = listOf(Span("")))
+            }
+        }
+    }
+    val insertAt = if (afterIndex < 0) next.size else (afterIndex + 1).coerceIn(0, next.size)
+    next.add(insertAt, media)
+    return next
+}
+
+/**
+ * Block index → readable media paths, preserving write-document order.
+ * Blank/missing paths are dropped so the reader never attempts a zero-byte load.
+ */
+fun List<Block>.mediaPlacement(mediaPaths: Map<String, String>): List<Pair<Int, List<String>>> =
+    mapIndexedNotNull { index, block ->
+        val ids = block.referencedMediaIds()
+        if (ids.isEmpty()) return@mapIndexedNotNull null
+        val paths = ids.mapNotNull { id -> mediaPaths[id]?.trim()?.takeIf { it.isNotEmpty() } }
+        if (paths.isEmpty()) null else index to paths
+    }

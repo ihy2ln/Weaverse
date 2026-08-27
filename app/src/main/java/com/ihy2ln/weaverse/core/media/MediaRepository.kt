@@ -140,7 +140,29 @@ class MediaRepository @Inject constructor(
         entity
     }
 
-    fun resolveFile(entity: MediaEntity): File = File(context.filesDir, entity.relativePath)
+    fun resolveFile(entity: MediaEntity): File {
+        val relative = entity.relativePath
+        val nested = File(context.filesDir, relative)
+        if (nested.exists()) return nested
+        val asAbsolute = File(relative)
+        if (asAbsolute.isAbsolute) return asAbsolute
+        return nested
+    }
+
+    /** Absolute path only when the copied file is actually readable. */
+    fun resolveReadablePath(entity: MediaEntity): String? {
+        localFileIfReadable(resolveFile(entity).absolutePath)?.let { return it.absolutePath }
+        storedMediaPathOrNull(entity.relativePath)?.let { raw ->
+            if (isRemoteOrContentUri(raw)) return raw
+            localFileIfReadable(raw)?.let { return it.absolutePath }
+        }
+        return null
+    }
+
+    fun pathMap(entities: List<MediaEntity>): Map<String, String> =
+        entities.mapNotNull { entity ->
+            resolveReadablePath(entity)?.let { entity.id to it }
+        }.toMap()
 
     companion object {
         fun kindForType(type: String): MediaKind = when (type) {

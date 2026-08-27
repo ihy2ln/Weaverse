@@ -13,6 +13,7 @@ import com.ihy2ln.weaverse.data.db.entities.CodexCategoryEntity
 import com.ihy2ln.weaverse.data.db.entities.CodexEntryEntity
 import com.ihy2ln.weaverse.data.db.entities.CodexEntryLoreEntity
 import com.ihy2ln.weaverse.data.db.entities.MediaEntity
+import com.ihy2ln.weaverse.data.db.entities.ReaderSceneRow
 import com.ihy2ln.weaverse.data.db.entities.PromptEntity
 import com.ihy2ln.weaverse.data.db.entities.PromptFolderEntity
 import com.ihy2ln.weaverse.data.db.entities.RpCharacterEntity
@@ -91,6 +92,23 @@ interface ManuscriptDao {
 
     @Query("SELECT * FROM scenes WHERE id = :id LIMIT 1")
     suspend fun getScene(id: String): SceneEntity?
+
+    @Query(
+        """
+        SELECT scenes.id AS sceneId,
+               chapters.id AS chapterId,
+               chapters.title AS chapterTitle,
+               scenes.title AS sceneTitle,
+               scenes.docJson AS docJson,
+               scenes.wordCount AS wordCount
+        FROM scenes
+        INNER JOIN chapters ON scenes.chapterId = chapters.id
+        INNER JOIN acts ON chapters.actId = acts.id
+        WHERE acts.bookId = :bookId
+        ORDER BY acts.sortOrder ASC, chapters.sortOrder ASC, scenes.sortOrder ASC
+        """,
+    )
+    fun observeReaderScenes(bookId: String): Flow<List<ReaderSceneRow>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAct(entity: ActEntity)

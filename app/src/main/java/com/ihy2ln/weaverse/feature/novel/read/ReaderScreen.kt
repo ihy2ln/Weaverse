@@ -3,12 +3,14 @@ package com.ihy2ln.weaverse.feature.novel.read
 import android.view.KeyEvent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -33,6 +35,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -57,10 +60,15 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ihy2ln.weaverse.core.media.MediaRepository
+import com.ihy2ln.weaverse.core.media.storedMediaPathOrNull
+import com.ihy2ln.weaverse.core.text.Align
 import com.ihy2ln.weaverse.core.text.Block
+import com.ihy2ln.weaverse.core.text.CodeBlock
 import com.ihy2ln.weaverse.core.text.Divider
 import com.ihy2ln.weaverse.core.text.Heading
+import com.ihy2ln.weaverse.core.text.ListItem
 import com.ihy2ln.weaverse.core.text.MediaBlock
+import com.ihy2ln.weaverse.core.text.MediaGridBlock
 import com.ihy2ln.weaverse.core.text.MediaKind
 import com.ihy2ln.weaverse.core.text.MediaStackBlock
 import com.ihy2ln.weaverse.core.text.Paragraph
@@ -86,7 +94,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.io.File
 import javax.inject.Inject
 
 enum class ReaderTheme(val label: String) { Paper("Paper"), Sepia("Sepia"), Night("Night") }
@@ -151,49 +158,46 @@ class ReaderViewModel @Inject constructor(
                 combine(
                     mediaRepository.observeAll(),
                     settings.readerState(bookId),
-                ) { mediaList, saved ->
-                    Triple(prefs, mediaList, saved)
-                }.collect { (latestPrefs, mediaList, saved) ->
+                    db.manuscriptDao().observeReaderScenes(bookId),
+                ) { mediaList, saved, sceneRows ->
+                    Triple(mediaList, saved, sceneRows)
+                }.collect { (mediaList, saved, sceneRows) ->
                     val book = db.bookDao().getById(bookId)
-                    val paths = mediaList.associate { entity ->
-                        entity.id to (
-                            mediaRepository.resolveFile(entity).takeIf(File::exists)?.absolutePath.orEmpty()
+                    val paths = mediaRepository.pathMap(mediaList)
+                    val scenes = sceneRows.map { row ->
+                        ReaderScene(
+                            id = row.sceneId,
+                            chapterId = row.chapterId,
+                            chapterTitle = row.chapterTitle,
+                            title = row.sceneTitle,
+                            docJson = row.docJson,
+                            wordCount = row.wordCount,
                         )
                     }
-                    val scenes = buildScenes(bookId)
-                    val savedIndex = scenes.indexOfFirst { it.id == saved.lastSceneId }.coerceAtLeast(0)
+                    val previous = _uiState.value
+                    val preferredId = when {
+                        previous.bookId == bookId -> previous.current?.id ?: saved.lastSceneId
+                        else -> saved.lastSceneId
+                    }
+                    val savedIndex = scenes.indexOfFirst { it.id == preferredId }.let { idx ->
+                        if (idx >= 0) idx else scenes.indexOfFirst { it.id == saved.lastSceneId }.coerceAtLeast(0)
+                    }
+                    val sceneChanged = previous.current?.id != scenes.getOrNull(savedIndex)?.id
+                    val bookChanged = previous.bookId != bookId
                     _uiState.value = ReaderUiState(
                         bookId = bookId,
                         bookTitle = book?.title.orEmpty(),
                         scenes = scenes,
                         currentIndex = savedIndex,
-                        fontSizeSp = latestPrefs.fontSizeSp.coerceIn(14, 28),
-                        lineHeight = latestPrefs.lineHeight,
-                        theme = ReaderTheme.entries.find { it.name == latestPrefs.readerTheme } ?: ReaderTheme.Paper,
-                        keepScrollOnPageChange = latestPrefs.readerKeepScrollOnPageChange,
+                        fontSizeSp = prefs.fontSizeSp.coerceIn(14, 28),
+                        lineHeight = prefs.lineHeight,
+                        theme = ReaderTheme.entries.find { it.name == prefs.readerTheme } ?: ReaderTheme.Paper,
+                        keepScrollOnPageChange = prefs.readerKeepScrollOnPageChange,
                         bookmarks = saved.bookmarkedSceneIds,
                         mediaPaths = paths,
                         loading = false,
-                        paragraphIndex = saved.paragraphIndex,
-                        scrollOffset = saved.scrollOffset,
-                    )
-                }
-            }
-        }
-    }
-
-    private suspend fun buildScenes(bookId: String): List<ReaderScene> {
-        val acts = db.manuscriptDao().getActs(bookId)
-        return acts.flatMap { act ->
-            db.manuscriptDao().getChapters(act.id).flatMap { chapter ->
-                db.manuscriptDao().getScenes(chapter.id).map { scene ->
-                    ReaderScene(
-                        id = scene.id,
-                        chapterId = chapter.id,
-                        chapterTitle = chapter.title,
-                        title = scene.title,
-                        docJson = scene.docJson,
-                        wordCount = scene.wordCount,
+                        paragraphIndex = if (bookChanged || sceneChanged) saved.paragraphIndex else previous.paragraphIndex,
+                        scrollOffset = if (bookChanged || sceneChanged) saved.scrollOffset else previous.scrollOffset,
                     )
                 }
             }
@@ -440,7 +444,7 @@ fun ReaderScreen(viewModel: ReaderViewModel = hiltViewModel()) {
                             modifier = Modifier.padding(top = InkSpacing.xs, bottom = InkSpacing.lg),
                         )
                     }
-                    itemsIndexed(blocks) { _, block ->
+                    itemsIndexed(blocks, key = { _, block -> block.id }) { _, block ->
                         ReaderBlockView(
                             block = block,
                             mediaPaths = state.mediaPaths,
@@ -532,42 +536,167 @@ private fun ReaderBlockView(
             modifier = Modifier.padding(vertical = InkSpacing.sm),
             color = secondaryColor.copy(alpha = .3f),
         )
-        is MediaBlock -> {
-            val path = mediaPaths[block.mediaId]
-            if (path != null) {
-                when (block.kind) {
-                    MediaKind.Audio -> AudioMediaPlayer(path = path, label = "Audio", modifier = Modifier.fillMaxWidth())
-                    else -> ZoomableMedia(
+        is ListItem -> {
+            val prefix = if (block.ordered) "• " else "• "
+            val text = block.spans.plainText()
+            if (text.isNotBlank()) {
+                Text(
+                    prefix + text,
+                    color = textColor,
+                    fontFamily = FontFamily.Serif,
+                    fontSize = fontSizeSp.sp,
+                    lineHeight = (fontSizeSp * lineHeight).sp,
+                    modifier = Modifier.padding(start = (block.depth * 16).dp),
+                )
+            }
+        }
+        is CodeBlock -> Text(
+            block.text,
+            color = textColor,
+            fontFamily = FontFamily.Monospace,
+            fontSize = (fontSizeSp - 1).sp,
+        )
+        is MediaBlock -> ReaderMediaBlock(
+            block = block,
+            path = storedMediaPathOrNull(mediaPaths[block.mediaId]),
+            secondaryColor = secondaryColor,
+        )
+        is MediaStackBlock -> ReaderMediaStack(
+            block = block,
+            mediaPaths = mediaPaths,
+            secondaryColor = secondaryColor,
+        )
+        is MediaGridBlock -> ReaderMediaGrid(
+            block = block,
+            mediaPaths = mediaPaths,
+        )
+        else -> Unit
+    }
+}
+
+@Composable
+private fun ReaderMediaBlock(
+    block: MediaBlock,
+    path: String?,
+    secondaryColor: Color,
+) {
+    if (path == null) return
+    val alignment = when (block.align) {
+        Align.Start -> Alignment.CenterStart
+        Align.End -> Alignment.CenterEnd
+        else -> Alignment.Center
+    }
+    val fraction = (block.widthPercent / 100f).coerceIn(0.2f, 1f)
+    val caption = block.caption.plainText()
+    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = alignment) {
+        Column(modifier = Modifier.fillMaxWidth(fraction)) {
+            when (block.kind) {
+                MediaKind.Audio -> AudioMediaPlayer(
+                    path = path,
+                    label = caption.ifBlank { "Audio" },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                else -> ZoomableMedia(
+                    path = path,
+                    isVideo = block.kind == MediaKind.Video,
+                    contentDescription = caption.ifBlank { "Scene media" },
+                    maxHeight = 360.dp,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(InkSpacing.radiusSm)),
+                )
+            }
+            if (caption.isNotBlank() && block.kind != MediaKind.Audio) {
+                Text(
+                    caption,
+                    color = secondaryColor,
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = InkSpacing.xs),
+                    textAlign = when (block.align) {
+                        Align.Start -> TextAlign.Start
+                        Align.End -> TextAlign.End
+                        else -> TextAlign.Center
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReaderMediaStack(
+    block: MediaStackBlock,
+    mediaPaths: Map<String, String>,
+    secondaryColor: Color,
+) {
+    val resolved = remember(block.mediaIds, mediaPaths) {
+        block.mediaIds.mapNotNull { id -> storedMediaPathOrNull(mediaPaths[id])?.let { id to it } }
+    }
+    if (resolved.isEmpty()) return
+    var index by remember(block.id, block.currentIndex, resolved.size) {
+        mutableIntStateOf(block.currentIndex.coerceIn(0, resolved.lastIndex))
+    }
+    val current = resolved.getOrNull(index.coerceIn(0, resolved.lastIndex)) ?: resolved.first()
+    Column(modifier = Modifier.fillMaxWidth()) {
+        ZoomableMedia(
+            path = current.second,
+            contentDescription = "Stacked media ${index + 1}/${resolved.size}",
+            maxHeight = 360.dp,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(InkSpacing.radiusSm))
+                .clickable {
+                    if (resolved.size > 1) index = (index + 1) % resolved.size
+                },
+        )
+        if (resolved.size > 1) {
+            Text(
+                "Picture ${index + 1} of ${resolved.size} · tap to cycle",
+                color = secondaryColor,
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.padding(top = InkSpacing.xs),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReaderMediaGrid(
+    block: MediaGridBlock,
+    mediaPaths: Map<String, String>,
+) {
+    val paths = block.mediaIds.mapNotNull { storedMediaPathOrNull(mediaPaths[it]) }
+    if (paths.isEmpty()) return
+    val columns = if (block.template.contains("3")) 3 else 2
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(block.gutterDp.dp),
+    ) {
+        paths.chunked(columns).forEach { row ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(block.gutterDp.dp),
+            ) {
+                row.forEach { path ->
+                    ZoomableMedia(
                         path = path,
                         contentDescription = "Scene media",
-                        maxHeight = 320.dp,
-                        contentScale = ContentScale.Fit,
+                        maxHeight = 200.dp,
+                        contentScale = ContentScale.Crop,
                         modifier = Modifier
-                            .fillMaxWidth(block.widthPercent / 100f)
+                            .weight(1f)
+                            .height(180.dp)
                             .clip(RoundedCornerShape(InkSpacing.radiusSm)),
                     )
                 }
-            }
-        }
-        is MediaStackBlock -> {
-            Row(horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
-                block.mediaIds.forEach { mediaId ->
-                    val path = mediaPaths[mediaId]
-                    if (path != null) {
-                        ZoomableMedia(
-                            path = path,
-                            contentDescription = "Stacked media",
-                            maxHeight = 200.dp,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(180.dp)
-                                .clip(RoundedCornerShape(InkSpacing.radiusSm)),
-                        )
-                    }
+                repeat(columns - row.size) {
+                    Spacer(modifier = Modifier.weight(1f))
                 }
             }
         }
-        else -> Unit
     }
 }
