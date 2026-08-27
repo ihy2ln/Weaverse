@@ -87,6 +87,14 @@ android {
             it.useJUnitPlatform()
         }
     }
+
+    // AGP 8.7.3 + Kotlin 2.0 crashes androidx.lifecycle's NullSafeMutableLiveData
+    // detector (KaCallableMemberCall class vs interface). That aborts assembleRelease
+    // on GitHub Actions; skip release-lint until AGP/lifecycle are upgraded together.
+    lint {
+        checkReleaseBuilds = false
+        disable += "NullSafeMutableLiveData"
+    }
 }
 
 dependencies {
