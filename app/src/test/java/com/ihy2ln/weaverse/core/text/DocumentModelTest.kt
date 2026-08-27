@@ -94,4 +94,22 @@ class DocumentModelTest {
         val placement = blocks.mediaPlacement(paths)
         assertEquals(listOf(1 to listOf("/tmp/a.jpg"), 3 to listOf("/tmp/b.jpg")), placement)
     }
+
+    @Test
+    fun documentFromJson_readsFqcnMediaBlockUsedByWritePersistedJson() {
+        val json = """
+            {"blocks":[
+              {"type":"com.ihy2ln.weaverse.core.text.Paragraph","id":"p-1","spans":[{"text":"Before"}],"align":"Start","indentLevel":0},
+              {"type":"com.ihy2ln.weaverse.core.text.MediaBlock","id":"m-art","mediaId":"img-1","kind":"Image","widthPercent":100.0,"align":"Center","caption":[{"text":"Harbor"}],"autoplay":false,"loop":false,"muted":true,"gridCol":-1,"gridRow":-1,"gridColSpan":2,"gridRowSpan":2,"collapsed":false},
+              {"type":"com.ihy2ln.weaverse.core.text.Paragraph","id":"p-2","spans":[{"text":"After"}],"align":"Start","indentLevel":0}
+            ]}
+        """.trimIndent()
+        val doc = documentFromJson(json)
+        assertEquals(3, doc.blocks.size)
+        assertEquals("Before", (doc.blocks[0] as Paragraph).plainText())
+        assertEquals("img-1", (doc.blocks[1] as MediaBlock).mediaId)
+        assertEquals("Harbor", (doc.blocks[1] as MediaBlock).caption.plainText())
+        assertEquals("After", (doc.blocks[2] as Paragraph).plainText())
+        assertEquals(listOf(1 to listOf("/files/img-1.jpg")), doc.blocks.mediaPlacement(mapOf("img-1" to "/files/img-1.jpg")))
+    }
 }

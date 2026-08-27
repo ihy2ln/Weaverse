@@ -1521,15 +1521,19 @@ class WriteViewModel @Inject constructor(
     }
 
     private fun persistScene(doc: Document) {
+        val base = loadedScene ?: return
+        val json = doc.toJson()
+        val plain = doc.plainText()
+        val words = doc.wordCount()
         viewModelScope.launch {
-            val base = loadedScene ?: return@launch
-            val next = base.copy(
-                docJson = doc.toJson(),
-                plainText = doc.plainText(),
-                wordCount = doc.wordCount(),
+            val latest = manuscriptRepository.getScene(base.id) ?: base
+            val next = latest.copy(
+                docJson = json,
+                plainText = plain,
+                wordCount = words,
                 updatedAt = System.currentTimeMillis(),
             )
-            loadedScene = next
+            if (loadedScene?.id == next.id) loadedScene = next
             manuscriptRepository.saveScene(next)
         }
     }

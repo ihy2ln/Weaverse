@@ -640,7 +640,17 @@ private fun ReaderMediaStack(
         mutableIntStateOf(block.currentIndex.coerceIn(0, resolved.lastIndex))
     }
     val current = resolved.getOrNull(index.coerceIn(0, resolved.lastIndex)) ?: resolved.first()
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (resolved.size > 1) {
+                    Modifier.clickable { index = (index + 1) % resolved.size }
+                } else {
+                    Modifier
+                },
+            ),
+    ) {
         ZoomableMedia(
             path = current.second,
             contentDescription = "Stacked media ${index + 1}/${resolved.size}",
@@ -648,10 +658,7 @@ private fun ReaderMediaStack(
             contentScale = ContentScale.Fit,
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(InkSpacing.radiusSm))
-                .clickable {
-                    if (resolved.size > 1) index = (index + 1) % resolved.size
-                },
+                .clip(RoundedCornerShape(InkSpacing.radiusSm)),
         )
         if (resolved.size > 1) {
             Text(
