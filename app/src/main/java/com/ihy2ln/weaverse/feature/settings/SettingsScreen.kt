@@ -39,7 +39,9 @@ import android.net.Uri
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -713,6 +715,31 @@ fun SettingsScreen(
                 modifier = Modifier.padding(top = InkSpacing.sm),
 
             )
+            val spend = state.prefs
+            if (spend.usageYearMonth.isNotBlank() || spend.usageCostUsd > 0.0) {
+                Text(
+                    "This month (${spend.usageYearMonth.ifBlank { "—" }}): " +
+                        "${com.ihy2ln.weaverse.core.ui.util.UsageFormat.formatCost(spend.usageCostUsd) ?: "$0.00"} · " +
+                        "${spend.usagePromptTokens + spend.usageCompletionTokens} tokens",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = InkSpacing.sm),
+                )
+            }
+            if (state.otherProviderModels.isNotEmpty()) {
+                Text(
+                    "Seeded models (tap to set as default)",
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(top = InkSpacing.sm),
+                )
+                state.otherProviderModels.forEach { model ->
+                    ModelRow(
+                        model = model,
+                        selected = state.prefs.defaultModelRef == model.id,
+                        onClick = { viewModel.selectDefaultModel(model.id, true, model.id.substringBefore('/')) },
+                    )
+                }
+            }
 
         }
 
@@ -786,6 +813,28 @@ fun SettingsScreen(
                         contentDescription = "Enable automatic web sync",
                     )
                 }
+                if (state.sync.tlsEnabled) {
+                    InkOutlinedButton(
+                        label = "TLS on",
+                        onClick = { viewModel.setSyncTls(false) },
+                        modifier = Modifier.padding(start = InkSpacing.sm),
+                    )
+                } else {
+                    InkConfirmButton(
+                        onClick = { viewModel.setSyncTls(true) },
+                        label = "TLS off",
+                        contentDescription = "Enable self-signed HTTPS for the hub",
+                        modifier = Modifier.padding(start = InkSpacing.sm),
+                    )
+                }
+            }
+            if (state.sync.certSha256.isNotBlank()) {
+                Text(
+                    "Pinned cert ${state.sync.certSha256.take(23)}…",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = InkSpacing.sm),
+                )
             }
             OutlinedTextField(
                 value = peerPin.ifBlank { state.sync.peerPin },
@@ -826,6 +875,32 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.error,
                 )
             }
+            if (state.sync.conflicts.isNotEmpty()) {
+                Text(
+                    "Conflicts (${state.sync.conflicts.size})",
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(top = InkSpacing.md),
+                )
+                state.sync.conflicts.take(12).forEach { conflict ->
+                    Text(
+                        "${conflict.tableName} · ${conflict.rowKey}",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = InkSpacing.xs),
+                    )
+                    Row(modifier = Modifier.padding(top = InkSpacing.xs)) {
+                        InkConfirmButton(
+                            onClick = { viewModel.keepSyncMine(conflict.id) },
+                            label = "Keep mine",
+                            contentDescription = "Restore the local version of this row",
+                        )
+                        InkOutlinedButton(
+                            label = "Keep theirs",
+                            onClick = { viewModel.keepSyncTheirs(conflict.id) },
+                            modifier = Modifier.padding(start = InkSpacing.sm),
+                        )
+                    }
+                }
+            }
         }
 
         ExpandableSection(
@@ -841,11 +916,25 @@ fun SettingsScreen(
         ) {
 
             Text(
-                "Backup now writes two zip files: one for this phone (Restore) and one for PC (extract into the Weaverse folder that contains data/). Copies also go to Android/data/…/files/backups so you can copy them off the device.",
+                "Backup now writes two zip files: one for this phone (Restore) and one for PC (extract into the Weaverse folder that contains data/). Copies also go to Android/data/…/files/backups so you can copy them off the device. Daily auto-backup keeps the last 7 zips.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(bottom = InkSpacing.sm),
             )
+            Row(modifier = Modifier.padding(bottom = InkSpacing.sm)) {
+                if (state.prefs.autoBackupEnabled) {
+                    InkOutlinedButton(
+                        label = "Daily backup on",
+                        onClick = { viewModel.setAutoBackup(false) },
+                    )
+                } else {
+                    InkConfirmButton(
+                        onClick = { viewModel.setAutoBackup(true) },
+                        label = "Daily backup off",
+                        contentDescription = "Enable daily automatic backups",
+                    )
+                }
+            }
 
             Row {
 
@@ -885,6 +974,26 @@ fun SettingsScreen(
 
                 )
 
+            }
+
+            InkOutlinedButton(
+                label = "Show crash log",
+                onClick = viewModel::loadCrashLog,
+                modifier = Modifier.padding(top = InkSpacing.sm),
+            )
+            if (state.crashLogText.isNotBlank()) {
+                Text(
+                    state.crashLogText.take(2000),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = InkSpacing.sm),
+                )
+                val clipboard = LocalClipboardManager.current
+                InkOutlinedButton(
+                    label = "Copy crash log",
+                    onClick = { clipboard.setText(AnnotatedString(state.crashLogText)) },
+                    modifier = Modifier.padding(top = InkSpacing.xs),
+                )
             }
 
         }

@@ -44,6 +44,7 @@ sealed class AIChunk {
         val totalTokens: Int = promptTokens + completionTokens,
         val cost: Double? = null,
     ) : AIChunk()
+    data class RetryWait(val secondsLeft: Int) : AIChunk()
     data object Done : AIChunk()
 }
 
@@ -60,7 +61,7 @@ sealed class AIError : Exception() {
     abstract override val message: String
 
     class NoApiKey : AIError() {
-        override val message: String = "Configure OpenRouter API key in Settings → AI Connections"
+        override val message: String = "Configure an API key in Settings → AI Connections"
     }
 
     class NoProvider(override val message: String = "No AI provider configured for this model") : AIError()

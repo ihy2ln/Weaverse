@@ -108,6 +108,14 @@ fun WorkshopChatScreen(
                     Text(message.role.uppercase(), style = MaterialTheme.typography.labelMedium)
 
                     Text(message.plainText, style = compactStyle, modifier = Modifier.padding(top = InkSpacing.xxs))
+                    if (message.usageText.isNotBlank()) {
+                        Text(
+                            message.usageText,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = InkSpacing.xxs),
+                        )
+                    }
 
                 }
 
@@ -190,6 +198,22 @@ fun WorkshopChatScreen(
         }
 
         CollapsibleUsageStrip(usageText = state.lastUsage)
+        state.contextMeter?.let { meter ->
+            Text(
+                meter.label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = InkSpacing.xs),
+            )
+        }
+
+        if (state.isStreaming) {
+            InkTextButton(
+                label = "Cancel",
+                onClick = viewModel::cancelGeneration,
+                modifier = Modifier.padding(top = InkSpacing.xs),
+            )
+        }
 
         if (state.showExtraPromptSurfaces) {
 

@@ -16,6 +16,7 @@ data class DesktopConfig(
     val appVersion: String = "1.2.0-beta",
     val openBrowser: Boolean = true,
     val allowRemote: Boolean = true,
+    val tls: Boolean = false,
 )
 
 object DesktopConfigStore {

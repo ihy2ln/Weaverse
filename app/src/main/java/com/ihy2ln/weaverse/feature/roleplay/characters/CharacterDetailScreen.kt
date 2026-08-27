@@ -88,6 +88,18 @@ fun CharacterDetailScreen(
                 contentDescription = "Save character sheet",
                 modifier = Modifier.fillMaxWidth().padding(top = InkSpacing.lg),
             )
+            InkConfirmButton(
+                onClick = viewModel::exportPngCard,
+                label = "Export PNG card",
+                contentDescription = "Export SillyTavern PNG character card",
+                modifier = Modifier.fillMaxWidth().padding(top = InkSpacing.sm),
+            )
+            InkConfirmButton(
+                onClick = viewModel::exportJsonCard,
+                label = "Export JSON card",
+                contentDescription = "Export character card JSON",
+                modifier = Modifier.fillMaxWidth().padding(top = InkSpacing.sm),
+            )
             Spacer(Modifier.height(AlwaysScrollEndPadding))
         }
     }

@@ -32,6 +32,7 @@ import com.ihy2ln.weaverse.data.db.entities.RpMessageEntity
 import com.ihy2ln.weaverse.data.db.entities.RpPersonaEntity
 import com.ihy2ln.weaverse.data.db.entities.SceneCodexLinkEntity
 import com.ihy2ln.weaverse.data.db.entities.SceneEntity
+import com.ihy2ln.weaverse.data.db.entities.SceneRevisionEntity
 import com.ihy2ln.weaverse.data.db.entities.SeriesEntity
 import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
 
@@ -42,6 +43,7 @@ import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
         ActEntity::class,
         ChapterEntity::class,
         SceneEntity::class,
+        SceneRevisionEntity::class,
         SceneCodexLinkEntity::class,
         CodexCategoryEntity::class,
         CodexEntryEntity::class,
@@ -58,7 +60,7 @@ import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
         PromptEntity::class,
         AiProfileEntity::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = false,
 )
 @TypeConverters(InkTypeConverters::class)
@@ -74,6 +76,46 @@ abstract class WeaverseDatabase : RoomDatabase() {
     abstract fun promptDao(): PromptDao
 
     companion object {
+        /** Usage columns on chat messages plus hourly scene snapshots. */
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE chat_messages ADD COLUMN promptTokens INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE chat_messages ADD COLUMN completionTokens INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE chat_messages ADD COLUMN costUsd REAL NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE rp_messages ADD COLUMN promptTokens INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE rp_messages ADD COLUMN completionTokens INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE rp_messages ADD COLUMN costUsd REAL NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS scene_revisions (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        sceneId TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        docJson TEXT NOT NULL,
+                        plainText TEXT NOT NULL,
+                        wordCount INTEGER NOT NULL DEFAULT 0,
+                        kind TEXT NOT NULL DEFAULT 'hourly'
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_scene_revisions_sceneId ON scene_revisions(sceneId)",
+                )
+            }
+        }
+
         /** Separates novel/campaign/storyboard shelves and links canvas chats to their work. */
         val MIGRATION_10_11 = object : Migration(10, 11) {
             override fun migrate(db: SupportSQLiteDatabase) {

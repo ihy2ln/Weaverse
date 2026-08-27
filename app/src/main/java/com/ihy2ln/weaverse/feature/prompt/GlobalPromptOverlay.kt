@@ -6,6 +6,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -49,13 +52,16 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.ihy2ln.weaverse.ai.ModelInfo
 import com.ihy2ln.weaverse.core.ui.components.InkCheckIconButton
 import com.ihy2ln.weaverse.core.ui.components.InkClearIconButton
-import com.ihy2ln.weaverse.core.ui.components.VoiceToTextField
+import com.ihy2ln.weaverse.core.ui.components.InkTextButton
+import com.ihy2ln.weaverse.core.ui.components.VoiceInputButton
+import com.ihy2ln.weaverse.core.ui.components.mergeSpokenText
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.InkAccentBlue
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun GlobalPromptOverlay(
     context: PromptInsertContext,
@@ -106,12 +112,10 @@ fun GlobalPromptOverlay(
     }
     val minimumWordsValue = minimumWordsText.toIntOrNull()
     val maximumWordsValue = maximumWordsText.toIntOrNull()
-    val wordRangeValid = kind != PromptEntryKind.Ai || (
-        minimumWordsValue != null && maximumWordsValue != null &&
-            minimumWordsValue in PromptWordLimit.Minimum..PromptWordLimit.Maximum &&
-            maximumWordsValue in PromptWordLimit.Minimum..PromptWordLimit.Maximum &&
-            minimumWordsValue <= maximumWordsValue
-        )
+    val wordRangeValid = minimumWordsValue != null && maximumWordsValue != null &&
+        minimumWordsValue in PromptWordLimit.Minimum..PromptWordLimit.Maximum &&
+        maximumWordsValue in PromptWordLimit.Minimum..PromptWordLimit.Maximum &&
+        minimumWordsValue <= maximumWordsValue
     val canSubmit = (state.text.isNotBlank() || state.imagePath != null) && wordRangeValid
     val activeModelRef = PromptModelSelection.effectiveModelRef(
         state.selectedModelRef,
@@ -131,7 +135,7 @@ fun GlobalPromptOverlay(
         disabledPlaceholderColor = tokens.secondaryText,
     )
 
-    Row(
+    Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xxs)
@@ -139,88 +143,124 @@ fun GlobalPromptOverlay(
             .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.97f))
             .border(1.dp, InkAccentBlue, shape)
             .padding(horizontal = InkSpacing.xs, vertical = InkSpacing.xxs),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(InkSpacing.xxs),
     ) {
         Text(
             "PROMPT ${if (collapsed) "▴" else "▾"}",
-            modifier = Modifier.clickable { collapsed = !collapsed }
-                .padding(horizontal = 3.dp, vertical = 8.dp),
+            modifier = Modifier
+                .clickable { collapsed = !collapsed }
+                .padding(horizontal = 2.dp, vertical = 2.dp),
             style = MaterialTheme.typography.labelSmall,
-            fontSize = 9.sp,
+            fontSize = 8.sp,
             color = InkAccentBlue,
             maxLines = 1,
         )
         if (!collapsed) {
-            VoiceToTextField(
+            OutlinedTextField(
                 value = state.text,
                 onValueChange = viewModel::onTextChange,
-                modifier = Modifier.weight(1f),
-                placeholder = state.errorMessage.ifBlank { placeholder },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp, max = 92.dp),
+                placeholder = { Text(state.errorMessage.ifBlank { placeholder }) },
                 enabled = !state.isStreaming,
-                singleLine = true,
                 minLines = 1,
-                maxLines = 1,
-                compact = true,
+                maxLines = 3,
                 colors = fieldColors,
-                extraTrailing = {
-                    Text(
-                        "Model",
-                        modifier = Modifier.width(48.dp).clip(RoundedCornerShape(inkRadiusSm()))
-                            .clickable(enabled = !state.isStreaming) { modelsOpen = true }
-                            .semantics {
-                                contentDescription = "Model: ${PromptModelSelection.shortLabel(activeModelRef, state.writingModels)}"
-                            }
-                            .padding(horizontal = 3.dp, vertical = 6.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = tokens.secondaryText,
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                    )
-                    if (kind == PromptEntryKind.Ai) {
-                        CompactNumberField(
-                            minimumWordsText,
-                            { value ->
-                                minimumWordsText = value.filter(Char::isDigit).take(4)
-                                minimumWordsText.toIntOrNull()?.let(viewModel::updateMinimumOutputWords)
-                            },
-                            "Minimum words",
-                            !state.isStreaming,
-                            wordRangeValid,
-                        )
-                        Text("–", style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
-                        CompactNumberField(
-                            maximumWordsText,
-                            { value ->
-                                maximumWordsText = value.filter(Char::isDigit).take(4)
-                                maximumWordsText.toIntOrNull()?.let(viewModel::updateOutputWords)
-                            },
-                            "Maximum words",
-                            !state.isStreaming,
-                            wordRangeValid,
-                        )
-                        Text(
-                            if (state.imagePath != null) "▣✓" else "▣",
-                            modifier = Modifier.clickable(enabled = !state.isStreaming) { viewModel.requestImage() }
-                                .padding(horizontal = 5.dp, vertical = 7.dp),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = tokens.secondaryText,
-                        )
+            )
+            if (state.contextMeterLabel.isNotBlank()) {
+                Text(
+                    state.contextMeterLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.secondaryText,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Start,
+            ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text("W", style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
+                CompactNumberField(
+                    minimumWordsText,
+                    { value ->
+                        minimumWordsText = value.filter(Char::isDigit).take(4)
+                        minimumWordsText.toIntOrNull()?.let(viewModel::updateMinimumOutputWords)
+                    },
+                    "Minimum words",
+                    !state.isStreaming,
+                    wordRangeValid,
+                )
+                Text("–", style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
+                CompactNumberField(
+                    maximumWordsText,
+                    { value ->
+                        maximumWordsText = value.filter(Char::isDigit).take(4)
+                        maximumWordsText.toIntOrNull()?.let(viewModel::updateOutputWords)
+                    },
+                    "Maximum words",
+                    !state.isStreaming,
+                    wordRangeValid,
+                )
+            }
+            Row(
+                modifier = Modifier.weight(1f).clip(RoundedCornerShape(inkRadiusSm()))
+                    .clickable(enabled = !state.isStreaming) { modelsOpen = true }
+                    .semantics {
+                        contentDescription = "Model: ${PromptModelSelection.shortLabel(activeModelRef, state.writingModels)}"
                     }
-                    if (state.isStreaming) {
-                        Text("…", color = tokens.secondaryText)
-                    } else {
-                        InkCheckIconButton(
-                            onClick = viewModel::submit,
-                            enabled = canSubmit,
-                            contentDescription = acceptDescription,
-                        )
-                    }
-                    InkClearIconButton(onClick = viewModel::clearText, enabled = canClear)
-                },
+                    .padding(horizontal = 4.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Model · ", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                Text(
+                    PromptModelSelection.shortLabel(activeModelRef, state.writingModels),
+                    modifier = Modifier.weight(1f).basicMarquee(iterations = Int.MAX_VALUE),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.secondaryText,
+                    maxLines = 1,
+                    softWrap = false,
+                )
+            }
+            if (kind == PromptEntryKind.Ai) {
+                Text(
+                    if (state.imagePath != null) "▣✓" else "▣",
+                    modifier = Modifier.clickable(enabled = !state.isStreaming) { viewModel.requestImage() }
+                        .padding(horizontal = 3.dp, vertical = 7.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = tokens.secondaryText,
+                )
+            }
+            PromptKindSelector(
+                selectedKind = kind ?: PromptEntryKind.Manual,
+                enabled = !state.isStreaming,
+                onSelect = viewModel::selectEntryKind,
+            )
+            if (state.isStreaming) {
+                InkTextButton(label = "Cancel", onClick = viewModel::cancelGeneration)
+            } else {
+                InkCheckIconButton(
+                    onClick = viewModel::submit,
+                    enabled = canSubmit,
+                    contentDescription = acceptDescription,
+                    modifier = Modifier.size(26.dp),
+                )
+            }
+            InkClearIconButton(
+                onClick = viewModel::clearText,
+                enabled = canClear,
+                modifier = Modifier.size(26.dp),
+            )
+            VoiceInputButton(
+                onSpoken = { viewModel.onTextChange(mergeSpokenText(state.text, it)) },
+                enabled = !state.isStreaming,
+                compact = true,
+                modifier = Modifier.size(26.dp),
             )
         }
+    }
     }
     if (modelsOpen) {
         PromptModelPickerDialog(
@@ -240,6 +280,37 @@ fun GlobalPromptOverlay(
             onDismiss = { modelsOpen = false },
         )
     }
+}
+
+@Composable
+private fun PromptKindSelector(
+    selectedKind: PromptEntryKind,
+    enabled: Boolean,
+    onSelect: (PromptEntryKind) -> Unit,
+) {
+    val tokens = inkTokens()
+    val aiSelected = selectedKind == PromptEntryKind.Ai
+    Text(
+        text = if (aiSelected) "/A" else "\\M",
+        modifier = Modifier
+            .clip(RoundedCornerShape(inkRadiusSm()))
+            .background(InkAccentBlue.copy(alpha = 0.14f))
+            .clickable(enabled = enabled) {
+                onSelect(if (aiSelected) PromptEntryKind.Manual else PromptEntryKind.Ai)
+            }
+            .semantics {
+                contentDescription = if (aiSelected) {
+                    "AI mode; tap for manual mode"
+                } else {
+                    "Manual mode; tap for AI mode"
+                }
+            }
+            .padding(horizontal = 4.dp, vertical = 7.dp),
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.Bold,
+        color = if (enabled) InkAccentBlue else tokens.secondaryText.copy(alpha = 0.5f),
+        maxLines = 1,
+    )
 }
 
 @Composable

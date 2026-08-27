@@ -7,6 +7,7 @@ enum class ExportFormat(val label: String, val extension: String) {
     Html("HTML", "html"),
     Json("JSON", "json"),
     Markdown("Markdown (.md)", "md"),
+    Epub("EPUB (.epub)", "epub"),
     PlainText("Plain text (.txt)", "txt"),
     ProjectZip("Project ZIP", "zip"),
 }
@@ -182,6 +183,9 @@ data class ChatMessageDto(
     val tokenCount: Int = 0,
     val wordCount: Int = 0,
     val createdAt: Long = 0,
+    val promptTokens: Int = 0,
+    val completionTokens: Int = 0,
+    val costUsd: Double = 0.0,
 )
 
 @Serializable
@@ -277,4 +281,7 @@ data class RpMessageDto(
     val createdAt: Long = 0,
     /** messenger | dungeonMaster | roleplay; missing on older bundles → messenger. */
     val displayMode: String = "messenger",
+    val promptTokens: Int = 0,
+    val completionTokens: Int = 0,
+    val costUsd: Double = 0.0,
 )

@@ -7,8 +7,8 @@ import androidx.lifecycle.viewModelScope
 import com.ihy2ln.weaverse.ai.AIChunk
 import com.ihy2ln.weaverse.ai.AIError
 import com.ihy2ln.weaverse.ai.AiGenerationService
-import com.ihy2ln.weaverse.ai.context.AssembledPrompt
-import com.ihy2ln.weaverse.ai.prompt.RoleplayPromptBuilder
+import com.ihy2ln.weaverse.ai.context.ContextMeter
+import com.ihy2ln.weaverse.ai.openrouter.OpenRouterModelCache
 import com.ihy2ln.weaverse.core.media.MediaClipboard
 import com.ihy2ln.weaverse.core.media.MediaClipboardPayload
 import com.ihy2ln.weaverse.core.media.MediaRepository
@@ -55,6 +55,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -67,86 +68,6 @@ import javax.inject.Inject
 /** Sentinel mediaId for DM text-only tiles placed on the 3×3 grid. */
 const val DM_TEXT_TILE_MEDIA_ID = "__dm_text__"
 
-data class RpMediaRef(
-    val messageId: String,
-    val blockId: String,
-    val path: String,
-    val caption: String,
-    val speaker: String,
-    val role: String,
-    /** When size > 1, this panel is a stacked presentation. */
-    val stackedPaths: List<String> = emptyList(),
-    /** Snap cell; -1 until placed. */
-    val gridCol: Int = -1,
-    val gridRow: Int = -1,
-    val gridColSpan: Int = 1,
-    val gridRowSpan: Int = 1,
-    val collapsed: Boolean = false,
-    val isAudio: Boolean = false,
-    val mediaId: String = "",
-    val mediaKind: com.ihy2ln.weaverse.core.text.MediaKind =
-        com.ihy2ln.weaverse.core.text.MediaKind.Image,
-    /** DM prose tile (no picture). */
-    val isTextTile: Boolean = false,
-    val mediaScale: Float = 1f,
-    val mediaOffsetXPercent: Float = 0f,
-    val mediaOffsetYPercent: Float = 0f,
-    val overlays: List<TextOverlay> = emptyList(),
-    val panelRotationDeg: Float = 0f,
-)
-
-data class RpMessageUi(
-    val id: String,
-    val swipeGroupId: String,
-    val swipeIndex: Int,
-    val swipeCount: Int,
-    val speaker: String,
-    val text: String,
-    val role: String,
-    val createdAt: Long = 0L,
-    /** Monogram tint for the messenger avatar gutter. */
-    val avatarColorHex: String = "",
-    val mediaPaths: List<String> = emptyList(),
-    val mediaBlockIds: List<String> = emptyList(),
-    val mediaIsAudio: List<Boolean> = emptyList(),
-    val mediaStackPaths: Map<String, List<String>> = emptyMap(),
-    val mediaCollapsed: Map<String, Boolean> = emptyMap(),
-)
-
-data class RoleplayChatUiState(
-    val chatId: String = "",
-    val title: String = "",
-    val input: String = "",
-    val messages: List<RpMessageUi> = emptyList(),
-    val mediaPanels: List<RpMediaRef> = emptyList(),
-    /** messenger | dungeonMaster | roleplay */
-    val displayMode: String = "messenger",
-    val streamingText: String = "",
-    val isStreaming: Boolean = false,
-    val errorMessage: String = "",
-    val lastUsage: String = "",
-    val mediaPickRequestId: Long = 0L,
-    val audioPickRequestId: Long = 0L,
-    val composerMinLines: Int = 1,
-    val ttsStatus: String = "",
-    /** Compact Generate strip visible (Write-style). */
-    val generationVisible: Boolean = true,
-    /** ai = OpenRouter generate; nai = non-AI manual entry (brainstorm). */
-    val entryMode: String = "ai",
-    val outputWords: Int = 400,
-    val selectedMediaKey: String? = null,
-    val canPasteMedia: Boolean = false,
-    val presetId: String = "preset-balanced",
-    val showExtraPromptSurfaces: Boolean = false,
-    /** Storyboard pages for the DM/Roleplay canvas, in display order. */
-    val pages: List<RpPageMeta> = emptyList(),
-    val activePageId: String = "",
-    /** Layout of the active page; its slots are drawn as empty frames. */
-    val activeTemplateId: String = "classic-6",
-    /** (messageId, blockId, overlayId) currently open in the text-overlay editor. */
-    val editingOverlay: Triple<String, String, String>? = null,
-)
-
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class RoleplayChatViewModel @Inject constructor(
@@ -157,20 +78,32 @@ class RoleplayChatViewModel @Inject constructor(
     private val tts: com.ihy2ln.weaverse.core.tts.TtsService,
     private val mediaClipboard: MediaClipboard,
     private val workspaceHistory: WorkspaceHistory,
+    private val generation: RoleplayGeneration,
+    private val modelCache: OpenRouterModelCache,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(RoleplayChatUiState())
     val uiState: StateFlow<RoleplayChatUiState> = _uiState.asStateFlow()
     private var bindJob: Job? = null
+    private var generateJob: Job? = null
     private var rawMessages: List<RpMessageEntity> = emptyList()
     private var boundChat: RpChatEntity? = null
     private var boundCharacter: RpCharacterEntity? = null
     private var boundPersona: RpPersonaEntity? = null
+    private var contextLimit = ContextMeter.DEFAULT_LIMIT
 
     fun bindChat(chatId: String) {
         if (_uiState.value.chatId == chatId && bindJob?.isActive == true) return
         _uiState.update { it.copy(chatId = chatId) }
         bindJob?.cancel()
         bindJob = viewModelScope.launch {
+            launch {
+                combine(settings.preferences, modelCache.models) { prefs, dtos ->
+                    ContextMeter.limitFor(prefs.defaultModelRef, modelCache.toModelInfo(dtos))
+                }.collect { limit ->
+                    contextLimit = limit
+                    refreshContextMeter()
+                }
+            }
             launch {
                 settings.preferences.collect { prefs ->
                     _uiState.update {
@@ -386,6 +319,11 @@ class RoleplayChatViewModel @Inject constructor(
                 mediaIsAudio = isAudioFlags,
                 mediaStackPaths = stackPaths,
                 mediaCollapsed = collapsedMap,
+                usageText = if (m.role != "user" && (m.promptTokens > 0 || m.completionTokens > 0 || m.costUsd > 0.0)) {
+                    UsageFormat.formatUsage(m.promptTokens, m.completionTokens, null, m.costUsd.takeIf { it > 0.0 })
+                } else {
+                    ""
+                },
             )
         }
         _uiState.update {
@@ -499,7 +437,10 @@ class RoleplayChatViewModel @Inject constructor(
         }
     }
 
-    fun onInputChange(value: String) = _uiState.update { it.copy(input = value, errorMessage = "") }
+    fun onInputChange(value: String) {
+        _uiState.update { it.copy(input = value, errorMessage = "") }
+        refreshContextMeter()
+    }
 
     fun updateOutputWords(words: Int) {
         _uiState.update { it.copy(outputWords = words.coerceIn(50, 4000)) }
@@ -1160,7 +1101,8 @@ class RoleplayChatViewModel @Inject constructor(
             addManualEntry()
             return
         }
-        viewModelScope.launch {
+        generateJob?.cancel()
+        generateJob = viewModelScope.launch {
             if (!aiGeneration.hasApiKey()) {
                 _uiState.update { it.copy(errorMessage = AIError.NoApiKey().message.orEmpty()) }
                 return@launch
@@ -1203,20 +1145,18 @@ class RoleplayChatViewModel @Inject constructor(
                 }
             val builder = StringBuilder()
             var usageText = ""
+            var promptTokens = 0
+            var completionTokens = 0
+            var costUsd = 0.0
             runCatching {
                 aiGeneration.stream(
                     userMessage = userText,
-                    assembled = AssembledPrompt(
-                        // Difficulty is a world rule, so it belongs in the system prompt
-                        // rather than only nudging the sampler.
-                        systemBlocks = RoleplayPromptBuilder.systemBlocks(
-                            character = boundCharacter,
-                            persona = boundPersona,
-                            outputWords = state.outputWords,
-                        ) + listOfNotNull(difficulty?.directive),
-                        messages = history,
-                        usedEntries = emptyList(),
-                        tokenBreakdown = emptyList(),
+                    assembled = generation.assemble(
+                        character = boundCharacter,
+                        persona = boundPersona,
+                        history = history,
+                        outputWords = state.outputWords,
+                        difficultyDirective = difficulty?.directive,
                     ),
                     maxTokens = maxTokens,
                     temperature = temperature,
@@ -1227,12 +1167,20 @@ class RoleplayChatViewModel @Inject constructor(
                             _uiState.update { it.copy(streamingText = builder.toString()) }
                         }
                         is AIChunk.Usage -> {
+                            promptTokens = chunk.promptTokens
+                            completionTokens = chunk.completionTokens
+                            costUsd = chunk.cost ?: 0.0
                             usageText = UsageFormat.formatUsage(
                                 promptTokens = chunk.promptTokens,
                                 completionTokens = chunk.completionTokens,
                                 totalTokens = chunk.totalTokens,
                                 cost = chunk.cost,
                             )
+                        }
+                        is AIChunk.RetryWait -> {
+                            _uiState.update {
+                                it.copy(errorMessage = "Rate limited — retry in ${chunk.secondsLeft}s")
+                            }
                         }
                         AIChunk.Done -> Unit
                     }
@@ -1257,6 +1205,9 @@ class RoleplayChatViewModel @Inject constructor(
                 contentJson = Document.fromPlainText(builder.toString()).toJson(),
                 createdAt = now + 1,
                 displayMode = mode,
+                promptTokens = promptTokens,
+                completionTokens = completionTokens,
+                costUsd = costUsd,
             )
             db.roleplayDao().upsertMessage(reply)
             val added = listOf(userMessage, reply)
@@ -1268,6 +1219,12 @@ class RoleplayChatViewModel @Inject constructor(
                 it.copy(isStreaming = false, streamingText = "", lastUsage = usageText)
             }
         }
+    }
+
+    fun cancelGeneration() {
+        generateJob?.cancel()
+        generateJob = null
+        _uiState.update { it.copy(isStreaming = false, streamingText = "", errorMessage = "Cancelled") }
     }
 
     fun swipe(messageId: String, direction: Int) {
@@ -1309,15 +1266,12 @@ class RoleplayChatViewModel @Inject constructor(
             runCatching {
                 aiGeneration.complete(
                     userMessage = "Continue the roleplay from here. Write the character's next beat.",
-                    assembled = AssembledPrompt(
-                        systemBlocks = RoleplayPromptBuilder.systemBlocks(
-                            character = boundCharacter,
-                            persona = boundPersona,
-                            outputWords = words,
-                        ) + listOfNotNull(difficulty?.directive),
-                        messages = history,
-                        usedEntries = emptyList(),
-                        tokenBreakdown = emptyList(),
+                    assembled = generation.assemble(
+                        character = boundCharacter,
+                        persona = boundPersona,
+                        history = history,
+                        outputWords = words,
+                        difficultyDirective = difficulty?.directive,
                     ),
                     maxTokens = (words * 1.5).toInt().coerceIn(64, 8192),
                     temperature = temperature,
@@ -1370,6 +1324,27 @@ class RoleplayChatViewModel @Inject constructor(
         is AIError.HttpFailure -> "HTTP ${err.statusCode}: ${err.message}"
         is AIError -> err.message.orEmpty()
         else -> err.message ?: err.toString()
+    }
+
+    private fun refreshContextMeter() {
+        val state = _uiState.value
+        val mode = currentDisplayMode()
+        val history = rawMessages
+            .filter { it.isActiveSwipe && it.displayMode == mode }
+            .map { msg ->
+                val role = if (msg.role == "user") "user" else "assistant"
+                role to documentFromJson(msg.contentJson).plainText()
+            }
+        val difficulty = defaultPresets.find { it.id == state.presetId }
+        val assembled = generation.assemble(
+            character = boundCharacter,
+            persona = boundPersona,
+            history = history,
+            outputWords = state.outputWords,
+            difficultyDirective = difficulty?.directive,
+        )
+        val reading = generation.meter(assembled, state.input, contextLimit)
+        _uiState.update { it.copy(contextMeter = reading) }
     }
 
     private suspend fun insertStoredMessage(entity: RpMessageEntity) {

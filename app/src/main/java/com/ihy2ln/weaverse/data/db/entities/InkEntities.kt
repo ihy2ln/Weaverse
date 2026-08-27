@@ -84,6 +84,17 @@ data class SceneCodexLinkEntity(
     val source: String = "manual",
 )
 
+@Entity(tableName = "scene_revisions", indices = [Index("sceneId")])
+data class SceneRevisionEntity(
+    @PrimaryKey val id: String,
+    val sceneId: String,
+    val createdAt: Long,
+    val docJson: String,
+    val plainText: String,
+    val wordCount: Int = 0,
+    val kind: String = "hourly",
+)
+
 @Entity(tableName = "codex_categories")
 data class CodexCategoryEntity(
     @PrimaryKey val id: String,
@@ -175,6 +186,9 @@ data class ChatMessageEntity(
     val tokenCount: Int = 0,
     val wordCount: Int = 0,
     val createdAt: Long,
+    val promptTokens: Int = 0,
+    val completionTokens: Int = 0,
+    val costUsd: Double = 0.0,
 )
 
 @Entity(tableName = "rp_characters")
@@ -311,6 +325,9 @@ data class RpMessageEntity(
     val createdAt: Long,
     /** messenger | dungeonMaster | roleplay — content is isolated per mode. */
     val displayMode: String = "messenger",
+    val promptTokens: Int = 0,
+    val completionTokens: Int = 0,
+    val costUsd: Double = 0.0,
 )
 
 @Entity(tableName = "media")

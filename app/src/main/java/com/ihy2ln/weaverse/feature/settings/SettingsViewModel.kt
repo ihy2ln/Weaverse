@@ -1,16 +1,20 @@
 package com.ihy2ln.weaverse.feature.settings
 
+import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ihy2ln.weaverse.ai.AIError
 import com.ihy2ln.weaverse.ai.ModelInfo
+import com.ihy2ln.weaverse.ai.OtherProviderSeeds
 import com.ihy2ln.weaverse.ai.openrouter.OpenRouterKeyData
 import com.ihy2ln.weaverse.ai.openrouter.OpenRouterModelCache
 import com.ihy2ln.weaverse.ai.openrouter.OpenRouterRepository
+import com.ihy2ln.weaverse.core.crash.CrashLogStore
 import com.ihy2ln.weaverse.core.media.MediaRepository
 import com.ihy2ln.weaverse.core.ui.theme.AppThemeMode
 import com.ihy2ln.weaverse.core.ui.theme.AppearanceProfile
+import com.ihy2ln.weaverse.data.backup.AutoBackupScheduler
 import com.ihy2ln.weaverse.data.backup.BackupManager
 import com.ihy2ln.weaverse.data.settings.ExtraPromptSurface
 import com.ihy2ln.weaverse.data.settings.SecureKeyStore
@@ -19,6 +23,7 @@ import com.ihy2ln.weaverse.data.settings.UserPreferences
 import com.ihy2ln.weaverse.data.sync.SyncCoordinator
 import com.ihy2ln.weaverse.data.sync.SyncUiSnapshot
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -52,10 +57,13 @@ data class SettingsUiState(
     val backgroundLabel: String = "None",
     val backgroundNote: String = "",
     val sync: SyncUiSnapshot = SyncUiSnapshot(),
+    val otherProviderModels: List<ModelInfo> = emptyList(),
+    val crashLogText: String = "",
 )
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
+    @ApplicationContext private val appContext: Context,
     private val settings: SettingsRepository,
     private val openRouterRepository: OpenRouterRepository,
     private val modelCache: OpenRouterModelCache,
@@ -76,6 +84,11 @@ class SettingsViewModel @Inject constructor(
                 anthropicKey = settings.apiKey(SecureKeyStore.ANTHROPIC).orEmpty(),
                 openAiKey = settings.apiKey(SecureKeyStore.OPENAI).orEmpty(),
                 geminiKey = settings.apiKey(SecureKeyStore.GEMINI).orEmpty(),
+                otherProviderModels = OtherProviderSeeds.seeded(
+                    openai = !settings.apiKey(SecureKeyStore.OPENAI).isNullOrBlank(),
+                    anthropic = !settings.apiKey(SecureKeyStore.ANTHROPIC).isNullOrBlank(),
+                    gemini = !settings.apiKey(SecureKeyStore.GEMINI).isNullOrBlank(),
+                ),
             )
         }
         viewModelScope.launch {
@@ -152,6 +165,32 @@ class SettingsViewModel @Inject constructor(
         syncCoordinator.setAutoSync(enabled)
     }
 
+    fun setSyncTls(enabled: Boolean) {
+        syncCoordinator.setTlsEnabled(enabled)
+    }
+
+    fun keepSyncMine(id: Long) {
+        val entry = _uiState.value.sync.conflicts.find { it.id == id } ?: return
+        syncCoordinator.keepMine(entry)
+    }
+
+    fun keepSyncTheirs(id: Long) {
+        val entry = _uiState.value.sync.conflicts.find { it.id == id } ?: return
+        syncCoordinator.keepTheirs(entry)
+    }
+
+    fun setAutoBackup(enabled: Boolean) {
+        viewModelScope.launch {
+            settings.setAutoBackupEnabled(enabled)
+            if (enabled) {
+                runCatching { backupManager.maybeAutoBackup() }
+                AutoBackupScheduler.ensure(appContext)
+            } else {
+                AutoBackupScheduler.cancel(appContext)
+            }
+        }
+    }
+
     fun setDailyCharactersEnabled(enabled: Boolean) {
         viewModelScope.launch { settings.setDailyCharactersEnabled(enabled) }
     }
@@ -179,7 +218,15 @@ class SettingsViewModel @Inject constructor(
         settings.setApiKey(SecureKeyStore.OPENAI, state.openAiKey)
         settings.setApiKey(SecureKeyStore.GEMINI, state.geminiKey)
         _uiState.update {
-            it.copy(keyStatus = "Other provider keys saved locally (not validated).", keyStatusIsError = false)
+            it.copy(
+                keyStatus = "Other provider keys saved locally.",
+                keyStatusIsError = false,
+                otherProviderModels = OtherProviderSeeds.seeded(
+                    openai = state.openAiKey.isNotBlank(),
+                    anthropic = state.anthropicKey.isNotBlank(),
+                    gemini = state.geminiKey.isNotBlank(),
+                ),
+            )
         }
     }
 
@@ -296,10 +343,17 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun selectDefaultModel(modelId: String, available: Boolean) {
+    fun selectDefaultModel(modelId: String, available: Boolean, providerPrefix: String = "openrouter") {
         if (!available) return
+        val ref = when {
+            modelId.startsWith("openrouter/") ||
+                modelId.startsWith("openai/") ||
+                modelId.startsWith("anthropic/") ||
+                modelId.startsWith("gemini/") -> modelId
+            else -> "$providerPrefix/$modelId"
+        }
         viewModelScope.launch {
-            settings.setDefaultModel("openrouter/$modelId")
+            settings.setDefaultModel(ref)
         }
     }
 
@@ -365,6 +419,12 @@ class SettingsViewModel @Inject constructor(
                 .onFailure { err -> _uiState.update { it.copy(exportStatus = "Restore failed: ${err.message}") } }
         }
     }
+
+    fun loadCrashLog() {
+        _uiState.update { it.copy(crashLogText = CrashLogStore.latestText(appContext)) }
+    }
+
+    fun copyCrashLog(): String = CrashLogStore.latestText(appContext)
 
     private fun formatKeyInfo(data: OpenRouterKeyData): String {
         val parts = mutableListOf<String>()

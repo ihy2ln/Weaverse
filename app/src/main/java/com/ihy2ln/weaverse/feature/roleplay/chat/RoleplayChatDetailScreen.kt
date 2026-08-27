@@ -512,6 +512,14 @@ fun RoleplayChatDetailScreen(
             usageText = state.lastUsage,
             modifier = Modifier.padding(horizontal = InkSpacing.lg),
         )
+        state.contextMeter?.let { meter ->
+            Text(
+                meter.label,
+                style = MaterialTheme.typography.labelSmall,
+                color = inkTokens().secondaryText,
+                modifier = Modifier.padding(horizontal = InkSpacing.lg, vertical = 2.dp),
+            )
+        }
 
         // The composer already carries attach / mic / send / AI-manual, so the old
         // extra button row would only make the dock taller.
@@ -522,6 +530,7 @@ fun RoleplayChatDetailScreen(
             entryMode = state.entryMode,
             isStreaming = state.isStreaming,
             onSend = viewModel::send,
+            onCancel = viewModel::cancelGeneration,
             onPickMedia = viewModel::requestMediaPick,
             onPickAudio = viewModel::requestAudioPick,
             onDictate = startDictateNew,
@@ -546,6 +555,7 @@ private fun MessageComposer(
     entryMode: String,
     isStreaming: Boolean,
     onSend: () -> Unit,
+    onCancel: () -> Unit = {},
     onPickMedia: () -> Unit,
     onPickAudio: () -> Unit,
     onDictate: () -> Unit,
@@ -621,7 +631,15 @@ private fun MessageComposer(
             )
         }
 
-        if (canSend) {
+        if (isStreaming) {
+            ComposerIconButton(
+                glyph = "✕",
+                contentDescription = "Cancel generation",
+                onClick = onCancel,
+                background = tokens.hover,
+                tint = tokens.primaryText,
+            )
+        } else if (canSend) {
             ComposerIconButton(
                 glyph = "➤",
                 contentDescription = "Send",
@@ -1515,6 +1533,14 @@ private fun MessengerRow(
                     message.text,
                     style = compactStyle,
                     modifier = Modifier.padding(top = if (grouped) 0.dp else 2.dp),
+                )
+            }
+            if (message.usageText.isNotBlank()) {
+                Text(
+                    message.usageText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.secondaryText,
+                    modifier = Modifier.padding(top = 2.dp),
                 )
             }
             message.mediaPaths.zip(message.mediaBlockIds).forEachIndexed { index, (path, blockId) ->

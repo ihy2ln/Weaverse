@@ -35,6 +35,8 @@ data class SyncStatusResponse(
     val noteCount: Int = 0,
     val webUrl: String = "",
     val lanHint: String = "",
+    val tls: Boolean = false,
+    val certSha256: String = "",
 )
 
 @Serializable
@@ -47,6 +49,8 @@ data class SyncPairResponse(
     val ok: Boolean,
     val token: String? = null,
     val message: String = "",
+    val certSha256: String = "",
+    val tls: Boolean = false,
 )
 
 @Serializable
@@ -54,6 +58,9 @@ data class SyncPushResult(
     val ok: Boolean,
     val message: String,
     val receivedAt: Long = System.currentTimeMillis(),
+    val appliedRows: Int = 0,
+    val deletedRows: Int = 0,
+    val conflicts: Int = 0,
 )
 
 @Serializable

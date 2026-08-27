@@ -20,6 +20,7 @@ import com.ihy2ln.weaverse.data.db.entities.RpChatEntity
 import com.ihy2ln.weaverse.data.db.entities.RpMessageEntity
 import com.ihy2ln.weaverse.data.db.entities.RpPersonaEntity
 import com.ihy2ln.weaverse.data.db.entities.SceneEntity
+import com.ihy2ln.weaverse.data.db.entities.SceneRevisionEntity
 import com.ihy2ln.weaverse.data.db.entities.SeriesEntity
 import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
 import kotlinx.coroutines.flow.Flow
@@ -92,6 +93,19 @@ interface ManuscriptDao {
     @Query("SELECT * FROM scenes WHERE id = :id LIMIT 1")
     suspend fun getScene(id: String): SceneEntity?
 
+    @Query(
+        """
+        SELECT s.id AS id, s.title AS title, s.plainText AS plainText, s.docJson AS docJson,
+               s.wordCount AS wordCount, c.id AS chapterId, c.title AS chapterTitle
+        FROM scenes s
+        INNER JOIN chapters c ON c.id = s.chapterId
+        INNER JOIN acts a ON a.id = c.actId
+        WHERE a.bookId = :bookId
+        ORDER BY a.sortOrder, c.sortOrder, s.sortOrder
+        """,
+    )
+    suspend fun getReaderScenes(bookId: String): List<ReaderSceneRow>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAct(entity: ActEntity)
 
@@ -106,6 +120,30 @@ interface ManuscriptDao {
 
     @Query("DELETE FROM chapters WHERE id = :id")
     suspend fun deleteChapter(id: String)
+
+    @Query("SELECT * FROM scene_revisions WHERE sceneId = :sceneId ORDER BY createdAt DESC")
+    fun observeRevisions(sceneId: String): Flow<List<SceneRevisionEntity>>
+
+    @Query("SELECT * FROM scene_revisions WHERE sceneId = :sceneId ORDER BY createdAt DESC")
+    suspend fun getRevisions(sceneId: String): List<SceneRevisionEntity>
+
+    @Query("SELECT * FROM scene_revisions WHERE id = :id LIMIT 1")
+    suspend fun getRevision(id: String): SceneRevisionEntity?
+
+    @Query("SELECT * FROM scene_revisions WHERE sceneId = :sceneId ORDER BY createdAt DESC LIMIT 1")
+    suspend fun latestRevision(sceneId: String): SceneRevisionEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertRevision(entity: SceneRevisionEntity)
+
+    @Query("DELETE FROM scene_revisions WHERE id = :id")
+    suspend fun deleteRevision(id: String)
+
+    @Query(
+        "DELETE FROM scene_revisions WHERE sceneId = :sceneId AND id NOT IN " +
+            "(SELECT id FROM scene_revisions WHERE sceneId = :sceneId ORDER BY createdAt DESC LIMIT :keep)",
+    )
+    suspend fun pruneRevisions(sceneId: String, keep: Int)
 }
 
 @Dao
@@ -364,3 +402,15 @@ interface MediaDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: MediaEntity)
 }
+
+/** Flattened manuscript row for the Reader — one JOIN instead of acts→chapters→scenes. */
+data class ReaderSceneRow(
+    val id: String,
+    val title: String,
+    val plainText: String,
+    val docJson: String,
+    val wordCount: Int,
+    val chapterId: String,
+    val chapterTitle: String,
+)
+

@@ -2,6 +2,7 @@ package com.ihy2ln.weaverse.feature.roleplay.characters
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ihy2ln.weaverse.core.roleplay.CharacterCardExporter
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
 import com.ihy2ln.weaverse.data.db.entities.RpCharacterEntity
 import com.ihy2ln.weaverse.data.db.entities.decodeEquipment
@@ -39,6 +40,7 @@ data class CharacterDetailUiState(
 class CharacterDetailViewModel @Inject constructor(
     private val db: WeaverseDatabase,
     private val workspaceHistory: WorkspaceHistory,
+    private val cardExporter: CharacterCardExporter,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(CharacterDetailUiState())
     val uiState: StateFlow<CharacterDetailUiState> = _uiState.asStateFlow()
@@ -133,6 +135,26 @@ class CharacterDetailViewModel @Inject constructor(
             }
             base = updated
             _uiState.update { it.copy(saved = true, statusMessage = "Saved") }
+        }
+    }
+
+    fun exportPngCard() {
+        val id = _uiState.value.id
+        if (id.isBlank()) return
+        viewModelScope.launch {
+            runCatching { cardExporter.exportPng(id) }
+                .onSuccess { file -> _uiState.update { it.copy(statusMessage = "PNG card: ${file.absolutePath}") } }
+                .onFailure { err -> _uiState.update { it.copy(statusMessage = "Export failed: ${err.message}") } }
+        }
+    }
+
+    fun exportJsonCard() {
+        val id = _uiState.value.id
+        if (id.isBlank()) return
+        viewModelScope.launch {
+            runCatching { cardExporter.exportJson(id) }
+                .onSuccess { file -> _uiState.update { it.copy(statusMessage = "JSON card: ${file.absolutePath}") } }
+                .onFailure { err -> _uiState.update { it.copy(statusMessage = "Export failed: ${err.message}") } }
         }
     }
 

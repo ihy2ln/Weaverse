@@ -24,4 +24,12 @@ object PromptTokens {
             .replace("{series.description}", ctx.seriesDescription)
             .replace("{today}", ctx.today)
     }
+
+    /** Rough English estimate used by the live context meter (~4 characters per token). */
+    fun estimate(text: String): Int = (text.length / 4).coerceAtLeast(if (text.isBlank()) 0 else 1)
+
+    fun meterLabel(used: Int, limit: Int): String {
+        fun k(n: Int) = "%.1fk".format(n / 1000.0)
+        return "${k(used)} / ${k(limit)}"
+    }
 }

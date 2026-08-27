@@ -1,10 +1,13 @@
 package com.ihy2ln.weaverse.data.sync
 
 import android.content.Context
-import android.content.Intent
 import android.net.wifi.WifiManager
 import android.os.Build
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import com.ihy2ln.weaverse.BuildConfig
+import com.ihy2ln.weaverse.data.backup.BackupManager
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
 import com.ihy2ln.weaverse.data.export.novelcrafter.NovelcrafterImporter
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
@@ -16,6 +19,7 @@ import com.ihy2ln.weaverse.sync.LibrarySummary
 import com.ihy2ln.weaverse.sync.NoteDetail
 import com.ihy2ln.weaverse.sync.NoteSummary
 import com.ihy2ln.weaverse.sync.SyncAuth
+import com.ihy2ln.weaverse.sync.SyncMerge
 import com.ihy2ln.weaverse.sync.novelcrafter.ImportArt
 import com.ihy2ln.weaverse.sync.novelcrafter.NovelcrafterZipParser
 import com.ihy2ln.weaverse.sync.SyncPackage
@@ -23,6 +27,7 @@ import com.ihy2ln.weaverse.sync.SyncPairRequest
 import com.ihy2ln.weaverse.sync.SyncPairResponse
 import com.ihy2ln.weaverse.sync.SyncPushResult
 import com.ihy2ln.weaverse.sync.SyncStatusResponse
+import com.ihy2ln.weaverse.sync.SyncTls
 import com.ihy2ln.weaverse.sync.normalizeSyncBaseUrl
 import com.ihy2ln.weaverse.sync.web.webAppCss
 import com.ihy2ln.weaverse.sync.web.webAppJs
@@ -40,11 +45,13 @@ import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
+import io.ktor.server.application.Application
 import io.ktor.server.application.call
 import io.ktor.server.application.install
 import io.ktor.server.cio.CIO
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
+import io.ktor.server.engine.sslConnector
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation as ServerContentNegotiation
 import io.ktor.server.request.receive
 import io.ktor.server.request.receiveChannel
@@ -72,6 +79,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -86,6 +94,9 @@ data class SyncUiSnapshot(
     val peerHost: String = "",
     val peerPin: String = "",
     val autoSync: Boolean = true,
+    val tlsEnabled: Boolean = false,
+    val certSha256: String = "",
+    val conflicts: List<SyncMerge.ConflictEntry> = emptyList(),
 )
 
 @Singleton
@@ -94,6 +105,7 @@ class SyncCoordinator @Inject constructor(
     private val db: WeaverseDatabase,
     private val settings: SettingsRepository,
     private val novelcrafterImporter: NovelcrafterImporter,
+    private val backupManager: BackupManager,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val json = Json {
@@ -104,6 +116,7 @@ class SyncCoordinator @Inject constructor(
     private val deviceId = SyncAuth.newDeviceId()
     private val pairPin = SyncAuth.newPairPin()
     private val sessions = ConcurrentHashMap.newKeySet<String>()
+    private val foregrounded = AtomicBoolean(true)
 
     private val _state = MutableStateFlow(
         SyncUiSnapshot(
@@ -114,7 +127,26 @@ class SyncCoordinator @Inject constructor(
     )
     val state: StateFlow<SyncUiSnapshot> = _state.asStateFlow()
 
+    private var server: EmbeddedServer<*, *>? = null
+    private var client = buildClient(null)
+    private var lastClientPin: String = ""
+    private var hostCertSha256: String = ""
+    private var hostTls: Boolean = false
+
     init {
+        scope.launch(Dispatchers.Main) {
+            ProcessLifecycleOwner.get().lifecycle.addObserver(
+                object : DefaultLifecycleObserver {
+                    override fun onStart(owner: LifecycleOwner) {
+                        foregrounded.set(true)
+                    }
+
+                    override fun onStop(owner: LifecycleOwner) {
+                        foregrounded.set(false)
+                    }
+                },
+            )
+        }
         scope.launch {
             settings.preferences.collect { prefs ->
                 _state.update {
@@ -122,171 +154,63 @@ class SyncCoordinator @Inject constructor(
                         peerHost = prefs.syncWebUrl.ifBlank { it.peerHost },
                         peerPin = prefs.syncPassword.ifBlank { it.peerPin },
                         autoSync = prefs.autoSync,
+                        tlsEnabled = prefs.syncTlsEnabled,
+                        certSha256 = prefs.syncCertSha256.ifBlank { it.certSha256 },
                     )
+                }
+                val pin = prefs.syncCertSha256
+                if (pin != lastClientPin) {
+                    lastClientPin = pin
+                    rebuildClient(pin)
                 }
             }
         }
         scope.launch {
             while (isActive) {
-                delay(20_000)
+                delay(FOREGROUND_POLL_MS)
+                if (!foregrounded.get()) continue
                 val snap = _state.value
                 if (snap.autoSync && snap.peerHost.isNotBlank() && snap.peerPin.isNotBlank()) {
                     runCatching { quietSync() }
                 }
             }
         }
-    }
-
-    private var server: EmbeddedServer<*, *>? = null
-
-    private val client = HttpClient(OkHttp) {
-        expectSuccess = false
-        install(ContentNegotiation) { json(json) }
+        scope.launch { refreshConflicts() }
     }
 
     private val syncDir get() = File(context.filesDir, "sync").also { it.mkdirs() }
 
     suspend fun startHost(port: Int = DEFAULT_SYNC_PORT) = withContext(Dispatchers.IO) {
         if (server != null) return@withContext
-        val engine = embeddedServer(CIO, host = "0.0.0.0", port = port) {
-            install(ServerContentNegotiation) { json(json) }
-            routing {
-                get("/") { call.respondText(webIndexHtml(), ContentType.Text.Html) }
-                get("/app.js") { call.respondText(webAppJs(), ContentType.Text.JavaScript) }
-                get("/app.css") { call.respondText(webAppCss(), ContentType.Text.CSS) }
-                get("/api/status") {
-                    call.respond(
-                        SyncStatusResponse(
-                            deviceId = deviceId,
-                            deviceName = _state.value.deviceName,
-                            appVersion = BuildConfig.VERSION_NAME,
-                            hostMode = "android",
-                            port = port,
-                            pairPin = pairPin,
-                            hasLibrary = true,
-                            webUrl = localWebUrl(port),
-                            lanHint = ipv4Address(),
-                        ),
-                    )
-                }
-                post("/api/pair") {
-                    val body = call.receive<SyncPairRequest>()
-                    if (!SyncAuth.constantTimeEquals(body.pin, pairPin)) {
-                        call.respond(SyncPairResponse(false, message = "Invalid password"))
-                        return@post
+        val tlsEnabled = settings.preferences.first().syncTlsEnabled
+        hostTls = tlsEnabled
+        val held = if (tlsEnabled) {
+            SyncTls.loadOrCreate(File(syncDir, "tls.p12"))
+        } else {
+            null
+        }
+        hostCertSha256 = held?.let { SyncTls.fingerprint(it) }.orEmpty()
+        val engine = if (held != null) {
+            val ks = SyncTls.toKeyStore(held)
+            embeddedServer(
+                factory = CIO,
+                configure = {
+                    sslConnector(
+                        keyStore = ks,
+                        keyAlias = SyncTls.KEY_ALIAS,
+                        keyStorePassword = { SyncTls.STORE_PASSWORD.toCharArray() },
+                        privateKeyPassword = { SyncTls.STORE_PASSWORD.toCharArray() },
+                    ) {
+                        host = "0.0.0.0"
+                        this.port = port
                     }
-                    val token = SyncAuth.newSessionToken()
-                    sessions.add(token)
-                    call.respond(SyncPairResponse(true, token = token, message = "Paired"))
-                }
-                get("/api/library") {
-                    if (!authorized(call.request.headers["X-Weaverse-Token"])) {
-                        call.respond(LibrarySummary())
-                        return@get
-                    }
-                    call.respond(librarySummary())
-                }
-                get("/api/notes/{id}") {
-                    if (!authorized(call.request.headers["X-Weaverse-Token"])) {
-                        call.respond(mapOf("ok" to false))
-                        return@get
-                    }
-                    val id = call.parameters["id"].orEmpty()
-                    val note = db.snippetDao().getById(id)
-                    if (note == null || note.category != "notes") {
-                        call.respond(mapOf("ok" to false))
-                    } else {
-                        call.respond(NoteDetail(note.id, note.title, note.body))
-                    }
-                }
-                put("/api/notes/{id}") {
-                    if (!authorized(call.request.headers["X-Weaverse-Token"])) {
-                        call.respond(mapOf("ok" to false))
-                        return@put
-                    }
-                    val id = call.parameters["id"].orEmpty()
-                    val detail = call.receive<NoteDetail>()
-                    val noteId = id.ifBlank { detail.id }
-                    val existing = db.snippetDao().getById(noteId)
-                    db.snippetDao().upsert(
-                        SnippetEntity(
-                            id = noteId,
-                            scopeType = existing?.scopeType ?: "app",
-                            scopeId = existing?.scopeId ?: "global",
-                            title = detail.title,
-                            body = detail.body,
-                            category = "notes",
-                            pinned = existing?.pinned ?: false,
-                            createdAt = existing?.createdAt ?: System.currentTimeMillis(),
-                        ),
-                    )
-                    call.respond(mapOf("ok" to true))
-                }
-                get("/api/media/{id}") {
-                    val id = call.parameters["id"].orEmpty()
-                    val piece = ImportArt.pieces.firstOrNull { it.id == id }
-                    val file = File(context.filesDir, "media/$id.jpg").takeIf { it.exists() }
-                        ?: File(context.filesDir, "media/$id.png").takeIf { it.exists() }
-                        ?: piece?.let { File(context.filesDir, "media/${it.id}.${it.fileName.substringAfterLast('.')}") }
-                    if (file != null && file.exists()) {
-                        call.respondFile(file)
-                    } else {
-                        call.respond(mapOf("ok" to false))
-                    }
-                }
-                post("/api/import") {
-                    if (!authorized(call.request.headers["X-Weaverse-Token"])) {
-                        call.respond(ImportZipResult(false, "Unauthorized"))
-                        return@post
-                    }
-                    val incoming = File(syncDir, "import-${System.currentTimeMillis()}.zip")
-                    call.receiveChannel().copyTo(incoming.outputStream())
-                    val bytes = incoming.readBytes()
-                    if (!NovelcrafterZipParser.looksLikeNovelcrafterZipBytes(bytes)) {
-                        call.respond(
-                            ImportZipResult(
-                                false,
-                                "ZIP not recognized. Use a Novelcrafter full export (novel.md or novel.docx + characters/…).",
-                            ),
-                        )
-                        return@post
-                    }
-                    val parsed = NovelcrafterZipParser.parse(bytes)
-                    val result = novelcrafterImporter.import(parsed)
-                    settings.setSelectedBookId(result.bookId)
-                    call.respond(
-                        ImportZipResult(
-                            ok = true,
-                            message = "Imported “${result.bookTitle}”",
-                            bookId = result.bookId,
-                            bookTitle = result.bookTitle,
-                            sceneCount = result.sceneCount,
-                            codexCount = result.codexCount,
-                            rpChatCount = result.rpChatCount,
-                            mediaCount = result.mediaCount,
-                        ),
-                    )
-                }
-                get("/api/sync/pull") {
-                    val token = call.request.headers["X-Weaverse-Token"]
-                    if (!authorized(token)) {
-                        call.respond(mapOf("ok" to false, "message" to "Unauthorized"))
-                        return@get
-                    }
-                    val zip = buildLocalPackage()
-                    call.respondFile(zip)
-                }
-                post("/api/sync/push") {
-                    val token = call.request.headers["X-Weaverse-Token"]
-                    if (!authorized(token)) {
-                        call.respond(SyncPushResult(false, "Unauthorized"))
-                        return@post
-                    }
-                    val incoming = File(syncDir, "incoming-${System.currentTimeMillis()}.zip")
-                    call.receiveChannel().copyTo(incoming.outputStream())
-                    restorePackage(incoming)
-                    call.respond(SyncPushResult(true, "Applied on Android host — restart app to reload DB"))
-                }
+                },
+            ) {
+                configureHost(port)
+            }
+        } else {
+            embeddedServer(CIO, host = "0.0.0.0", port = port) {
+                configureHost(port)
             }
         }
         engine.start(wait = false)
@@ -298,9 +222,171 @@ class SyncCoordinator @Inject constructor(
                 port = port,
                 lanAddress = ipv4Address(),
                 peerHost = it.peerHost.ifBlank { url },
+                tlsEnabled = tlsEnabled,
+                certSha256 = hostCertSha256.ifBlank { it.certSha256 },
                 statusText = "Web hub running. Open the web link to see the password.",
                 lastError = "",
             )
+        }
+    }
+
+    private fun Application.configureHost(port: Int) {
+        install(ServerContentNegotiation) { json(json) }
+        routing {
+            get("/") { call.respondText(webIndexHtml(), ContentType.Text.Html) }
+            get("/app.js") { call.respondText(webAppJs(), ContentType.Text.JavaScript) }
+            get("/app.css") { call.respondText(webAppCss(), ContentType.Text.CSS) }
+            get("/api/status") {
+                call.respond(
+                    SyncStatusResponse(
+                        deviceId = deviceId,
+                        deviceName = _state.value.deviceName,
+                        appVersion = BuildConfig.VERSION_NAME,
+                        hostMode = "android",
+                        port = port,
+                        pairPin = pairPin,
+                        hasLibrary = true,
+                        webUrl = localWebUrl(port),
+                        lanHint = ipv4Address(),
+                        tls = hostTls,
+                        certSha256 = hostCertSha256,
+                    ),
+                )
+            }
+            post("/api/pair") {
+                val body = call.receive<SyncPairRequest>()
+                if (!SyncAuth.constantTimeEquals(body.pin, pairPin)) {
+                    call.respond(SyncPairResponse(false, message = "Invalid password"))
+                    return@post
+                }
+                val token = SyncAuth.newSessionToken()
+                sessions.add(token)
+                call.respond(
+                    SyncPairResponse(
+                        true,
+                        token = token,
+                        message = "Paired",
+                        certSha256 = hostCertSha256,
+                        tls = hostTls,
+                    ),
+                )
+            }
+            get("/api/library") {
+                if (!authorized(call.request.headers["X-Weaverse-Token"])) {
+                    call.respond(LibrarySummary())
+                    return@get
+                }
+                call.respond(librarySummary())
+            }
+            get("/api/notes/{id}") {
+                if (!authorized(call.request.headers["X-Weaverse-Token"])) {
+                    call.respond(mapOf("ok" to false))
+                    return@get
+                }
+                val id = call.parameters["id"].orEmpty()
+                val note = db.snippetDao().getById(id)
+                if (note == null || note.category != "notes") {
+                    call.respond(mapOf("ok" to false))
+                } else {
+                    call.respond(NoteDetail(note.id, note.title, note.body))
+                }
+            }
+            put("/api/notes/{id}") {
+                if (!authorized(call.request.headers["X-Weaverse-Token"])) {
+                    call.respond(mapOf("ok" to false))
+                    return@put
+                }
+                val id = call.parameters["id"].orEmpty()
+                val detail = call.receive<NoteDetail>()
+                val noteId = id.ifBlank { detail.id }
+                val existing = db.snippetDao().getById(noteId)
+                db.snippetDao().upsert(
+                    SnippetEntity(
+                        id = noteId,
+                        scopeType = existing?.scopeType ?: "app",
+                        scopeId = existing?.scopeId ?: "global",
+                        title = detail.title,
+                        body = detail.body,
+                        category = "notes",
+                        pinned = existing?.pinned ?: false,
+                        createdAt = existing?.createdAt ?: System.currentTimeMillis(),
+                    ),
+                )
+                call.respond(mapOf("ok" to true))
+            }
+            get("/api/media/{id}") {
+                val id = call.parameters["id"].orEmpty()
+                val piece = ImportArt.pieces.firstOrNull { it.id == id }
+                val file = File(context.filesDir, "media/$id.jpg").takeIf { it.exists() }
+                    ?: File(context.filesDir, "media/$id.png").takeIf { it.exists() }
+                    ?: piece?.let { File(context.filesDir, "media/${it.id}.${it.fileName.substringAfterLast('.')}") }
+                if (file != null && file.exists()) {
+                    call.respondFile(file)
+                } else {
+                    call.respond(mapOf("ok" to false))
+                }
+            }
+            post("/api/import") {
+                if (!authorized(call.request.headers["X-Weaverse-Token"])) {
+                    call.respond(ImportZipResult(false, "Unauthorized"))
+                    return@post
+                }
+                val incoming = File(syncDir, "import-${System.currentTimeMillis()}.zip")
+                call.receiveChannel().copyTo(incoming.outputStream())
+                val bytes = incoming.readBytes()
+                if (!NovelcrafterZipParser.looksLikeNovelcrafterZipBytes(bytes)) {
+                    call.respond(
+                        ImportZipResult(
+                            false,
+                            "ZIP not recognized. Use a Novelcrafter full export (novel.md or novel.docx + characters/…).",
+                        ),
+                    )
+                    return@post
+                }
+                val parsed = NovelcrafterZipParser.parse(bytes)
+                val result = novelcrafterImporter.import(parsed)
+                settings.setSelectedBookId(result.bookId)
+                call.respond(
+                    ImportZipResult(
+                        ok = true,
+                        message = "Imported “${result.bookTitle}”",
+                        bookId = result.bookId,
+                        bookTitle = result.bookTitle,
+                        sceneCount = result.sceneCount,
+                        codexCount = result.codexCount,
+                        rpChatCount = result.rpChatCount,
+                        mediaCount = result.mediaCount,
+                    ),
+                )
+            }
+            get("/api/sync/pull") {
+                val token = call.request.headers["X-Weaverse-Token"]
+                if (!authorized(token)) {
+                    call.respond(mapOf("ok" to false, "message" to "Unauthorized"))
+                    return@get
+                }
+                val zip = buildLocalPackage()
+                call.respondFile(zip)
+            }
+            post("/api/sync/push") {
+                val token = call.request.headers["X-Weaverse-Token"]
+                if (!authorized(token)) {
+                    call.respond(SyncPushResult(false, "Unauthorized"))
+                    return@post
+                }
+                val incoming = File(syncDir, "incoming-${System.currentTimeMillis()}.zip")
+                call.receiveChannel().copyTo(incoming.outputStream())
+                val report = mergePackage(incoming)
+                call.respond(
+                    SyncPushResult(
+                        true,
+                        "Merged on Android host — ${report.summary}",
+                        appliedRows = report.appliedRows,
+                        deletedRows = report.deletedRows,
+                        conflicts = report.conflicts,
+                    ),
+                )
+            }
         }
     }
 
@@ -308,12 +394,14 @@ class SyncCoordinator @Inject constructor(
         val peer = normalizeSyncBaseUrl(_state.value.peerHost)
         if (peer.isNotBlank()) return peer
         if (_state.value.hosting) return localWebUrl(_state.value.port)
-        return "http://127.0.0.1:$DEFAULT_SYNC_PORT"
+        return "${if (_state.value.tlsEnabled) "https" else "http"}://127.0.0.1:$DEFAULT_SYNC_PORT"
     }
 
     suspend fun stopHost() = withContext(Dispatchers.IO) {
         runCatching { server?.stop(500, 1000) }
         server = null
+        hostTls = false
+        hostCertSha256 = ""
         _state.update { it.copy(hosting = false, statusText = "Host stopped") }
     }
 
@@ -325,6 +413,31 @@ class SyncCoordinator @Inject constructor(
     fun setAutoSync(enabled: Boolean) {
         _state.update { it.copy(autoSync = enabled) }
         scope.launch { settings.setAutoSync(enabled) }
+    }
+
+    fun setTlsEnabled(enabled: Boolean) {
+        _state.update { it.copy(tlsEnabled = enabled) }
+        scope.launch {
+            settings.setSyncTlsEnabled(enabled)
+            if (_state.value.hosting) {
+                stopHost()
+                startHost()
+            }
+        }
+    }
+
+    fun keepMine(entry: SyncMerge.ConflictEntry) {
+        scope.launch {
+            runCatching { SyncMerge.restoreLost(liveSql(), entry) }
+            refreshConflicts()
+        }
+    }
+
+    fun keepTheirs(entry: SyncMerge.ConflictEntry) {
+        scope.launch {
+            runCatching { SyncMerge.dismissConflict(liveSql(), entry) }
+            refreshConflicts()
+        }
     }
 
     private suspend fun quietSync() {
@@ -339,7 +452,7 @@ class SyncCoordinator @Inject constructor(
         val localMtime = if (localDb.exists()) localDb.lastModified() else 0L
         val last = settings.preferences.first().lastSyncAt
         if (remote > last + 2000 && remote >= localMtime) {
-            pullFromPeer(relaunch = true)
+            pullFromPeer()
         } else if (localMtime > last + 2000) {
             pushToPeer()
             settings.setLastSyncAt(System.currentTimeMillis())
@@ -364,16 +477,26 @@ class SyncCoordinator @Inject constructor(
             if (result.ok) settings.setLastSyncAt(System.currentTimeMillis())
             _state.update {
                 it.copy(
-                    statusText = if (result.ok) "Pushed to the web hub" else result.message,
+                    statusText = if (result.ok) {
+                        "Pushed to the web hub" +
+                            if (result.appliedRows > 0 || result.conflicts > 0) {
+                                " — ${result.appliedRows} applied, ${result.conflicts} conflicts"
+                            } else {
+                                ""
+                            }
+                    } else {
+                        result.message
+                    },
                     lastError = if (result.ok) "" else result.message,
                 )
             }
+            refreshConflicts()
         }.onFailure { err ->
             _state.update { it.copy(lastError = err.message ?: "Push failed") }
         }
     }
 
-    suspend fun pullFromPeer(relaunch: Boolean = true) = withContext(Dispatchers.IO) {
+    suspend fun pullFromPeer() = withContext(Dispatchers.IO) {
         val host = normalizeHost(_state.value.peerHost)
         val pin = _state.value.peerPin
         if (host.isBlank() || pin.isBlank()) {
@@ -390,15 +513,14 @@ class SyncCoordinator @Inject constructor(
             response.bodyAsChannel().toInputStream().use { input ->
                 incoming.outputStream().use { input.copyTo(it) }
             }
-            restorePackage(incoming)
+            val report = mergePackage(incoming)
             settings.setLastSyncAt(System.currentTimeMillis())
             _state.update {
                 it.copy(
-                    statusText = "Pulled from the web hub — reloading",
+                    statusText = "Merged from the web hub — ${report.summary}",
                     lastError = "",
                 )
             }
-            if (relaunch) relaunchApp()
         }.onFailure { err ->
             _state.update { it.copy(lastError = err.message ?: "Pull failed") }
         }
@@ -411,6 +533,11 @@ class SyncCoordinator @Inject constructor(
         }.body<SyncPairResponse>()
         val token = res.token
         if (!res.ok || token.isNullOrBlank()) error(res.message.ifBlank { "Pair failed" })
+        if (res.certSha256.isNotBlank()) {
+            settings.setSyncCertSha256(res.certSha256)
+            rebuildClient(res.certSha256)
+            _state.update { it.copy(certSha256 = res.certSha256) }
+        }
         return token
     }
 
@@ -421,7 +548,6 @@ class SyncCoordinator @Inject constructor(
     }
 
     private fun buildLocalPackage(): File {
-        // Checkpoint Room so the on-disk file is consistent enough for sync.
         runCatching { db.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(FULL)").close() }
         val zip = File(syncDir, "local-package.zip")
         SyncPackage.writePackage(
@@ -435,21 +561,38 @@ class SyncCoordinator @Inject constructor(
         return zip
     }
 
-    private fun restorePackage(zip: File) {
+    private suspend fun mergePackage(zip: File): SyncMerge.Report {
+        backupManager.snapshotBeforeMerge("sync")
         runCatching { db.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(FULL)").close() }
-        runCatching { db.close() }
-        SyncPackage.restoreInto(
+        val report = SyncPackage.mergeFromZip(
             zipFile = zip,
-            dbFile = context.getDatabasePath("weaverse.db"),
+            live = liveSql(),
             mediaDir = File(context.filesDir, "media"),
         )
+        refreshConflicts()
+        return report
     }
 
-    private fun relaunchApp() {
-        val intent = context.packageManager.getLaunchIntentForPackage(context.packageName) ?: return
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-        context.startActivity(intent)
-        Runtime.getRuntime().exit(0)
+    private fun liveSql(): RoomSyncSql = RoomSyncSql(db.openHelper.writableDatabase)
+
+    private fun refreshConflicts() {
+        val list = runCatching { SyncMerge.conflicts(liveSql()) }.getOrDefault(emptyList())
+        _state.update { it.copy(conflicts = list) }
+    }
+
+    private fun rebuildClient(pin: String?) {
+        runCatching { client.close() }
+        client = buildClient(pin?.takeIf { it.isNotBlank() })
+    }
+
+    private fun buildClient(pin: String?): HttpClient = HttpClient(OkHttp) {
+        expectSuccess = false
+        engine {
+            config {
+                SyncTlsPinning.apply(this, pin)
+            }
+        }
+        install(ContentNegotiation) { json(json) }
     }
 
     private suspend fun librarySummary(): LibrarySummary {
@@ -462,7 +605,8 @@ class SyncCoordinator @Inject constructor(
 
     private fun localWebUrl(port: Int): String {
         val ip = ipv4Address().ifBlank { "127.0.0.1" }
-        return "http://$ip:$port"
+        val scheme = if (hostTls) "https" else "http"
+        return "$scheme://$ip:$port"
     }
 
     private fun normalizeHost(raw: String): String = normalizeSyncBaseUrl(raw)
@@ -481,5 +625,9 @@ class SyncCoordinator @Inject constructor(
                 ip shr 24 and 0xff,
             )
         }.getOrDefault("")
+    }
+
+    companion object {
+        private const val FOREGROUND_POLL_MS = 8_000L
     }
 }

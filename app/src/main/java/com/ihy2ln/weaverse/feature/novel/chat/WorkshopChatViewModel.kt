@@ -9,6 +9,8 @@ import com.ihy2ln.weaverse.ai.context.AssembledPrompt
 import com.ihy2ln.weaverse.ai.context.ContextBuilder
 import com.ihy2ln.weaverse.ai.context.ContextBuildRequest
 import com.ihy2ln.weaverse.ai.context.ContextChip
+import com.ihy2ln.weaverse.ai.context.ContextMeter
+import com.ihy2ln.weaverse.ai.context.ContextMeterReading
 import com.ihy2ln.weaverse.ai.prompt.PromptComponents
 import com.ihy2ln.weaverse.ai.prompt.PromptRenderContext
 import com.ihy2ln.weaverse.ai.prompt.PromptRenderer
@@ -36,6 +38,7 @@ data class ChatMessageUi(
     val id: String,
     val role: String,
     val plainText: String,
+    val usageText: String = "",
 )
 
 data class WorkshopChatUiState(
@@ -50,6 +53,7 @@ data class WorkshopChatUiState(
     val isStreaming: Boolean = false,
     val errorMessage: String = "",
     val lastUsage: String = "",
+    val contextMeter: ContextMeterReading? = null,
     val showCodexPicker: Boolean = false,
     val codexEntries: List<CodexPickerEntry> = emptyList(),
     val showExtraPromptSurfaces: Boolean = false,
@@ -75,6 +79,7 @@ class WorkshopChatViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(WorkshopChatUiState())
     val uiState: StateFlow<WorkshopChatUiState> = _uiState.asStateFlow()
     private var observeJob: Job? = null
+    private var generateJob: Job? = null
     private var assembledPrompt: com.ihy2ln.weaverse.ai.context.AssembledPrompt? = null
 
     init {
@@ -101,7 +106,16 @@ class WorkshopChatViewModel @Inject constructor(
             db.workshopChatDao().observeMessages(threadId).collect { messages ->
                 _uiState.update {
                     it.copy(messages = messages.map { m ->
-                        ChatMessageUi(m.id, m.role, documentFromJson(m.contentJson).plainText())
+                        ChatMessageUi(
+                            m.id,
+                            m.role,
+                            documentFromJson(m.contentJson).plainText(),
+                            usageText = if (m.role != "user" && (m.promptTokens > 0 || m.completionTokens > 0 || m.costUsd > 0.0)) {
+                                UsageFormat.formatUsage(m.promptTokens, m.completionTokens, null, m.costUsd.takeIf { it > 0.0 })
+                            } else {
+                                ""
+                            },
+                        )
                     })
                 }
             }
@@ -180,7 +194,8 @@ class WorkshopChatViewModel @Inject constructor(
     fun send() {
         val state = _uiState.value
         if (state.input.isBlank() || state.isStreaming) return
-        viewModelScope.launch {
+        generateJob?.cancel()
+        generateJob = viewModelScope.launch {
             if (!aiGeneration.hasApiKey()) {
                 _uiState.update { it.copy(errorMessage = AIError.NoApiKey().message.orEmpty()) }
                 return@launch
@@ -198,6 +213,9 @@ class WorkshopChatViewModel @Inject constructor(
             _uiState.update { it.copy(input = "", isStreaming = true, streamingText = "", errorMessage = "") }
             val builder = StringBuilder()
             var usageText = ""
+            var promptTokens = 0
+            var completionTokens = 0
+            var costUsd = 0.0
             runCatching {
                 aiGeneration.stream(
                     userMessage = userText,
@@ -210,12 +228,20 @@ class WorkshopChatViewModel @Inject constructor(
                             _uiState.update { it.copy(streamingText = builder.toString()) }
                         }
                         is AIChunk.Usage -> {
+                            promptTokens = chunk.promptTokens
+                            completionTokens = chunk.completionTokens
+                            costUsd = chunk.cost ?: 0.0
                             usageText = UsageFormat.formatUsage(
                                 promptTokens = chunk.promptTokens,
                                 completionTokens = chunk.completionTokens,
                                 totalTokens = chunk.totalTokens,
                                 cost = chunk.cost,
                             )
+                        }
+                        is AIChunk.RetryWait -> {
+                            _uiState.update {
+                                it.copy(errorMessage = "Rate limited — retry in ${chunk.secondsLeft}s")
+                            }
                         }
                         AIChunk.Done -> Unit
                     }
@@ -240,6 +266,9 @@ class WorkshopChatViewModel @Inject constructor(
                 role = "assistant",
                 contentJson = Document.fromPlainText(builder.toString()).toJson(),
                 createdAt = now + 1,
+                promptTokens = promptTokens,
+                completionTokens = completionTokens,
+                costUsd = costUsd,
             )
             db.workshopChatDao().upsertMessage(assistantMessage)
             val added = listOf(userMessage, assistantMessage)
@@ -251,6 +280,12 @@ class WorkshopChatViewModel @Inject constructor(
                 it.copy(isStreaming = false, streamingText = "", lastUsage = usageText)
             }
         }
+    }
+
+    fun cancelGeneration() {
+        generateJob?.cancel()
+        generateJob = null
+        _uiState.update { it.copy(isStreaming = false, streamingText = "", errorMessage = "Cancelled") }
     }
 
     private fun refreshContext(input: String) {
@@ -290,10 +325,12 @@ class WorkshopChatViewModel @Inject constructor(
             )
             assembledPrompt = withWorkshop
             val chips = withWorkshop.usedEntries.filter { it.entryId !in excludedEntryIds }
+            val meter = ContextMeter.reading(withWorkshop, extraUser = input)
             _uiState.update {
                 it.copy(
                     contextChips = chips,
                     previewPrompt = withWorkshop.systemBlocks.joinToString("\n\n"),
+                    contextMeter = meter,
                 )
             }
         }

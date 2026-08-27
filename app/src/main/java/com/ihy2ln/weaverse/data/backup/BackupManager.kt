@@ -2,8 +2,10 @@ package com.ihy2ln.weaverse.data.backup
 
 import android.content.Context
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
+import com.ihy2ln.weaverse.data.settings.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -18,11 +20,67 @@ import javax.inject.Singleton
 class BackupManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val db: WeaverseDatabase,
+    private val settings: SettingsRepository,
 ) {
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
     private val backupDir get() = File(context.filesDir, "backups").also { it.mkdirs() }
     private val shareDir: File
         get() = File(context.getExternalFilesDir(null) ?: context.filesDir, "backups").also { it.mkdirs() }
+
+    /** Immediate DB+media snapshot used before every sync merge. Independent of the daily toggle. */
+    suspend fun snapshotBeforeMerge(reason: String = "sync-merge"): File? = withContext(Dispatchers.IO) {
+        runCatching {
+            checkpointWal()
+            val timestamp = System.currentTimeMillis()
+            val dbFile = context.getDatabasePath("weaverse.db")
+            val sources = BackupSources(
+                dbFile = dbFile,
+                walFile = File(dbFile.path + "-wal"),
+                shmFile = File(dbFile.path + "-shm"),
+                mediaDir = File(context.filesDir, "media"),
+            )
+            val dir = File(backupDir, "sync-snapshots").also { it.mkdirs() }
+            val zip = File(dir, "pre-merge-$reason-$timestamp.zip")
+            val manifest = json.encodeToString(
+                BackupManifest(exportedAt = timestamp, version = 2, platforms = listOf("mobile")),
+            )
+            BackupArchives.packMobile(zip, sources, manifest)
+            pruneSnapshots(dir, keep = 7)
+            pruneBackupZips(keep = 7)
+            zip
+        }.getOrNull()
+    }
+
+    suspend fun maybeAutoBackup() = withContext(Dispatchers.IO) {
+        val prefs = settings.preferences.first()
+        if (!prefs.autoBackupEnabled) return@withContext
+        val now = System.currentTimeMillis()
+        val dayMs = 20L * 60 * 60 * 1000
+        if (prefs.lastAutoBackupAt > 0L && now - prefs.lastAutoBackupAt < dayMs) return@withContext
+        exportAutoBackup()
+    }
+
+    suspend fun exportAutoBackup() = withContext(Dispatchers.IO) {
+        val prefs = settings.preferences.first()
+        if (!prefs.autoBackupEnabled) return@withContext
+        exportBackup()
+        settings.setLastAutoBackupAt(System.currentTimeMillis())
+    }
+
+    fun pruneBackupZips(keep: Int = 7) {
+        val all = (backupDir.listFiles()?.toList().orEmpty() + shareDir.listFiles()?.toList().orEmpty())
+            .filter { it.isFile && it.extension.equals("zip", ignoreCase = true) }
+            .sortedByDescending { it.lastModified() }
+        all.drop(keep).forEach { runCatching { it.delete() } }
+    }
+
+    private fun pruneSnapshots(dir: File, keep: Int) {
+        dir.listFiles()
+            ?.filter { it.isFile }
+            ?.sortedByDescending { it.lastModified() }
+            ?.drop(keep)
+            ?.forEach { runCatching { it.delete() } }
+    }
 
     suspend fun exportBackup(): BackupExportResult = withContext(Dispatchers.IO) {
         checkpointWal()
@@ -44,6 +102,7 @@ class BackupManager @Inject constructor(
         BackupArchives.packPc(pcZip, sources, manifest)
         copyBeside(mobileZip, File(shareDir, mobileZip.name))
         copyBeside(pcZip, File(shareDir, pcZip.name))
+        pruneBackupZips(keep = 7)
         BackupExportResult(
             mobileZip = File(shareDir, mobileZip.name).takeIf { it.exists() } ?: mobileZip,
             pcZip = File(shareDir, pcZip.name).takeIf { it.exists() } ?: pcZip,

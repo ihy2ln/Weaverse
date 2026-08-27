@@ -10,6 +10,8 @@ import com.ihy2ln.weaverse.ai.AiGenerationService
 import com.ihy2ln.weaverse.ai.ImageAttachment
 import com.ihy2ln.weaverse.ai.ModelInfo
 import com.ihy2ln.weaverse.ai.context.AssembledPrompt
+import com.ihy2ln.weaverse.ai.context.ContextMeter
+import com.ihy2ln.weaverse.ai.context.ContextMeterReading
 import com.ihy2ln.weaverse.ai.openrouter.OpenRouterModelCache
 import com.ihy2ln.weaverse.ai.prompt.DefaultAiGuides
 import com.ihy2ln.weaverse.ai.prompt.PromptTokenContext
@@ -32,6 +34,7 @@ import com.ihy2ln.weaverse.feature.shell.AppMode
 import com.ihy2ln.weaverse.feature.shell.NovelDestination
 import com.ihy2ln.weaverse.feature.shell.WorkspaceHistory
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -59,6 +62,7 @@ data class GlobalPromptUiState(
     val selectedModelRef: String = "",
     val defaultModelRef: String = "",
     val writingModels: List<ModelInfo> = emptyList(),
+    val contextMeterLabel: String = "",
 )
 
 data class PromptInsertContext(
@@ -83,6 +87,8 @@ class GlobalPromptViewModel @Inject constructor(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(GlobalPromptUiState())
     val uiState: StateFlow<GlobalPromptUiState> = _uiState.asStateFlow()
+    private var generateJob: Job? = null
+    private var cachedSystemTokens: Int = 0
 
     private var context = PromptInsertContext()
 
@@ -104,6 +110,7 @@ class GlobalPromptViewModel @Inject constructor(
 
     fun updateContext(ctx: PromptInsertContext) {
         context = ctx
+        refreshContextMeter(reloadSystem = true)
     }
 
     fun open(kind: PromptEntryKind) {
@@ -122,14 +129,49 @@ class GlobalPromptViewModel @Inject constructor(
                 outputWords = if (kind == PromptEntryKind.Ai) 750 else it.outputWords,
             )
         }
+        refreshContextMeter(reloadSystem = true)
     }
 
     fun dismiss() {
+        generateJob?.cancel()
         _uiState.update { it.copy(kind = null, isStreaming = false) }
     }
 
+    fun cancelGeneration() {
+        generateJob?.cancel()
+        generateJob = null
+        _uiState.update { it.copy(isStreaming = false, errorMessage = "Cancelled") }
+    }
+
     fun onTextChange(value: String) {
-        _uiState.update { it.copy(text = value, errorMessage = "", statusMessage = "") }
+        _uiState.update {
+            it.copy(
+                text = value,
+                errorMessage = "",
+                statusMessage = "",
+                contextMeterLabel = meterLabel(value),
+            )
+        }
+    }
+
+    fun selectEntryKind(kind: PromptEntryKind) {
+        _uiState.update {
+            it.copy(
+                kind = kind,
+                errorMessage = "",
+                statusMessage = "",
+                minimumOutputWords = if (kind == PromptEntryKind.Ai && it.kind != PromptEntryKind.Ai) {
+                    500
+                } else {
+                    it.minimumOutputWords
+                },
+                outputWords = if (kind == PromptEntryKind.Ai && it.kind != PromptEntryKind.Ai) {
+                    750
+                } else {
+                    it.outputWords
+                },
+            )
+        }
     }
 
     fun clearText() {
@@ -150,10 +192,12 @@ class GlobalPromptViewModel @Inject constructor(
 
     fun selectModel(modelId: String) {
         _uiState.update { it.copy(selectedModelRef = PromptModelSelection.modelRef(modelId)) }
+        refreshContextMeter(reloadSystem = false)
     }
 
     fun useDefaultModel() {
         _uiState.update { it.copy(selectedModelRef = "") }
+        refreshContextMeter(reloadSystem = false)
     }
 
     fun requestImage() {
@@ -208,7 +252,8 @@ class GlobalPromptViewModel @Inject constructor(
     }
 
     private fun generateAi(state: GlobalPromptUiState) {
-        viewModelScope.launch {
+        generateJob?.cancel()
+        generateJob = viewModelScope.launch {
             if (!aiGeneration.hasApiKey()) {
                 _uiState.update { it.copy(errorMessage = AIError.NoApiKey().message.orEmpty()) }
                 return@launch
@@ -266,6 +311,11 @@ class GlobalPromptViewModel @Inject constructor(
                                 cost = chunk.cost,
                             )
                         }
+                        is AIChunk.RetryWait -> {
+                            _uiState.update {
+                                it.copy(errorMessage = "Rate limited — retry in ${chunk.secondsLeft}s")
+                            }
+                        }
                         AIChunk.Done -> Unit
                     }
                 }
@@ -314,6 +364,27 @@ class GlobalPromptViewModel @Inject constructor(
             }
             dismiss()
         }
+    }
+
+    private fun refreshContextMeter(reloadSystem: Boolean) {
+        viewModelScope.launch {
+            val state = _uiState.value
+            if (reloadSystem) {
+                val blocks = runCatching {
+                    assembleSystemBlocks(state.minimumOutputWords, state.outputWords)
+                }.getOrDefault(emptyList())
+                cachedSystemTokens = blocks.sumOf { ContextMeter.estimateTokens(it) }
+            }
+            _uiState.update { it.copy(contextMeterLabel = meterLabel(it.text)) }
+        }
+    }
+
+    private fun meterLabel(text: String): String {
+        val state = _uiState.value
+        val used = cachedSystemTokens + ContextMeter.estimateTokens(text)
+        val modelRef = state.selectedModelRef.ifBlank { state.defaultModelRef }
+        val limit = ContextMeter.limitFor(modelRef, state.writingModels)
+        return ContextMeterReading(used, limit).label
     }
 
     private suspend fun assembleSystemBlocks(minimumWords: Int, outputWords: Int): List<String> {

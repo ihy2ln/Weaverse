@@ -96,6 +96,14 @@ data class UserPreferences(
     val syncPassword: String = "",
     val autoSync: Boolean = true,
     val lastSyncAt: Long = 0L,
+    val syncTlsEnabled: Boolean = false,
+    val syncCertSha256: String = "",
+    val autoBackupEnabled: Boolean = false,
+    val lastAutoBackupAt: Long = 0L,
+    val usageYearMonth: String = "",
+    val usageCostUsd: Double = 0.0,
+    val usagePromptTokens: Long = 0L,
+    val usageCompletionTokens: Long = 0L,
     /** Epoch-day of the last auto-generated "new person"; 0 = never. */
     val lastDailyCharacterEpochDay: Long = 0L,
     /** Whether to auto-generate one new character per day (needs an API key). */
@@ -111,6 +119,8 @@ data class UserPreferences(
 data class ReaderSavedState(
     val lastSceneId: String = "",
     val bookmarkedSceneIds: Set<String> = emptySet(),
+    val paragraphIndex: Int = 0,
+    val scrollOffset: Int = 0,
 )
 
 @Singleton
@@ -152,6 +162,14 @@ class SettingsRepository @Inject constructor(
             syncPassword = prefs[KEY_SYNC_PASSWORD] ?: "",
             autoSync = prefs[KEY_AUTO_SYNC] ?: true,
             lastSyncAt = prefs[KEY_LAST_SYNC_AT] ?: 0L,
+            syncTlsEnabled = prefs[KEY_SYNC_TLS] ?: false,
+            syncCertSha256 = prefs[KEY_SYNC_CERT_SHA] ?: "",
+            autoBackupEnabled = prefs[KEY_AUTO_BACKUP] ?: false,
+            lastAutoBackupAt = prefs[KEY_LAST_AUTO_BACKUP_AT] ?: 0L,
+            usageYearMonth = prefs[KEY_USAGE_YEAR_MONTH] ?: "",
+            usageCostUsd = (prefs[KEY_USAGE_COST] ?: 0f).toDouble(),
+            usagePromptTokens = prefs[KEY_USAGE_PROMPT_TOKENS] ?: 0L,
+            usageCompletionTokens = prefs[KEY_USAGE_COMPLETION_TOKENS] ?: 0L,
             lastDailyCharacterEpochDay = prefs[KEY_LAST_DAILY_CHARACTER_DAY] ?: 0L,
             dailyCharactersEnabled = prefs[KEY_DAILY_CHARACTERS_ENABLED] ?: true,
             extraPromptSurfaces = ExtraPromptSurfaces(
@@ -196,11 +214,21 @@ class SettingsRepository @Inject constructor(
         ReaderSavedState(
             lastSceneId = prefs[stringPreferencesKey("reader_last_$bookId")].orEmpty(),
             bookmarkedSceneIds = prefs[stringSetPreferencesKey("reader_bookmarks_$bookId")].orEmpty(),
+            paragraphIndex = prefs[intPreferencesKey("reader_para_$bookId")] ?: 0,
+            scrollOffset = prefs[intPreferencesKey("reader_offset_$bookId")] ?: 0,
         )
     }
 
     suspend fun setReaderPosition(bookId: String, sceneId: String) {
         context.dataStore.edit { it[stringPreferencesKey("reader_last_$bookId")] = sceneId }
+    }
+
+    suspend fun setReaderScroll(bookId: String, sceneId: String, paragraphIndex: Int, scrollOffset: Int) {
+        context.dataStore.edit {
+            it[stringPreferencesKey("reader_last_$bookId")] = sceneId
+            it[intPreferencesKey("reader_para_$bookId")] = paragraphIndex.coerceAtLeast(0)
+            it[intPreferencesKey("reader_offset_$bookId")] = scrollOffset
+        }
     }
 
     suspend fun toggleReaderBookmark(bookId: String, sceneId: String) {
@@ -278,6 +306,37 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setLastSyncAt(value: Long) {
         context.dataStore.edit { it[KEY_LAST_SYNC_AT] = value }
+    }
+
+    suspend fun setSyncTlsEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[KEY_SYNC_TLS] = enabled }
+    }
+
+    suspend fun setSyncCertSha256(value: String) {
+        context.dataStore.edit { it[KEY_SYNC_CERT_SHA] = value }
+    }
+
+    suspend fun setAutoBackupEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[KEY_AUTO_BACKUP] = enabled }
+    }
+
+    suspend fun setLastAutoBackupAt(value: Long) {
+        context.dataStore.edit { it[KEY_LAST_AUTO_BACKUP_AT] = value }
+    }
+
+    suspend fun recordUsage(promptTokens: Int, completionTokens: Int, costUsd: Double?) {
+        val now = java.time.YearMonth.now().toString()
+        context.dataStore.edit { prefs ->
+            val month = prefs[KEY_USAGE_YEAR_MONTH].orEmpty()
+            val reset = month != now
+            prefs[KEY_USAGE_YEAR_MONTH] = now
+            val previous = if (reset) 0.0 else (prefs[KEY_USAGE_COST] ?: 0f).toDouble()
+            prefs[KEY_USAGE_COST] = (previous + (costUsd ?: 0.0)).toFloat()
+            prefs[KEY_USAGE_PROMPT_TOKENS] =
+                (if (reset) 0L else prefs[KEY_USAGE_PROMPT_TOKENS] ?: 0L) + promptTokens.toLong()
+            prefs[KEY_USAGE_COMPLETION_TOKENS] =
+                (if (reset) 0L else prefs[KEY_USAGE_COMPLETION_TOKENS] ?: 0L) + completionTokens.toLong()
+        }
     }
 
     suspend fun setLastDailyCharacterEpochDay(value: Long) {
@@ -383,6 +442,14 @@ class SettingsRepository @Inject constructor(
         private val KEY_SYNC_PASSWORD = stringPreferencesKey("sync_password")
         private val KEY_AUTO_SYNC = booleanPreferencesKey("auto_sync")
         private val KEY_LAST_SYNC_AT = longPreferencesKey("last_sync_at")
+        private val KEY_SYNC_TLS = booleanPreferencesKey("sync_tls_enabled")
+        private val KEY_SYNC_CERT_SHA = stringPreferencesKey("sync_cert_sha256")
+        private val KEY_AUTO_BACKUP = booleanPreferencesKey("auto_backup_enabled")
+        private val KEY_LAST_AUTO_BACKUP_AT = longPreferencesKey("last_auto_backup_at")
+        private val KEY_USAGE_YEAR_MONTH = stringPreferencesKey("usage_year_month")
+        private val KEY_USAGE_COST = floatPreferencesKey("usage_cost_usd")
+        private val KEY_USAGE_PROMPT_TOKENS = longPreferencesKey("usage_prompt_tokens")
+        private val KEY_USAGE_COMPLETION_TOKENS = longPreferencesKey("usage_completion_tokens")
         private val KEY_LAST_DAILY_CHARACTER_DAY = longPreferencesKey("last_daily_character_day")
         private val KEY_DAILY_CHARACTERS_ENABLED = booleanPreferencesKey("daily_characters_enabled")
         private val KEY_SHOW_EXTRA_PROMPT_SURFACES = booleanPreferencesKey("show_extra_prompt_surfaces")
