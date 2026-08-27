@@ -86,6 +86,20 @@ class DocumentModelTest {
     }
 
     @Test
+    fun insertMediaAfter_twoPicturesKeepProseAndOrder() {
+        val blocks = listOf(Paragraph("p1", listOf(Span("Hello"))))
+        val withFirst = blocks.insertMediaAfter(0, MediaBlock("m1", "img-1", MediaKind.Image))
+        val withSecond = withFirst.insertMediaAfter(1, MediaBlock("m2", "img-2", MediaKind.Image))
+        assertEquals("Hello", (withSecond[0] as Paragraph).plainText())
+        assertEquals("img-1", (withSecond[1] as MediaBlock).mediaId)
+        assertEquals("img-2", (withSecond[2] as MediaBlock).mediaId)
+        assertEquals(
+            listOf(1 to listOf("/a.jpg"), 2 to listOf("/b.jpg")),
+            withSecond.mediaPlacement(mapOf("img-1" to "/a.jpg", "img-2" to "/b.jpg")),
+        )
+    }
+
+    @Test
     fun mediaPlacement_followsBlockOrderAndSkipsBlankPaths() {
         val blocks = listOf(
             Paragraph("p1", listOf(Span("one"))),

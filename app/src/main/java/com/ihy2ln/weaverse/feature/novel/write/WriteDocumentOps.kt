@@ -14,6 +14,8 @@ import com.ihy2ln.weaverse.data.repo.SceneRevisionRepository
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Scene document persist plus in-scene find/replace. WriteViewModel stays a Hilt coordinator.
@@ -23,6 +25,8 @@ class WriteDocumentOps @Inject constructor(
     private val manuscriptRepository: ManuscriptRepository,
     private val sceneRevisions: SceneRevisionRepository,
 ) {
+    private val persistMutex = Mutex()
+
     fun observeRevisions(sceneId: String): Flow<List<SceneRevisionEntity>> =
         sceneRevisions.observe(sceneId)
 
@@ -30,17 +34,18 @@ class WriteDocumentOps @Inject constructor(
 
     suspend fun getScene(sceneId: String): SceneEntity? = manuscriptRepository.getScene(sceneId)
 
-    suspend fun persist(base: SceneEntity, doc: Document): SceneEntity {
+    suspend fun persist(base: SceneEntity, doc: Document): SceneEntity = persistMutex.withLock {
         val latest = manuscriptRepository.getScene(base.id) ?: base
+        val snapshot = Document(doc.blocks.toList())
         val updated = latest.copy(
-            docJson = doc.toJson(),
-            plainText = doc.plainText(),
-            wordCount = doc.wordCount(),
+            docJson = snapshot.toJson(),
+            plainText = snapshot.plainText(),
+            wordCount = snapshot.wordCount(),
             updatedAt = System.currentTimeMillis(),
         )
         manuscriptRepository.saveScene(updated)
         sceneRevisions.snapshotIfDue(updated)
-        return updated
+        updated
     }
 
     suspend fun saveScene(scene: SceneEntity) = manuscriptRepository.saveScene(scene)

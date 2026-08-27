@@ -1146,9 +1146,10 @@ class WriteViewModel @Inject constructor(
 
     private fun persistScene(doc: Document) {
         val sceneId = loadedScene?.id ?: return
+        val snapshot = Document(doc.blocks.toList())
         viewModelScope.launch {
             val base = documentOps.getScene(sceneId) ?: loadedScene?.takeIf { it.id == sceneId } ?: return@launch
-            val updated = documentOps.persist(base, doc)
+            val updated = documentOps.persist(base, snapshot)
             if (loadedScene?.id == updated.id) loadedScene = updated
             refreshContextMeter()
         }
