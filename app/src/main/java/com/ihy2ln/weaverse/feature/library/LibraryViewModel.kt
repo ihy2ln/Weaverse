@@ -103,9 +103,12 @@ class LibraryViewModel @Inject constructor(
                 seriesRepository.observeSeries(),
                 settings.preferences,
                 mediaRepository.observeAll(),
-                db.roleplayDao().observeChats(),
-                db.snippetDao().observeCategory(NotesViewModel.CATEGORY),
-            ) { books, series, prefs, media, rpChats, notes ->
+                combine(
+                    db.roleplayDao().observeChats(),
+                    db.snippetDao().observeCategory(NotesViewModel.CATEGORY),
+                ) { rpChats, notes -> rpChats to notes },
+            ) { books, series, prefs, media, chatsAndNotes ->
+                val (rpChats, notes) = chatsAndNotes
                 val groups = buildList {
                     series.forEach { s ->
                         add(SeriesGroup(s, books.filter { it.seriesId == s.id }))
