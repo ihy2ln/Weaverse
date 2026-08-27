@@ -8,6 +8,11 @@ what is actually implemented in this codebase, not an aspirational spec.
 For the wiki-formatted equivalent (same content, split across pages), see
 the [repo Wiki](https://github.com/ihy2ln/weaverse/wiki).
 
+Version freeze: [v1.2.5-beta checkpoint](CHECKPOINTS.md) and
+[feature snapshot](features/v1.2.5-beta.md). Novel Write vs Read media
+pipeline (including the known picture gap at that tag):
+[novel-write-read.md](features/novel-write-read.md).
+
 ## What the app is
 
 Weaverse is an offline-first novel-writing app (Novelcrafter-style: Plan /

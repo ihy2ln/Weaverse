@@ -25,10 +25,15 @@ Three rows across the top:
 
 ## Novel
 
-`Plan · Write · Chat · Review`
+`Bookshelf · Plan · Write · Read · Chat · Review`
 
+- **Bookshelf** — the novels in this workspace.
 - **Plan** — the outline: Book → Chapter → Scene → Scene beat.
 - **Write** — the scene editor, with media blocks and codex highlighting.
+- **Read** — a paged reading view of the same scenes (theme, type size,
+  contents, bookmarks, read-aloud). Pictures placed in Write belong here
+  in the same document order; at v1.2.5-beta they were text-only — see
+  [novel-write-read.md](features/novel-write-read.md).
 - **Chat** — a workshop conversation about the book.
 - **Review** — a read-through pass.
 

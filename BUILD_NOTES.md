@@ -3,6 +3,15 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## Resume state (2026-08-27) — v1.2.5-beta checkpoint
+
+New work starts from the **v1.2.5-beta** release (`fec9e85`, versionCode 46),
+not from the later recreated GitHub `main`. Checkpoint log:
+[docs/CHECKPOINTS.md](docs/CHECKPOINTS.md). Snapshot:
+[docs/features/v1.2.5-beta.md](docs/features/v1.2.5-beta.md). Known gap to
+fix next: pictures added in Novel Write do not appear (or sit in the wrong
+place) in Novel Read — [docs/features/novel-write-read.md](docs/features/novel-write-read.md).
+
 ## Resume state (2026-08-16)
 
 **The app codebase in this repo was replaced today.** Everything under
