@@ -243,13 +243,31 @@ fun AppShell(
         }
         Column(modifier = Modifier.fillMaxSize().background(bgColor)) {
             val currentMode = runCatching { AppMode.valueOf(mode) }.getOrDefault(AppMode.Novel)
-            val modeOptions = when (currentMode) {
+            val defaultModeOptions = when (currentMode) {
                 AppMode.Novel -> NovelDestination.entries.map { SegmentedOption(it.name, it.label) }
                 AppMode.Roleplay -> RoleplayDestination.entries.map { SegmentedOption(it.name, it.label) }
                 AppMode.Chatting -> ChattingDestination.entries.map { SegmentedOption(it.name, it.label) }
                 AppMode.Storyboard -> StoryboardDestination.entries.map { SegmentedOption(it.name, it.label) }
                 AppMode.Notes -> NotesDestination.entries.map { SegmentedOption(it.name, it.label) }
             }
+            val savedModeOrder = when (currentMode) {
+                AppMode.Novel -> prefs.navigationOrder.novel
+                AppMode.Roleplay -> prefs.navigationOrder.roleplay
+                AppMode.Chatting -> prefs.navigationOrder.chatting
+                AppMode.Storyboard -> prefs.navigationOrder.storyboard
+                AppMode.Notes -> prefs.navigationOrder.notes
+            }
+            val modeOptions = applySavedOrder(defaultModeOptions, savedModeOrder) { it.id }
+            val workspaceOptions = applySavedOrder(
+                listOf(
+                    SegmentedOption(AppMode.Novel.name, AppMode.Novel.label),
+                    SegmentedOption(AppMode.Roleplay.name, AppMode.Roleplay.label),
+                    SegmentedOption(AppMode.Chatting.name, AppMode.Chatting.label),
+                    SegmentedOption(AppMode.Storyboard.name, AppMode.Storyboard.label),
+                    SegmentedOption(AppMode.Notes.name, AppMode.Notes.label),
+                ),
+                prefs.navigationOrder.workspaces,
+            ) { it.id }
             val modeId = when (currentMode) {
                 AppMode.Novel -> novelDest
                 AppMode.Roleplay -> rpDest
@@ -277,13 +295,7 @@ fun AppShell(
             WorkspaceChrome(
                 bookTitle = chromeTitle,
                 seriesTitle = chromeSubtitle,
-                workspaceOptions = listOf(
-                    SegmentedOption(AppMode.Novel.name, AppMode.Novel.label),
-                    SegmentedOption(AppMode.Roleplay.name, AppMode.Roleplay.label),
-                    SegmentedOption(AppMode.Chatting.name, AppMode.Chatting.label),
-                    SegmentedOption(AppMode.Storyboard.name, AppMode.Storyboard.label),
-                    SegmentedOption(AppMode.Notes.name, AppMode.Notes.label),
-                ),
+                workspaceOptions = workspaceOptions,
                 workspaceId = mode,
                 modeOptions = modeOptions,
                 modeId = modeId,
@@ -379,6 +391,8 @@ fun AppShell(
                     }
                 },
                 onFocus = { workspaceFocus = it; chromeTool = null },
+                onWorkspaceOrderChange = shellViewModel::setWorkspaceButtonOrder,
+                onModeOrderChange = { shellViewModel.setModeButtonOrder(currentMode, it) },
             )
             when {
                 showSettings -> SettingsScreen(modifier = Modifier.weight(1f).fillMaxSize())

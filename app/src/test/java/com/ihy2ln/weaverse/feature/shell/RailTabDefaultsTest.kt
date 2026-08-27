@@ -112,4 +112,14 @@ class RailTabDefaultsTest {
             tools.map { it.label },
         )
     }
+
+    @Test
+    fun savedNavigationOrderKeepsNewAndUnknownItemsSafe() {
+        val items = listOf("Novel", "Roleplay", "Chatting", "Storyboard", "Notes")
+        assertEquals(
+            listOf("Chatting", "Novel", "Roleplay", "Storyboard", "Notes"),
+            applySavedOrder(items, "Chatting,Novel,removed") { it },
+        )
+        assertEquals(items, applySavedOrder(items, "") { it })
+    }
 }

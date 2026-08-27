@@ -101,6 +101,15 @@ enum class WorkspaceFocus(val label: String) {
     Pictures("Pictures"),
 }
 
+fun <T> applySavedOrder(items: List<T>, saved: String, id: (T) -> String): List<T> {
+    if (saved.isBlank()) return items
+    val ranks = saved.split(',').mapIndexed { index, value -> value to index }.toMap()
+    return items.withIndex().sortedWith(
+        compareBy<IndexedValue<T>> { ranks[id(it.value)] ?: Int.MAX_VALUE }
+            .thenBy { it.index },
+    ).map { it.value }
+}
+
 fun workspaceChromeTools(): List<RailTab> = listOf(
     RailTab.Codex,
     RailTab.Prompts,

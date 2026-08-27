@@ -152,4 +152,12 @@ class AppShellViewModel @Inject constructor(
     fun setSelectedBookId(bookId: String) {
         viewModelScope.launch { settings.setSelectedBookId(bookId) }
     }
+
+    fun setWorkspaceButtonOrder(ids: List<String>) {
+        viewModelScope.launch { settings.setWorkspaceButtonOrder(ids) }
+    }
+
+    fun setModeButtonOrder(mode: AppMode, ids: List<String>) {
+        viewModelScope.launch { settings.setModeButtonOrder(mode.name, ids) }
+    }
 }

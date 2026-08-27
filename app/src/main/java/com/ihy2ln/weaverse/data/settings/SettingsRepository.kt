@@ -55,6 +55,15 @@ data class ExtraPromptSurfaces(
     val roleplayButtons: Boolean = false,
 )
 
+data class NavigationOrderPreferences(
+    val workspaces: String = "",
+    val novel: String = "",
+    val roleplay: String = "",
+    val chatting: String = "",
+    val storyboard: String = "",
+    val notes: String = "",
+)
+
 enum class ExtraPromptSurface {
     InlineWriting,
     SceneBeatCard,
@@ -94,6 +103,7 @@ data class UserPreferences(
      * all default off. The PROMPT box itself is always available.
      */
     val extraPromptSurfaces: ExtraPromptSurfaces = ExtraPromptSurfaces(),
+    val navigationOrder: NavigationOrderPreferences = NavigationOrderPreferences(),
 )
 
 data class ReaderSavedState(
@@ -147,6 +157,14 @@ class SettingsRepository @Inject constructor(
                 continuation = extraFlag(prefs, KEY_PROMPT_CONTINUATION),
                 chatComposer = extraFlag(prefs, KEY_PROMPT_CHAT_COMPOSER),
                 roleplayButtons = extraFlag(prefs, KEY_PROMPT_ROLEPLAY_BUTTONS),
+            ),
+            navigationOrder = NavigationOrderPreferences(
+                workspaces = prefs[KEY_NAV_WORKSPACES].orEmpty(),
+                novel = prefs[KEY_NAV_NOVEL].orEmpty(),
+                roleplay = prefs[KEY_NAV_ROLEPLAY].orEmpty(),
+                chatting = prefs[KEY_NAV_CHATTING].orEmpty(),
+                storyboard = prefs[KEY_NAV_STORYBOARD].orEmpty(),
+                notes = prefs[KEY_NAV_NOTES].orEmpty(),
             ),
         )
     }
@@ -291,6 +309,21 @@ class SettingsRepository @Inject constructor(
         context.dataStore.edit { it[key] = enabled }
     }
 
+    suspend fun setWorkspaceButtonOrder(ids: List<String>) {
+        context.dataStore.edit { it[KEY_NAV_WORKSPACES] = encodeOrder(ids) }
+    }
+
+    suspend fun setModeButtonOrder(mode: String, ids: List<String>) {
+        val key = when (mode) {
+            "Novel" -> KEY_NAV_NOVEL
+            "Roleplay" -> KEY_NAV_ROLEPLAY
+            "Chatting" -> KEY_NAV_CHATTING
+            "Storyboard" -> KEY_NAV_STORYBOARD
+            else -> KEY_NAV_NOTES
+        }
+        context.dataStore.edit { it[key] = encodeOrder(ids) }
+    }
+
     /** Clear all section color/opacity overrides back to theme defaults. */
     suspend fun resetAppearanceColors() {
         val keys = listOf("chrome", "rail", "content", "page", "chat_bubble")
@@ -314,6 +347,12 @@ class SettingsRepository @Inject constructor(
             colorHex = prefs[stringPreferencesKey("${key}_color")] ?: "",
             opacityPercent = prefs[intPreferencesKey("${key}_opacity")] ?: 100,
         )
+
+    private fun encodeOrder(ids: List<String>): String = ids
+        .map { it.replace(",", "") }
+        .filter { it.isNotBlank() }
+        .distinct()
+        .joinToString(",")
 
     companion object {
         private val KEY_THEME = stringPreferencesKey("theme_mode")
@@ -344,6 +383,12 @@ class SettingsRepository @Inject constructor(
         private val KEY_PROMPT_CONTINUATION = booleanPreferencesKey("prompt_continuation")
         private val KEY_PROMPT_CHAT_COMPOSER = booleanPreferencesKey("prompt_chat_composer")
         private val KEY_PROMPT_ROLEPLAY_BUTTONS = booleanPreferencesKey("prompt_roleplay_buttons")
+        private val KEY_NAV_WORKSPACES = stringPreferencesKey("nav_order_workspaces")
+        private val KEY_NAV_NOVEL = stringPreferencesKey("nav_order_novel")
+        private val KEY_NAV_ROLEPLAY = stringPreferencesKey("nav_order_roleplay")
+        private val KEY_NAV_CHATTING = stringPreferencesKey("nav_order_chatting")
+        private val KEY_NAV_STORYBOARD = stringPreferencesKey("nav_order_storyboard")
+        private val KEY_NAV_NOTES = stringPreferencesKey("nav_order_notes")
 
         const val InkSpacingRailMin = 48f
         const val InkSpacingRailMax = 420f
