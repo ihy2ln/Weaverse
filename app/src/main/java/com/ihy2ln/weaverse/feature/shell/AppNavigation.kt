@@ -9,6 +9,7 @@ enum class AppMode {
 enum class NovelDestination(val label: String) {
     Plan("Plan"),
     Write("Write"),
+    Read("Read"),
     Chat("Chat"),
     Review("Review"),
 }

@@ -58,6 +58,7 @@ import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import com.ihy2ln.weaverse.core.ui.util.resolveSectionColor
 import com.ihy2ln.weaverse.feature.export.ExportImportScreen
 import com.ihy2ln.weaverse.feature.library.LibraryScreen
+import com.ihy2ln.weaverse.feature.library.ModeActiveWork
 import com.ihy2ln.weaverse.feature.media.MediaGalleryScreen
 import com.ihy2ln.weaverse.feature.media.PicturesRailScreen
 import com.ihy2ln.weaverse.feature.notes.NotesRailScreen
@@ -73,8 +74,9 @@ import com.ihy2ln.weaverse.feature.novel.codex.CodexEntryDetailScreen
 import com.ihy2ln.weaverse.feature.novel.codex.CodexRailScreen
 import com.ihy2ln.weaverse.feature.novel.manuscript.ManuscriptRailScreen
 import com.ihy2ln.weaverse.feature.novel.plan.PlanScreen
-import com.ihy2ln.weaverse.feature.novel.review.ReviewScreen
+import com.ihy2ln.weaverse.feature.novel.read.ReaderScreen
 import com.ihy2ln.weaverse.feature.novel.snippets.SnippetsRailScreen
+import com.ihy2ln.weaverse.feature.novel.review.ReviewScreen
 import com.ihy2ln.weaverse.feature.novel.write.WriteScreen
 import com.ihy2ln.weaverse.feature.prompts.PromptsScreen
 import com.ihy2ln.weaverse.feature.roleplay.characters.CharacterDetailScreen
@@ -161,6 +163,39 @@ fun AppShell(
     LaunchedEffect(Unit) {
         runCatching { shellFocus.requestFocus() }
     }
+
+    fun openHomeMode(modeId: String, work: ModeActiveWork?) {
+        showLibrary = false
+        showSettings = false
+        showExport = false
+        showSearch = false
+        chromeTool = null
+        when (modeId) {
+            "Novel" -> {
+                mode = AppMode.Novel.name
+                work?.threadId?.let { selectedThreadId = it; novelDest = NovelDestination.Chat.name }
+                    ?: run {
+                        work?.bookId?.let { shellViewModel.setSelectedBookId(it) }
+                        novelDest = NovelDestination.Plan.name
+                    }
+            }
+            "Roleplay", "Chatting" -> {
+                mode = AppMode.Roleplay.name
+                rpDest = RoleplayDestination.Chats.name
+                work?.chatId?.let { selectedRpChatId = it }
+            }
+            "Storyboard" -> {
+                mode = AppMode.Roleplay.name
+                rpDest = RoleplayDestination.Chats.name
+            }
+            "Notes" -> {
+                mode = AppMode.Notes.name
+                work?.noteId?.let { notesViewModel.selectNote(it) }
+            }
+            else -> mode = AppMode.Novel.name
+        }
+    }
+
     CompositionLocalProvider(
         LocalPromptShortcutHandler provides { shortcut ->
             shellViewModel.openPrompt(
@@ -347,7 +382,14 @@ fun AppShell(
                         novelDest = NovelDestination.Write.name
                         mode = AppMode.Novel.name
                     },
+                    onReadBook = { _, sceneId ->
+                        if (sceneId != null) selectedSceneId = sceneId
+                        showLibrary = false
+                        novelDest = NovelDestination.Read.name
+                        mode = AppMode.Novel.name
+                    },
                     onOpenExport = { showExport = true },
+                    onOpenMode = { modeId, work -> openHomeMode(modeId, work) },
                     modifier = Modifier.weight(1f).fillMaxSize(),
                 )
                 selectedCodexEntryId != null -> Box(Modifier.weight(1f).fillMaxSize()) {
@@ -490,7 +532,11 @@ fun AppShell(
                                     jumpKind = writeJumpKind,
                                     onOpenCodexEntry = { selectedCodexEntryId = it },
                                 )
-                                NovelDestination.Chat -> WorkshopChatScreen(threadId = selectedThreadId)
+                                NovelDestination.Read -> ReaderScreen()
+                                NovelDestination.Chat -> WorkshopChatScreen(
+                                    threadId = selectedThreadId,
+                                    onThreadSelected = { selectedThreadId = it },
+                                )
                                 NovelDestination.Review -> ReviewScreen()
                             }
                             AppMode.Notes.name -> NotesScreen(viewModel = notesViewModel)

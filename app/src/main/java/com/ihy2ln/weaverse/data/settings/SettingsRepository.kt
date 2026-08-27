@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.ihy2ln.weaverse.ai.openrouter.WritingModelSeeds
 import com.ihy2ln.weaverse.core.ui.theme.AppThemeMode
@@ -84,6 +85,17 @@ data class UserPreferences(
      * all default off. The PROMPT box itself is always available.
      */
     val extraPromptSurfaces: ExtraPromptSurfaces = ExtraPromptSurfaces(),
+    /** Paper | Sepia | Night — dedicated reader palette. */
+    val readerTheme: String = "Paper",
+    /** When true, page/scene changes keep the current scroll position instead of jumping to top. */
+    val readerKeepScrollOnPageChange: Boolean = false,
+)
+
+data class ReaderSavedState(
+    val lastSceneId: String = "",
+    val bookmarkedSceneIds: Set<String> = emptySet(),
+    val paragraphIndex: Int = 0,
+    val scrollOffset: Int = 0,
 )
 
 @Singleton
@@ -127,6 +139,8 @@ class SettingsRepository @Inject constructor(
                 chatComposer = extraFlag(prefs, KEY_PROMPT_CHAT_COMPOSER),
                 roleplayButtons = extraFlag(prefs, KEY_PROMPT_ROLEPLAY_BUTTONS),
             ),
+            readerTheme = prefs[KEY_READER_THEME] ?: "Paper",
+            readerKeepScrollOnPageChange = prefs[KEY_READER_KEEP_SCROLL] ?: false,
         )
     }
 
@@ -140,6 +154,44 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setLineHeight(value: Float) {
         context.dataStore.edit { it[KEY_LINE_HEIGHT] = value.coerceIn(1.2f, 2.2f) }
+    }
+
+    suspend fun setReaderTheme(theme: String) {
+        context.dataStore.edit { it[KEY_READER_THEME] = theme }
+    }
+
+    suspend fun setReaderKeepScrollOnPageChange(enabled: Boolean) {
+        context.dataStore.edit { it[KEY_READER_KEEP_SCROLL] = enabled }
+    }
+
+    fun readerState(bookId: String): Flow<ReaderSavedState> = context.dataStore.data.map { prefs ->
+        ReaderSavedState(
+            lastSceneId = prefs[stringPreferencesKey("reader_last_$bookId")].orEmpty(),
+            bookmarkedSceneIds = prefs[stringSetPreferencesKey("reader_bookmarks_$bookId")].orEmpty(),
+            paragraphIndex = prefs[intPreferencesKey("reader_para_$bookId")] ?: 0,
+            scrollOffset = prefs[intPreferencesKey("reader_offset_$bookId")] ?: 0,
+        )
+    }
+
+    suspend fun setReaderPosition(bookId: String, sceneId: String) {
+        context.dataStore.edit { it[stringPreferencesKey("reader_last_$bookId")] = sceneId }
+    }
+
+    suspend fun setReaderScroll(bookId: String, sceneId: String, paragraphIndex: Int, scrollOffset: Int) {
+        context.dataStore.edit {
+            it[stringPreferencesKey("reader_last_$bookId")] = sceneId
+            it[intPreferencesKey("reader_para_$bookId")] = paragraphIndex.coerceAtLeast(0)
+            it[intPreferencesKey("reader_offset_$bookId")] = scrollOffset
+        }
+    }
+
+    suspend fun toggleReaderBookmark(bookId: String, sceneId: String) {
+        val key = stringSetPreferencesKey("reader_bookmarks_$bookId")
+        context.dataStore.edit { prefs ->
+            val next = prefs[key].orEmpty().toMutableSet()
+            if (!next.add(sceneId)) next.remove(sceneId)
+            prefs[key] = next
+        }
     }
 
     suspend fun setDefaultModel(ref: String) {
@@ -283,6 +335,8 @@ class SettingsRepository @Inject constructor(
         private val KEY_PROMPT_CONTINUATION = booleanPreferencesKey("prompt_continuation")
         private val KEY_PROMPT_CHAT_COMPOSER = booleanPreferencesKey("prompt_chat_composer")
         private val KEY_PROMPT_ROLEPLAY_BUTTONS = booleanPreferencesKey("prompt_roleplay_buttons")
+        private val KEY_READER_THEME = stringPreferencesKey("reader_theme")
+        private val KEY_READER_KEEP_SCROLL = booleanPreferencesKey("reader_keep_scroll_on_page_change")
 
         const val InkSpacingRailMin = 48f
         const val InkSpacingRailMax = 420f

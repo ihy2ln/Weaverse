@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ihy2ln.weaverse.core.media.MediaRepository
+import com.ihy2ln.weaverse.data.db.WeaverseDatabase
 import com.ihy2ln.weaverse.data.db.entities.BookEntity
 import com.ihy2ln.weaverse.data.db.entities.SeriesEntity
 import com.ihy2ln.weaverse.data.export.ProjectExportManager
@@ -11,6 +12,7 @@ import com.ihy2ln.weaverse.data.export.SampleBookImporter
 import com.ihy2ln.weaverse.data.repo.BookRepository
 import com.ihy2ln.weaverse.data.repo.SeriesRepository
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
+import com.ihy2ln.weaverse.feature.notes.NotesViewModel
 import com.ihy2ln.weaverse.feature.shell.WorkspaceHistory
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,6 +45,18 @@ data class LibraryBookCard(
     val coverPath: String?,
 )
 
+data class ModeActiveWork(
+    val modeId: String,
+    val title: String,
+    val subtitle: String,
+    val coverPath: String?,
+    val bookId: String? = null,
+    val sceneId: String? = null,
+    val threadId: String? = null,
+    val chatId: String? = null,
+    val noteId: String? = null,
+)
+
 data class LibraryUiState(
     val tab: LibraryTab = LibraryTab.Novels,
     val books: List<BookEntity> = emptyList(),
@@ -56,6 +70,9 @@ data class LibraryUiState(
     val status: String = "",
     val busy: Boolean = false,
     val hasIsekaiGacha: Boolean = false,
+    val modeActiveWorks: Map<String, ModeActiveWork> = emptyMap(),
+    val selectionMode: Boolean = false,
+    val selectedForRemoval: Set<String> = emptySet(),
 )
 
 @HiltViewModel
@@ -67,6 +84,7 @@ class LibraryViewModel @Inject constructor(
     private val exportManager: ProjectExportManager,
     private val sampleBookImporter: SampleBookImporter,
     private val workspaceHistory: WorkspaceHistory,
+    private val db: WeaverseDatabase,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(LibraryUiState())
     val uiState: StateFlow<LibraryUiState> = _uiState.asStateFlow()
@@ -85,7 +103,9 @@ class LibraryViewModel @Inject constructor(
                 seriesRepository.observeSeries(),
                 settings.preferences,
                 mediaRepository.observeAll(),
-            ) { books, series, prefs, media ->
+                db.roleplayDao().observeChats(),
+                db.snippetDao().observeCategory(NotesViewModel.CATEGORY),
+            ) { books, series, prefs, media, rpChats, notes ->
                 val groups = buildList {
                     series.forEach { s ->
                         add(SeriesGroup(s, books.filter { it.seriesId == s.id }))
@@ -107,6 +127,76 @@ class LibraryViewModel @Inject constructor(
                         coverPath = cover,
                     )
                 }
+                val selectedCard = cards.find { it.book.id == prefs.selectedBookId } ?: cards.firstOrNull()
+                val threads = db.workshopChatDao().getThreads(prefs.selectedBookId)
+                val latestThread = threads.maxByOrNull { it.updatedAt }
+                val latestRpChat = rpChats.maxByOrNull { it.updatedAt }
+                val notesInScope = notes.filter { it.scopeId == NotesViewModel.SCOPE_ID }
+                val latestNote = notesInScope.maxByOrNull { it.updatedAt }
+                val modeWorks = buildMap {
+                    selectedCard?.let { card ->
+                        put(
+                            "Novel",
+                            ModeActiveWork(
+                                modeId = "Novel",
+                                title = card.book.title,
+                                subtitle = card.seriesTitle ?: "Novel",
+                                coverPath = card.coverPath,
+                                bookId = card.book.id,
+                            ),
+                        )
+                    }
+                    latestRpChat?.let { chat ->
+                        put(
+                            "Roleplay",
+                            ModeActiveWork(
+                                modeId = "Roleplay",
+                                title = chat.title,
+                                subtitle = "RPG campaign",
+                                coverPath = chat.backgroundMediaId?.let { id ->
+                                    media.find { it.id == id }?.let(mediaRepository::resolveFile)
+                                        ?.takeIf(File::exists)?.absolutePath
+                                },
+                                chatId = chat.id,
+                            ),
+                        )
+                        put(
+                            "Chatting",
+                            ModeActiveWork(
+                                modeId = "Chatting",
+                                title = chat.title,
+                                subtitle = "Messenger chat",
+                                coverPath = null,
+                                chatId = chat.id,
+                            ),
+                        )
+                    }
+                    latestThread?.let { thread ->
+                        put(
+                            "NovelChat",
+                            ModeActiveWork(
+                                modeId = "Novel",
+                                title = thread.name,
+                                subtitle = "Workshop chat",
+                                coverPath = selectedCard?.coverPath,
+                                bookId = prefs.selectedBookId,
+                                threadId = thread.id,
+                            ),
+                        )
+                    }
+                    latestNote?.let { note ->
+                        put(
+                            "Notes",
+                            ModeActiveWork(
+                                modeId = "Notes",
+                                title = note.title.ifBlank { "Untitled note" },
+                                subtitle = "Shared notes",
+                                coverPath = null,
+                                noteId = note.id,
+                            ),
+                        )
+                    }
+                }
                 LibraryUiState(
                     tab = _uiState.value.tab,
                     books = books,
@@ -120,6 +210,9 @@ class LibraryViewModel @Inject constructor(
                     status = _uiState.value.status,
                     busy = _uiState.value.busy,
                     hasIsekaiGacha = books.any { it.title.equals(SampleBookImporter.BOOK_TITLE, ignoreCase = true) },
+                    modeActiveWorks = modeWorks,
+                    selectionMode = _uiState.value.selectionMode,
+                    selectedForRemoval = _uiState.value.selectedForRemoval,
                 )
             }.collect { _uiState.value = it }
         }
@@ -130,6 +223,23 @@ class LibraryViewModel @Inject constructor(
     fun onNewSeriesTitle(value: String) = _uiState.update { it.copy(newSeriesTitle = value) }
     fun onAssignSeriesId(value: String) = _uiState.update { it.copy(assignSeriesId = value) }
 
+    fun enterSelectionMode() = _uiState.update { it.copy(selectionMode = true, selectedForRemoval = emptySet()) }
+    fun exitSelectionMode() = _uiState.update { it.copy(selectionMode = false, selectedForRemoval = emptySet()) }
+    fun toggleSelectedForRemoval(bookId: String) = _uiState.update { state ->
+        val next = state.selectedForRemoval.toMutableSet()
+        if (!next.add(bookId)) next.remove(bookId)
+        state.copy(selectedForRemoval = next)
+    }
+
+    fun removeSelected() {
+        val ids = _uiState.value.selectedForRemoval.toList()
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            ids.forEach { deleteBook(it) }
+            _uiState.update { it.copy(selectionMode = false, selectedForRemoval = emptySet()) }
+        }
+    }
+
     fun createBook(onOpened: (bookId: String, sceneId: String?) -> Unit = { _, _ -> }) {
         viewModelScope.launch {
             val title = _uiState.value.newBookTitle.ifBlank { "Untitled Book" }
@@ -139,6 +249,26 @@ class LibraryViewModel @Inject constructor(
             val sceneId = bookRepository.firstSceneId(book.id)
             _uiState.update { it.copy(newBookTitle = "", assignSeriesId = "") }
             onOpened(book.id, sceneId)
+        }
+    }
+
+    fun copyBook(bookId: String) {
+        viewModelScope.launch {
+            bookRepository.duplicateBook(bookId)
+            _uiState.update { it.copy(status = "Book copied") }
+        }
+    }
+
+    fun setCoverFromUri(bookId: String, uri: Uri) {
+        viewModelScope.launch {
+            runCatching {
+                val media = mediaRepository.importFromUri(uri)
+                bookRepository.setCoverMedia(bookId, media.id)
+            }.onSuccess {
+                _uiState.update { state -> state.copy(status = "Cover updated") }
+            }.onFailure { err ->
+                _uiState.update { it.copy(status = "Cover failed: ${err.message}") }
+            }
         }
     }
 
