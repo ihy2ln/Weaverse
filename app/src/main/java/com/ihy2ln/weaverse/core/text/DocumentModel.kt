@@ -192,3 +192,73 @@ fun Document.wordCount(): Int {
     val words = plainText().trim().split(Regex("\\s+")).filter { it.isNotBlank() }
     return words.size
 }
+
+fun Block.plainText(): String = when (this) {
+    is Paragraph -> spans.joinToString("") { it.text }
+    is Heading -> spans.joinToString("") { it.text }
+    is Quote -> spans.joinToString("") { it.text }
+    is ListItem -> spans.joinToString("") { it.text }
+    is CodeBlock -> text
+    is MediaBlock -> caption.joinToString("") { it.text }
+    else -> ""
+}
+
+fun Document.referencedMediaIds(): List<String> = blocks.flatMap { block ->
+    when (block) {
+        is MediaBlock -> listOf(block.mediaId)
+        is MediaStackBlock -> block.mediaIds
+        is MediaGridBlock -> block.mediaIds
+        else -> emptyList()
+    }
+}.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+
+data class MediaPlacement(
+    val blockId: String,
+    val mediaIds: List<String>,
+    val kind: String,
+    val blockIndex: Int,
+)
+
+fun Document.mediaPlacement(): List<MediaPlacement> =
+    blocks.mapIndexedNotNull { index, block ->
+        when (block) {
+            is MediaBlock -> MediaPlacement(block.id, listOf(block.mediaId), "media", index)
+            is MediaStackBlock -> MediaPlacement(block.id, block.mediaIds, "stack", index)
+            is MediaGridBlock -> MediaPlacement(block.id, block.mediaIds, "grid", index)
+            else -> null
+        }
+    }
+
+fun Document.speakableParagraphs(): List<String> = blocks.mapNotNull { block ->
+    block.takeIf { it.isSpeakable() }?.plainText()?.trim()
+}
+
+fun Block.isSpeakable(): Boolean = when (this) {
+    is Paragraph, is Heading, is Quote, is ListItem, is CodeBlock -> plainText().isNotBlank()
+    else -> false
+}
+
+fun Paragraph.isSlashCommandResidue(): Boolean {
+    val text = spans.joinToString("") { it.text }.trim()
+    if (text.isEmpty()) return false
+    return text.startsWith("/") || text == "\\"
+}
+
+/**
+ * Insert [media] after [index], keeping surrounding prose. Only a paragraph that is
+ * leftover slash-command text (`/image`, `\\`, …) is cleared.
+ */
+fun List<Block>.insertMediaAfter(index: Int, media: Block): List<Block> {
+    if (isEmpty()) return listOf(media)
+    val next = toMutableList()
+    val sourceIndex = index.coerceAtLeast(-1)
+    if (sourceIndex in next.indices) {
+        val target = next[sourceIndex]
+        if (target is Paragraph && target.isSlashCommandResidue()) {
+            next[sourceIndex] = target.copy(spans = listOf(Span("")))
+        }
+    }
+    val insertAt = (sourceIndex + 1).coerceIn(0, next.size)
+    next.add(insertAt, media)
+    return next
+}

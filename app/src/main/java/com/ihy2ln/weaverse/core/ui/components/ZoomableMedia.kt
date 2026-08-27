@@ -40,7 +40,7 @@ import androidx.media3.ui.PlayerView
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.size.Size
-import java.io.File
+import com.ihy2ln.weaverse.core.media.MediaPaths
 
 /**
  * Shared pinch-to-zoom media surface for images (and video players when [isVideo]).
@@ -81,8 +81,9 @@ fun ZoomableMedia(
     val latestLongPressAt by rememberUpdatedState(onLongPressAt)
     val latestTransformEnd by rememberUpdatedState(onTransformEnd)
     val context = LocalContext.current
-    val file = remember(path) { File(path) }
-    val exists = file.exists() && file.length() > 0L
+    val file = remember(path) { MediaPaths.localFileIfReadable(path) }
+    val exists = file != null || MediaPaths.isRemoteOrContentUri(path)
+    val loadData = remember(path) { MediaPaths.mediaLoadTarget(path) }
 
     val sizeModifier = if (fillPanel) {
         Modifier.fillMaxSize()
@@ -159,9 +160,12 @@ fun ZoomableMedia(
         when {
             !exists -> Unit
             isVideo -> {
+                val mediaUri = remember(path, file) {
+                    file?.let { Uri.fromFile(it) } ?: Uri.parse(path)
+                }
                 val player = remember(path) {
                     ExoPlayer.Builder(context).build().apply {
-                        setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
+                        setMediaItem(MediaItem.fromUri(mediaUri))
                         prepare()
                     }
                 }
@@ -185,9 +189,9 @@ fun ZoomableMedia(
                 )
             }
             else -> {
-                val request = remember(file, decodeOriginal) {
+                val request = remember(loadData, decodeOriginal) {
                     ImageRequest.Builder(context)
-                        .data(file)
+                        .data(loadData)
                         .apply {
                             if (decodeOriginal) size(Size.ORIGINAL)
                         }

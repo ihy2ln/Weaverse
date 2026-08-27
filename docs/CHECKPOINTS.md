@@ -58,13 +58,11 @@ entries in scene `docJson` and copies picker files into app storage. Detail:
 
 **What's explicitly NOT done / known gaps carried forward**:
 
-- **Novel Read does not show pictures added in Write.** The reader flattens
-  each scene to `plainText` and paints newline-split paragraphs only. Media
-  blocks never render, and the scene list is a one-shot DB snapshot, so a
-  Write → Read switch can also miss a just-saved image. This is the next
-  piece of work after this checkpoint.
-- `docs/GUIDE.md` still lists Novel as `Plan · Write · Chat · Review` and
-  omits Bookshelf / Read (those destinations exist in `AppNavigation.kt`).
+- `docs/GUIDE.md` still listed Novel as `Plan · Write · Chat · Review` at
+  the tag; this branch's checkpoint commit documents Bookshelf / Read.
+- Novel Read was text-only at the tag. The commit after this checkpoint
+  renders Write media blocks in document order (see
+  [`novel-write-read.md`](features/novel-write-read.md)).
 
 **Why this checkpoint exists**: start a new update from the real v1.2.5-beta
 release rather than from the later recreated `main` (InkForge-era transplant)

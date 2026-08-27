@@ -61,10 +61,22 @@ Read cannot match Write placement because it never sees blocks.
 
 ---
 
-## Intended fix (next commit on this branch)
+## After the picture fix (this branch)
 
-- Observe `docJson` live; resolve `mediaId` → readable app-storage path.
-- Render image / stack / grid / audio / video blocks in the same document
-  order as Write, honoring width and alignment.
-- Keep surrounding prose when inserting media; pin persist to the edited
-  scene id.
+Read observes `observeReaderScenes(bookId)` plus `MediaRepository.observeAll()`,
+keeps `docJson`, resolves `mediaId → readable path`, and renders the same
+block types as Write in **document order**:
+
+- Prose (`Paragraph` / `Heading` / `Quote` / `ListItem` / `CodeBlock`)
+- `Divider`
+- `MediaBlock` — width, alignment, caption; image / video / audio
+- `MediaStackBlock` — one picture at `currentIndex`, tap the frame to cycle
+- `MediaGridBlock` — 2-up / 3-up row for imported grids
+- `SceneBeatBlock` — skipped in the reader (author-only)
+
+Write inserts with `insertMediaAfter` (keeps surrounding prose; strips only
+slash-command residue) and pins persist to the edited scene id so a fast
+Write → Read switch cannot drop the picture.
+
+Tests: `DocumentModelTest` (JSON round-trip + insert/placement),
+`MediaPathsTest` (readable path / URI heuristics).

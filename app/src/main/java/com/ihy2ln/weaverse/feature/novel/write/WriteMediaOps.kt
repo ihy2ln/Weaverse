@@ -38,7 +38,7 @@ class WriteMediaOps @Inject constructor(
         val paths = mutableMapOf<String, String>()
         ids.distinct().forEach { id ->
             mediaRepository.getById(id)?.let { media ->
-                paths[id] = mediaRepository.resolveFile(media).absolutePath
+                mediaRepository.resolveReadablePath(media)?.let { paths[id] = it }
             }
         }
         return paths

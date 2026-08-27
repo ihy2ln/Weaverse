@@ -18,7 +18,7 @@ import com.ihy2ln.weaverse.core.text.MediaStackBlock
 import com.ihy2ln.weaverse.core.text.Paragraph
 import com.ihy2ln.weaverse.core.text.SceneBeatBlock
 import com.ihy2ln.weaverse.core.text.Span
-import com.ihy2ln.weaverse.core.text.appendParagraphs
+import com.ihy2ln.weaverse.core.text.insertMediaAfter
 import com.ihy2ln.weaverse.core.text.appendSceneBeat
 import com.ihy2ln.weaverse.core.text.withSceneBeatCollapsedToggled
 import com.ihy2ln.weaverse.core.text.withSceneBeatPrompt
@@ -708,8 +708,9 @@ class WriteViewModel @Inject constructor(
                     val path = mediaOps.resolveFile(media).absolutePath
                     val block = WriteMediaOps.newMediaBlock(media.id, MediaKind.Video)
                     updateBlocksSync(recordHistory = true) { blocks ->
-                        blocks[index] = Paragraph(blocks[index].id, listOf(Span("")))
-                        blocks.add(index + 1, block)
+                        val next = blocks.insertMediaAfter(index, block)
+                        blocks.clear()
+                        blocks.addAll(next)
                     }
                     _uiState.update { it.copy(mediaPaths = it.mediaPaths + (media.id to path)) }
                 }
@@ -1062,10 +1063,9 @@ class WriteViewModel @Inject constructor(
         val path = paths[mediaId] ?: return
         val block = WriteMediaOps.newMediaBlock(mediaId, kind)
         updateBlocksSync(recordHistory = true) { blocks ->
-            if (index in blocks.indices && blocks[index] is Paragraph) {
-                blocks[index] = Paragraph(blocks[index].id, listOf(Span("")))
-            }
-            blocks.add(index + 1, block)
+            val next = blocks.insertMediaAfter(index, block)
+            blocks.clear()
+            blocks.addAll(next)
         }
         _uiState.update {
             it.copy(mediaPaths = it.mediaPaths + (mediaId to path), pickImageBlockIndex = null)
@@ -1143,10 +1143,14 @@ class WriteViewModel @Inject constructor(
     }
 
     private fun persistScene(doc: Document) {
+        val sceneId = loadedScene?.id ?: return
         viewModelScope.launch {
-            val base = loadedScene ?: return@launch
-            loadedScene = documentOps.persist(base, doc)
-            refreshContextMeter()
+            val base = documentOps.getScene(sceneId) ?: return@launch
+            val saved = documentOps.persist(base, doc)
+            if (loadedScene?.id == sceneId) {
+                loadedScene = saved
+                refreshContextMeter()
+            }
         }
     }
 

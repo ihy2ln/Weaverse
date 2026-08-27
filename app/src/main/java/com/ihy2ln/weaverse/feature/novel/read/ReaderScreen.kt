@@ -51,8 +51,12 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ihy2ln.weaverse.core.media.MediaRepository
+import com.ihy2ln.weaverse.core.text.MediaStackBlock
 import com.ihy2ln.weaverse.core.text.documentFromJson
+import com.ihy2ln.weaverse.core.text.isSpeakable
 import com.ihy2ln.weaverse.core.text.plainText
+import com.ihy2ln.weaverse.core.text.speakableParagraphs
 import com.ihy2ln.weaverse.core.tts.TtsService
 import com.ihy2ln.weaverse.core.ui.components.InkSegmentedPill
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
@@ -67,6 +71,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -78,6 +83,7 @@ data class ReaderScene(
     val chapterId: String,
     val chapterTitle: String,
     val title: String,
+    val docJson: String,
     val text: String,
     val wordCount: Int,
 )
@@ -86,6 +92,8 @@ data class ReaderUiState(
     val bookId: String = "",
     val bookTitle: String = "",
     val scenes: List<ReaderScene> = emptyList(),
+    val mediaPaths: Map<String, String> = emptyMap(),
+    val stackIndex: Map<String, Int> = emptyMap(),
     val currentIndex: Int = 0,
     val fontSizeSp: Int = 18,
     val lineHeight: Float = 1.65f,
@@ -113,6 +121,7 @@ data class ReaderUiState(
 class ReaderViewModel @Inject constructor(
     private val db: WeaverseDatabase,
     private val settings: SettingsRepository,
+    private val mediaRepository: MediaRepository,
     private val tts: TtsService,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ReaderUiState())
@@ -122,34 +131,53 @@ class ReaderViewModel @Inject constructor(
         viewModelScope.launch {
             settings.preferences.collectLatest { prefs ->
                 val bookId = prefs.selectedBookId
-                val book = db.bookDao().getById(bookId)
-                val scenes = db.manuscriptDao().getReaderScenes(bookId).map { row ->
-                    ReaderScene(
-                        id = row.id,
-                        chapterId = row.chapterId,
-                        chapterTitle = row.chapterTitle,
-                        title = row.title,
-                        text = row.plainText.ifBlank { documentFromJson(row.docJson).plainText() },
-                        wordCount = row.wordCount,
-                    )
-                }
-                settings.readerState(bookId).collect { saved ->
-                    val savedIndex = scenes.indexOfFirst { it.id == saved.lastSceneId }
-                    _uiState.value = ReaderUiState(
-                        bookId = bookId,
-                        bookTitle = book?.title.orEmpty(),
-                        scenes = scenes,
-                        currentIndex = savedIndex.coerceAtLeast(0),
-                        fontSizeSp = prefs.fontSizeSp.coerceIn(14, 28),
-                        lineHeight = prefs.lineHeight,
-                        theme = ReaderTheme.entries.find { it.name == prefs.readerTheme }
-                            ?: ReaderTheme.Paper,
-                        bookmarks = saved.bookmarkedSceneIds,
-                        loading = false,
-                        paragraphIndex = saved.paragraphIndex,
-                        scrollOffset = saved.scrollOffset,
-                    )
-                }
+                combine(
+                    db.manuscriptDao().observeReaderScenes(bookId),
+                    mediaRepository.observeAll(),
+                    settings.readerState(bookId),
+                ) { rows, media, saved -> Triple(rows, media, saved) }
+                    .collectLatest { (rows, media, saved) ->
+                        val book = db.bookDao().getById(bookId)
+                        val paths = mediaRepository.pathMap(media)
+                        val scenes = rows.map { row ->
+                            val doc = documentFromJson(row.docJson)
+                            ReaderScene(
+                                id = row.id,
+                                chapterId = row.chapterId,
+                                chapterTitle = row.chapterTitle,
+                                title = row.title,
+                                docJson = row.docJson,
+                                text = row.plainText.ifBlank { doc.plainText() },
+                                wordCount = row.wordCount,
+                            )
+                        }
+                        val previous = _uiState.value
+                        val indexFromPrevious = scenes.indexOfFirst { it.id == previous.current?.id }
+                        val indexFromSaved = scenes.indexOfFirst { it.id == saved.lastSceneId }
+                        val currentIndex = when {
+                            previous.bookId == bookId && indexFromPrevious >= 0 -> indexFromPrevious
+                            indexFromSaved >= 0 -> indexFromSaved
+                            else -> 0
+                        }
+                        val keepScroll = previous.bookId == bookId && indexFromPrevious >= 0
+                        _uiState.update {
+                            it.copy(
+                                bookId = bookId,
+                                bookTitle = book?.title.orEmpty(),
+                                scenes = scenes,
+                                mediaPaths = paths,
+                                currentIndex = currentIndex,
+                                fontSizeSp = prefs.fontSizeSp.coerceIn(14, 28),
+                                lineHeight = prefs.lineHeight,
+                                theme = ReaderTheme.entries.find { theme -> theme.name == prefs.readerTheme }
+                                    ?: ReaderTheme.Paper,
+                                bookmarks = saved.bookmarkedSceneIds,
+                                loading = false,
+                                paragraphIndex = if (keepScroll) previous.paragraphIndex else saved.paragraphIndex,
+                                scrollOffset = if (keepScroll) previous.scrollOffset else saved.scrollOffset,
+                            )
+                        }
+                    }
             }
         }
     }
@@ -185,10 +213,7 @@ class ReaderViewModel @Inject constructor(
     fun setTheme(theme: ReaderTheme) = viewModelScope.launch { settings.setReaderTheme(theme.name) }
 
     fun speak() {
-        val paragraphs = _uiState.value.current?.text
-            ?.split(Regex("\\n\\s*\\n|\\n"))
-            ?.filter { it.isNotBlank() }
-            .orEmpty()
+        val paragraphs = documentFromJson(_uiState.value.current?.docJson).speakableParagraphs()
         if (paragraphs.isEmpty()) return
         tts.speakParagraphs(paragraphs) { index ->
             _uiState.update { it.copy(speakingParagraph = index, status = "Reading paragraph ${index + 1}") }
@@ -199,9 +224,20 @@ class ReaderViewModel @Inject constructor(
         tts.stop()
         _uiState.update { it.copy(status = "Read aloud stopped", speakingParagraph = -1) }
     }
+
+    fun cycleStack(blockId: String) {
+        val stack = documentFromJson(_uiState.value.current?.docJson).blocks
+            .filterIsInstance<MediaStackBlock>()
+            .find { it.id == blockId }
+            ?: return
+        if (stack.mediaIds.size <= 1) return
+        val current = _uiState.value.stackIndex[blockId] ?: stack.currentIndex
+        val next = (current + 1) % stack.mediaIds.size
+        _uiState.update { it.copy(stackIndex = it.stackIndex + (blockId to next)) }
+    }
 }
 
-private data class ReaderPalette(val background: Color, val page: Color, val text: Color, val secondary: Color)
+internal data class ReaderPalette(val background: Color, val page: Color, val text: Color, val secondary: Color)
 
 @OptIn(ExperimentalMaterial3Api::class, FlowPreview::class)
 @Composable
@@ -225,10 +261,23 @@ fun ReaderScreen(viewModel: ReaderViewModel = hiltViewModel()) {
     LaunchedEffect(state.bookId, state.currentIndex) {
         focusRequester.requestFocus()
     }
-    LaunchedEffect(state.speakingParagraph) {
+    LaunchedEffect(state.speakingParagraph, current?.id, current?.docJson) {
         val idx = state.speakingParagraph
-        if (idx >= 0) {
-            runCatching { listState.animateScrollToItem(idx + 1) }
+        val scene = current
+        if (idx >= 0 && scene != null) {
+            val blocks = documentFromJson(scene.docJson).blocks
+            var seen = -1
+            val blockIndex = blocks.indexOfFirst { block ->
+                if (!block.isSpeakable()) {
+                    false
+                } else {
+                    seen++
+                    seen == idx
+                }
+            }
+            if (blockIndex >= 0) {
+                runCatching { listState.animateScrollToItem(blockIndex + 1) }
+            }
         }
     }
     LaunchedEffect(listState) {
@@ -342,7 +391,9 @@ fun ReaderScreen(viewModel: ReaderViewModel = hiltViewModel()) {
                     Text("This book has no readable scenes yet.", color = palette.secondary)
                 }
             } else {
-                val paragraphs = current.text.split(Regex("\\n\\s*\\n|\\n")).filter { it.isNotBlank() }
+                val blocks = remember(current.id, current.docJson) {
+                    documentFromJson(current.docJson).blocks
+                }
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.weight(1f),
@@ -352,7 +403,7 @@ fun ReaderScreen(viewModel: ReaderViewModel = hiltViewModel()) {
                     ),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    item {
+                    item(key = "reader-title-${current.id}") {
                         Text(current.chapterTitle.uppercase(), color = palette.secondary, style = MaterialTheme.typography.labelLarge)
                         Text(
                             current.title,
@@ -363,15 +414,18 @@ fun ReaderScreen(viewModel: ReaderViewModel = hiltViewModel()) {
                             modifier = Modifier.padding(top = InkSpacing.xs, bottom = InkSpacing.lg),
                         )
                     }
-                    itemsIndexed(paragraphs) { index, paragraph ->
-                        val speaking = index == state.speakingParagraph
-                        Text(
-                            paragraph,
-                            color = if (speaking) palette.text else palette.text,
-                            fontFamily = FontFamily.Serif,
-                            fontSize = state.fontSizeSp.sp,
-                            lineHeight = (state.fontSizeSp * state.lineHeight).sp,
-                            fontWeight = if (speaking) FontWeight.SemiBold else FontWeight.Normal,
+                    itemsIndexed(blocks, key = { _, block -> block.id }) { index, block ->
+                        val speakableIndex = blocks.take(index).count { it.isSpeakable() }
+                        val speaking = block.isSpeakable() && speakableIndex == state.speakingParagraph
+                        ReaderBlockView(
+                            block = block,
+                            mediaPaths = state.mediaPaths,
+                            stackIndex = state.stackIndex[block.id],
+                            palette = palette,
+                            fontSizeSp = state.fontSizeSp,
+                            lineHeight = state.lineHeight,
+                            speaking = speaking,
+                            onCycleStack = { viewModel.cycleStack(block.id) },
                         )
                     }
                 }

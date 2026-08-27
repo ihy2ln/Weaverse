@@ -140,7 +140,26 @@ class MediaRepository @Inject constructor(
         entity
     }
 
-    fun resolveFile(entity: MediaEntity): File = File(context.filesDir, entity.relativePath)
+    fun resolveFile(entity: MediaEntity): File {
+        val stored = entity.relativePath.trim()
+        if (stored.isEmpty()) return File(context.filesDir, "media/.missing")
+        val asFile = File(stored)
+        return if (asFile.isAbsolute) asFile else File(context.filesDir, stored)
+    }
+
+    fun resolveReadablePath(entity: MediaEntity): String? {
+        val stored = MediaPaths.storedMediaPathOrNull(entity.relativePath) ?: return null
+        val file = resolveFile(entity)
+        if (file.exists() && file.isFile && file.length() > 0L) return file.absolutePath
+        if (MediaPaths.isRemoteOrContentUri(stored)) return stored
+        return null
+    }
+
+    fun pathMap(media: List<MediaEntity>): Map<String, String> = buildMap {
+        media.forEach { entity ->
+            resolveReadablePath(entity)?.let { put(entity.id, it) }
+        }
+    }
 
     companion object {
         fun kindForType(type: String): MediaKind = when (type) {
