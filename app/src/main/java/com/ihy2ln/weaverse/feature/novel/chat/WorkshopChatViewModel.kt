@@ -40,6 +40,7 @@ data class ChatMessageUi(
 
 data class WorkshopChatUiState(
     val threadId: String = "thread-1",
+    val threadName: String = "",
     val modelRef: String = "openrouter/deepseek/deepseek-v4-flash",
     val input: String = "",
     val messages: List<ChatMessageUi> = emptyList(),
@@ -95,7 +96,10 @@ class WorkshopChatViewModel @Inject constructor(
             val thread = db.workshopChatDao().observeThreads(bookId).first().find { it.id == threadId }
             if (thread != null) {
                 _uiState.update {
-                    it.copy(modelRef = thread.modelRef.ifBlank { "openrouter/deepseek/deepseek-v4-flash" })
+                    it.copy(
+                        modelRef = thread.modelRef.ifBlank { "openrouter/deepseek/deepseek-v4-flash" },
+                        threadName = thread.name,
+                    )
                 }
             }
             db.workshopChatDao().observeMessages(threadId).collect { messages ->

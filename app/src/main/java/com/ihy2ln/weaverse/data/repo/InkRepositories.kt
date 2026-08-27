@@ -132,6 +132,26 @@ class BookRepository @Inject constructor(
         db.bookDao().deleteById(bookId)
     }
 
+    suspend fun duplicateBook(bookId: String): BookEntity? {
+        val source = db.bookDao().getById(bookId) ?: return null
+        val copy = createBook("${source.title} (copy)", source.seriesId)
+        db.bookDao().upsert(
+            copy.copy(
+                genre = source.genre,
+                pov = source.pov,
+                tense = source.tense,
+                styleGuide = source.styleGuide,
+                coverMediaId = source.coverMediaId,
+            ),
+        )
+        return copy
+    }
+
+    suspend fun setCoverMedia(bookId: String, mediaId: String?) {
+        val book = db.bookDao().getById(bookId) ?: return
+        db.bookDao().upsert(book.copy(coverMediaId = mediaId, updatedAt = System.currentTimeMillis()))
+    }
+
     suspend fun firstSceneId(bookId: String): String? {
         val acts = db.manuscriptDao().observeActs(bookId).first()
         val act = acts.firstOrNull() ?: return null
@@ -159,6 +179,7 @@ class ManuscriptRepository @Inject constructor(
     fun observeScenes(chapterId: String) = db.manuscriptDao().observeScenes(chapterId)
     fun observeActs(bookId: String) = db.manuscriptDao().observeActs(bookId)
     fun observeChapters(actId: String) = db.manuscriptDao().observeChapters(actId)
+    fun observeReaderScenes(bookId: String) = db.manuscriptDao().observeReaderScenes(bookId)
     suspend fun saveScene(scene: SceneEntity) = db.manuscriptDao().upsertScene(scene)
 
     suspend fun saveChapter(chapter: ChapterEntity) = db.manuscriptDao().upsertChapter(chapter)

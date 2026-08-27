@@ -2,7 +2,6 @@ package com.ihy2ln.weaverse.feature.notes
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,11 +23,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ihy2ln.weaverse.core.ui.components.InkConfirmButton
-import com.ihy2ln.weaverse.core.ui.components.InkDeleteButton
+import com.ihy2ln.weaverse.core.ui.components.InkLongPressMenuBox
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
+import com.ihy2ln.weaverse.core.ui.components.LongPressMenuItem
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import com.ihy2ln.weaverse.core.ui.util.alwaysScrollEndSpacer
+import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
 
 /**
  * Modular Notes list for the shared shell left rail (same collapse / expand / slide
@@ -69,6 +70,22 @@ fun NotesRailScreen(
             color = tokens.secondaryText,
             modifier = Modifier.padding(bottom = InkSpacing.sm),
         )
+        if (state.selectionMode) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = InkSpacing.xs),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                InkTextButton(label = "Cancel", onClick = viewModel::exitSelectionMode, compact = true)
+                InkTextButton(
+                    label = "Remove (${state.selectedForRemoval.size})",
+                    onClick = viewModel::removeSelected,
+                    enabled = state.selectedForRemoval.isNotEmpty(),
+                    compact = true,
+                )
+            }
+        }
         LazyColumn(
             verticalArrangement = Arrangement.spacedBy(InkSpacing.xs),
             modifier = Modifier
@@ -76,41 +93,72 @@ fun NotesRailScreen(
                 .fillMaxWidth(),
         ) {
             items(state.notes, key = { it.id }) { note ->
-                val selected = note.id == state.selectedId
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(InkSpacing.radiusSm))
-                        .background(
-                            if (selected) {
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                            } else {
-                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-                            },
-                        )
-                        .border(
-                            width = if (selected) 1.5.dp else 0.dp,
-                            color = MaterialTheme.colorScheme.primary,
-                            shape = RoundedCornerShape(InkSpacing.radiusSm),
-                        )
-                        .clickable { viewModel.selectNote(note.id) }
-                        .padding(InkSpacing.sm),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        note.title.ifBlank { "Untitled" },
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    InkDeleteButton(
-                        itemName = note.title.ifBlank { "Untitled" },
-                        onConfirmedDelete = { viewModel.deleteNote(note.id) },
-                    )
-                }
+                NoteRailRow(
+                    note = note,
+                    selected = note.id == state.selectedId,
+                    markedForRemoval = state.selectedForRemoval.contains(note.id),
+                    selectionMode = state.selectionMode,
+                    onClick = {
+                        if (state.selectionMode) {
+                            viewModel.toggleSelectedForRemoval(note.id)
+                        } else {
+                            viewModel.selectNote(note.id)
+                        }
+                    },
+                    onRemove = { viewModel.deleteNote(note.id) },
+                    onEnterSelectMode = viewModel::enterSelectionMode,
+                )
             }
             alwaysScrollEndSpacer()
+        }
+    }
+}
+
+@Composable
+private fun NoteRailRow(
+    note: SnippetEntity,
+    selected: Boolean,
+    markedForRemoval: Boolean,
+    selectionMode: Boolean,
+    onClick: () -> Unit,
+    onRemove: () -> Unit,
+    onEnterSelectMode: () -> Unit,
+) {
+    val shape = RoundedCornerShape(InkSpacing.radiusSm)
+    InkLongPressMenuBox(
+        onClick = onClick,
+        onRemove = onRemove,
+        onEnterSelectMode = onEnterSelectMode,
+        selectionMode = selectionMode,
+        extraItems = listOf(LongPressMenuItem("Open", onClick)),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(shape)
+                .background(
+                    when {
+                        markedForRemoval -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+                        selected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                        else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                    },
+                )
+                .border(
+                    width = if (selected && !markedForRemoval) 1.5.dp else 0.dp,
+                    color = MaterialTheme.colorScheme.primary,
+                    shape = shape,
+                )
+                .padding(InkSpacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                note.title.ifBlank { "Untitled" },
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

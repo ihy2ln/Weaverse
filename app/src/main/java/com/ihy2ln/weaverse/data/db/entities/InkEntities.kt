@@ -47,6 +47,16 @@ data class ChapterEntity(
     val summary: String = "",
 )
 
+/** Flattened scene row for the novel reader (acts → chapters → scenes). */
+data class ReaderSceneRow(
+    val sceneId: String,
+    val chapterId: String,
+    val chapterTitle: String,
+    val sceneTitle: String,
+    val docJson: String,
+    val wordCount: Int,
+)
+
 @Entity(tableName = "scenes", indices = [Index("chapterId")])
 data class SceneEntity(
     @PrimaryKey val id: String,

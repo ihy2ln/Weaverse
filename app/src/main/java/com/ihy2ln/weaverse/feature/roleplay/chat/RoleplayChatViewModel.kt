@@ -41,6 +41,7 @@ import com.ihy2ln.weaverse.data.db.entities.RpChatEntity
 import com.ihy2ln.weaverse.data.db.entities.RpMessageEntity
 import com.ihy2ln.weaverse.data.db.entities.RpPersonaEntity
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
+import com.ihy2ln.weaverse.feature.library.HomeModeRouting
 import com.ihy2ln.weaverse.feature.roleplay.presets.defaultPresets
 import com.ihy2ln.weaverse.feature.shell.WorkspaceHistory
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -147,8 +148,20 @@ class RoleplayChatViewModel @Inject constructor(
     private var boundCharacter: RpCharacterEntity? = null
     private var boundPersona: RpPersonaEntity? = null
 
-    fun bindChat(chatId: String) {
-        if (_uiState.value.chatId == chatId && bindJob?.isActive == true) return
+    private var pendingDisplayMode: String? = null
+
+    fun bindChat(chatId: String, preferredDisplayMode: String? = null) {
+        if (preferredDisplayMode != null) {
+            pendingDisplayMode = HomeModeRouting.normalizeDisplayMode(preferredDisplayMode)
+        }
+        if (_uiState.value.chatId == chatId && bindJob?.isActive == true) {
+            val pending = pendingDisplayMode
+            if (pending != null) {
+                pendingDisplayMode = null
+                setDisplayMode(pending)
+            }
+            return
+        }
         _uiState.update { it.copy(chatId = chatId) }
         bindJob?.cancel()
         bindJob = viewModelScope.launch {
@@ -165,24 +178,33 @@ class RoleplayChatViewModel @Inject constructor(
             launch {
                 db.roleplayDao().observeChats().collect { chats ->
                     chats.find { it.id == chatId }?.let { chat ->
-                        boundChat = chat
-                        val character = chat.characterId?.let { id ->
+                        val pending = pendingDisplayMode
+                        val currentMode = HomeModeRouting.normalizeDisplayMode(chat.displayMode)
+                        val resolved = pending ?: currentMode
+                        if (pending != null) pendingDisplayMode = null
+                        val bound = if (resolved != currentMode) {
+                            chat.copy(displayMode = resolved).also { db.roleplayDao().upsertChat(it) }
+                        } else {
+                            chat
+                        }
+                        boundChat = bound
+                        val character = bound.characterId?.let { id ->
                             db.roleplayDao().getCharacter(id)
                         }
                         boundCharacter = character
-                        boundPersona = chat.personaId.takeIf { it.isNotBlank() }?.let { id ->
+                        boundPersona = bound.personaId.takeIf { it.isNotBlank() }?.let { id ->
                             db.roleplayDao().getPersona(id)
                         }
                         val charColor = parseHexColor(
                             character?.colorHex,
                             Color(0xFF4A90D9),
                         )
-                        val preset = chat.presetId?.takeIf { it.isNotBlank() }
+                        val preset = bound.presetId?.takeIf { it.isNotBlank() }
                             ?: _uiState.value.presetId
                         _uiState.update {
                             it.copy(
-                                title = chat.title,
-                                displayMode = chat.displayMode.ifBlank { "messenger" },
+                                title = bound.title,
+                                displayMode = resolved,
                                 characterBubbleColor = charColor,
                                 presetId = preset,
                             )
