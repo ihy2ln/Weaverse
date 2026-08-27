@@ -38,7 +38,7 @@ import com.ihy2ln.weaverse.core.ui.components.ZoomableMedia
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 
 @Composable
-fun ReaderBlockView(
+internal fun ReaderBlockView(
     block: Block,
     mediaPaths: Map<String, String>,
     stackIndex: Int?,

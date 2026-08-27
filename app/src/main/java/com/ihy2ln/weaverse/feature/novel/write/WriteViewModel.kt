@@ -18,6 +18,7 @@ import com.ihy2ln.weaverse.core.text.MediaStackBlock
 import com.ihy2ln.weaverse.core.text.Paragraph
 import com.ihy2ln.weaverse.core.text.SceneBeatBlock
 import com.ihy2ln.weaverse.core.text.Span
+import com.ihy2ln.weaverse.core.text.appendParagraphs
 import com.ihy2ln.weaverse.core.text.insertMediaAfter
 import com.ihy2ln.weaverse.core.text.appendSceneBeat
 import com.ihy2ln.weaverse.core.text.withSceneBeatCollapsedToggled
