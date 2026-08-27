@@ -31,7 +31,8 @@ class WriteDocumentOps @Inject constructor(
     suspend fun getScene(sceneId: String): SceneEntity? = manuscriptRepository.getScene(sceneId)
 
     suspend fun persist(base: SceneEntity, doc: Document): SceneEntity {
-        val updated = base.copy(
+        val latest = manuscriptRepository.getScene(base.id) ?: base
+        val updated = latest.copy(
             docJson = doc.toJson(),
             plainText = doc.plainText(),
             wordCount = doc.wordCount(),

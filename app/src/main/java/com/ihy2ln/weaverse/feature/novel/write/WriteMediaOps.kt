@@ -9,6 +9,7 @@ import com.ihy2ln.weaverse.core.text.MediaBlock
 import com.ihy2ln.weaverse.core.text.MediaKind
 import com.ihy2ln.weaverse.core.text.MediaStackBlock
 import com.ihy2ln.weaverse.core.text.isMediaBlockAt
+import com.ihy2ln.weaverse.core.text.referencedMediaIds
 import com.ihy2ln.weaverse.data.db.entities.MediaEntity
 import java.util.UUID
 import javax.inject.Inject
@@ -38,7 +39,9 @@ class WriteMediaOps @Inject constructor(
         val paths = mutableMapOf<String, String>()
         ids.distinct().forEach { id ->
             mediaRepository.getById(id)?.let { media ->
-                paths[id] = mediaRepository.resolveFile(media).absolutePath
+                mediaRepository.resolveReadablePath(media)?.let { path ->
+                    paths[id] = path
+                }
             }
         }
         return paths
@@ -91,11 +94,7 @@ class WriteMediaOps @Inject constructor(
                 )
             }
 
-        fun mediaIdsOf(block: Block): List<String> = when (block) {
-            is MediaBlock -> listOf(block.mediaId)
-            is MediaStackBlock -> block.mediaIds
-            else -> emptyList()
-        }
+        fun mediaIdsOf(block: Block): List<String> = block.referencedMediaIds()
 
         fun newMediaBlock(mediaId: String, kind: MediaKind): MediaBlock = MediaBlock(
             id = UUID.randomUUID().toString(),

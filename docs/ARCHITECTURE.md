@@ -11,7 +11,7 @@ the [repo Wiki](https://github.com/ihy2ln/weaverse/wiki).
 ## What the app is
 
 Weaverse is an offline-first novel-writing app (Novelcrafter-style: Plan /
-Write / Chat / Review, a Codex, Snippets, a prompt library) combined with a
+Write / Read / Chat / Review, a Codex, Snippets, a prompt library) combined with a
 SillyTavern-style roleplay chat mode (characters, personas, presets, real
 streaming chats with swipe-cycled regeneration), plus a Windows desktop
 companion that hosts a web UI and a Wi-Fi/remote sync protocol between

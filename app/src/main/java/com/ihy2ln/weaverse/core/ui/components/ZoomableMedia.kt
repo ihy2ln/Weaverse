@@ -40,6 +40,8 @@ import androidx.media3.ui.PlayerView
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.size.Size
+import com.ihy2ln.weaverse.core.media.isRemoteOrContentUri
+import com.ihy2ln.weaverse.core.media.mediaLoadTarget
 import java.io.File
 
 /**
@@ -81,8 +83,9 @@ fun ZoomableMedia(
     val latestLongPressAt by rememberUpdatedState(onLongPressAt)
     val latestTransformEnd by rememberUpdatedState(onTransformEnd)
     val context = LocalContext.current
+    val loadTarget = remember(path) { mediaLoadTarget(path) }
     val file = remember(path) { File(path) }
-    val exists = file.exists() && file.length() > 0L
+    val exists = loadTarget != null
 
     val sizeModifier = if (fillPanel) {
         Modifier.fillMaxSize()
@@ -161,7 +164,12 @@ fun ZoomableMedia(
             isVideo -> {
                 val player = remember(path) {
                     ExoPlayer.Builder(context).build().apply {
-                        setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
+                        val uri = if (isRemoteOrContentUri(path)) {
+                            Uri.parse(path)
+                        } else {
+                            Uri.fromFile(file)
+                        }
+                        setMediaItem(MediaItem.fromUri(uri))
                         prepare()
                     }
                 }
@@ -185,9 +193,9 @@ fun ZoomableMedia(
                 )
             }
             else -> {
-                val request = remember(file, decodeOriginal) {
+                val request = remember(loadTarget, decodeOriginal) {
                     ImageRequest.Builder(context)
-                        .data(file)
+                        .data(loadTarget)
                         .apply {
                             if (decodeOriginal) size(Size.ORIGINAL)
                         }

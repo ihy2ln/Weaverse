@@ -12,10 +12,11 @@ New work starts from that tag. GitHub `main` may still be the older InkForge
 transplant (`0.5.17`); do not branch from it. Full snapshot:
 [docs/CHECKPOINT-v1.2.5-beta.md](docs/CHECKPOINT-v1.2.5-beta.md).
 
-**First update on this checkpoint:** pictures added in Novel → Write must
-also appear in Novel → Read, in document order, with the same width /
-alignment as the editor. The reader at the checkpoint only renders
-`plainText()`, which drops media blocks.
+**First update on this checkpoint (1.2.6-beta):** pictures added in Novel →
+Write now appear in Novel → Read in document order, with the same width /
+alignment as the editor. The reader observes scene JSON live, copies picker
+files into readable app-storage paths, and keeps surrounding prose when
+inserting media.
 
 ## Resume state (2026-08-16)
 

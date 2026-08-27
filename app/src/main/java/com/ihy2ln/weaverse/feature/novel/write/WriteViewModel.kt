@@ -24,7 +24,9 @@ import com.ihy2ln.weaverse.core.text.withSceneBeatCollapsedToggled
 import com.ihy2ln.weaverse.core.text.withSceneBeatPrompt
 import com.ihy2ln.weaverse.core.text.applyColor
 import com.ihy2ln.weaverse.core.text.documentFromJson
+import com.ihy2ln.weaverse.core.text.insertMediaAfter
 import com.ihy2ln.weaverse.core.text.plainText
+import com.ihy2ln.weaverse.core.text.referencedMediaIds
 import com.ihy2ln.weaverse.core.text.replaceRangeText
 import com.ihy2ln.weaverse.core.text.stackMediaOnto
 import com.ihy2ln.weaverse.core.text.stackMediaWithAdjacent
@@ -250,7 +252,7 @@ class WriteViewModel @Inject constructor(
         val doc = documentFromJson(scene.docJson)
         val blocks = doc.blocks.ifEmpty { listOf(Paragraph("new-p", listOf(Span("")))) }
         viewModelScope.launch {
-            val mediaIds = blocks.flatMap { WriteMediaOps.mediaIdsOf(it) }
+            val mediaIds = blocks.flatMap { it.referencedMediaIds() }
             val paths = mediaOps.resolvePaths(mediaIds)
             _uiState.update {
                 it.copy(
@@ -708,8 +710,9 @@ class WriteViewModel @Inject constructor(
                     val path = mediaOps.resolveFile(media).absolutePath
                     val block = WriteMediaOps.newMediaBlock(media.id, MediaKind.Video)
                     updateBlocksSync(recordHistory = true) { blocks ->
-                        blocks[index] = Paragraph(blocks[index].id, listOf(Span("")))
-                        blocks.add(index + 1, block)
+                        val next = blocks.insertMediaAfter(index, block)
+                        blocks.clear()
+                        blocks.addAll(next)
                     }
                     _uiState.update { it.copy(mediaPaths = it.mediaPaths + (media.id to path)) }
                 }
@@ -1062,10 +1065,9 @@ class WriteViewModel @Inject constructor(
         val path = paths[mediaId] ?: return
         val block = WriteMediaOps.newMediaBlock(mediaId, kind)
         updateBlocksSync(recordHistory = true) { blocks ->
-            if (index in blocks.indices && blocks[index] is Paragraph) {
-                blocks[index] = Paragraph(blocks[index].id, listOf(Span("")))
-            }
-            blocks.add(index + 1, block)
+            val next = blocks.insertMediaAfter(index, block)
+            blocks.clear()
+            blocks.addAll(next)
         }
         _uiState.update {
             it.copy(mediaPaths = it.mediaPaths + (mediaId to path), pickImageBlockIndex = null)
@@ -1143,9 +1145,11 @@ class WriteViewModel @Inject constructor(
     }
 
     private fun persistScene(doc: Document) {
+        val sceneId = loadedScene?.id ?: return
         viewModelScope.launch {
-            val base = loadedScene ?: return@launch
-            loadedScene = documentOps.persist(base, doc)
+            val base = documentOps.getScene(sceneId) ?: loadedScene?.takeIf { it.id == sceneId } ?: return@launch
+            val updated = documentOps.persist(base, doc)
+            if (loadedScene?.id == updated.id) loadedScene = updated
             refreshContextMeter()
         }
     }

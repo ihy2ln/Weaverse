@@ -106,6 +106,19 @@ interface ManuscriptDao {
     )
     suspend fun getReaderScenes(bookId: String): List<ReaderSceneRow>
 
+    @Query(
+        """
+        SELECT s.id AS id, s.title AS title, s.plainText AS plainText, s.docJson AS docJson,
+               s.wordCount AS wordCount, c.id AS chapterId, c.title AS chapterTitle
+        FROM scenes s
+        INNER JOIN chapters c ON c.id = s.chapterId
+        INNER JOIN acts a ON a.id = c.actId
+        WHERE a.bookId = :bookId
+        ORDER BY a.sortOrder, c.sortOrder, s.sortOrder
+        """,
+    )
+    fun observeReaderScenes(bookId: String): Flow<List<ReaderSceneRow>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAct(entity: ActEntity)
 

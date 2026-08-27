@@ -25,12 +25,14 @@ Three rows across the top:
 
 ## Novel
 
-`Plan · Write · Chat · Review`
+`Bookshelf · Plan · Write · Read · Chat · Review`
 
 - **Plan** — the outline: Book → Chapter → Scene → Scene beat.
 - **Write** — the scene editor, with media blocks and codex highlighting.
+- **Read** — the premium reader. Pictures, stacks, grids, and audio inserted
+  in Write appear in the same order and placement (width and alignment).
 - **Chat** — a workshop conversation about the book.
-- **Review** — a read-through pass.
+- **Review** — a consistency pass.
 
 ---
 

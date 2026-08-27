@@ -1,6 +1,7 @@
 package com.ihy2ln.weaverse.feature.novel.write
 
 import com.ihy2ln.weaverse.core.text.MediaBlock
+import com.ihy2ln.weaverse.core.text.MediaGridBlock
 import com.ihy2ln.weaverse.core.text.MediaKind
 import com.ihy2ln.weaverse.core.text.MediaStackBlock
 import com.ihy2ln.weaverse.core.text.Paragraph
@@ -68,5 +69,12 @@ class WriteMediaOpsTest {
     fun emptyClipboardPayload_isRejected() {
         assertNull(WriteMediaOps.clipboardFromBlock(Paragraph("p", listOf(Span("hi")))))
         assertNull(WriteMediaOps.clipboardFromBlock(MediaBlock("m", "", MediaKind.Image)))
+    }
+
+    @Test
+    fun mediaIdsOf_includesGridAndStack() {
+        assertEquals(listOf("img-a"), WriteMediaOps.mediaIdsOf(MediaBlock("m", "img-a", MediaKind.Image)))
+        assertEquals(listOf("a", "b"), WriteMediaOps.mediaIdsOf(MediaStackBlock("s", listOf("a", "b"))))
+        assertEquals(listOf("c", "d"), WriteMediaOps.mediaIdsOf(MediaGridBlock("g", listOf("c", "d"))))
     }
 }

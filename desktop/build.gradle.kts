@@ -99,7 +99,7 @@ tasks.register<Zip>("packageDesktopZip") {
     group = "distribution"
     description = "Zip desktop fat JAR + launchers for Windows/Linux."
     dependsOn("stageDesktopDist")
-    archiveFileName.set("Weaverse-Desktop-v1.2.5-beta.zip")
+    archiveFileName.set("Weaverse-Desktop-v1.2.6-beta.zip")
     destinationDirectory.set(rootProject.layout.projectDirectory.dir("releases/desktop"))
     from(packageDir)
 }

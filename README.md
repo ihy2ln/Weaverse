@@ -92,7 +92,7 @@ target — `:sync-core` and `:desktop` are pure JVM).
 ```
 
 - Android APK → `app/build/outputs/apk/debug/`
-- Desktop zip → `releases/desktop/Weaverse-Desktop-v1.2.5-beta.zip`
+- Desktop zip → `releases/desktop/Weaverse-Desktop-v1.2.6-beta.zip`
 
 To build a release APK signed with your own key, set the `KEYSTORE_PATH` /
 `KEYSTORE_PASSWORD` / `KEY_ALIAS` / `KEY_PASSWORD` environment variables (CI

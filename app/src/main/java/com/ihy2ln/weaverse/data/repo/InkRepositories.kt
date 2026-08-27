@@ -172,6 +172,7 @@ class ManuscriptRepository @Inject constructor(
     fun observeScenes(chapterId: String) = db.manuscriptDao().observeScenes(chapterId)
     fun observeActs(bookId: String) = db.manuscriptDao().observeActs(bookId)
     fun observeChapters(actId: String) = db.manuscriptDao().observeChapters(actId)
+    fun observeReaderScenes(bookId: String) = db.manuscriptDao().observeReaderScenes(bookId)
     suspend fun saveScene(scene: SceneEntity) = db.manuscriptDao().upsertScene(scene)
 
     suspend fun saveChapter(chapter: ChapterEntity) = db.manuscriptDao().upsertChapter(chapter)
