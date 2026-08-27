@@ -65,5 +65,18 @@ class SceneRevisionRepository @Inject constructor(
     companion object {
         const val HOUR_MS = 60L * 60L * 1000L
         const val KEEP_PER_SCENE = 24
+
+        fun isDue(
+            latestCreatedAt: Long?,
+            latestDocJson: String?,
+            currentDocJson: String,
+            now: Long,
+            minIntervalMs: Long = HOUR_MS,
+        ): Boolean {
+            if (latestCreatedAt == null || latestDocJson == null) return true
+            if (now - latestCreatedAt < minIntervalMs) return false
+            if (latestDocJson == currentDocJson) return false
+            return true
+        }
     }
 }

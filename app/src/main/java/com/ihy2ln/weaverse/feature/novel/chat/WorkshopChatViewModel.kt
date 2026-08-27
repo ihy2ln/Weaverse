@@ -11,6 +11,7 @@ import com.ihy2ln.weaverse.ai.context.ContextBuildRequest
 import com.ihy2ln.weaverse.ai.context.ContextChip
 import com.ihy2ln.weaverse.ai.context.ContextMeter
 import com.ihy2ln.weaverse.ai.context.ContextMeterReading
+import com.ihy2ln.weaverse.ai.openrouter.OpenRouterModelCache
 import com.ihy2ln.weaverse.ai.prompt.PromptComponents
 import com.ihy2ln.weaverse.ai.prompt.PromptRenderContext
 import com.ihy2ln.weaverse.ai.prompt.PromptRenderer
@@ -29,6 +30,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -73,6 +75,7 @@ class WorkshopChatViewModel @Inject constructor(
     private val settings: SettingsRepository,
     private val promptRepository: PromptRepository,
     private val workspaceHistory: WorkspaceHistory,
+    private val modelCache: OpenRouterModelCache,
 ) : ViewModel() {
     private val contextBuilder = ContextBuilder()
     private var bookId = "book-adams-haven-1"
@@ -81,12 +84,21 @@ class WorkshopChatViewModel @Inject constructor(
     private var observeJob: Job? = null
     private var generateJob: Job? = null
     private var assembledPrompt: com.ihy2ln.weaverse.ai.context.AssembledPrompt? = null
+    private var contextLimit = ContextMeter.DEFAULT_LIMIT
 
     init {
         viewModelScope.launch {
             settings.preferences.collect { prefs ->
                 bookId = prefs.selectedBookId
                 _uiState.update { it.copy(showExtraPromptSurfaces = prefs.extraPromptSurfaces.chatComposer) }
+            }
+        }
+        viewModelScope.launch {
+            combine(settings.preferences, modelCache.models) { prefs, dtos ->
+                ContextMeter.limitFor(prefs.defaultModelRef, modelCache.toModelInfo(dtos))
+            }.collect { limit ->
+                contextLimit = limit
+                refreshContext(_uiState.value.input)
             }
         }
         selectThread("thread-1")
@@ -325,7 +337,7 @@ class WorkshopChatViewModel @Inject constructor(
             )
             assembledPrompt = withWorkshop
             val chips = withWorkshop.usedEntries.filter { it.entryId !in excludedEntryIds }
-            val meter = ContextMeter.reading(withWorkshop, extraUser = input)
+            val meter = ContextMeter.reading(withWorkshop, extraUser = input, limitTokens = contextLimit)
             _uiState.update {
                 it.copy(
                     contextChips = chips,
