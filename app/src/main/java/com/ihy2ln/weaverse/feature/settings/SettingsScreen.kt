@@ -156,6 +156,31 @@ fun SettingsScreen(
 
             )
 
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = InkSpacing.sm)
+                    .clickable { viewModel.setKeepScrollOnPageChange(!state.prefs.keepScrollOnPageChange) },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(
+                    checked = state.prefs.keepScrollOnPageChange,
+                    onCheckedChange = viewModel::setKeepScrollOnPageChange,
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = MaterialTheme.colorScheme.primary,
+                        checkmarkColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
+                )
+                Column(modifier = Modifier.padding(start = InkSpacing.sm)) {
+                    Text("Keep scroll when changing pages", fontWeight = FontWeight.Medium)
+                    Text(
+                        "Read mode stays at the current offset instead of jumping to the top of the next page.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = inkTokens().secondaryText,
+                    )
+                }
+            }
+
             Text(
                 "Overall brightness: ${state.prefs.appBrightnessPercent}%",
                 modifier = Modifier.padding(top = InkSpacing.sm),

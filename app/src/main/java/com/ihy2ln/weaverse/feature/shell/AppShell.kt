@@ -57,6 +57,8 @@ import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import com.ihy2ln.weaverse.core.ui.util.resolveSectionColor
 import com.ihy2ln.weaverse.feature.export.ExportImportScreen
+import com.ihy2ln.weaverse.feature.library.HomeWorkspace
+import com.ihy2ln.weaverse.feature.library.LibraryPane
 import com.ihy2ln.weaverse.feature.library.LibraryScreen
 import com.ihy2ln.weaverse.feature.media.MediaGalleryScreen
 import com.ihy2ln.weaverse.feature.media.PicturesRailScreen
@@ -73,6 +75,7 @@ import com.ihy2ln.weaverse.feature.novel.codex.CodexEntryDetailScreen
 import com.ihy2ln.weaverse.feature.novel.codex.CodexRailScreen
 import com.ihy2ln.weaverse.feature.novel.manuscript.ManuscriptRailScreen
 import com.ihy2ln.weaverse.feature.novel.plan.PlanScreen
+import com.ihy2ln.weaverse.feature.novel.read.ReadScreen
 import com.ihy2ln.weaverse.feature.novel.review.ReviewScreen
 import com.ihy2ln.weaverse.feature.novel.snippets.SnippetsRailScreen
 import com.ihy2ln.weaverse.feature.novel.write.WriteScreen
@@ -105,6 +108,7 @@ fun AppShell(
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showSearch by rememberSaveable { mutableStateOf(false) }
     var showLibrary by rememberSaveable { mutableStateOf(true) }
+    var libraryPane by rememberSaveable { mutableStateOf(LibraryPane.Home.name) }
     var showExport by rememberSaveable { mutableStateOf(false) }
     var workspaceFocus by rememberSaveable { mutableStateOf(WorkspaceFocus.Story.name) }
     var chromeTool by rememberSaveable { mutableStateOf<String?>(null) }
@@ -210,6 +214,7 @@ fun AppShell(
                 showSettings -> "Settings"
                 showExport -> "Import / Export"
                 showSearch -> "Search"
+                showLibrary && libraryPane == LibraryPane.Bookshelf.name -> "Bookshelf"
                 showLibrary -> "Library"
                 selectedCodexEntryId != null -> "Codex"
                 selectedCharacterId != null -> "Character"
@@ -239,7 +244,7 @@ fun AppShell(
                 toolOptions = workspaceChromeTools().map { SegmentedOption(it.name, it.label) },
                 activeToolId = chromeTool,
                 onLibrary = {
-                    if (showLibrary) {
+                    if (showLibrary && libraryPane == LibraryPane.Home.name) {
                         if (shellInfo.book != null) showLibrary = false
                     } else {
                         showSettings = false
@@ -248,10 +253,21 @@ fun AppShell(
                         selectedCodexEntryId = null
                         selectedCharacterId = null
                         selectedPersonaId = null
+                        libraryPane = LibraryPane.Home.name
                         showLibrary = true
                     }
                 },
                 onSettings = { showSettings = !showSettings },
+                onBookshelf = {
+                    showSettings = false
+                    showExport = false
+                    showSearch = false
+                    selectedCodexEntryId = null
+                    selectedCharacterId = null
+                    selectedPersonaId = null
+                    libraryPane = LibraryPane.Bookshelf.name
+                    showLibrary = true
+                },
                 onImport = { showExport = true },
                 onExport = { showExport = true },
                 canUndo = historyState.canUndo,
@@ -334,6 +350,7 @@ fun AppShell(
                     modifier = Modifier.weight(1f).fillMaxSize(),
                 )
                 showLibrary -> LibraryScreen(
+                    pane = runCatching { LibraryPane.valueOf(libraryPane) }.getOrDefault(LibraryPane.Home),
                     onOpenBook = { _, sceneId ->
                         if (sceneId != null) selectedSceneId = sceneId
                         showLibrary = false
@@ -348,6 +365,40 @@ fun AppShell(
                         mode = AppMode.Novel.name
                     },
                     onOpenExport = { showExport = true },
+                    onOpenMode = { workspace ->
+                        showLibrary = false
+                        showSettings = false
+                        showExport = false
+                        showSearch = false
+                        chromeTool = null
+                        when (workspace) {
+                            HomeWorkspace.Novel -> {
+                                mode = AppMode.Novel.name
+                                novelDest = NovelDestination.Plan.name
+                            }
+                            HomeWorkspace.Rpg -> {
+                                mode = AppMode.Roleplay.name
+                                rpDest = RoleplayDestination.Chats.name
+                            }
+                            HomeWorkspace.Chatting -> {
+                                mode = AppMode.Roleplay.name
+                                rpDest = RoleplayDestination.Chats.name
+                            }
+                            HomeWorkspace.Storyboard -> {
+                                mode = AppMode.Roleplay.name
+                                rpDest = RoleplayDestination.Chats.name
+                            }
+                            HomeWorkspace.Notes -> {
+                                mode = AppMode.Notes.name
+                            }
+                        }
+                    },
+                    onOpenRpChat = { chatId ->
+                        showLibrary = false
+                        mode = AppMode.Roleplay.name
+                        rpDest = RoleplayDestination.Chats.name
+                        selectedRpChatId = chatId
+                    },
                     modifier = Modifier.weight(1f).fillMaxSize(),
                 )
                 selectedCodexEntryId != null -> Box(Modifier.weight(1f).fillMaxSize()) {
@@ -490,7 +541,11 @@ fun AppShell(
                                     jumpKind = writeJumpKind,
                                     onOpenCodexEntry = { selectedCodexEntryId = it },
                                 )
-                                NovelDestination.Chat -> WorkshopChatScreen(threadId = selectedThreadId)
+                                NovelDestination.Read -> ReadScreen(sceneId = selectedSceneId)
+                                NovelDestination.Chat -> WorkshopChatScreen(
+                                    threadId = selectedThreadId,
+                                    onThreadChange = { selectedThreadId = it },
+                                )
                                 NovelDestination.Review -> ReviewScreen()
                             }
                             AppMode.Notes.name -> NotesScreen(viewModel = notesViewModel)

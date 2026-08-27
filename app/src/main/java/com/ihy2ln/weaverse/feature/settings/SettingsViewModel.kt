@@ -310,6 +310,10 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { settings.setLineHeight(value) }
     }
 
+    fun setKeepScrollOnPageChange(enabled: Boolean) {
+        viewModelScope.launch { settings.setKeepScrollOnPageChange(enabled) }
+    }
+
     fun setSectionAppearance(sectionKey: String, colorHex: String, opacityPercent: Int) {
         viewModelScope.launch { settings.setSectionAppearance(sectionKey, colorHex, opacityPercent) }
     }

@@ -132,6 +132,43 @@ class BookRepository @Inject constructor(
         db.bookDao().deleteById(bookId)
     }
 
+    suspend fun copyBook(bookId: String): BookEntity? {
+        val source = getBook(bookId) ?: return null
+        val now = System.currentTimeMillis()
+        val newBookId = "book-${UUID.randomUUID()}"
+        val copy = source.copy(
+            id = newBookId,
+            title = "Copy of ${source.title}",
+            createdAt = now,
+            updatedAt = now,
+        )
+        db.bookDao().upsert(copy)
+        db.manuscriptDao().getActs(bookId).forEach { act ->
+            val newActId = "act-${UUID.randomUUID()}"
+            db.manuscriptDao().upsertAct(act.copy(id = newActId, bookId = newBookId))
+            db.manuscriptDao().getChapters(act.id).forEach { chapter ->
+                val newChapterId = "chapter-${UUID.randomUUID()}"
+                db.manuscriptDao().upsertChapter(chapter.copy(id = newChapterId, actId = newActId))
+                db.manuscriptDao().getScenes(chapter.id).forEach { scene ->
+                    db.manuscriptDao().upsertScene(
+                        scene.copy(
+                            id = "scene-${UUID.randomUUID()}",
+                            chapterId = newChapterId,
+                            createdAt = now,
+                            updatedAt = now,
+                        ),
+                    )
+                }
+            }
+        }
+        return copy
+    }
+
+    suspend fun setCoverMediaId(bookId: String, mediaId: String?) {
+        val book = getBook(bookId) ?: return
+        updateBook(book.copy(coverMediaId = mediaId))
+    }
+
     suspend fun firstSceneId(bookId: String): String? {
         val acts = db.manuscriptDao().observeActs(bookId).first()
         val act = acts.firstOrNull() ?: return null

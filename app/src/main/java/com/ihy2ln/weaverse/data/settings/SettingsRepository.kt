@@ -84,6 +84,11 @@ data class UserPreferences(
      * all default off. The PROMPT box itself is always available.
      */
     val extraPromptSurfaces: ExtraPromptSurfaces = ExtraPromptSurfaces(),
+    /**
+     * Read mode: keep the current scroll offset when turning pages.
+     * Default is off — new pages start at the top.
+     */
+    val keepScrollOnPageChange: Boolean = false,
 )
 
 @Singleton
@@ -127,6 +132,7 @@ class SettingsRepository @Inject constructor(
                 chatComposer = extraFlag(prefs, KEY_PROMPT_CHAT_COMPOSER),
                 roleplayButtons = extraFlag(prefs, KEY_PROMPT_ROLEPLAY_BUTTONS),
             ),
+            keepScrollOnPageChange = prefs[KEY_KEEP_SCROLL_ON_PAGE_CHANGE] ?: false,
         )
     }
 
@@ -140,6 +146,10 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setLineHeight(value: Float) {
         context.dataStore.edit { it[KEY_LINE_HEIGHT] = value.coerceIn(1.2f, 2.2f) }
+    }
+
+    suspend fun setKeepScrollOnPageChange(enabled: Boolean) {
+        context.dataStore.edit { it[KEY_KEEP_SCROLL_ON_PAGE_CHANGE] = enabled }
     }
 
     suspend fun setDefaultModel(ref: String) {
@@ -283,6 +293,7 @@ class SettingsRepository @Inject constructor(
         private val KEY_PROMPT_CONTINUATION = booleanPreferencesKey("prompt_continuation")
         private val KEY_PROMPT_CHAT_COMPOSER = booleanPreferencesKey("prompt_chat_composer")
         private val KEY_PROMPT_ROLEPLAY_BUTTONS = booleanPreferencesKey("prompt_roleplay_buttons")
+        private val KEY_KEEP_SCROLL_ON_PAGE_CHANGE = booleanPreferencesKey("keep_scroll_on_page_change")
 
         const val InkSpacingRailMin = 48f
         const val InkSpacingRailMax = 420f

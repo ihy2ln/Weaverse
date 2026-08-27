@@ -24,4 +24,9 @@ class UserPreferencesTest {
         assertFalse(extras.chatComposer)
         assertFalse(extras.roleplayButtons)
     }
+
+    @Test
+    fun keepScrollOnPageChangeDefaultsOff() {
+        assertFalse(UserPreferences().keepScrollOnPageChange)
+    }
 }

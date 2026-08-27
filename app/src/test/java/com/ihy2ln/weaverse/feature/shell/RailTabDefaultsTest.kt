@@ -28,9 +28,9 @@ class RailTabDefaultsTest {
     }
 
     @Test
-    fun novelDestinationsStayPlanWriteChatReview() {
+    fun novelDestinationsStayPlanWriteReadChatReview() {
         assertEquals(
-            listOf("Plan", "Write", "Chat", "Review"),
+            listOf("Plan", "Write", "Read", "Chat", "Review"),
             NovelDestination.entries.map { it.label },
         )
     }

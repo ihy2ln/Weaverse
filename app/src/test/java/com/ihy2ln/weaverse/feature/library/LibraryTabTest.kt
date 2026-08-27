@@ -15,4 +15,9 @@ class LibraryTabTest {
         val labels = LibraryTab.entries.map { it.novelSubLabel() }
         assertEquals(listOf("Books", "Series"), labels)
     }
+
+    @Test
+    fun homeAndBookshelfAreSeparatePanes() {
+        assertEquals(listOf(LibraryPane.Home, LibraryPane.Bookshelf), LibraryPane.entries.toList())
+    }
 }

@@ -4,7 +4,9 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ihy2ln.weaverse.core.media.MediaRepository
+import com.ihy2ln.weaverse.data.db.WeaverseDatabase
 import com.ihy2ln.weaverse.data.db.entities.BookEntity
+import com.ihy2ln.weaverse.data.db.entities.MediaEntity
 import com.ihy2ln.weaverse.data.db.entities.SeriesEntity
 import com.ihy2ln.weaverse.data.export.ProjectExportManager
 import com.ihy2ln.weaverse.data.export.SampleBookImporter
@@ -43,6 +45,13 @@ data class LibraryBookCard(
     val coverPath: String?,
 )
 
+private data class LibraryCore(
+    val books: List<BookEntity>,
+    val series: List<SeriesEntity>,
+    val prefs: com.ihy2ln.weaverse.data.settings.UserPreferences,
+    val media: List<MediaEntity>,
+)
+
 data class LibraryUiState(
     val tab: LibraryTab = LibraryTab.Novels,
     val books: List<BookEntity> = emptyList(),
@@ -56,6 +65,13 @@ data class LibraryUiState(
     val status: String = "",
     val busy: Boolean = false,
     val hasIsekaiGacha: Boolean = false,
+    val selectingToRemove: Boolean = false,
+    val selectedToRemove: Set<String> = emptySet(),
+    val recentNovel: HomeRecentWork? = null,
+    val recentRpg: HomeRecentWork? = null,
+    val recentChat: HomeRecentWork? = null,
+    val recentStoryboard: HomeRecentWork? = null,
+    val recentNote: HomeRecentWork? = null,
 )
 
 @HiltViewModel
@@ -67,6 +83,7 @@ class LibraryViewModel @Inject constructor(
     private val exportManager: ProjectExportManager,
     private val sampleBookImporter: SampleBookImporter,
     private val workspaceHistory: WorkspaceHistory,
+    private val db: WeaverseDatabase,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(LibraryUiState())
     val uiState: StateFlow<LibraryUiState> = _uiState.asStateFlow()
@@ -81,11 +98,21 @@ class LibraryViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             combine(
-                bookRepository.observeBooks(),
-                seriesRepository.observeSeries(),
-                settings.preferences,
-                mediaRepository.observeAll(),
-            ) { books, series, prefs, media ->
+                combine(
+                    bookRepository.observeBooks(),
+                    seriesRepository.observeSeries(),
+                    settings.preferences,
+                    mediaRepository.observeAll(),
+                ) { books, series, prefs, media ->
+                    LibraryCore(books, series, prefs, media)
+                },
+                db.roleplayDao().observeChats(),
+                db.snippetDao().observeCategory("notes"),
+            ) { core, rpChats, notes ->
+                val books = core.books
+                val series = core.series
+                val prefs = core.prefs
+                val media = core.media
                 val groups = buildList {
                     series.forEach { s ->
                         add(SeriesGroup(s, books.filter { it.seriesId == s.id }))
@@ -107,19 +134,39 @@ class LibraryViewModel @Inject constructor(
                         coverPath = cover,
                     )
                 }
+                val activeCard = cards.find { it.book.id == prefs.selectedBookId } ?: cards.firstOrNull()
+                val messenger = rpChats.firstOrNull { it.displayMode == "messenger" } ?: rpChats.firstOrNull()
+                val dungeon = rpChats.firstOrNull { it.displayMode == "dungeonMaster" } ?: rpChats.firstOrNull()
+                val manga = rpChats.firstOrNull { it.displayMode == "roleplay" } ?: rpChats.firstOrNull()
+                val note = notes.firstOrNull()
+                val prev = _uiState.value
                 LibraryUiState(
-                    tab = _uiState.value.tab,
+                    tab = prev.tab,
                     books = books,
                     cards = cards,
                     series = series,
                     seriesGroups = groups,
                     selectedBookId = prefs.selectedBookId,
-                    newBookTitle = _uiState.value.newBookTitle,
-                    newSeriesTitle = _uiState.value.newSeriesTitle,
-                    assignSeriesId = _uiState.value.assignSeriesId,
-                    status = _uiState.value.status,
-                    busy = _uiState.value.busy,
+                    newBookTitle = prev.newBookTitle,
+                    newSeriesTitle = prev.newSeriesTitle,
+                    assignSeriesId = prev.assignSeriesId,
+                    status = prev.status,
+                    busy = prev.busy,
                     hasIsekaiGacha = books.any { it.title.equals(SampleBookImporter.BOOK_TITLE, ignoreCase = true) },
+                    selectingToRemove = prev.selectingToRemove,
+                    selectedToRemove = prev.selectedToRemove.filter { id -> books.any { it.id == id } }.toSet(),
+                    recentNovel = activeCard?.let {
+                        HomeRecentWork(
+                            id = it.book.id,
+                            title = it.book.title,
+                            subtitle = listOfNotNull(it.seriesTitle, it.book.genre.takeIf(String::isNotBlank)).joinToString(" · "),
+                            coverPath = it.coverPath,
+                        )
+                    },
+                    recentRpg = dungeon?.let { HomeRecentWork(it.id, it.title, "RPG campaign") },
+                    recentChat = messenger?.let { HomeRecentWork(it.id, it.title, "Messenger") },
+                    recentStoryboard = manga?.let { HomeRecentWork(it.id, it.title, "Storyboard") },
+                    recentNote = note?.let { HomeRecentWork(it.id, it.title.ifBlank { "Note" }, "Shared board") },
                 )
             }.collect { _uiState.value = it }
         }
@@ -161,6 +208,69 @@ class LibraryViewModel @Inject constructor(
             bookRepository.deleteBook(bookId)
             if (wasSelected) {
                 settings.setSelectedBookId(next.ifBlank { "book-adams-haven-1" })
+            }
+            _uiState.update {
+                it.copy(selectedToRemove = it.selectedToRemove - bookId)
+            }
+        }
+    }
+
+    fun copyBook(bookId: String) {
+        viewModelScope.launch {
+            val copy = bookRepository.copyBook(bookId)
+            if (copy != null) {
+                _uiState.update { it.copy(status = "Copied as ${copy.title}") }
+            }
+        }
+    }
+
+    fun setCoverFromUri(bookId: String, uri: Uri) {
+        viewModelScope.launch {
+            runCatching { mediaRepository.importFromUri(uri) }
+                .onSuccess { media ->
+                    bookRepository.setCoverMediaId(bookId, media.id)
+                    _uiState.update { it.copy(status = "Cover updated") }
+                }
+                .onFailure { err ->
+                    _uiState.update { it.copy(status = "Cover failed: ${err.message}") }
+                }
+        }
+    }
+
+    fun enterSelectToRemove(initialId: String? = null) {
+        _uiState.update {
+            it.copy(
+                selectingToRemove = true,
+                selectedToRemove = if (initialId != null) setOf(initialId) else emptySet(),
+            )
+        }
+    }
+
+    fun exitSelectToRemove() {
+        _uiState.update { it.copy(selectingToRemove = false, selectedToRemove = emptySet()) }
+    }
+
+    fun toggleSelectedToRemove(bookId: String) {
+        _uiState.update { state ->
+            val next = if (bookId in state.selectedToRemove) {
+                state.selectedToRemove - bookId
+            } else {
+                state.selectedToRemove + bookId
+            }
+            state.copy(selectedToRemove = next)
+        }
+    }
+
+    fun deleteSelectedBooks() {
+        val ids = _uiState.value.selectedToRemove
+        viewModelScope.launch {
+            ids.forEach { bookRepository.deleteBook(it) }
+            val remaining = _uiState.value.books.filter { it.id !in ids }
+            if (_uiState.value.selectedBookId in ids) {
+                settings.setSelectedBookId(remaining.firstOrNull()?.id ?: "book-adams-haven-1")
+            }
+            _uiState.update {
+                it.copy(selectingToRemove = false, selectedToRemove = emptySet(), status = "Removed ${ids.size} novel(s)")
             }
         }
     }

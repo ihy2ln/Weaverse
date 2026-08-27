@@ -132,6 +132,7 @@ fun WorkspaceChrome(
     activeToolId: String?,
     onLibrary: () -> Unit,
     onSettings: () -> Unit,
+    onBookshelf: () -> Unit = {},
     onImport: () -> Unit,
     onExport: () -> Unit,
     canUndo: Boolean = false,
@@ -166,6 +167,7 @@ fun WorkspaceChrome(
             IconButton(onClick = onSettings) {
                 Icon(Icons.Default.Settings, contentDescription = "Settings")
             }
+            InkTextButton(label = "Bookshelf", onClick = onBookshelf, compact = true)
             InkMenuChip(
                 label = "Workspace",
                 options = workspaceOptions,
