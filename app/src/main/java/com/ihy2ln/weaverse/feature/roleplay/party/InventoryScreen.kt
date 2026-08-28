@@ -1,5 +1,8 @@
 package com.ihy2ln.weaverse.feature.roleplay.party
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -11,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,17 +33,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import coil3.compose.AsyncImage
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
 import com.ihy2ln.weaverse.data.db.entities.RpEquipSlot
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import com.ihy2ln.weaverse.core.ui.util.alwaysScrollEndSpacer
+import java.io.File
 
 /**
  * What the party is carrying, grouped by who carries it. Items are plain
@@ -56,6 +63,14 @@ fun InventoryScreen(viewModel: InventoryViewModel = hiltViewModel()) {
     var collapsedGroups by rememberSaveable { mutableStateOf(setOf<String>()) }
     var draftName by remember { mutableStateOf("") }
     var draftQty by remember { mutableStateOf("1") }
+    var imageTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
+    val imagePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        val target = imageTarget
+        imageTarget = null
+        if (uri != null && target != null) viewModel.setItemImage(target.first, target.second, uri)
+    }
 
     if (!state.loading && state.carriers.isEmpty()) {
         Box(
@@ -169,6 +184,8 @@ fun InventoryScreen(viewModel: InventoryViewModel = hiltViewModel()) {
                 item(key = "equip-${carrier.characterId}") {
                     EquipmentPlate(
                         equipment = carrier.equipment,
+                        items = carrier.items,
+                        imagePaths = carrier.itemImagePaths,
                         onSlotClick = { slot -> equippingFor = carrier.characterId to slot },
                     )
                 }
@@ -198,6 +215,32 @@ fun InventoryScreen(viewModel: InventoryViewModel = hiltViewModel()) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
                 ) {
+                    val imagePath = carrier.itemImagePaths[item.id].orEmpty()
+                    Box(
+                        modifier = Modifier
+                            .size(54.dp)
+                            .clip(RoundedCornerShape(inkRadiusSm()))
+                            .background(tokens.hover)
+                            .border(1.dp, tokens.hairline, RoundedCornerShape(inkRadiusSm()))
+                            .clickable {
+                                imageTarget = carrier.characterId to item.id
+                                imagePicker.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                                )
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (imagePath.isNotBlank()) {
+                            AsyncImage(
+                                model = File(imagePath),
+                                contentDescription = "${item.name} picture",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        } else {
+                            Text("＋\nimage", style = MaterialTheme.typography.labelSmall, color = tokens.activePill)
+                        }
+                    }
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             item.name,
@@ -322,6 +365,8 @@ fun InventoryScreen(viewModel: InventoryViewModel = hiltViewModel()) {
 @Composable
 private fun EquipmentPlate(
     equipment: Map<String, String>,
+    items: List<com.ihy2ln.weaverse.data.db.entities.RpItem>,
+    imagePaths: Map<String, String>,
     onSlotClick: (RpEquipSlot) -> Unit,
 ) {
     val tokens = inkTokens()
@@ -335,6 +380,8 @@ private fun EquipmentPlate(
             Row(horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
                 row.forEach { slot ->
                     val equipped = equipment[slot.name].orEmpty()
+                    val equippedItem = items.firstOrNull { it.name.equals(equipped, ignoreCase = true) }
+                    val imagePath = equippedItem?.let { imagePaths[it.id] }.orEmpty()
                     Column(
                         modifier = Modifier
                             .weight(1f)
@@ -354,6 +401,18 @@ private fun EquipmentPlate(
                             letterSpacing = 1.sp,
                             color = tokens.secondaryText,
                         )
+                        if (imagePath.isNotBlank()) {
+                            AsyncImage(
+                                model = File(imagePath),
+                                contentDescription = "$equipped equipment",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .padding(vertical = 3.dp)
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                                    .clip(RoundedCornerShape(inkRadiusSm())),
+                            )
+                        }
                         Text(
                             equipped.ifBlank { "—" },
                             style = MaterialTheme.typography.bodySmall,

@@ -12,11 +12,24 @@ above the narrative, player actions are marked in the story, and the action
 entry stays at the bottom. The game master receives the chosen characters,
 tense, rules template, extra house rules, and difficulty as context.
 
+Each action also receives a hidden system-appropriate roll (d20, PbtA 2d6, or
+Fate 4dF). The game master decides whether the roll applies, resolves the
+world's reaction, and keeps the scene going until the player asks to advance or
+a decisive transition occurs. Previous browses an earlier saved scene, Next
+moves forward or advances from the latest scene, and Stay here—or an action
+such as “do not advance”—overrules a transition.
+
 The character sheet keeps tabletop information on one screen. Each category has
 a name and reference picture; tap either to expand. It includes health/death,
 ability scores, saves/skills, combat, spells, traits, inventory, equipped gear,
 resources/tools, biography, and settings. Health supports current, maximum, and
 temporary hit points.
+
+Roster uses portrait cards with class, level, HP, and AC summaries; tapping a
+character opens the full stat sheet. Inventory gives carried equipment and
+accessories their own user-added picture slots and repeats that art in equipped
+gear slots. Town is a grid of tappable shops and landmarks, each with a
+persistent slot for the user's own location art.
 
 ## Chatting
 

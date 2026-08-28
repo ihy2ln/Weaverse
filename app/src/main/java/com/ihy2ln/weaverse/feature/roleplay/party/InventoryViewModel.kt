@@ -2,6 +2,8 @@ package com.ihy2ln.weaverse.feature.roleplay.party
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.net.Uri
+import com.ihy2ln.weaverse.core.media.MediaRepository
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
 import com.ihy2ln.weaverse.data.db.entities.RpEquipSlot
 import com.ihy2ln.weaverse.data.db.entities.RpItem
@@ -31,6 +33,7 @@ data class CarrierUi(
     val items: List<RpItem>,
     /** RpEquipSlot.name -> item name. */
     val equipment: Map<String, String> = emptyMap(),
+    val itemImagePaths: Map<String, String> = emptyMap(),
     val kind: CarrierKind = CarrierKind.Roster,
 )
 
@@ -42,6 +45,7 @@ data class InventoryUiState(
 @HiltViewModel
 class InventoryViewModel @Inject constructor(
     private val db: WeaverseDatabase,
+    private val mediaRepository: MediaRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(InventoryUiState())
     val uiState: StateFlow<InventoryUiState> = _uiState.asStateFlow()
@@ -51,23 +55,34 @@ class InventoryViewModel @Inject constructor(
             combine(
                 db.roleplayDao().observePersonas(),
                 db.roleplayDao().observeCharacters(),
-            ) { personas, characters ->
+                mediaRepository.observeAll(),
+            ) { personas, characters, media ->
+                val mediaById = media.associateBy { it.id }
+                fun imagePaths(items: List<RpItem>): Map<String, String> = items.mapNotNull { item ->
+                    item.imageMediaId
+                        ?.let(mediaById::get)
+                        ?.let { item.id to mediaRepository.resolveFile(it).absolutePath }
+                }.toMap()
                 // You first, then the team you are travelling with, then everyone else.
                 val you = personas.map {
+                    val items = decodeItems(it.inventoryJson)
                     CarrierUi(
                         characterId = it.id,
                         name = it.name,
-                        items = decodeItems(it.inventoryJson),
+                        items = items,
                         equipment = decodeEquipment(it.equipmentJson),
+                        itemImagePaths = imagePaths(items),
                         kind = CarrierKind.You,
                     )
                 }
                 val rest = characters.map {
+                    val items = decodeItems(it.inventoryJson)
                     CarrierUi(
                         characterId = it.id,
                         name = it.name,
-                        items = decodeItems(it.inventoryJson),
+                        items = items,
                         equipment = decodeEquipment(it.equipmentJson),
+                        itemImagePaths = imagePaths(items),
                         kind = if (it.inParty) CarrierKind.Team else CarrierKind.Roster,
                     )
                 }
@@ -97,6 +112,15 @@ class InventoryViewModel @Inject constructor(
         editItems(characterId) { items -> items.filterNot { it.id == itemId } }
     }
 
+    fun setItemImage(characterId: String, itemId: String, uri: Uri) {
+        viewModelScope.launch {
+            val media = runCatching { mediaRepository.importFromUri(uri) }.getOrNull() ?: return@launch
+            updateItems(characterId) { items ->
+                items.map { item -> if (item.id == itemId) item.copy(imageMediaId = media.id) else item }
+            }
+        }
+    }
+
     /** Equips [itemName] in [slot]; a blank name clears the slot. */
     fun setEquipment(carrierId: String, slot: RpEquipSlot, itemName: String) {
         editEquipment(carrierId) { current ->
@@ -108,16 +132,18 @@ class InventoryViewModel @Inject constructor(
 
     // A carrier is either a persona (You) or a character, so every edit tries both.
     private fun editItems(carrierId: String, transform: (List<RpItem>) -> List<RpItem>) {
-        viewModelScope.launch {
-            db.roleplayDao().getPersona(carrierId)?.let { persona ->
-                val next = transform(decodeItems(persona.inventoryJson))
-                db.roleplayDao().upsertPersona(persona.copy(inventoryJson = encodeItems(next)))
-                return@launch
-            }
-            val character = db.roleplayDao().getCharacter(carrierId) ?: return@launch
-            val next = transform(decodeItems(character.inventoryJson))
-            db.roleplayDao().upsertCharacter(character.copy(inventoryJson = encodeItems(next)))
+        viewModelScope.launch { updateItems(carrierId, transform) }
+    }
+
+    private suspend fun updateItems(carrierId: String, transform: (List<RpItem>) -> List<RpItem>) {
+        db.roleplayDao().getPersona(carrierId)?.let { persona ->
+            val next = transform(decodeItems(persona.inventoryJson))
+            db.roleplayDao().upsertPersona(persona.copy(inventoryJson = encodeItems(next)))
+            return
         }
+        val character = db.roleplayDao().getCharacter(carrierId) ?: return
+        val next = transform(decodeItems(character.inventoryJson))
+        db.roleplayDao().upsertCharacter(character.copy(inventoryJson = encodeItems(next)))
     }
 
     private fun editEquipment(

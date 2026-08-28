@@ -149,3 +149,17 @@ to the transplant commit for that log in full. That codebase is gone from
   choices into generation context.
 - Adventure now opens directly as an illustrated prose session: one large
   scene image, a lorebook-like story/action record, and a bottom action entry.
+- Player actions now receive private ruleset-aware resolution rolls (d20, PbtA
+  2d6, or Fate 4dF). The AI game master decides when the roll applies, resolves
+  the world's response, and hides mechanical bookkeeping unless asked.
+- Added persistent numbered scene boundaries. The game master may advance only
+  on a decisive transition, while Next scene and Stay here give the player an
+  explicit pacing override without deleting prior scenes.
+- Added Previous scene browsing; Next moves forward through saved scenes before
+  creating a new boundary from the latest scene.
+- Replaced the side-scrolling Town with tappable location picture cards. Every
+  shop and landmark has a persistent user-imported art slot.
+- Roster now uses portrait-forward cards with class/level, HP, and AC summaries
+  that open the full character sheet.
+- Inventory items now persist optional artwork, show image-picking slots, and
+  reuse the selected image in equipped weapon/accessory plates.

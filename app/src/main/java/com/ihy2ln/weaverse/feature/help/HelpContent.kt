@@ -74,19 +74,28 @@ object HelpContent {
                     "Adventure is the play session",
                     "Adventure is not a messenger chat. The current scene uses one large " +
                         "illustration, an ongoing prose story, and an action box at the bottom. " +
-                        "Your actions become the next rules-aware game-master response.",
+                        "Your actions receive a hidden rules-aware dice roll and become the next " +
+                        "game-master response. Play stays in the numbered scene until you or the " +
+                        "game master advances it; Previous browses saved scenes, while Next scene " +
+                        "and Stay here let you control or overrule pacing.",
                 ),
                 HelpEntry(
                     "Roster",
-                    "Your immediate team only. Personas sit under You, travelling " +
-                        "characters under Team. Add / remove changes the team; the wider " +
-                        "cast stays in Lore.",
+                    "Portrait cards for You and the immediate team. Character cards show class, " +
+                        "level, HP, and AC; tap one for its full stat sheet. Add / remove changes " +
+                        "the team while the wider cast stays in Lore.",
                 ),
                 HelpEntry(
                     "Inventory",
                     "Grouped You, then Team, then Roster — each group collapses. Tap a " +
                         "name for their equipment plate: head, torso, arms, legs, weapon, " +
-                        "accessory. Plus Item adds to the pack; tapping a slot equips from it.",
+                        "accessory. Plus Item adds to the pack; tap an item's picture slot to add " +
+                        "art, and tapping an equipment slot equips from the pack.",
+                ),
+                HelpEntry(
+                    "Town",
+                    "A tappable picture directory of shops and landmarks. Empty slots let you " +
+                        "add location art; once filled, tap the picture to enter that place.",
                 ),
                 HelpEntry(
                     "Lore",

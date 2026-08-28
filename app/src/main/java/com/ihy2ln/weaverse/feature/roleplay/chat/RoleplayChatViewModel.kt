@@ -67,6 +67,19 @@ import javax.inject.Inject
 
 /** Sentinel mediaId for DM text-only tiles placed on the 3×3 grid. */
 const val DM_TEXT_TILE_MEDIA_ID = "__dm_text__"
+private const val ADVENTURE_SCENE_ROLE = "scene"
+private val ExplicitSceneAdvance = Regex(
+    "\\b(next scene|advance (?:the )?scene|move (?:on|forward)|leave this scene|go to the next)\\b",
+    RegexOption.IGNORE_CASE,
+)
+private val ExplicitStayInScene = Regex(
+    "\\b(stay (?:here|in (?:this|the) scene)|do not (?:advance|move on)|don't (?:advance|move on)|remain here|go back (?:a scene|to the previous scene))\\b",
+    RegexOption.IGNORE_CASE,
+)
+private val AiSceneAdvanceMarker = Regex(
+    "\\[\\[ADVANCE_SCENE(?::\\s*([^]]+))?]]",
+    RegexOption.IGNORE_CASE,
+)
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
@@ -90,9 +103,12 @@ class RoleplayChatViewModel @Inject constructor(
     private var boundCharacter: RpCharacterEntity? = null
     private var boundPersona: RpPersonaEntity? = null
     private var contextLimit = ContextMeter.DEFAULT_LIMIT
+    /** Null follows the newest scene; a number browses saved scene history. */
+    private var viewedSceneNumber: Int? = null
 
     fun bindChat(chatId: String) {
         if (_uiState.value.chatId == chatId && bindJob?.isActive == true) return
+        viewedSceneNumber = null
         _uiState.update { it.copy(chatId = chatId) }
         bindJob?.cancel()
         bindJob = viewModelScope.launch {
@@ -178,7 +194,20 @@ class RoleplayChatViewModel @Inject constructor(
     }
 
     private suspend fun publishMessages() {
-        val active = rawMessages.filter { it.isActiveSwipe }
+        val allActive = rawMessages.filter { it.isActiveSwipe }
+        val sceneMarkers = allActive
+            .filter { it.role == ADVENTURE_SCENE_ROLE }
+            .sortedBy { it.createdAt }
+        val totalScenes = sceneMarkers.size + 1
+        val targetScene = (viewedSceneNumber ?: totalScenes).coerceIn(1, totalScenes)
+        if (viewedSceneNumber != null) viewedSceneNumber = targetScene
+        val startsAfter = sceneMarkers.getOrNull(targetScene - 2)?.createdAt
+        val endsAt = sceneMarkers.getOrNull(targetScene - 1)?.createdAt
+        val active = allActive.filter { message ->
+            message.role != ADVENTURE_SCENE_ROLE &&
+                (startsAfter == null || message.createdAt > startsAfter) &&
+                (endsAt == null || message.createdAt < endsAt)
+        }
         val panels = mutableListOf<RpMediaRef>()
         val statePages = _uiState.value.pages
         val defaultPageId = statePages.firstOrNull()?.id ?: "page-1"
@@ -327,7 +356,16 @@ class RoleplayChatViewModel @Inject constructor(
             )
         }
         _uiState.update {
-            it.copy(messages = ui, mediaPanels = panels, canPasteMedia = mediaClipboard.hasPayload)
+            it.copy(
+                messages = ui,
+                mediaPanels = panels,
+                canPasteMedia = mediaClipboard.hasPayload,
+                sceneNumber = targetScene,
+                totalScenes = totalScenes,
+                canGoToPreviousScene = targetScene > 1,
+                viewingCurrentScene = targetScene == totalScenes,
+                canUndoSceneAdvance = targetScene == totalScenes && sceneMarkers.isNotEmpty(),
+            )
         }
     }
 
@@ -1069,6 +1107,7 @@ class RoleplayChatViewModel @Inject constructor(
 
     /** Non-AI (NAI): insert the typed text as a user message without calling a model. */
     fun addManualEntry() {
+        viewedSceneNumber = null
         insertUserText(_uiState.value.input)
     }
 
@@ -1078,6 +1117,12 @@ class RoleplayChatViewModel @Inject constructor(
         if (text.isBlank() || state.chatId.isBlank() || state.isStreaming) return
         viewModelScope.launch {
             val now = System.currentTimeMillis()
+            if (currentDisplayMode() == "dungeonMaster" && ExplicitStayInScene.containsMatchIn(text)) {
+                removeLatestSceneMarker()
+            }
+            if (currentDisplayMode() == "dungeonMaster" && ExplicitSceneAdvance.containsMatchIn(text)) {
+                insertSceneMarker(state.chatId, "The player explicitly advanced the scene.", now - 1)
+            }
             val entity = RpMessageEntity(
                 id = "rpm-$now",
                 chatId = state.chatId,
@@ -1102,6 +1147,7 @@ class RoleplayChatViewModel @Inject constructor(
             return
         }
         generateJob?.cancel()
+        viewedSceneNumber = null
         generateJob = viewModelScope.launch {
             if (!aiGeneration.hasApiKey()) {
                 _uiState.update { it.copy(errorMessage = AIError.NoApiKey().message.orEmpty()) }
@@ -1110,10 +1156,13 @@ class RoleplayChatViewModel @Inject constructor(
             val now = System.currentTimeMillis()
             val groupId = "sw-$now"
             val userText = state.input
+            val mode = currentDisplayMode()
+            val playerAdvancedScene = mode == "dungeonMaster" && ExplicitSceneAdvance.containsMatchIn(userText)
+            val playerStayedInScene = mode == "dungeonMaster" && ExplicitStayInScene.containsMatchIn(userText)
+            val backgroundRoll = simulateAdventureRoll(boundChat?.authorsNote.orEmpty())
             val maxTokens = (state.outputWords * 1.5).toInt().coerceIn(64, 8192)
             val difficulty = defaultPresets.find { it.id == state.presetId }
             val temperature = difficulty?.temperature?.toDouble() ?: 0.8
-            val mode = currentDisplayMode()
             val userMessage = RpMessageEntity(
                 id = "rpm-$now",
                 chatId = state.chatId,
@@ -1125,6 +1174,11 @@ class RoleplayChatViewModel @Inject constructor(
                 createdAt = now,
                 displayMode = mode,
             )
+            if (playerStayedInScene) {
+                removeLatestSceneMarker()
+            } else if (playerAdvancedScene) {
+                insertSceneMarker(state.chatId, "The player explicitly advanced the scene.", now - 1)
+            }
             db.roleplayDao().upsertMessage(userMessage)
             boundChat?.let { chat ->
                 if (chat.presetId != state.presetId) {
@@ -1138,7 +1192,7 @@ class RoleplayChatViewModel @Inject constructor(
             }
             // History is already mode-filtered via observeMessages(chatId, displayMode).
             val history = rawMessages
-                .filter { it.isActiveSwipe && it.displayMode == mode }
+                .filter { it.isActiveSwipe && it.displayMode == mode && it.role != ADVENTURE_SCENE_ROLE }
                 .map { msg ->
                     val role = if (msg.role == "user") "user" else "assistant"
                     role to documentFromJson(msg.contentJson).plainText()
@@ -1157,7 +1211,11 @@ class RoleplayChatViewModel @Inject constructor(
                         history = history,
                         outputWords = state.outputWords,
                         difficultyDirective = difficulty?.directive,
-                        extraSystem = sessionSystemBlocks(mode),
+                        extraSystem = sessionSystemBlocks(mode) + if (mode == "dungeonMaster") {
+                            listOf(backgroundRoll.asHiddenDmInstruction())
+                        } else {
+                            emptyList()
+                        },
                     ),
                     maxTokens = maxTokens,
                     temperature = temperature,
@@ -1165,7 +1223,9 @@ class RoleplayChatViewModel @Inject constructor(
                     when (chunk) {
                         is AIChunk.Delta -> {
                             builder.append(chunk.text)
-                            _uiState.update { it.copy(streamingText = builder.toString()) }
+                            _uiState.update {
+                                it.copy(streamingText = AiSceneAdvanceMarker.replace(builder.toString(), "").trimStart())
+                            }
                         }
                         is AIChunk.Usage -> {
                             promptTokens = chunk.promptTokens
@@ -1196,6 +1256,19 @@ class RoleplayChatViewModel @Inject constructor(
                 }
                 return@launch
             }
+            val rawReply = builder.toString()
+            val aiAdvanceMatch = AiSceneAdvanceMarker.find(rawReply)
+            val aiAdvancedScene = mode == "dungeonMaster" && aiAdvanceMatch != null &&
+                !playerAdvancedScene && !ExplicitStayInScene.containsMatchIn(userText)
+            if (aiAdvancedScene) {
+                insertSceneMarker(
+                    state.chatId,
+                    aiAdvanceMatch?.groupValues?.getOrNull(1)?.ifBlank { "The game master advanced the scene." }
+                        ?: "The game master advanced the scene.",
+                    now + 1,
+                )
+            }
+            val cleanedReply = AiSceneAdvanceMarker.replace(rawReply, "").trim()
             val reply = RpMessageEntity(
                 id = "rpm-${now + 1}",
                 chatId = state.chatId,
@@ -1203,8 +1276,8 @@ class RoleplayChatViewModel @Inject constructor(
                 swipeIndex = 0,
                 isActiveSwipe = true,
                 role = "char",
-                contentJson = Document.fromPlainText(builder.toString()).toJson(),
-                createdAt = now + 1,
+                contentJson = Document.fromPlainText(cleanedReply).toJson(),
+                createdAt = now + if (aiAdvancedScene) 2 else 1,
                 displayMode = mode,
                 promptTokens = promptTokens,
                 completionTokens = completionTokens,
@@ -1259,7 +1332,10 @@ class RoleplayChatViewModel @Inject constructor(
             val temperature = difficulty?.temperature?.toDouble() ?: 0.8
             _uiState.update { it.copy(isStreaming = true, errorMessage = "") }
             val history = rawMessages
-                .filter { it.isActiveSwipe && it.displayMode == current.displayMode && it.id != messageId }
+                .filter {
+                    it.isActiveSwipe && it.displayMode == current.displayMode &&
+                        it.id != messageId && it.role != ADVENTURE_SCENE_ROLE
+                }
                 .map { msg ->
                     val role = if (msg.role == "user") "user" else "assistant"
                     role to documentFromJson(msg.contentJson).plainText()
@@ -1332,7 +1408,7 @@ class RoleplayChatViewModel @Inject constructor(
         val state = _uiState.value
         val mode = currentDisplayMode()
         val history = rawMessages
-            .filter { it.isActiveSwipe && it.displayMode == mode }
+            .filter { it.isActiveSwipe && it.displayMode == mode && it.role != ADVENTURE_SCENE_ROLE }
             .map { msg ->
                 val role = if (msg.role == "user") "user" else "assistant"
                 role to documentFromJson(msg.contentJson).plainText()
@@ -1350,12 +1426,80 @@ class RoleplayChatViewModel @Inject constructor(
         _uiState.update { it.copy(contextMeter = reading) }
     }
 
+    /** Player-owned scene controls always override the AI game master's pacing. */
+    fun advanceScene(reason: String = "The player moved the adventure to the next scene.") {
+        val state = _uiState.value
+        if (state.chatId.isBlank() || currentDisplayMode() != "dungeonMaster") return
+        viewModelScope.launch {
+            if (!state.viewingCurrentScene) {
+                viewedSceneNumber = (state.sceneNumber + 1).coerceAtMost(state.totalScenes)
+                publishMessages()
+            } else {
+                viewedSceneNumber = null
+                insertSceneMarker(state.chatId, reason, System.currentTimeMillis())
+            }
+        }
+    }
+
+    fun previousScene() {
+        val state = _uiState.value
+        if (state.sceneNumber <= 1 || currentDisplayMode() != "dungeonMaster") return
+        viewModelScope.launch {
+            viewedSceneNumber = state.sceneNumber - 1
+            publishMessages()
+        }
+    }
+
+    fun undoLastSceneAdvance() {
+        viewedSceneNumber = null
+        viewModelScope.launch { removeLatestSceneMarker() }
+    }
+
+    private suspend fun removeLatestSceneMarker() {
+        val marker = rawMessages
+            .filter { it.role == ADVENTURE_SCENE_ROLE && it.isActiveSwipe }
+            .maxByOrNull { it.createdAt }
+            ?: return
+        db.roleplayDao().deleteMessage(marker.id)
+        workspaceHistory.record(
+            undo = { db.roleplayDao().upsertMessage(marker) },
+            redo = { db.roleplayDao().deleteMessage(marker.id) },
+        )
+    }
+
+    private suspend fun insertSceneMarker(chatId: String, reason: String, createdAt: Long): RpMessageEntity {
+        val marker = RpMessageEntity(
+            id = "rpscene-${UUID.randomUUID()}",
+            chatId = chatId,
+            swipeGroupId = "rpscene-${UUID.randomUUID()}",
+            swipeIndex = 0,
+            isActiveSwipe = true,
+            role = ADVENTURE_SCENE_ROLE,
+            contentJson = Document.fromPlainText(reason.ifBlank { "The scene changed." }).toJson(),
+            createdAt = createdAt,
+            displayMode = "dungeonMaster",
+        )
+        db.roleplayDao().upsertMessage(marker)
+        workspaceHistory.record(
+            undo = { db.roleplayDao().deleteMessage(marker.id) },
+            redo = { db.roleplayDao().upsertMessage(marker) },
+        )
+        return marker
+    }
+
     private fun sessionSystemBlocks(mode: String): List<String> = listOfNotNull(
         boundChat?.authorsNote?.takeIf { it.isNotBlank() }?.let {
             "Campaign setup and house rules:\n$it"
         },
         if (mode == "dungeonMaster") {
-            "Write the next scene as immersive adventure prose, resolve the player's declared action according to the campaign rules, and end with a clear situation that invites the next action. Do not format the response as a text-message conversation."
+            "You are the AI game master for scene ${_uiState.value.sceneNumber}. " +
+                "Determine the world's action and consequences in response to the player's declared action, " +
+                "using the supplied hidden roll when a check is warranted. Write immersive adventure prose " +
+                "and end with a clear situation that invites the next action. Keep play in the current scene " +
+                "until the player asks to move on or a decisive fictional transition makes a new scene necessary. " +
+                "If you independently advance, begin the response with [[ADVANCE_SCENE: short reason]]. " +
+                "Never emit that marker otherwise, never format the response as text messages, and always obey " +
+                "a player's explicit request to stay or return to the current scene."
         } else {
             null
         },

@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import com.ihy2ln.weaverse.core.ui.components.CollapsibleUsageStrip
+import com.ihy2ln.weaverse.core.ui.components.InkTextButton
 import com.ihy2ln.weaverse.core.ui.components.mergeSpokenText
 import com.ihy2ln.weaverse.core.ui.components.rememberSpeechToText
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
@@ -161,12 +162,45 @@ fun AdventurePlayScreen(
                 .fillMaxWidth()
                 .padding(horizontal = InkSpacing.lg),
         ) {
-            Text(
-                "Adventure story",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(vertical = InkSpacing.xs),
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column {
+                    Text(
+                        "Scene ${state.sceneNumber}",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        "Adventure story",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tokens.secondaryText,
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (state.canGoToPreviousScene) {
+                        InkTextButton(
+                            label = "‹ Previous",
+                            onClick = viewModel::previousScene,
+                            compact = true,
+                        )
+                    }
+                    if (state.canUndoSceneAdvance) {
+                        InkTextButton(
+                            label = "Stay here",
+                            onClick = viewModel::undoLastSceneAdvance,
+                            compact = true,
+                        )
+                    }
+                    InkTextButton(
+                        label = if (state.viewingCurrentScene) "Next scene ›" else "Next ›",
+                        onClick = viewModel::advanceScene,
+                        compact = true,
+                    )
+                }
+            }
             LazyColumn(
                 state = storyState,
                 modifier = Modifier.weight(1f).fillMaxWidth(),

@@ -260,6 +260,17 @@ class SettingsRepository @Inject constructor(
         context.dataStore.edit { it[KEY_TOWN_BACKGROUND_MEDIA] = mediaId }
     }
 
+    /** User-selected illustration for one tappable RPG town location. */
+    fun townLocationMediaId(locationId: String): Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[stringPreferencesKey("town_location_media_${locationId.filter(Char::isLetterOrDigit)}")].orEmpty()
+    }
+
+    suspend fun setTownLocationMediaId(locationId: String, mediaId: String) {
+        context.dataStore.edit {
+            it[stringPreferencesKey("town_location_media_${locationId.filter(Char::isLetterOrDigit)}")] = mediaId
+        }
+    }
+
     suspend fun setBackgroundMediaId(mediaId: String) {
         context.dataStore.edit { it[KEY_BACKGROUND_MEDIA] = mediaId }
     }

@@ -74,4 +74,10 @@ data class RoleplayChatUiState(
     val activeTemplateId: String = "classic-6",
     val editingOverlay: Triple<String, String, String>? = null,
     val contextMeter: ContextMeterReading? = null,
+    /** Adventure scene markers are hidden storage records, not chat messages. */
+    val sceneNumber: Int = 1,
+    val totalScenes: Int = 1,
+    val canGoToPreviousScene: Boolean = false,
+    val viewingCurrentScene: Boolean = true,
+    val canUndoSceneAdvance: Boolean = false,
 )

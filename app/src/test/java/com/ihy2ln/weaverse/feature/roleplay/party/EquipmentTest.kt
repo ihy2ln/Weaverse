@@ -36,7 +36,7 @@ class EquipmentTest {
     @Test
     fun itemsRoundTripAndBadJsonIsSurvivable() {
         val items = listOf(
-            RpItem(id = "i1", name = "Rope", quantity = 2, notes = "50ft"),
+            RpItem(id = "i1", name = "Rope", quantity = 2, notes = "50ft", imageMediaId = "media-rope"),
             RpItem(id = "i2", name = "Torch"),
         )
         assertEquals(items, decodeItems(encodeItems(items)))

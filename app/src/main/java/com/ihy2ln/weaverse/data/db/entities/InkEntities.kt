@@ -226,6 +226,8 @@ data class RpItem(
     val name: String,
     val quantity: Int = 1,
     val notes: String = "",
+    /** Optional imported equipment/accessory illustration. */
+    val imageMediaId: String? = null,
 )
 
 private val itemsJsonCodec = Json { ignoreUnknownKeys = true }

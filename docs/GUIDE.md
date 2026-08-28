@@ -159,6 +159,22 @@ player actions clearly marked, and the action entry remains at the bottom.
 Generated game-master responses receive the selected main characters, tense,
 rules template, house rules, and difficulty as session context.
 
+Every submitted action gets a private, ruleset-aware resolution roll: d20 for
+D&D, Pathfinder, OSR, and systemless campaigns; 2d6 for PbtA; and 4dF for
+Fate. The game master decides whether the action is uncertain enough to use the
+roll, applies the appropriate modifiers and difficulty, and normally keeps the
+mechanics behind the screen. It then narrates the world's response and presents
+the next actionable situation.
+
+Play remains in the current numbered scene until you request the next scene or
+the game master detects a decisive fictional transition. **Next scene** always
+advances from the latest scene and moves forward while browsing history.
+**Previous** opens the preceding saved scene without deleting anything.
+**Stay here** returns to the preceding scene when an automatic or
+manual transition should be overruled; phrases such as “stay here” and “do not
+advance” provide the same override from the action box. Earlier scenes remain
+stored in the adventure even though only the active scene is shown.
+
 ### Character sheet
 
 The character sheet keeps tabletop information on one screen as compact,
@@ -171,9 +187,13 @@ current, maximum, and temporary hit points plus quick change controls.
 ### Inventory, roster, lore, and presets
 
 - **Inventory** groups You, Team, and Roster. Open a character to manage their
-  pack and equipment slots.
-- **Roster** controls personas and current companions without deleting the
-  wider cast.
+  pack and equipment slots. Every carried item, equipped weapon, and accessory
+  has a tappable picture slot for importing or replacing its art.
+- **Roster** presents the party as portrait cards. Character cards summarize
+  class, level, hit points, and armor class, and open the full expandable stat
+  sheet; recruiting changes the immediate team without deleting the wider cast.
+- **Town** is a tappable picture directory. Each shop or landmark has its own
+  persistent user-added art slot; tap populated art to enter the location.
 - **Lore** is the current campaign reference; the full shared Codex is under
   Extra.
 - **Presets** change world difficulty: Slice of life, Normal, Hard, and

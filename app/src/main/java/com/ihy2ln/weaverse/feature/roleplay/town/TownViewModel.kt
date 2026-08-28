@@ -24,6 +24,8 @@ data class TownUiState(
     val facingRight: Boolean = true,
     /** Absolute path of the town backdrop, or blank to draw the fallback. */
     val backgroundPath: String = "",
+    /** Location id to imported user image path. */
+    val locationImagePaths: Map<String, String> = emptyMap(),
     val openLocationId: String? = null,
     val status: String = "",
 ) {
@@ -51,6 +53,19 @@ class TownViewModel @Inject constructor(
                     }
                     .orEmpty()
                 _uiState.update { it.copy(backgroundPath = path) }
+            }
+        }
+        TownMap.locations.forEach { location ->
+            viewModelScope.launch {
+                settings.townLocationMediaId(location.id).collect { mediaId ->
+                    val path = mediaId.takeIf { it.isNotBlank() }
+                        ?.let { mediaRepository.getById(it) }
+                        ?.let { mediaRepository.resolveFile(it).absolutePath }
+                        .orEmpty()
+                    _uiState.update { state ->
+                        state.copy(locationImagePaths = state.locationImagePaths + (location.id to path))
+                    }
+                }
             }
         }
     }
@@ -89,6 +104,17 @@ class TownViewModel @Inject constructor(
                 .getOrNull()
                 ?.firstOrNull()
                 ?.let { settings.setTownBackgroundMediaId(it.id) }
+        }
+    }
+
+    /** Imports art for a single location card; picking again replaces that slot. */
+    fun onLocationImagePicked(locationId: String, uri: android.net.Uri) {
+        viewModelScope.launch {
+            runCatching { mediaRepository.importFromUri(uri) }
+                .onSuccess { media -> settings.setTownLocationMediaId(locationId, media.id) }
+                .onFailure { error ->
+                    _uiState.update { it.copy(status = "Could not add location picture: ${error.message}") }
+                }
         }
     }
 

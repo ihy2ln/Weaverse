@@ -26,16 +26,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import coil3.compose.AsyncImage
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import com.ihy2ln.weaverse.core.ui.util.alwaysScrollEndSpacer
 import com.ihy2ln.weaverse.feature.roleplay.friends.CharacterAvatar
+import java.io.File
 
 /**
  * Who is in the adventure — the player's personas above the cast of characters,
@@ -158,20 +161,29 @@ private fun PartyRow(member: PartyMemberUi, onClick: () -> Unit) {
             .padding(InkSpacing.sm),
         horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
     ) {
-        // Square framed portrait rather than a chat-style circle.
+        // Large picture-card portrait; tapping anywhere opens the full stat sheet.
         Box(
             modifier = Modifier
-                .size(56.dp)
+                .size(88.dp)
                 .clip(RoundedCornerShape(inkRadiusSm()))
                 .border(1.dp, tokens.hairline, RoundedCornerShape(inkRadiusSm())),
             contentAlignment = Alignment.Center,
         ) {
-            CharacterAvatar(
-                name = member.name,
-                colorHex = member.avatarColorHex,
-                size = 52.dp,
-                present = member.isPlayer,
-            )
+            if (member.portraitPath.isNotBlank()) {
+                AsyncImage(
+                    model = File(member.portraitPath),
+                    contentDescription = "${member.name} portrait",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                CharacterAvatar(
+                    name = member.name,
+                    colorHex = member.avatarColorHex,
+                    size = 84.dp,
+                    present = member.isPlayer,
+                )
+            }
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -201,14 +213,22 @@ private fun PartyRow(member: PartyMemberUi, onClick: () -> Unit) {
                     modifier = Modifier.padding(top = InkSpacing.xs),
                 )
             }
-            if (member.personality.isNotBlank()) {
+            if (member.sheetLabel.isNotBlank()) {
                 Row(
                     modifier = Modifier.padding(top = InkSpacing.xs),
                     horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
                 ) {
-                    StatChip("TRAITS", member.personality)
+                    StatChip("CLASS", member.sheetLabel)
+                    StatChip("HP", member.hpLabel)
+                    StatChip("AC", member.armorClassLabel)
                 }
             }
+            Text(
+                if (member.isPlayer) "Open profile ›" else "Open character sheet ›",
+                style = MaterialTheme.typography.labelSmall,
+                color = tokens.activePill,
+                modifier = Modifier.padding(top = InkSpacing.xs),
+            )
         }
     }
 }
