@@ -135,14 +135,22 @@ fun GlobalPromptOverlay(
         disabledPlaceholderColor = tokens.secondaryText,
     )
 
-    Column(
-        modifier = modifier
+    val dockModifier = if (collapsed) {
+        modifier.padding(start = InkSpacing.sm, bottom = InkSpacing.xxs)
+    } else {
+        modifier
             .fillMaxWidth()
             .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xxs)
+    }
+    Column(
+        modifier = dockModifier
             .clip(shape)
             .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.97f))
             .border(1.dp, InkAccentBlue, shape)
-            .padding(horizontal = InkSpacing.xs, vertical = InkSpacing.xxs),
+            .padding(
+                horizontal = if (collapsed) 4.dp else InkSpacing.xs,
+                vertical = if (collapsed) 1.dp else InkSpacing.xxs,
+            ),
     ) {
         Text(
             "PROMPT ${if (collapsed) "▴" else "▾"}",

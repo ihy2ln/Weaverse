@@ -40,6 +40,8 @@ import com.ihy2ln.weaverse.core.ui.util.alwaysScrollEndSpacer
 fun NotesRailScreen(
     viewModel: NotesViewModel = hiltViewModel(),
     modifier: Modifier = Modifier,
+    compact: Boolean = false,
+    onNoteOpened: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsState()
     val tokens = inkTokens()
@@ -60,16 +62,19 @@ fun NotesRailScreen(
                 overflow = TextOverflow.Ellipsis,
             )
             InkConfirmButton(
-                onClick = viewModel::createNote,
+                onClick = {
+                    viewModel.createNote()
+                    onNoteOpened()
+                },
                 label = "New",
                 contentDescription = "New note",
             )
         }
         Text(
-            "Personal notes — not tied to a book. Speak, type, attach media.",
+            "Shared · ${state.notes.size} notes · every book & mode",
             style = MaterialTheme.typography.bodySmall,
             color = tokens.secondaryText,
-            modifier = Modifier.padding(bottom = InkSpacing.sm),
+            modifier = Modifier.padding(bottom = if (compact) InkSpacing.xs else InkSpacing.sm),
         )
         LazyColumn(
             verticalArrangement = Arrangement.spacedBy(InkSpacing.xs),
@@ -95,8 +100,11 @@ fun NotesRailScreen(
                             color = MaterialTheme.colorScheme.primary,
                             shape = RoundedCornerShape(inkRadiusSm()),
                         )
-                        .clickable { viewModel.selectNote(note.id) }
-                        .padding(InkSpacing.sm),
+                        .clickable {
+                            viewModel.selectNote(note.id)
+                            onNoteOpened()
+                        }
+                        .padding(if (compact) InkSpacing.xs else InkSpacing.sm),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(

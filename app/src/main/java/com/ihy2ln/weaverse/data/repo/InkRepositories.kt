@@ -134,6 +134,74 @@ class BookRepository @Inject constructor(
     suspend fun updateBook(entity: BookEntity) =
         db.bookDao().upsert(entity.copy(updatedAt = System.currentTimeMillis()))
 
+    /** Deep-copy a work so long-press Copy includes its manuscript, codex, notes, and workshop chats. */
+    suspend fun duplicateBook(bookId: String): BookEntity? {
+        val source = db.bookDao().getById(bookId) ?: return null
+        val now = System.currentTimeMillis()
+        val copyId = "book-${UUID.randomUUID()}"
+        val copy = source.copy(
+            id = copyId,
+            title = "${source.title} Copy",
+            createdAt = now,
+            updatedAt = now,
+        )
+        db.bookDao().upsert(copy)
+
+        db.manuscriptDao().getActs(bookId).forEach { act ->
+            val actId = "act-${UUID.randomUUID()}"
+            db.manuscriptDao().upsertAct(act.copy(id = actId, bookId = copyId))
+            db.manuscriptDao().getChapters(act.id).forEach { chapter ->
+                val chapterId = "chapter-${UUID.randomUUID()}"
+                db.manuscriptDao().upsertChapter(chapter.copy(id = chapterId, actId = actId))
+                db.manuscriptDao().getScenes(chapter.id).forEach { scene ->
+                    db.manuscriptDao().upsertScene(
+                        scene.copy(
+                            id = "scene-${UUID.randomUUID()}",
+                            chapterId = chapterId,
+                            createdAt = now,
+                            updatedAt = now,
+                        ),
+                    )
+                }
+            }
+        }
+
+        val categoryIds = mutableMapOf<String, String>()
+        db.codexDao().getCategories(bookId).forEach { category ->
+            val categoryId = "cat-${UUID.randomUUID()}"
+            categoryIds[category.id] = categoryId
+            db.codexDao().upsertCategory(category.copy(id = categoryId, scopeId = copyId))
+        }
+        db.codexDao().getEntries(bookId).forEach { entry ->
+            db.codexDao().upsertEntry(
+                entry.copy(
+                    id = "entry-${UUID.randomUUID()}",
+                    categoryId = categoryIds[entry.categoryId] ?: entry.categoryId,
+                    scopeId = copyId,
+                    createdAt = now,
+                    updatedAt = now,
+                ),
+            )
+        }
+        db.snippetDao().get(bookId).forEach { snippet ->
+            db.snippetDao().upsert(
+                snippet.copy(id = "snippet-${UUID.randomUUID()}", scopeId = copyId, createdAt = now),
+            )
+        }
+        db.workshopChatDao().getThreads(bookId).forEach { thread ->
+            val threadId = "thread-${UUID.randomUUID()}"
+            db.workshopChatDao().upsertThread(
+                thread.copy(id = threadId, scopeId = copyId, createdAt = now, updatedAt = now),
+            )
+            db.workshopChatDao().getMessages(thread.id).forEach { message ->
+                db.workshopChatDao().upsertMessage(
+                    message.copy(id = "message-${UUID.randomUUID()}", threadId = threadId),
+                )
+            }
+        }
+        return copy
+    }
+
     suspend fun setBookSeries(bookId: String, seriesId: String?) {
         val book = db.bookDao().observeById(bookId).first() ?: return
         db.bookDao().upsert(book.copy(seriesId = seriesId, updatedAt = System.currentTimeMillis()))

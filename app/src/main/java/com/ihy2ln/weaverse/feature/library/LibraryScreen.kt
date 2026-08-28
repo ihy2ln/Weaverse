@@ -8,6 +8,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -68,59 +70,19 @@ fun LibraryScreen(
     val state by viewModel.uiState.collectAsState()
     val tokens = inkTokens()
     val contentPad = adaptiveContentPadding()
-    var creating by remember { mutableStateOf<CreateWorkVocabulary?>(null) }
-
-    creating?.let { vocabulary ->
-        CreateWorkDialog(
-            vocabulary = vocabulary,
-            onDismiss = { creating = null },
-            onCreate = { details ->
-                viewModel.createBook(details) { bookId, sceneId -> onWriteBook(bookId, sceneId) }
-            },
-        )
-    }
-
     Column(
         modifier = modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(contentPad),
     ) {
         Text("Weaverse", style = MaterialTheme.typography.headlineSmall)
-        ModeShelf(onOpenMode = onOpenMode)
-        Text(
-            "Your Novels",
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(top = InkSpacing.lg),
-        )
-        InkOutlinedButton(
-            label = "+ Create Novel",
-            onClick = { creating = CreateWorkVocabulary.Novel },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = InkSpacing.sm, bottom = InkSpacing.md),
-        )
-        if (!state.hasIsekaiGacha) {
-            InkOutlinedButton(
-                label = "Import Isekai Gacha ZIP",
-                onClick = {
-                    viewModel.importBundledSample { bookId ->
-                        if (bookId != null) {
-                            viewModel.openBook(bookId) { sceneId -> onOpenBook(bookId, sceneId) }
-                        }
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = InkSpacing.md),
-            )
-        }
-        InkSegmentedPill(
-            options = LibraryTab.entries.map { SegmentedOption(it.name, it.novelSubLabel()) },
-            selectedId = state.tab.name,
-            onSelect = { id ->
-                LibraryTab.entries.find { it.name == id }?.let(viewModel::setTab)
+        ModeShelf(
+            activeWorkByMode = state.activeWorkByMode,
+            onOpenMode = onOpenMode,
+            onOpenNovel = { card ->
+                viewModel.openBook(card.book.id) { sceneId -> onOpenBook(card.book.id, sceneId) }
             },
-            modifier = Modifier.padding(bottom = InkSpacing.sm),
         )
         if (state.status.isNotBlank()) {
             Text(
@@ -132,33 +94,6 @@ fun LibraryScreen(
             )
         }
 
-        when (state.tab) {
-            LibraryTab.Novels -> NovelsTab(
-                state = state,
-                onTitle = viewModel::onNewBookTitle,
-                onOpen = { book ->
-                    viewModel.openBook(book.id) { sceneId -> onOpenBook(book.id, sceneId) }
-                },
-                onRead = { book ->
-                    viewModel.openBook(book.id) { sceneId -> onReadBook(book.id, sceneId) }
-                },
-                onDelete = viewModel::deleteBook,
-                onExport = { bookId ->
-                    viewModel.openBook(bookId) { onOpenExport(bookId) }
-                },
-            )
-            LibraryTab.Series -> SeriesTab(
-                state = state,
-                onTitle = viewModel::onNewSeriesTitle,
-                onCreate = viewModel::createSeries,
-                onDeleteSeries = viewModel::deleteSeries,
-                onOpenBook = { book ->
-                    viewModel.openBook(book.id) { sceneId -> onOpenBook(book.id, sceneId) }
-                },
-                onRemoveFromSeries = viewModel::removeBookFromSeries,
-                onAddToSeries = viewModel::addBookToSeries,
-            )
-        }
     }
 }
 
@@ -396,7 +331,11 @@ private fun SeriesTab(
  * in the same bordered-card language the book list uses.
  */
 @Composable
-private fun ModeShelf(onOpenMode: (String) -> Unit) {
+private fun ModeShelf(
+    activeWorkByMode: Map<String, LibraryBookCard>,
+    onOpenMode: (String) -> Unit,
+    onOpenNovel: (LibraryBookCard) -> Unit,
+) {
     val tokens = inkTokens()
     val modes = listOf(
         Triple("Novel", "Novel", "Plan, write and review a book"),
@@ -410,6 +349,7 @@ private fun ModeShelf(onOpenMode: (String) -> Unit) {
         verticalArrangement = Arrangement.spacedBy(InkSpacing.xs),
     ) {
         modes.forEach { (id, label, blurb) ->
+            val active = activeWorkByMode[id]
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -429,6 +369,46 @@ private fun ModeShelf(onOpenMode: (String) -> Unit) {
                     style = MaterialTheme.typography.bodySmall,
                     color = tokens.secondaryText,
                 )
+                if (active != null) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = InkSpacing.sm)
+                            .clip(RoundedCornerShape(inkRadiusSm()))
+                            .background(tokens.hover)
+                            .clickable {
+                                if (id == "Novel") onOpenNovel(active) else onOpenMode(id)
+                            }
+                            .padding(InkSpacing.sm),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (active.coverPath != null) {
+                            AsyncImage(
+                                model = File(active.coverPath),
+                                contentDescription = active.book.title,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .width(40.dp)
+                                    .aspectRatio(2f / 3f)
+                                    .clip(RoundedCornerShape(inkRadiusSm())),
+                            )
+                        }
+                        Column(modifier = Modifier.padding(start = InkSpacing.sm)) {
+                            Text(
+                                active.book.title,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                "Continue active work",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = tokens.secondaryText,
+                            )
+                        }
+                    }
+                }
             }
         }
     }

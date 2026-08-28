@@ -297,6 +297,12 @@ interface WorkshopChatDao {
 
     @Query("DELETE FROM chat_messages WHERE id = :id")
     suspend fun deleteMessage(id: String)
+
+    @Query("DELETE FROM chat_messages WHERE threadId = :threadId")
+    suspend fun deleteMessagesForThread(threadId: String)
+
+    @Query("DELETE FROM chat_threads WHERE id = :threadId")
+    suspend fun deleteThread(threadId: String)
 }
 
 @Dao

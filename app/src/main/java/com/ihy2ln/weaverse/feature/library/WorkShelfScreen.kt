@@ -1,7 +1,12 @@
 package com.ihy2ln.weaverse.feature.library
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,10 +20,17 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -40,13 +52,16 @@ import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import com.ihy2ln.weaverse.core.ui.util.adaptiveContentPadding
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
 import com.ihy2ln.weaverse.data.repo.BookRepository
+import com.ihy2ln.weaverse.data.settings.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.File
 import javax.inject.Inject
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 enum class WorkShelfKind(val workType: String, val heading: String, val emptyText: String) {
     Novel("novel", "Bookshelf", "No novels yet. Add one to begin writing."),
@@ -67,10 +82,13 @@ data class WorkShelfCard(
 
 @HiltViewModel
 class WorkShelfViewModel @Inject constructor(
-    bookRepository: BookRepository,
+    private val bookRepository: BookRepository,
     db: WeaverseDatabase,
-    mediaRepository: MediaRepository,
+    private val mediaRepository: MediaRepository,
+    private val settings: SettingsRepository,
 ) : ViewModel() {
+    private val _status = kotlinx.coroutines.flow.MutableStateFlow("")
+    val status: StateFlow<String> = _status
     val cards: StateFlow<List<WorkShelfCard>> = combine(
         bookRepository.observeBooks(),
         db.roleplayDao().observeChats(),
@@ -117,17 +135,62 @@ class WorkShelfViewModel @Inject constructor(
         }
         typed + legacyBoards
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun duplicate(bookId: String) {
+        viewModelScope.launch {
+            runCatching { bookRepository.duplicateBook(bookId) }
+                .onSuccess { copy -> _status.value = copy?.let { "Copied as ${it.title}" } ?: "Could not find work" }
+                .onFailure { _status.value = "Copy failed: ${it.message}" }
+        }
+    }
+
+    fun setCover(bookId: String, uri: Uri) {
+        viewModelScope.launch {
+            runCatching {
+                val media = mediaRepository.importFromUri(uri)
+                val book = bookRepository.getBook(bookId) ?: error("Could not find work")
+                bookRepository.updateBook(book.copy(coverMediaId = media.id))
+            }.onSuccess {
+                _status.value = "Cover art updated"
+            }.onFailure { _status.value = "Cover update failed: ${it.message}" }
+        }
+    }
+
+    fun delete(bookIds: Set<String>) {
+        if (bookIds.isEmpty()) return
+        viewModelScope.launch {
+            val selectedBookId = settings.preferences.first().selectedBookId
+            bookIds.forEach { bookRepository.deleteBook(it) }
+            if (selectedBookId in bookIds) {
+                settings.setSelectedBookId(cards.value.firstOrNull { it.bookId !in bookIds }?.bookId.orEmpty())
+            }
+            _status.value = if (bookIds.size == 1) "Work removed" else "${bookIds.size} works removed"
+        }
+    }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun WorkShelfScreen(
     kind: WorkShelfKind,
     onCreate: () -> Unit,
     onOpen: (WorkShelfCard) -> Unit,
+    onExport: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: WorkShelfViewModel = hiltViewModel(),
 ) {
     val allCards by viewModel.cards.collectAsState()
+    val status by viewModel.status.collectAsState()
+    var selectedIds by remember { mutableStateOf(emptySet<String>()) }
+    var pendingDeleteIds by remember { mutableStateOf(emptySet<String>()) }
+    var coverTargetId by remember { mutableStateOf<String?>(null) }
+    val coverPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        val bookId = coverTargetId
+        coverTargetId = null
+        if (uri != null && bookId != null) viewModel.setCover(bookId, uri)
+    }
     val cards = allCards.filter { card ->
         when (kind) {
             WorkShelfKind.Novel -> card.workType == "novel"
@@ -163,6 +226,27 @@ fun WorkShelfScreen(
                 onClick = onCreate,
             )
         }
+        if (selectedIds.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = InkSpacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("${selectedIds.size} selected", style = MaterialTheme.typography.labelLarge)
+                Row {
+                    TextButton(onClick = { selectedIds = emptySet() }) { Text("Clear") }
+                    TextButton(onClick = { pendingDeleteIds = selectedIds }) { Text("Quick remove") }
+                }
+            }
+        }
+        if (status.isNotBlank()) {
+            Text(
+                status,
+                style = MaterialTheme.typography.labelSmall,
+                color = tokens.secondaryText,
+                modifier = Modifier.padding(top = InkSpacing.xs),
+            )
+        }
         if (cards.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(kind.emptyText, color = tokens.secondaryText)
@@ -175,23 +259,68 @@ fun WorkShelfScreen(
                 verticalArrangement = Arrangement.spacedBy(InkSpacing.md),
             ) {
                 items(cards, key = { it.id }) { card ->
-                    WorkPosterCard(card = card, onClick = { onOpen(card) })
+                    WorkPosterCard(
+                        card = card,
+                        selected = card.id in selectedIds,
+                        onClick = {
+                            if (selectedIds.isEmpty()) onOpen(card)
+                            else selectedIds = if (card.id in selectedIds) selectedIds - card.id else selectedIds + card.id
+                        },
+                        onExport = card.bookId?.let { id -> { onExport(id) } },
+                        onCopy = card.bookId?.let { id -> { viewModel.duplicate(id) } },
+                        onCover = card.bookId?.let { id ->
+                            {
+                                coverTargetId = id
+                                coverPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            }
+                        },
+                        onSelect = {
+                            selectedIds = if (card.id in selectedIds) selectedIds - card.id else selectedIds + card.id
+                        },
+                        onDelete = card.bookId?.let { id -> { pendingDeleteIds = setOf(id) } },
+                    )
                 }
             }
         }
     }
+    if (pendingDeleteIds.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { pendingDeleteIds = emptySet() },
+            title = { Text(if (pendingDeleteIds.size == 1) "Remove this work?" else "Remove selected works?") },
+            text = { Text("This permanently removes the selected work and its saved project data.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.delete(pendingDeleteIds)
+                    selectedIds = selectedIds - pendingDeleteIds
+                    pendingDeleteIds = emptySet()
+                }) { Text("Remove") }
+            },
+            dismissButton = { TextButton(onClick = { pendingDeleteIds = emptySet() }) { Text("Cancel") } },
+        )
+    }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun WorkPosterCard(card: WorkShelfCard, onClick: () -> Unit) {
+private fun WorkPosterCard(
+    card: WorkShelfCard,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onExport: (() -> Unit)?,
+    onCopy: (() -> Unit)?,
+    onCover: (() -> Unit)?,
+    onSelect: () -> Unit,
+    onDelete: (() -> Unit)?,
+) {
     val tokens = inkTokens()
+    var menuOpen by remember(card.id) { mutableStateOf(false) }
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(2f / 3f)
             .clip(RoundedCornerShape(inkRadiusMd()))
-            .background(tokens.panel)
-            .clickable(onClick = onClick),
+            .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = .18f) else tokens.panel)
+            .combinedClickable(onClick = onClick, onLongClick = { menuOpen = true }),
     ) {
         if (card.artPath != null) {
             AsyncImage(
@@ -227,6 +356,24 @@ private fun WorkPosterCard(card: WorkShelfCard, onClick: () -> Unit) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            onExport?.let { action ->
+                DropdownMenuItem(text = { Text("Export") }, onClick = { menuOpen = false; action() })
+            }
+            onCopy?.let { action ->
+                DropdownMenuItem(text = { Text("Copy") }, onClick = { menuOpen = false; action() })
+            }
+            onCover?.let { action ->
+                DropdownMenuItem(text = { Text("Cover art") }, onClick = { menuOpen = false; action() })
+            }
+            DropdownMenuItem(
+                text = { Text(if (selected) "Unselect" else "Select for quick remove") },
+                onClick = { menuOpen = false; onSelect() },
+            )
+            onDelete?.let { action ->
+                DropdownMenuItem(text = { Text("Delete") }, onClick = { menuOpen = false; action() })
+            }
         }
     }
 }

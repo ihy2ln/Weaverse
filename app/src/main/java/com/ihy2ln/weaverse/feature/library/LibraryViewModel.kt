@@ -57,6 +57,8 @@ data class LibraryUiState(
     val status: String = "",
     val busy: Boolean = false,
     val hasIsekaiGacha: Boolean = false,
+    /** Most recently touched work shown inside each Home mode card. */
+    val activeWorkByMode: Map<String, LibraryBookCard> = emptyMap(),
 )
 
 @HiltViewModel
@@ -97,7 +99,7 @@ class LibraryViewModel @Inject constructor(
                         add(SeriesGroup(null, unassigned))
                     }
                 }
-                val cards = novels.map { book ->
+                val allCards = books.map { book ->
                     val cover = book.coverMediaId
                         ?.let { id -> media.find { it.id == id } }
                         ?.let { entity ->
@@ -109,6 +111,10 @@ class LibraryViewModel @Inject constructor(
                         coverPath = cover,
                     )
                 }
+                val cards = allCards.filter { it.book.workType == "novel" }
+                fun active(workType: String): LibraryBookCard? =
+                    allCards.firstOrNull { it.book.id == prefs.selectedBookId && it.book.workType == workType }
+                        ?: allCards.filter { it.book.workType == workType }.maxByOrNull { it.book.updatedAt }
                 LibraryUiState(
                     tab = _uiState.value.tab,
                     books = novels,
@@ -122,6 +128,11 @@ class LibraryViewModel @Inject constructor(
                     status = _uiState.value.status,
                     busy = _uiState.value.busy,
                     hasIsekaiGacha = novels.any { it.title.equals(SampleBookImporter.BOOK_TITLE, ignoreCase = true) },
+                    activeWorkByMode = buildMap {
+                        active("novel")?.let { put("Novel", it) }
+                        active("campaign")?.let { put("Roleplay", it) }
+                        active("storyboard")?.let { put("Storyboard", it) }
+                    },
                 )
             }.collect { _uiState.value = it }
         }

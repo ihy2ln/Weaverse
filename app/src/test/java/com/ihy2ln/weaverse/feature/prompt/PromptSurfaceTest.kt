@@ -7,15 +7,15 @@ import org.junit.jupiter.api.Test
 
 class PromptSurfaceTest {
     @Test
-    fun everyGenerativeSurfaceUsesGlobalOverlay() {
-        NovelDestination.entries.filterNot { it == NovelDestination.Read }.forEach { dest ->
+    fun onlyActiveWritingSurfacesUseGlobalOverlay() {
+        NovelDestination.entries.filterNot { it == NovelDestination.Write }.forEach { dest ->
             assertTrue(
-                PromptSurface.usesGlobalOverlay(AppMode.Novel, dest.name),
-                "Novel ${dest.name} should show the shared prompt bar",
+                !PromptSurface.usesGlobalOverlay(AppMode.Novel, dest.name),
+                "Novel ${dest.name} should not show the shared prompt bar",
             )
         }
-        assertTrue(!PromptSurface.usesGlobalOverlay(AppMode.Novel, NovelDestination.Read.name))
+        assertTrue(PromptSurface.usesGlobalOverlay(AppMode.Novel, NovelDestination.Write.name))
         assertTrue(PromptSurface.usesGlobalOverlay(AppMode.Roleplay, null))
-        assertTrue(PromptSurface.usesGlobalOverlay(AppMode.Notes, null))
+        assertTrue(!PromptSurface.usesGlobalOverlay(AppMode.Notes, null))
     }
 }

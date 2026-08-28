@@ -32,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -52,11 +53,27 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ihy2ln.weaverse.core.text.documentFromJson
+import com.ihy2ln.weaverse.core.text.Block
+import com.ihy2ln.weaverse.core.text.CodeBlock
+import com.ihy2ln.weaverse.core.text.Divider
+import com.ihy2ln.weaverse.core.text.Document
+import com.ihy2ln.weaverse.core.text.Heading
+import com.ihy2ln.weaverse.core.text.ListItem
+import com.ihy2ln.weaverse.core.text.MediaBlock
+import com.ihy2ln.weaverse.core.text.MediaGridBlock
+import com.ihy2ln.weaverse.core.text.MediaKind
+import com.ihy2ln.weaverse.core.text.MediaStackBlock
+import com.ihy2ln.weaverse.core.text.Paragraph
+import com.ihy2ln.weaverse.core.text.Quote
+import com.ihy2ln.weaverse.core.text.SceneBeatBlock
 import com.ihy2ln.weaverse.core.text.plainText
+import com.ihy2ln.weaverse.core.media.MediaRepository
 import com.ihy2ln.weaverse.core.tts.TtsService
+import com.ihy2ln.weaverse.core.ui.components.AudioMediaPlayer
 import com.ihy2ln.weaverse.core.ui.components.InkSegmentedPill
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
 import com.ihy2ln.weaverse.core.ui.components.SegmentedOption
+import com.ihy2ln.weaverse.core.ui.components.ZoomableMedia
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
@@ -67,9 +84,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
 
 enum class ReaderTheme(val label: String) { Paper("Paper"), Sepia("Sepia"), Night("Night") }
 
@@ -80,6 +99,7 @@ data class ReaderScene(
     val title: String,
     val text: String,
     val wordCount: Int,
+    val document: Document,
 )
 
 data class ReaderUiState(
@@ -96,6 +116,8 @@ data class ReaderUiState(
     val paragraphIndex: Int = 0,
     val scrollOffset: Int = 0,
     val speakingParagraph: Int = -1,
+    val keepPositionOnPageChange: Boolean = false,
+    val mediaPaths: Map<String, String> = emptyMap(),
 ) {
     val current: ReaderScene? get() = scenes.getOrNull(currentIndex)
     val progress: Float get() = if (scenes.isEmpty()) 0f else (currentIndex + 1f) / scenes.size
@@ -114,6 +136,7 @@ class ReaderViewModel @Inject constructor(
     private val db: WeaverseDatabase,
     private val settings: SettingsRepository,
     private val tts: TtsService,
+    private val mediaRepository: MediaRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ReaderUiState())
     val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
@@ -124,16 +147,19 @@ class ReaderViewModel @Inject constructor(
                 val bookId = prefs.selectedBookId
                 val book = db.bookDao().getById(bookId)
                 val scenes = db.manuscriptDao().getReaderScenes(bookId).map { row ->
+                    val document = documentFromJson(row.docJson)
                     ReaderScene(
                         id = row.id,
                         chapterId = row.chapterId,
                         chapterTitle = row.chapterTitle,
                         title = row.title,
-                        text = row.plainText.ifBlank { documentFromJson(row.docJson).plainText() },
+                        text = row.plainText.ifBlank { document.plainText() },
                         wordCount = row.wordCount,
+                        document = document,
                     )
                 }
-                settings.readerState(bookId).collect { saved ->
+                combine(settings.readerState(bookId), mediaRepository.observeAll()) { saved, media -> saved to media }
+                    .collect { (saved, media) ->
                     val savedIndex = scenes.indexOfFirst { it.id == saved.lastSceneId }
                     _uiState.value = ReaderUiState(
                         bookId = bookId,
@@ -148,6 +174,10 @@ class ReaderViewModel @Inject constructor(
                         loading = false,
                         paragraphIndex = saved.paragraphIndex,
                         scrollOffset = saved.scrollOffset,
+                        keepPositionOnPageChange = _uiState.value.keepPositionOnPageChange,
+                        mediaPaths = media.associate { entity ->
+                            entity.id to mediaRepository.resolveFile(entity).absolutePath
+                        },
                     )
                 }
             }
@@ -158,12 +188,42 @@ class ReaderViewModel @Inject constructor(
         val state = _uiState.value
         val next = index.coerceIn(0, (state.scenes.size - 1).coerceAtLeast(0))
         val scene = state.scenes.getOrNull(next) ?: return
-        _uiState.update { it.copy(currentIndex = next, status = "", speakingParagraph = -1, paragraphIndex = 0, scrollOffset = 0) }
+        _uiState.update {
+            it.copy(
+                currentIndex = next,
+                status = "",
+                speakingParagraph = -1,
+                paragraphIndex = if (it.keepPositionOnPageChange) it.paragraphIndex else 0,
+                scrollOffset = if (it.keepPositionOnPageChange) it.scrollOffset else 0,
+            )
+        }
         viewModelScope.launch { settings.setReaderPosition(state.bookId, scene.id) }
     }
 
     fun next() = goTo(_uiState.value.currentIndex + 1)
     fun previous() = goTo(_uiState.value.currentIndex - 1)
+
+    fun previousChapter() {
+        val state = _uiState.value
+        val current = state.current ?: return
+        val firstInChapter = state.scenes.indexOfFirst { it.chapterId == current.chapterId }
+        if (firstInChapter <= 0) return
+        val previousChapterId = state.scenes[firstInChapter - 1].chapterId
+        goTo(state.scenes.indexOfFirst { it.chapterId == previousChapterId })
+    }
+
+    fun nextChapter() {
+        val state = _uiState.value
+        val current = state.current ?: return
+        val nextIndex = state.scenes.indices.firstOrNull { index ->
+            index > state.currentIndex && state.scenes[index].chapterId != current.chapterId
+        }
+        if (nextIndex != null) goTo(nextIndex)
+    }
+
+    fun toggleKeepPosition() {
+        _uiState.update { it.copy(keepPositionOnPageChange = !it.keepPositionOnPageChange) }
+    }
 
     fun saveScroll(paragraphIndex: Int, scrollOffset: Int) {
         val state = _uiState.value
@@ -203,6 +263,118 @@ class ReaderViewModel @Inject constructor(
 
 private data class ReaderPalette(val background: Color, val page: Color, val text: Color, val secondary: Color)
 
+@Composable
+private fun ReaderBlockView(
+    block: Block,
+    mediaPaths: Map<String, String>,
+    palette: ReaderPalette,
+    fontSizeSp: Int,
+    lineHeight: Float,
+    speaking: Boolean,
+) {
+    val proseStyle = MaterialTheme.typography.bodyLarge.copy(
+        color = palette.text,
+        fontFamily = FontFamily.Serif,
+        fontSize = fontSizeSp.sp,
+        lineHeight = (fontSizeSp * lineHeight).sp,
+        fontWeight = if (speaking) FontWeight.SemiBold else FontWeight.Normal,
+    )
+    when (block) {
+        is Paragraph -> Text(block.spans.joinToString("") { it.text }, style = proseStyle)
+        is Heading -> Text(
+            block.spans.joinToString("") { it.text },
+            color = palette.text,
+            fontFamily = FontFamily.Serif,
+            fontWeight = FontWeight.Bold,
+            fontSize = (fontSizeSp + (5 - block.level.coerceIn(1, 4)) * 2).sp,
+        )
+        is Quote -> Text(
+            "“${block.spans.joinToString("") { it.text }}”",
+            style = proseStyle.copy(color = palette.secondary, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic),
+            modifier = Modifier.padding(horizontal = InkSpacing.md),
+        )
+        is ListItem -> Text(
+            "${if (block.ordered) "${block.depth + 1}." else "•"} ${block.spans.joinToString("") { it.text }}",
+            style = proseStyle,
+            modifier = Modifier.padding(start = (block.depth * 16).dp),
+        )
+        is CodeBlock -> Text(
+            block.text,
+            color = palette.text,
+            fontFamily = FontFamily.Monospace,
+            fontSize = (fontSizeSp - 2).coerceAtLeast(12).sp,
+            modifier = Modifier.fillMaxWidth().background(palette.background).padding(InkSpacing.md),
+        )
+        is Divider -> HorizontalDivider(color = palette.secondary.copy(alpha = .35f))
+        is MediaBlock -> {
+            ReaderMedia(
+                path = mediaPaths[block.mediaId],
+                kind = block.kind,
+                label = block.caption.joinToString("") { it.text }.ifBlank { block.kind.name },
+                palette = palette,
+            )
+        }
+        is MediaStackBlock -> Column(verticalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
+            block.mediaIds.forEachIndexed { index, mediaId ->
+                ReaderMedia(
+                    path = mediaPaths[mediaId],
+                    kind = mediaKindFromPath(mediaPaths[mediaId]),
+                    label = "Media ${index + 1}",
+                    palette = palette,
+                )
+            }
+        }
+        is MediaGridBlock -> Column(verticalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
+            block.mediaIds.forEachIndexed { index, mediaId ->
+                ReaderMedia(
+                    path = mediaPaths[mediaId],
+                    kind = mediaKindFromPath(mediaPaths[mediaId]),
+                    label = "Panel ${index + 1}",
+                    palette = palette,
+                )
+            }
+        }
+        is SceneBeatBlock -> Unit
+    }
+}
+
+@Composable
+private fun ReaderMedia(path: String?, kind: MediaKind, label: String, palette: ReaderPalette) {
+    if (path.isNullOrBlank() || !File(path).exists()) {
+        Text("Media unavailable", color = palette.secondary, style = MaterialTheme.typography.labelMedium)
+        return
+    }
+    if (kind == MediaKind.Audio) {
+        AudioMediaPlayer(path = path, label = label)
+    } else {
+        Column(verticalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+            ZoomableMedia(
+                path = path,
+                contentDescription = label,
+                isVideo = kind == MediaKind.Video,
+                minHeight = 180.dp,
+                maxHeight = 520.dp,
+                decodeOriginal = true,
+            )
+            if (label.isNotBlank() && label != kind.name) {
+                Text(
+                    label,
+                    color = palette.secondary,
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
+    }
+}
+
+private fun mediaKindFromPath(path: String?): MediaKind = when (path?.substringAfterLast('.', "")?.lowercase()) {
+    "mp3", "wav", "ogg", "aac", "m4a" -> MediaKind.Audio
+    "mp4", "webm", "mkv" -> MediaKind.Video
+    else -> MediaKind.Image
+}
+
 @OptIn(ExperimentalMaterial3Api::class, FlowPreview::class)
 @Composable
 fun ReaderScreen(viewModel: ReaderViewModel = hiltViewModel()) {
@@ -221,9 +393,13 @@ fun ReaderScreen(viewModel: ReaderViewModel = hiltViewModel()) {
     )
     val focusRequester = remember { FocusRequester() }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
 
-    LaunchedEffect(state.bookId, state.currentIndex) {
+    LaunchedEffect(state.bookId, current?.id) {
         focusRequester.requestFocus()
+        if (!state.keepPositionOnPageChange && current != null) {
+            listState.scrollToItem(0)
+        }
     }
     LaunchedEffect(state.speakingParagraph) {
         val idx = state.speakingParagraph
@@ -304,6 +480,25 @@ fun ReaderScreen(viewModel: ReaderViewModel = hiltViewModel()) {
                     color = palette.secondary,
                     trackColor = palette.secondary.copy(alpha = .15f),
                 )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    InkTextButton("↑ Top", { scope.launch { listState.animateScrollToItem(0) } }, compact = true)
+                    InkTextButton("← Chapter", viewModel::previousChapter, compact = true)
+                    InkTextButton("Chapter →", viewModel::nextChapter, compact = true)
+                    InkTextButton(
+                        "↓ Bottom",
+                        {
+                            scope.launch {
+                                val last = (listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
+                                listState.animateScrollToItem(last)
+                            }
+                        },
+                        compact = true,
+                    )
+                }
                 AnimatedVisibility(settingsOpen) {
                     Column(verticalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -324,6 +519,15 @@ fun ReaderScreen(viewModel: ReaderViewModel = hiltViewModel()) {
                             selectedId = state.theme.name,
                             onSelect = { id -> ReaderTheme.entries.find { it.name == id }?.let(viewModel::setTheme) },
                         )
+                        InkTextButton(
+                            label = if (state.keepPositionOnPageChange) {
+                                "Page change: keep position"
+                            } else {
+                                "Page change: scroll to top"
+                            },
+                            onClick = viewModel::toggleKeepPosition,
+                            compact = true,
+                        )
                         Row(horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
                             InkTextButton("Read aloud", viewModel::speak, compact = true)
                             InkTextButton("Stop", viewModel::stopSpeaking, compact = true)
@@ -342,7 +546,7 @@ fun ReaderScreen(viewModel: ReaderViewModel = hiltViewModel()) {
                     Text("This book has no readable scenes yet.", color = palette.secondary)
                 }
             } else {
-                val paragraphs = current.text.split(Regex("\\n\\s*\\n|\\n")).filter { it.isNotBlank() }
+                val blocks = current.document.blocks.ifEmpty { Document.fromPlainText(current.text).blocks }
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.weight(1f),
@@ -363,15 +567,15 @@ fun ReaderScreen(viewModel: ReaderViewModel = hiltViewModel()) {
                             modifier = Modifier.padding(top = InkSpacing.xs, bottom = InkSpacing.lg),
                         )
                     }
-                    itemsIndexed(paragraphs) { index, paragraph ->
+                    itemsIndexed(blocks, key = { _, block -> block.id }) { index, block ->
                         val speaking = index == state.speakingParagraph
-                        Text(
-                            paragraph,
-                            color = if (speaking) palette.text else palette.text,
-                            fontFamily = FontFamily.Serif,
-                            fontSize = state.fontSizeSp.sp,
-                            lineHeight = (state.fontSizeSp * state.lineHeight).sp,
-                            fontWeight = if (speaking) FontWeight.SemiBold else FontWeight.Normal,
+                        ReaderBlockView(
+                            block = block,
+                            mediaPaths = state.mediaPaths,
+                            palette = palette,
+                            fontSizeSp = state.fontSizeSp,
+                            lineHeight = state.lineHeight,
+                            speaking = speaking,
                         )
                     }
                 }

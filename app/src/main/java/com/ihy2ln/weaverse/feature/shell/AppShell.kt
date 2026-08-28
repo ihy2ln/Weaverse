@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -75,6 +76,7 @@ import com.ihy2ln.weaverse.feature.prompt.PromptInsertContext
 import com.ihy2ln.weaverse.feature.novel.chat.WorkshopThreadsRail
 import com.ihy2ln.weaverse.feature.novel.codex.CodexEntryDetailScreen
 import com.ihy2ln.weaverse.feature.novel.codex.CodexRailScreen
+import com.ihy2ln.weaverse.feature.novel.codex.CodexViewModel
 import com.ihy2ln.weaverse.feature.novel.manuscript.ManuscriptRailScreen
 import com.ihy2ln.weaverse.feature.novel.plan.PlanScreen
 import com.ihy2ln.weaverse.feature.novel.plan.PlanVocabulary
@@ -106,6 +108,7 @@ fun AppShell(
     modifier: Modifier = Modifier,
     shellViewModel: AppShellViewModel = hiltViewModel(),
     notesViewModel: NotesViewModel = hiltViewModel(),
+    codexViewModel: CodexViewModel = hiltViewModel(),
     promptViewModel: GlobalPromptViewModel = hiltViewModel(),
 ) {
     var mode by rememberSaveable { mutableStateOf(AppMode.Novel.name) }
@@ -126,6 +129,7 @@ fun AppShell(
     var selectedCodexEntryId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedCharacterId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedPersonaId by rememberSaveable { mutableStateOf<String?>(null) }
+    var notesDetailOpen by rememberSaveable { mutableStateOf(false) }
     var selectedSceneId by rememberSaveable { mutableStateOf("scene-1") }
     var writeJumpKind by rememberSaveable { mutableStateOf(WriteJumpKind.Scene.name) }
     var selectedThreadId by rememberSaveable { mutableStateOf("thread-1") }
@@ -140,6 +144,7 @@ fun AppShell(
     )
     val shellInfo by shellViewModel.shellInfo.collectAsState()
     val notesState by notesViewModel.uiState.collectAsState()
+    val codexState by codexViewModel.uiState.collectAsState()
     val promptUi by promptViewModel.uiState.collectAsState()
     val promptOverlayOpen = promptUi.kind != null
 
@@ -291,6 +296,8 @@ fun AppShell(
                 showSettings -> "Weaverse"
                 showExport -> "Novels · Roleplay · Notes"
                 showSearch -> "Weaverse"
+                selectedCodexEntryId != null || chromeTool == RailTab.Codex.name ->
+                    "Shared · ${codexState.entries.size} entries · every book & mode"
                 else -> toolbarSubtitle
             }
             WorkspaceChrome(
@@ -340,6 +347,7 @@ fun AppShell(
                         }
                     } else {
                         chromeTool = id
+                        if (id == RailTab.Notes.name) notesDetailOpen = false
                         if (id != null) workspaceFocus = WorkspaceFocus.Story.name
                     }
                 },
@@ -354,6 +362,7 @@ fun AppShell(
                     selectedCodexEntryId = null
                     selectedCharacterId = null
                     selectedPersonaId = null
+                    notesDetailOpen = false
                     storyboardChatId = null
                     rpShowChatPicker = false
                     rpChrome = null
@@ -388,7 +397,7 @@ fun AppShell(
                             storyboardDest = id
                             if (id == StoryboardDestination.Window.name) storyboardChatId = null
                         }
-                        AppMode.Notes -> Unit
+                        AppMode.Notes -> notesDetailOpen = false
                     }
                 },
                 onFocus = { workspaceFocus = it; chromeTool = null },
@@ -455,8 +464,21 @@ fun AppShell(
                     onOpenExport = { showExport = true },
                     modifier = Modifier.weight(1f).fillMaxSize(),
                 )
-                selectedCodexEntryId != null -> Box(Modifier.weight(1f).fillMaxSize()) {
-                    CodexEntryDetailScreen(entryId = selectedCodexEntryId!!, onBack = { selectedCodexEntryId = null })
+                selectedCodexEntryId != null -> Column(Modifier.weight(1f).fillMaxSize()) {
+                    CodexRailScreen(
+                        viewModel = codexViewModel,
+                        onEntryClick = { selectedCodexEntryId = it },
+                        selectedEntryId = selectedCodexEntryId,
+                        compact = true,
+                        showSharedSummary = false,
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                    )
+                    Box(Modifier.weight(1f).fillMaxWidth()) {
+                        CodexEntryDetailScreen(
+                            entryId = selectedCodexEntryId!!,
+                            onBack = { selectedCodexEntryId = null },
+                        )
+                    }
                 }
                 selectedCharacterId != null -> Box(Modifier.weight(1f).fillMaxSize()) {
                     CharacterDetailScreen(characterId = selectedCharacterId!!, onBack = { selectedCharacterId = null })
@@ -554,23 +576,18 @@ fun AppShell(
                         if (tool != null) {
                             when (runCatching { RailTab.valueOf(tool) }.getOrNull()) {
                                 RailTab.Codex -> CodexRailScreen(
+                                    viewModel = codexViewModel,
                                     onEntryClick = { selectedCodexEntryId = it },
+                                    showSharedSummary = false,
                                     modifier = Modifier.fillMaxSize(),
                                 )
                                 RailTab.Prompts -> PromptsScreen(modifier = Modifier.fillMaxSize())
-                                RailTab.Notes -> Row(Modifier.fillMaxSize()) {
-                                    NotesRailScreen(
-                                        viewModel = notesViewModel,
-                                        modifier = Modifier
-                                            .width(200.dp)
-                                            .fillMaxHeight()
-                                            .background(railColor),
-                                    )
-                                    NotesScreen(
-                                        viewModel = notesViewModel,
-                                        modifier = Modifier.weight(1f).fillMaxHeight(),
-                                    )
-                                }
+                                RailTab.Notes -> NotesWorkspaceScreen(
+                                    viewModel = notesViewModel,
+                                    detailOpen = notesDetailOpen,
+                                    onDetailOpen = { notesDetailOpen = true },
+                                    modifier = Modifier.fillMaxSize(),
+                                )
                                 RailTab.Snippets -> SnippetsRailScreen()
                                 RailTab.Chats -> WorkshopThreadsRail(
                                     selectedThreadId = selectedThreadId,
@@ -599,6 +616,10 @@ fun AppShell(
                                 NovelDestination.Bookshelf -> WorkShelfScreen(
                                     kind = WorkShelfKind.Novel,
                                     onCreate = { creatingWork = CreateWorkVocabulary.Novel },
+                                    onExport = { bookId ->
+                                        shellViewModel.setSelectedBookId(bookId)
+                                        showExport = true
+                                    },
                                     onOpen = { card ->
                                         card.bookId?.let(shellViewModel::setSelectedBookId)
                                         novelDest = NovelDestination.Plan.name
@@ -621,7 +642,12 @@ fun AppShell(
                                 NovelDestination.Chat -> WorkshopChatScreen(threadId = selectedThreadId)
                                 NovelDestination.Review -> ReviewScreen()
                             }
-                            AppMode.Notes.name -> NotesScreen(viewModel = notesViewModel)
+                            AppMode.Notes.name -> NotesWorkspaceScreen(
+                                viewModel = notesViewModel,
+                                detailOpen = notesDetailOpen,
+                                onDetailOpen = { notesDetailOpen = true },
+                                modifier = Modifier.fillMaxSize(),
+                            )
                             AppMode.Chatting.name -> when (chattingDestinationOf(cd)) {
                                 ChattingDestination.Friends -> FriendsScreen(
                                     onOpenChat = {
@@ -759,6 +785,16 @@ fun AppShell(
                     .background(Color.Black.copy(alpha = brightnessDim)),
             )
         }
+        val activeWritingDestination = when (runCatching { AppMode.valueOf(mode) }.getOrDefault(AppMode.Novel)) {
+            AppMode.Novel -> novelDestinationOf(novelDest) == NovelDestination.Write
+            AppMode.Roleplay -> roleplayDestinationOf(rpDest) == RoleplayDestination.Chats &&
+                selectedRpChatId != null
+            AppMode.Chatting -> chattingDestinationOf(chatDest) == ChattingDestination.Chats &&
+                selectedRpChatId != null
+            AppMode.Storyboard -> storyboardDestinationOf(storyboardDest) != StoryboardDestination.Window &&
+                storyboardChatId != null
+            AppMode.Notes -> false
+        }
         GlobalPromptOverlay(
             context = PromptInsertContext(
                 mode = runCatching { AppMode.valueOf(mode) }.getOrDefault(AppMode.Novel),
@@ -770,10 +806,45 @@ fun AppShell(
                 novelDest = novelDest,
             ),
             novelDest = novelDest,
-            active = !showLibrary && !showSettings && !showSearch && !showExport,
-            modifier = Modifier.align(Alignment.BottomCenter),
+            active = activeWritingDestination &&
+                chromeTool == null &&
+                workspaceFocus != WorkspaceFocus.Pictures.name &&
+                selectedCodexEntryId == null &&
+                selectedCharacterId == null &&
+                selectedPersonaId == null &&
+                !showLibrary && !showSettings && !showSearch && !showExport,
+            modifier = Modifier.align(Alignment.BottomStart),
         )
     }
+    }
+}
+
+@Composable
+private fun NotesWorkspaceScreen(
+    viewModel: NotesViewModel,
+    detailOpen: Boolean,
+    onDetailOpen: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
+        if (detailOpen) {
+            NotesRailScreen(
+                viewModel = viewModel,
+                compact = true,
+                onNoteOpened = onDetailOpen,
+                modifier = Modifier.fillMaxWidth().height(156.dp),
+            )
+            NotesScreen(
+                viewModel = viewModel,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+            )
+        } else {
+            NotesRailScreen(
+                viewModel = viewModel,
+                onNoteOpened = onDetailOpen,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
     }
 }
 
