@@ -15,6 +15,8 @@ working log, and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a from-the-
 ground-up description of how the app is built (detailed enough to rebuild it
 from scratch if this repo ever disappeared).
 
+New to the app? Start with the [in-depth helper guide](docs/GUIDE.md).
+
 ## Downloads
 
 | Platform | Where |
@@ -123,6 +125,9 @@ JUnit 5 + Turbine (app), a Go launcher for the Windows `.exe` shim.
 ## Docs
 
 - Build notes / working log: [BUILD_NOTES.md](BUILD_NOTES.md)
+- **User helper guide:** [docs/GUIDE.md](docs/GUIDE.md)
+- **Hard checkpoint record:** [docs/CHECKPOINT-v1.3.2-CODEX-NAVIGATION.md](docs/CHECKPOINT-v1.3.2-CODEX-NAVIGATION.md)
+- Wiki-ready guide mirror: [docs/wiki/Home.md](docs/wiki/Home.md)
 - **Rebuild documentation** (architecture, data model, protocols — detailed
   enough to reconstruct this app from scratch): [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - Same content, wiki-formatted: the [repo Wiki](https://github.com/ihy2ln/weaverse/wiki)

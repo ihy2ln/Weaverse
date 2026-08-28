@@ -44,6 +44,8 @@ fun InkToolbar(
     onBack: () -> Unit = {},
     onForward: () -> Unit = {},
     onSettings: () -> Unit = {},
+    /** Replaces the Back / Forward pair when a screen has one contextual navigation control. */
+    navigationControl: (@Composable () -> Unit)? = null,
     trailing: @Composable () -> Unit = {},
     /** Optional second row inside the title panel (e.g. mode/destination pills). */
     belowContent: (@Composable () -> Unit)? = null,
@@ -66,11 +68,15 @@ fun InkToolbar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
         ) {
-            IconButton(onClick = onBack, enabled = canGoBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-            }
-            IconButton(onClick = onForward, enabled = canGoForward) {
-                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Forward")
+            if (navigationControl != null) {
+                navigationControl()
+            } else {
+                IconButton(onClick = onBack, enabled = canGoBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                }
+                IconButton(onClick = onForward, enabled = canGoForward) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Forward")
+                }
             }
             IconButton(onClick = onSettings) {
                 Icon(Icons.Default.Settings, contentDescription = "Settings")

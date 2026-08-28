@@ -122,3 +122,19 @@ tagged and released through `v0.2.0` — see the git history on `main` prior
 to the transplant commit for that log in full. That codebase is gone from
 `main` as of this transplant; nothing in the current `app/`, `desktop/`, or
 `sync-core/` originates from it.
+## Hard checkpoint — v1.3.2 Codex navigation (2026-08-28)
+
+- Added a direct Codex category popup: tap the active category name to jump to
+  Characters, Locations, Lore, Objects, or any custom category without repeated
+  horizontal dragging.
+- Condensed the open-entry Codex rail to the active category and its scrollable
+  entries; the selected entry remains highlighted.
+- Added a draggable divider so the rail can expand downward or collapse back to
+  one line while the detail editor receives the remaining screen.
+- Replaced the entry editor's back/forward pair with one expand/collapse
+  chevron, restoring the last useful rail height.
+- Added [the complete helper guide](docs/GUIDE.md), a
+  [wiki-ready mirror](docs/wiki/Home.md), and a
+  [checkpoint recovery record](docs/CHECKPOINT-v1.3.2-CODEX-NAVIGATION.md).
+- Verified `:app:compileDebugKotlin` and `:app:assembleDebug` offline. Local test
+  APK SHA-256: `1365E4B3124E3D84990E846A46F0527E3CD07F22C8B3AA02DE9F8576FCA8FDC0`.

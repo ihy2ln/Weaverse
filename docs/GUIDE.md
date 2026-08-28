@@ -1,168 +1,300 @@
-# Weaverse — Full Guide
+# Weaverse Helper Guide
 
-Weaverse is five workspaces over one shared library. Everything except AI text
-generation works with the network off.
+This guide describes the Android app at the
+`checkpoint-v1.3.2-codex-navigation` checkpoint. Weaverse is an offline-first
+creative workspace with five modes over one shared library: Novel, RPG,
+Chatting, Storyboard, and Notes. AI generation needs OpenRouter; editing,
+reading, organizing, and local media continue to work offline.
 
----
+## Quick start
 
-## Home
+1. Tap the book icon to open Home.
+2. Choose a mode. Its main button always opens that mode's home:
+   - **Novel** → **Bookshelf**
+   - **RPG** → **Campaign**
+   - **Chatting** → **Chats**
+   - **Storyboard** → **Window**
+   - **Notes** → shared notes board
+3. Create or select a work from its shelf.
+4. Use the second menu for the current mode's work areas.
+5. Use **Extra** for shared tools such as Codex, Prompts, Notes, Snippets,
+   Chats, and Pictures.
 
-The **book button** in the top bar opens Home. Home is the way into every
-workspace, not just novels: a card per mode, then your novels underneath.
+Work is saved as you edit. Import and export remain the safest way to make a
+portable backup before large changes.
 
-## The chrome
+## Navigation and customization
 
-Three rows across the top:
+The top chrome has three logical groups:
 
-1. **Modes** — Novel · RPG · Chatting · Storyboard · Notes
-2. **Sub-modes** — whatever the current mode is divided into
-3. **Extra** — Codex, Prompts, Notes, Snippets, Chats, Pictures. App-wide tools
-   that do not belong to any single mode.
+1. **Mode**: Novel, RPG, Chatting, Storyboard, Notes.
+2. **Workspace**: destinations belonging to the active mode.
+3. **Extra**: shared tools usable across works and modes.
 
-**Focus** switches between the writing view and the picture gallery.
+Main mode buttons return to the mode home instead of leaving you in a deep
+editor. Menu items can be reordered with press-and-hold: hold the item, choose
+the move action, then drag it into its new position. This works for the visible
+menu bar and items inside drop-down menus. Navigation order is kept in app
+preferences.
 
----
+## Home and shelves
+
+Home is intentionally small: it launches the five modes. Active work belongs
+on its mode shelf rather than in a duplicate “continue where you left off” area.
+
+Bookshelf, Campaign, and Window share these interactions:
+
+- Tap a card to open it.
+- Use the add button to create a novel, campaign, or storyboard.
+- Press and hold a card for its context menu.
+- Use **Select for quick remove** to build a multi-selection, then **Quick
+  remove** to remove the selected works together.
+- Novel cards also expose export, copy, cover art, and delete actions.
+
+Deletion asks for confirmation. Export first when the work may be needed later.
 
 ## Novel
 
-`Plan · Write · Chat · Review`
+### Bookshelf
 
-- **Plan** — the outline: Book → Chapter → Scene → Scene beat.
-- **Write** — the scene editor, with media blocks and codex highlighting.
-- **Chat** — a workshop conversation about the book.
-- **Review** — a read-through pass.
+Bookshelf is the Novel home. It shows cover art and titles and is the place to
+select an existing novel or add one. Opening Novel from the main mode button
+returns here.
 
----
+### Plan
+
+Plan organizes the manuscript as **Book → Chapter → Scene → Scene beat**. Use
+it to structure the story, set scene information, and choose what Write edits.
+
+### Write
+
+Write is the primary manuscript editor. It supports scene text, scene beats,
+Codex mention highlighting, media blocks, speech input, and AI/manual prompt
+entry. Long-press selected text for editing actions, including adding it to the
+Codex. Tapping a highlighted Codex mention opens that entry.
+
+Media inserted in Write is stored with the manuscript and appears in reading
+and review surfaces. If imported media does not display, confirm the source
+still exists and make a fresh export before reinstalling the app.
+
+### Read and review
+
+The reader provides page and chapter navigation plus jump-to-top and
+jump-to-bottom controls. By default, changing pages moves to the top. Enable
+the keep-position format option when comparing matching areas across pages.
+
+## Codex
+
+The Codex is shared across every book and mode. It is for structured reference
+material—characters, locations, objects, lore, and custom categories—while
+Notes is for flexible personal writing.
+
+### Browsing all entries
+
+Open **Extra → Codex**. With no entry selected, category sections and entries
+use the available screen. Tap a category heading to expand or collapse it. Use
+**+** on a category to add an entry there.
+
+### Working inside an entry
+
+When an entry opens:
+
+- The shared status (`Shared · entry count · every book & mode`) moves into the
+  title band.
+- A compact, horizontally scrollable category strip appears below it.
+- Only the active category and that category's entries occupy the strip.
+- Tap the category name—**Characters**, **Locations**, **Lore**, and so on—to
+  open a popup containing every category and its entry count.
+- Select a popup category to jump directly to it without repeated dragging.
+- Tap an entry in the strip to switch entries. The selected entry stays
+  highlighted.
+- Tap **+** to create an entry in the active category.
+
+The divider below the strip is draggable. Drag it downward to reveal more
+Codex entries and upward to return to the one-line view. The editor toolbar has
+a single collapse/expand chevron in place of the old back and forward buttons;
+it restores the last useful expanded height.
+
+Each entry can store a name, aliases or nicknames, entry text, and supporting
+media. Names and aliases are used for Codex mentions in writing surfaces.
+
+## Notes
+
+Notes is one shared board across every book and mode. Open Notes from the main
+mode button or **Extra → Notes**. The list occupies the workspace until a note
+is selected; opening one reveals its editor while keeping navigation nearby.
+Notes do not show the writing prompt dock because they are edited directly and
+are not a generation play surface.
+
+Use Notes for research, checklists, loose ideas, and information that should not
+become a structured Codex entry. Speech-to-text is available in the editor.
 
 ## RPG
 
-`Inventory · Adventure · Roster · Lore · Presets`
+RPG opens at **Campaign**, the high-level shelf for all adventures. Its areas
+include Campaign, Adventure, Inventory, Roster, Lore, and Presets.
 
-A campaign is shaped exactly like a book, so RPG reuses the manuscript model:
-
-| RPG | Novel |
+| RPG concept | Manuscript concept |
 |---|---|
 | Adventure | Book |
 | Day | Chapter |
 | Mission | Scene |
-| Event / Battle | Scene beat |
+| Event or battle | Scene beat |
 
-- **Adventure** — the campaign outline. Picking a Mission's *Play* chooses which
-  conversation to run it in.
-- **Roster** — your immediate team only. Your personas sit under **You**; the
-  characters travelling with you under **Team**. Use *Add / remove* to change who
-  is on the team; the wider cast stays in Lore.
-- **Inventory** — grouped **You → Team → Roster**, each group collapsible. Tap a
-  name to open their equipment plate: head, torso, arms, legs, weapon,
-  accessory. `+ Item` adds to their pack; tapping a slot equips from it.
-- **Lore** — this adventure's codex only. A new adventure starts empty and fills
-  as you play. Your full library is under **Extra → Codex**.
-- **Presets** — difficulty, not a sampler setting:
-  - **Slice of life** — warm, low stakes, nobody really loses.
-  - **Normal** — effort is rewarded, mistakes are recoverable.
-  - **Hard** — the world pushes back; plans need thought.
-  - **Ruthless** — enemies exploit weakness; lasting loss is on the table.
+### Campaign and Adventure
 
-  Each one injects a directive into the system prompt, so the world actually
-  behaves that way rather than just shifting randomness.
+Campaign shows every adventure by title and art. Choose one to enter its
+Adventure view. Adventure is the outline and play launcher for days, missions,
+events, and battles.
 
----
+### Character sheet
+
+The character sheet keeps tabletop information on one screen as compact,
+illustrated sections. Tap a section name or picture to expand it; tap again to
+collapse it. Sections cover identity and portrait, health and death, ability
+scores, saves and skills, combat, spells, features and traits, inventory,
+equipped gear, resources and tools, biography, and settings. Health includes
+current, maximum, and temporary hit points plus quick change controls.
+
+### Inventory, roster, lore, and presets
+
+- **Inventory** groups You, Team, and Roster. Open a character to manage their
+  pack and equipment slots.
+- **Roster** controls personas and current companions without deleting the
+  wider cast.
+- **Lore** is the current campaign reference; the full shared Codex is under
+  Extra.
+- **Presets** change world difficulty: Slice of life, Normal, Hard, and
+  Ruthless. They add behavioral direction to play rather than merely changing
+  randomness.
 
 ## Chatting
 
-`Contacts · Chats`
+Chatting opens at **Chats**, with **Friends/Contacts** for starting new
+conversations. The layout follows a modern messenger: search, filters, unread
+counts, avatars, speaker colors, timestamps, grouped messages, and day dividers.
 
-A phone-messenger view of your cast.
-
-- **Contacts** — everyone you can talk to, drawn from the character codex.
-  Tapping someone opens their conversation, creating it on first contact and
-  seeding their greeting.
-- **Chats** — open conversations with search, **All / Unread / Groups** filters,
-  and unread badges. Badges are real: a chat remembers when you last opened it.
-- **Meet someone** writes a brand-new character for you. One arrives
-  automatically each day (needs an OpenRouter key; skipped quietly when offline,
-  retried next launch). Toggle it in Settings.
-
-The transcript is a modern messenger layout: avatar gutter, the speaker's name
-in their own colour, timestamps, and messages grouped when they arrive close
-together, with day dividers between sessions.
-
----
+The chat list is collapsible so the conversation can use the screen. Add chats
+from Friends/Contacts. Press and hold a chat for its actions, including select
+or unselect for quick removal; selected chats can be removed together. Opening
+a character for the first time creates a conversation and may seed a greeting.
 
 ## Storyboard
 
-`Manga · Comic`
+Storyboard opens at **Window**, the cover-art shelf for all manga and comic
+projects. Tap a title or its main art to open its Manga or Comic canvas.
 
-Comic pages built from panels. **Manga** reads right-to-left; **Comic** reads
-left-to-right.
+- **Manga** uses right-to-left reading order.
+- **Comic** uses left-to-right reading order.
+- Page tabs sit above the canvas; add, rename, remove, or reorder pages there.
+- Layout templates show their complete panel grid when selected, including
+  full-page, strip, split, establishing, and multi-panel arrangements.
+- Dropped media fills the first available panel at that panel's size.
+- Select and drag a panel to move it; use its corner grip to resize it.
+- Dropping one panel over another stacks them.
+- **Adjust image** pans and zooms media inside the frame without changing the
+  panel itself.
+- Text is an overlay. Captions and speech bubbles can be moved and resized
+  independently from panels.
 
-- **Pages** — page tabs sit above the canvas. `+` adds a page; long-press a tab
-  to rename, delete or reorder. Each page is its own canvas.
-- **Layout** — pick from six templates (six-panel, pair/wide/split, establishing
-  shot, tall/wide/full, vertical strip, splash). The chosen layout draws its
-  slots as numbered empty frames, so a page reads as a comic page before you add
-  anything. Some layouts tilt panels for slanted gutters.
-- **Panels are for media.** Media dropped in lands in the first free slot at that
-  slot's size. Tap a panel to select it, then drag to move it; drag the corner
-  grip to resize. Drop one panel onto another to stack them.
-- **Adjust image** (panel menu) pans and zooms the picture *inside* its frame,
-  which is remembered.
-- **Text is an overlay**, not a panel: *Add text* on the panel menu drops a box
-  you can drag and resize, as either a plain caption or a manga speech bubble
-  with a tail.
+The creation dialog uses comic/manga language: series title, reading style,
+main art, and page-oriented setup.
 
----
+## Prompt dock and AI
 
-## Notes
+The full prompt dock appears only where generating or entering prose is useful:
+Novel Write and applicable RPG, Chatting, or Storyboard play/creation surfaces.
+It is not shown on Bookshelf, Campaign, Window, reader pages, Notes, Codex, or
+other management screens.
 
-One shared board, visible from every mode.
+When expanded, prompt text sits above one compact control row:
 
----
+- **PROMPT** is the small collapse control at the top-left.
+- **W minimum–maximum** sets the requested generation range. The app asks the
+  model to stay within the maximum, although model output cannot be guaranteed
+  with mathematical precision.
+- **Model** opens the OpenRouter model selector. Long names scroll within their
+  available space.
+- **/A · \\M** is one toggle: A selects AI generation and M manual entry.
+- **✓** accepts, **×** clears or cancels, and the microphone starts speech.
 
-## Appearance
+When collapsed, the dock becomes a small **PROMPT** label and triangle so it
+does not cover the workspace. Add an OpenRouter API key in Settings before AI
+use. Manual entry and all non-AI editing remain available without a key.
 
-**Settings → Appearance** has two levels:
+## Import, export, sync, and recovery
 
-- **Profile** — a whole look: palette, lettering and corner shape together.
-  *Classic* (the original), *Fantasy*, *Arcade*, *Synthwave*, *Chill*,
-  *Tabletop*.
-- **Theme** — Classic keeps all four (Light / Sepia / Dark / OLED). The styled
-  profiles carry their own mood, so they offer light or dark only.
+### Import and export
 
-Per-section colours layer on top, and *Reset section colours* undoes them.
+Top-bar Import and Export cover novels, RPG data, and shared Notes. A
+NovelCrafter export containing `novel.docx` or `novel.md` plus character folders
+is supported. Codex folders map into Characters, Locations, Objects, and Lore;
+characters can also become roleplay/chat cards.
 
----
+For a durable backup:
 
-## Prompts and AI
+1. Export the work and its project extras.
+2. Keep the exported ZIP or JSON outside the app's private storage.
+3. Verify the file exists before deleting, reinstalling, or clearing app data.
 
-- `/` opens the AI prompt, `\` opens manual entry — from anywhere.
-- The **PROMPT** dock collapses to a single line with the ▾ control.
-- **Models** picks any OpenRouter text model.
-- Add your API key in **Settings**. Without one, everything except generation
-  still works.
+### Peer-to-peer sync
 
----
+1. Start the Weaverse desktop package. It opens the local web hub.
+2. Note the one-time password shown by the hub.
+3. On Android, open **Settings → Open web sync** and enter the password.
+4. Leave Auto-sync enabled, or use Push/Pull manually.
 
-## Sync
+Sync uses your Wi-Fi or a tunnel you control; it does not require a Weaverse
+account or hosted Weaverse cloud.
 
-Weaverse has no account and no cloud. Sync is peer-to-peer over your own Wi-Fi:
+### Installing test APKs
 
-1. Start the desktop EXE — it opens the web hub and shows a password.
-2. On Android: **Settings → Open web sync**, enter that password once.
-3. Leave **Auto-sync** on.
+Debug/test and release builds can use different Android application IDs and
+signing keys. A test APK may install beside a release build. If Android reports
+an incompatible signature, export first, uninstall only the conflicting build,
+then install the new APK and restore the export.
 
----
+## Troubleshooting
 
-## Import / export
+### I can only see one Codex category
 
-**Import** and **Export** live in the top bar. Novelcrafter ZIP exports with
-`novel.docx`/`novel.md` plus a `characters/` folder are supported; codex folders
-land in Characters / Locations / Objects / Lore, and characters also become
-roleplay cards.
+Tap the visible category word in the compact strip. The popup lists every
+category and its entry count. Select the one you need. Drag the divider down if
+you want the full category list visible while editing.
 
----
+### The prompt dock is missing
 
-## Leaving
+This is expected on shelves, readers, Notes, Codex, and management screens.
+Open a Write or play surface. If condensed, tap the small PROMPT label and
+triangle.
 
-Back asks before closing, since an edge swipe is easy to trigger by accident.
-Your work is saved as you go.
+### AI generation does nothing
+
+Confirm the OpenRouter key and selected model in Settings, check connectivity,
+and make sure AI mode (/A) rather than manual mode (\\M) is selected. Local work
+remains usable offline.
+
+### Media does not appear
+
+Confirm the source media has not been moved or removed, reopen the work, and
+check Pictures. For imported projects, export a backup and re-import if the
+archive did not include media assets.
+
+### A shelf or chat is crowded
+
+Press and hold an item and choose **Select for quick remove**. Select additional
+items, then use **Quick remove**. Review the confirmation carefully and export
+anything you may want later.
+
+### The interface no longer matches this guide
+
+Check the installed version and compare it with the latest GitHub release. This
+guide is anchored to `checkpoint-v1.3.2-codex-navigation`; later builds may move
+controls while retaining the same concepts.
+
+## Further documentation
+
+- [Architecture and rebuild reference](ARCHITECTURE.md)
+- [Checkpoint record](CHECKPOINT-v1.3.2-CODEX-NAVIGATION.md)
+- [Wiki-ready documentation](wiki/Home.md)
+- [Build and release log](../BUILD_NOTES.md)

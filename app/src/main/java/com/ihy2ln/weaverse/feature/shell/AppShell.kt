@@ -6,6 +6,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
@@ -41,6 +43,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -130,6 +133,8 @@ fun AppShell(
     var selectedCharacterId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedPersonaId by rememberSaveable { mutableStateOf<String?>(null) }
     var notesDetailOpen by rememberSaveable { mutableStateOf(false) }
+    var codexPanelHeightDp by rememberSaveable { mutableStateOf(48f) }
+    var lastExpandedCodexPanelHeightDp by rememberSaveable { mutableStateOf(240f) }
     var selectedSceneId by rememberSaveable { mutableStateOf("scene-1") }
     var writeJumpKind by rememberSaveable { mutableStateOf(WriteJumpKind.Scene.name) }
     var selectedThreadId by rememberSaveable { mutableStateOf("thread-1") }
@@ -190,6 +195,7 @@ fun AppShell(
     val density = LocalDensity.current
     val configuration = LocalConfiguration.current
     val isPortrait = configuration.screenHeightDp > configuration.screenWidthDp
+    val maxCodexPanelHeightDp = (configuration.screenHeightDp * 0.45f).coerceIn(180f, 480f)
     val bgColor = resolveSectionColor(prefs.appearance.chrome, tokens.background)
     val railColor = resolveSectionColor(prefs.appearance.rail, tokens.panel)
     val contentColor = resolveSectionColor(prefs.appearance.content, tokens.background)
@@ -465,18 +471,60 @@ fun AppShell(
                     modifier = Modifier.weight(1f).fillMaxSize(),
                 )
                 selectedCodexEntryId != null -> Column(Modifier.weight(1f).fillMaxSize()) {
-                    CodexRailScreen(
-                        viewModel = codexViewModel,
-                        onEntryClick = { selectedCodexEntryId = it },
-                        selectedEntryId = selectedCodexEntryId,
-                        compact = true,
-                        showSharedSummary = false,
-                        modifier = Modifier.fillMaxWidth().height(48.dp),
-                    )
+                    val codexPanelExpanded = codexPanelHeightDp > 72f
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height((codexPanelHeightDp + 12f).dp),
+                    ) {
+                        CodexRailScreen(
+                            viewModel = codexViewModel,
+                            onEntryClick = { selectedCodexEntryId = it },
+                            selectedEntryId = selectedCodexEntryId,
+                            compact = !codexPanelExpanded,
+                            showSharedSummary = false,
+                            modifier = Modifier.fillMaxWidth().weight(1f),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(12.dp)
+                                .background(inkTokens().panel)
+                                .pointerInput(maxCodexPanelHeightDp) {
+                                    detectVerticalDragGestures { change, dragAmount ->
+                                        change.consume()
+                                        val next = (codexPanelHeightDp + dragAmount / density.density)
+                                            .coerceIn(48f, maxCodexPanelHeightDp)
+                                        codexPanelHeightDp = next
+                                        if (next > 72f) lastExpandedCodexPanelHeightDp = next
+                                    }
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .width(46.dp)
+                                    .height(4.dp)
+                                    .background(
+                                        inkTokens().secondaryText.copy(alpha = 0.55f),
+                                        RoundedCornerShape(2.dp),
+                                    ),
+                            )
+                        }
+                    }
                     Box(Modifier.weight(1f).fillMaxWidth()) {
                         CodexEntryDetailScreen(
                             entryId = selectedCodexEntryId!!,
-                            onBack = { selectedCodexEntryId = null },
+                            codexPanelExpanded = codexPanelExpanded,
+                            onToggleCodexPanel = {
+                                if (codexPanelExpanded) {
+                                    lastExpandedCodexPanelHeightDp = codexPanelHeightDp
+                                    codexPanelHeightDp = 48f
+                                } else {
+                                    codexPanelHeightDp = lastExpandedCodexPanelHeightDp
+                                        .coerceIn(96f, maxCodexPanelHeightDp)
+                                }
+                            },
                         )
                     }
                 }
