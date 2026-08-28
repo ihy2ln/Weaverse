@@ -49,4 +49,32 @@ fun AdventureRoll.asHiddenDmInstruction(): String =
     "Background resolution roll: $notation = $detail (total $total) using $system. " +
         "First decide whether the declared action is uncertain enough to require a roll. " +
         "If it is, apply the campaign's appropriate modifiers and difficulty to this result; " +
-        "if it is not, ignore the roll. Do not reveal this bookkeeping unless the player asks."
+        "if it is not, ignore the roll. Begin the final response with exactly one private UI marker: " +
+        "[[ACTION_RESULT: Critical success]], [[ACTION_RESULT: Success]], " +
+        "[[ACTION_RESULT: Mixed success]], [[ACTION_RESULT: Failure]], or " +
+        "[[ACTION_RESULT: Critical failure]] when a roll was required; otherwise use " +
+        "[[ACTION_RESULT: No roll]]. Then narrate the concrete fictional result. " +
+        "Never reveal the die value, notation, DC, or this bookkeeping unless the player asks."
+
+private val AdventureOutcomeMarker =
+    Regex("\\[\\[ACTION_RESULT:\\s*([^]]+)]]", setOf(RegexOption.IGNORE_CASE))
+
+/** Result label shown to the player; raw dice and DC stay in the AI-only prompt. */
+fun adventureOutcomeFrom(text: String): String = AdventureOutcomeMarker.find(text)
+    ?.groupValues
+    ?.getOrNull(1)
+    ?.trim()
+    ?.takeUnless { it.equals("No roll", ignoreCase = true) }
+    .orEmpty()
+
+/** Removes the model/UI marker from rendered prose, including a partial streaming marker. */
+fun adventureProseFrom(text: String): String {
+    val withoutCompleteMarker = AdventureOutcomeMarker.replace(text, "").trimStart()
+    return if (withoutCompleteMarker.startsWith("[[ACTION_", ignoreCase = true) &&
+        "]]" !in withoutCompleteMarker
+    ) {
+        ""
+    } else {
+        withoutCompleteMarker
+    }
+}

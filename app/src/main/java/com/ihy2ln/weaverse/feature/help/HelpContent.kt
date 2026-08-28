@@ -67,15 +67,17 @@ object HelpContent {
                 HelpEntry(
                     "Create a campaign",
                     "Choose one or more main characters from You, Roster, or the Characters " +
-                        "Codex. Pick a D&D, Pathfinder, OSR, PbtA, Fate, or custom rules " +
-                        "template, select narrative tense, then add campaign-specific house rules.",
+                        "Codex. Pick AI-backed setting and rules templates, select narrative tense, " +
+                        "then add setting details and campaign-specific house rules. Their full " +
+                        "guidance is supplied to the game master during play.",
                 ),
                 HelpEntry(
                     "Adventure is the play session",
                     "Adventure is not a messenger chat. The current scene uses one large " +
                         "illustration, an ongoing prose story, and an action box at the bottom. " +
-                        "Your actions receive a hidden rules-aware dice roll and become the next " +
-                        "game-master response. Play stays in the numbered scene until you or the " +
+                        "Your uncertain actions receive a hidden rules-aware dice roll; the page " +
+                        "shows its resolved outcome and consequences without exposing the raw die. " +
+                        "Play stays in the numbered scene until you or the " +
                         "game master advances it; Previous browses saved scenes, while Next scene " +
                         "and Stay here let you control or overrule pacing.",
                 ),
@@ -88,7 +90,8 @@ object HelpContent {
                 ),
                 HelpEntry(
                     "Inventory",
-                    "Grouped You, then Team, then Roster — each group collapses. Tap a " +
+                    "Starts at the top with Writer / You and the wider roster collapsed; Team " +
+                        "roster stays visible. Tags separate NPCs, Enemies, and Other. Tap a " +
                         "name for one-item head, torso, arms, legs, weapon, accessory, and backpack " +
                         "slots. Add item can save a picture with the item; tap existing art to " +
                         "preview, replace, or remove it. Pictures follow items between the pack and " +

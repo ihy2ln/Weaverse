@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import android.net.Uri
 import com.ihy2ln.weaverse.core.media.MediaRepository
+import com.ihy2ln.weaverse.core.text.decodeAliases
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
 import com.ihy2ln.weaverse.data.db.entities.RpEquipSlot
 import com.ihy2ln.weaverse.data.db.entities.RpItem
@@ -22,9 +23,22 @@ import javax.inject.Inject
 
 /** Who a carrier is, which decides where they sort in the list. */
 enum class CarrierKind(val label: String) {
-    You("You"),
-    Team("Team"),
-    Roster("Roster"),
+    You("Writer / You"),
+    Team("Team roster"),
+    Npc("NPCs"),
+    Enemy("Enemies"),
+    Other("Other"),
+}
+
+/** Maps the editable character tags into stable inventory sections. */
+fun inventoryCarrierKind(inParty: Boolean, tagsJson: String): CarrierKind {
+    if (inParty) return CarrierKind.Team
+    val tags = decodeAliases(tagsJson).map { it.trim().lowercase() }.toSet()
+    return when {
+        tags.any { it in setOf("enemy", "hostile", "monster", "villain", "antagonist") } -> CarrierKind.Enemy
+        tags.any { it in setOf("npc", "ally", "merchant", "quest giver", "quest-giver") } -> CarrierKind.Npc
+        else -> CarrierKind.Other
+    }
 }
 
 data class CarrierUi(
@@ -34,7 +48,7 @@ data class CarrierUi(
     /** RpEquipSlot.name -> item name. */
     val equipment: Map<String, String> = emptyMap(),
     val itemImagePaths: Map<String, String> = emptyMap(),
-    val kind: CarrierKind = CarrierKind.Roster,
+    val kind: CarrierKind = CarrierKind.Other,
 )
 
 data class InventoryUiState(
@@ -63,7 +77,7 @@ class InventoryViewModel @Inject constructor(
                         ?.let(mediaById::get)
                         ?.let { item.id to mediaRepository.resolveFile(it).absolutePath }
                 }.toMap()
-                // You first, then the team you are travelling with, then everyone else.
+                // Writer first, then team, NPCs, enemies, and uncategorized cast.
                 val you = personas.map {
                     val items = decodeItems(it.inventoryJson)
                     CarrierUi(
@@ -83,7 +97,7 @@ class InventoryViewModel @Inject constructor(
                         items = items,
                         equipment = decodeEquipment(it.equipmentJson),
                         itemImagePaths = imagePaths(items),
-                        kind = if (it.inParty) CarrierKind.Team else CarrierKind.Roster,
+                        kind = inventoryCarrierKind(it.inParty, it.tagsJson),
                     )
                 }
                 InventoryUiState(

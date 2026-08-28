@@ -45,6 +45,8 @@ data class RpMessageUi(
     val mediaStackPaths: Map<String, List<String>> = emptyMap(),
     val mediaCollapsed: Map<String, Boolean> = emptyMap(),
     val usageText: String = "",
+    /** Resolved check outcome; the underlying roll remains private. */
+    val actionResult: String = "",
 )
 
 data class RoleplayChatUiState(

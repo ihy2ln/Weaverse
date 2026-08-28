@@ -228,12 +228,25 @@ fun AdventurePlayScreen(
                                 .padding(InkSpacing.sm),
                         )
                     } else {
-                        Text(
-                            message.text,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = tokens.primaryText,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            if (message.actionResult.isNotBlank()) {
+                                Text(
+                                    "ACTION RESULT · ${message.actionResult.uppercase()}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = tokens.activePill,
+                                    modifier = Modifier
+                                        .background(tokens.hover, RoundedCornerShape(inkRadiusMd()))
+                                        .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
+                                )
+                            }
+                            Text(
+                                message.text,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = tokens.primaryText,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                     }
                 }
                 if (state.streamingText.isNotBlank()) {

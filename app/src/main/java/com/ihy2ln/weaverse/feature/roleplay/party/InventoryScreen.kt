@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
@@ -65,9 +66,19 @@ fun InventoryScreen(
     var addingForCharacterId by remember { mutableStateOf<String?>(null) }
     var equippingFor by remember { mutableStateOf<Pair<String, RpEquipSlot>?>(null) }
     var openCharacterId by rememberSaveable { mutableStateOf<String?>(initialCarrierId) }
-    // Each group collapses independently; all open to start.
-    var collapsedGroups by rememberSaveable { mutableStateOf(setOf<String>()) }
+    // Keep the writer and wider cast compact on entry; the immediate team stays visible.
+    var collapsedGroups by rememberSaveable {
+        mutableStateOf(
+            setOf(
+                CarrierKind.You.name,
+                CarrierKind.Npc.name,
+                CarrierKind.Enemy.name,
+                CarrierKind.Other.name,
+            ),
+        )
+    }
     var collapsedBackpacks by rememberSaveable { mutableStateOf(setOf<String>()) }
+    val inventoryListState = rememberLazyListState()
     var draftName by remember { mutableStateOf("") }
     var draftQty by remember { mutableStateOf("1") }
     var draftSlotSize by remember { mutableStateOf("1") }
@@ -89,6 +100,16 @@ fun InventoryScreen(
     ) { uri -> if (uri != null) draftImageUri = uri }
     LaunchedEffect(initialCarrierId) {
         if (!initialCarrierId.isNullOrBlank()) openCharacterId = initialCarrierId
+    }
+    LaunchedEffect(state.loading) {
+        if (!state.loading) inventoryListState.scrollToItem(0)
+    }
+    LaunchedEffect(initialCarrierId, state.carriers) {
+        if (!initialCarrierId.isNullOrBlank()) {
+            state.carriers.firstOrNull { it.characterId == initialCarrierId }?.let { carrier ->
+                collapsedGroups = collapsedGroups - carrier.kind.name
+            }
+        }
     }
 
     fun beginAdding(
@@ -131,7 +152,7 @@ fun InventoryScreen(
         return
     }
 
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
+    LazyColumn(state = inventoryListState, modifier = Modifier.fillMaxSize()) {
         state.carriers.groupBy { it.kind }.forEach { (kind, carriers) ->
             val groupOpen = kind.name !in collapsedGroups
             item(key = "group-${kind.name}") {

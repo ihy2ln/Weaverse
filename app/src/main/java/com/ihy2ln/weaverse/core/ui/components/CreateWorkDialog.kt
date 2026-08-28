@@ -33,6 +33,7 @@ data class NewWorkDetails(
     val styleGuide: String = "",
     val mainCharacters: List<WorkCharacterOption> = emptyList(),
     val rulesetId: String = "",
+    val settingId: String = "",
 )
 
 data class WorkCharacterOption(
@@ -45,6 +46,50 @@ data class CampaignRulesetTemplate(
     val id: String,
     val label: String,
     val directive: String,
+)
+
+data class CampaignSettingTemplate(
+    val id: String,
+    val label: String,
+    val directive: String,
+)
+
+val CampaignSettingTemplates = listOf(
+    CampaignSettingTemplate(
+        "high-fantasy",
+        "High fantasy",
+        "Run a high-fantasy world of ancient kingdoms, dungeon delves, dangerous wilderness, monsters, magic, gods, factions, treasure, and heroic quests. Present locations as explorable spaces and seed meaningful choices, secrets, and consequences.",
+    ),
+    CampaignSettingTemplate(
+        "dark-fantasy",
+        "Dark fantasy",
+        "Run a morally difficult fantasy world shaped by curses, corruption, scarce safety, frightening magic, compromised factions, and costly victories. Keep danger serious without removing player agency or fair warning.",
+    ),
+    CampaignSettingTemplate(
+        "sword-sorcery",
+        "Sword & sorcery",
+        "Run a pulpy sword-and-sorcery world of decadent city-states, dangerous ruins, personal ambition, strange cults, mercenary work, and rare unsettling magic. Favor immediate stakes and adventurous momentum over world-saving destiny.",
+    ),
+    CampaignSettingTemplate(
+        "gothic-horror",
+        "Gothic horror",
+        "Run a gothic-horror setting of isolated communities, decaying estates, family secrets, supernatural dread, investigation, and temptation. Build tension through clues and atmosphere while keeping threats actionable at the table.",
+    ),
+    CampaignSettingTemplate(
+        "urban-fantasy",
+        "Urban fantasy",
+        "Run a modern city where supernatural communities, hidden magic, institutions, neighborhoods, and mundane life collide. Treat information, favors, territory, and relationships as important adventure resources.",
+    ),
+    CampaignSettingTemplate(
+        "science-fantasy",
+        "Science fantasy",
+        "Run a science-fantasy world where advanced relics, strange planets or ruins, sorcery, nonhuman cultures, and lost civilizations coexist. Keep technology and magic wondrous but internally consistent.",
+    ),
+    CampaignSettingTemplate(
+        "custom",
+        "Custom setting",
+        "Use the player's setting details as the authoritative world guide. Infer only what is needed for play, remain internally consistent, and ask or offer choices instead of overwriting established lore.",
+    ),
 )
 
 val CampaignRulesetTemplates = listOf(
@@ -149,6 +194,8 @@ fun CreateWorkDialog(
     var selectedCharacterIds by remember { mutableStateOf(setOf<String>()) }
     var rulesetId by remember { mutableStateOf("dnd-5e") }
     var rulesetMenuOpen by remember { mutableStateOf(false) }
+    var settingId by remember { mutableStateOf("high-fantasy") }
+    var settingMenuOpen by remember { mutableStateOf(false) }
     val isCampaign = vocabulary == CreateWorkVocabulary.Campaign
 
     AlertDialog(
@@ -202,10 +249,43 @@ fun CreateWorkDialog(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 } else if (isCampaign) {
+                    Text("Setting template", style = MaterialTheme.typography.labelMedium)
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        InkOutlinedButton(
+                            label = CampaignSettingTemplates.first { it.id == settingId }.label + " ▾",
+                            onClick = { settingMenuOpen = true },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        DropdownMenu(
+                            expanded = settingMenuOpen,
+                            onDismissRequest = { settingMenuOpen = false },
+                        ) {
+                            CampaignSettingTemplates.forEach { template ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text(template.label)
+                                            Text(
+                                                template.directive,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = tokens.secondaryText,
+                                                maxLines = 3,
+                                            )
+                                        }
+                                    },
+                                    onClick = {
+                                        settingId = template.id
+                                        settingMenuOpen = false
+                                    },
+                                )
+                            }
+                        }
+                    }
                     OutlinedTextField(
                         value = genre,
                         onValueChange = { genre = it },
-                        label = { Text(vocabulary.genreLabel) },
+                        label = { Text("Setting details") },
+                        placeholder = { Text("Kingdom, era, locations, factions, tone…") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -336,19 +416,24 @@ fun CreateWorkDialog(
                 onCreate(
                     NewWorkDetails(
                         title = title.trim().ifBlank { vocabulary.titlePlaceholder },
-                        genre = genre.trim(),
+                        genre = if (isCampaign) {
+                            val settingLabel = CampaignSettingTemplates.first { it.id == settingId }.label
+                            listOf(settingLabel, genre.trim()).filter { it.isNotBlank() }.joinToString(" — ")
+                        } else genre.trim(),
                         pov = if (isCampaign) {
                             characterOptions.filter { it.id in selectedCharacterIds }.joinToString(", ") { it.name }
                         } else pov.trim(),
                         tense = tense.trim().ifBlank { if (isCampaign) "Past tense" else "" },
                         styleGuide = if (isCampaign) {
                             listOf(
-                                CampaignRulesetTemplates.first { it.id == rulesetId }.directive,
-                                styleGuide.trim(),
-                            ).filter { it.isNotBlank() }.joinToString("\n\nHouse rules: ")
+                                "Setting guidance: ${CampaignSettingTemplates.first { it.id == settingId }.directive}",
+                                "Rules guidance: ${CampaignRulesetTemplates.first { it.id == rulesetId }.directive}",
+                                styleGuide.trim().takeIf { it.isNotBlank() }?.let { "House rules: $it" }.orEmpty(),
+                            ).filter { it.isNotBlank() }.joinToString("\n\n")
                         } else styleGuide.trim(),
                         mainCharacters = characterOptions.filter { it.id in selectedCharacterIds },
                         rulesetId = if (isCampaign) rulesetId else "",
+                        settingId = if (isCampaign) settingId else "",
                     ),
                 )
                 onDismiss()

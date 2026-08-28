@@ -25,4 +25,20 @@ class AdventureDiceTest {
         assertEquals("4dF", roll.notation)
         assertTrue(roll.total in -4..4)
     }
+
+    @Test
+    fun outcomeMarkerShowsResultButNotThePrivateRoll() {
+        val raw = "[[ACTION_RESULT: Mixed success]] You cross the ledge, but lose your pack."
+        assertEquals("Mixed success", adventureOutcomeFrom(raw))
+        assertEquals("You cross the ledge, but lose your pack.", adventureProseFrom(raw))
+        assertEquals("", adventureOutcomeFrom("[[ACTION_RESULT: No roll]] The door is already open."))
+        assertEquals("The door is already open.", adventureProseFrom("[[ACTION_RESULT: No roll]] The door is already open."))
+        assertTrue("1d20" !in adventureProseFrom(raw))
+    }
+
+    @Test
+    fun partialStreamingMarkerDoesNotFlashAsStoryText() {
+        assertEquals("", adventureProseFrom("[[ACTION_RES"))
+        assertEquals("", adventureProseFrom("[[ACTION_RESULT: Suc"))
+    }
 }

@@ -134,6 +134,14 @@ become a structured Codex entry. Speech-to-text is available in the editor.
 RPG opens at **Campaign**, the high-level shelf for all adventures. Its areas
 include Campaign, Adventure, Inventory, Roster, Lore, and Presets.
 
+New Campaign includes selectable setting engines (high fantasy, dark fantasy,
+sword & sorcery, gothic horror, urban fantasy, science fantasy, or custom) and
+tabletop rules engines. Their full guidance—not merely the visible label—is
+stored with the campaign and supplied to the AI game master alongside setting
+details and house rules. For example, High fantasy plus D&D 3.5e supplies both
+dungeon-fantasy world guidance and D&D 3.5e checks, saves, combat, and magic
+conventions.
+
 | RPG concept | Manuscript concept |
 |---|---|
 | Adventure | Book |
@@ -162,9 +170,10 @@ rules template, house rules, and difficulty as session context.
 Every submitted action gets a private, ruleset-aware resolution roll: d20 for
 D&D, Pathfinder, OSR, and systemless campaigns; 2d6 for PbtA; and 4dF for
 Fate. The game master decides whether the action is uncertain enough to use the
-roll, applies the appropriate modifiers and difficulty, and normally keeps the
-mechanics behind the screen. It then narrates the world's response and presents
-the next actionable situation.
+roll, applies the appropriate modifiers and difficulty, and keeps the raw die,
+notation, and DC behind the screen. The Adventure page shows the resolved
+action result—such as Success, Mixed success, or Failure—then narrates the
+world's response and presents the next actionable situation.
 
 Play remains in the current numbered scene until you request the next scene or
 the game master detects a decisive fictional transition. **Next scene** always
@@ -186,7 +195,10 @@ current, maximum, and temporary hit points plus quick change controls.
 
 ### Inventory, roster, lore, and presets
 
-- **Inventory** groups You, Team, and Roster. Open a character to manage their
+- **Inventory** always opens at the top. Writer / You and the wider roster start
+  collapsed, while Team roster stays visible. Wider characters are separated
+  into NPCs, Enemies, and Other; character tags such as `npc`, `merchant`,
+  `enemy`, `monster`, or `villain` choose the section. Open a character to manage their
   pack and equipment slots; the Inventory & gear link on each Roster card opens
   the same character-owned record. Head, torso, arms, legs, weapon, accessory,
   and backpack are single-item equipment slots. Empty slots can create an item

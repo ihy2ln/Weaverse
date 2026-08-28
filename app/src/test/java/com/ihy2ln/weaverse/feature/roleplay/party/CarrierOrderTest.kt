@@ -8,9 +8,9 @@ class CarrierOrderTest {
         CarrierUi(characterId = name, name = name, items = emptyList(), kind = kind)
 
     @Test
-    fun youComesBeforeTeamWhichComesBeforeRoster() {
+    fun writerComesBeforeSeparatedRosterGroups() {
         assertEquals(
-            listOf("You", "Team", "Roster"),
+            listOf("Writer / You", "Team roster", "NPCs", "Enemies", "Other"),
             CarrierKind.entries.map { it.label },
         )
     }
@@ -18,18 +18,27 @@ class CarrierOrderTest {
     @Test
     fun carriersSortByGroupThenName() {
         val unsorted = listOf(
-            carrier("Zara", CarrierKind.Roster),
+            carrier("Zara", CarrierKind.Enemy),
             carrier("bran", CarrierKind.Team),
-            carrier("Aldo", CarrierKind.Roster),
+            carrier("Aldo", CarrierKind.Npc),
             carrier("Mira", CarrierKind.You),
             carrier("Ana", CarrierKind.Team),
+            carrier("Relic", CarrierKind.Other),
         )
         val sorted = unsorted.sortedWith(
             compareBy({ it.kind.ordinal }, { it.name.lowercase() }),
         )
         assertEquals(
-            listOf("Mira", "Ana", "bran", "Aldo", "Zara"),
+            listOf("Mira", "Ana", "bran", "Aldo", "Zara", "Relic"),
             sorted.map { it.name },
         )
+    }
+
+    @Test
+    fun tagsSeparateNpcEnemyAndOtherWhilePartyWins() {
+        assertEquals(CarrierKind.Team, inventoryCarrierKind(true, "[\"enemy\"]"))
+        assertEquals(CarrierKind.Npc, inventoryCarrierKind(false, "[\"merchant\"]"))
+        assertEquals(CarrierKind.Enemy, inventoryCarrierKind(false, "[\"villain\"]"))
+        assertEquals(CarrierKind.Other, inventoryCarrierKind(false, "[]"))
     }
 }

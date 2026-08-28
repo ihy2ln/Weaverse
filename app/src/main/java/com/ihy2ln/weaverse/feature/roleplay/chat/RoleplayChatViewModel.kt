@@ -221,7 +221,9 @@ class RoleplayChatViewModel @Inject constructor(
             val isAudioFlags = mutableListOf<Boolean>()
             val stackPaths = mutableMapOf<String, List<String>>()
             val collapsedMap = mutableMapOf<String, Boolean>()
-            val caption = doc.plainText()
+            val storedCaption = doc.plainText()
+            val actionResult = adventureOutcomeFrom(storedCaption)
+            val caption = adventureProseFrom(storedCaption)
             val isUser = m.role == "user"
             // Real names read like a messenger; fall back only when nothing is bound.
             val speaker = if (isUser) {
@@ -353,6 +355,7 @@ class RoleplayChatViewModel @Inject constructor(
                 } else {
                     ""
                 },
+                actionResult = actionResult,
             )
         }
         _uiState.update {
@@ -1224,7 +1227,11 @@ class RoleplayChatViewModel @Inject constructor(
                         is AIChunk.Delta -> {
                             builder.append(chunk.text)
                             _uiState.update {
-                                it.copy(streamingText = AiSceneAdvanceMarker.replace(builder.toString(), "").trimStart())
+                                it.copy(
+                                    streamingText = adventureProseFrom(
+                                        AiSceneAdvanceMarker.replace(builder.toString(), "").trimStart(),
+                                    ),
+                                )
                             }
                         }
                         is AIChunk.Usage -> {

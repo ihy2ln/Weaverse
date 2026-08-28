@@ -140,6 +140,16 @@ to the transplant commit for that log in full. That codebase is gone from
   APK SHA-256: `1365E4B3124E3D84990E846A46F0527E3CD07F22C8B3AA02DE9F8576FCA8FDC0`.
 ## RPG campaign setup and illustrated Adventure play (2026-08-28)
 
+- Inventory now resets to the top on entry. Writer / You and the wider cast
+  start collapsed, Team roster stays visible, and tagged characters are split
+  into NPC, Enemy, and Other groups without a database migration.
+- New Campaign now offers AI-backed setting templates as well as rules-system
+  templates. Both full directives are stored in campaign guidance, so pairings
+  such as High fantasy + D&D 3.5e affect world framing and mechanical rulings.
+- Adventure action checks continue to roll privately, but AI responses now
+  carry a structured result. The play page displays the outcome label and
+  fictional consequence without exposing the raw die, notation, or DC.
+
 - Replaced New Campaign's free-text “Whose eyes” with multi-select Main
   character(s) sourced from personas, Roster, and the Characters Codex.
 - Added selectable Past/Present/Future tense and rules templates for D&D 5e,

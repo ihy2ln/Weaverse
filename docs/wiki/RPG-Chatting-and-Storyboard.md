@@ -4,7 +4,10 @@
 
 RPG opens at Campaign, the high-level shelf. New Campaign selects main
 characters from personas, Roster, and the Characters Codex, plus narrative
-tense and a D&D, Pathfinder, OSR, PbtA, Fate, or custom rules template.
+tense and AI-backed setting and rules templates. Their full directives are
+stored with the campaign, so High fantasy + D&D 3.5e supplies both a
+dungeon-fantasy world framework and that system's check, save, combat, and
+magic conventions.
 
 Pick a campaign to enter Adventure, its dedicated play session. Adventure is
 an illustrated story rather than a messenger: a single large scene image sits
@@ -13,8 +16,9 @@ entry stays at the bottom. The game master receives the chosen characters,
 tense, rules template, extra house rules, and difficulty as context.
 
 Each action also receives a hidden system-appropriate roll (d20, PbtA 2d6, or
-Fate 4dF). The game master decides whether the roll applies, resolves the
-world's reaction, and keeps the scene going until the player asks to advance or
+Fate 4dF). The game master decides whether the roll applies and shows the
+resolved outcome label and narrative consequence while the raw die, notation,
+and DC remain private. It keeps the scene going until the player asks to advance or
 a decisive transition occurs. Previous browses an earlier saved scene, Next
 moves forward or advances from the latest scene, and Stay here—or an action
 such as “do not advance”—overrules a transition.
@@ -27,7 +31,9 @@ temporary hit points.
 
 Roster uses portrait cards with class, level, HP, and AC summaries; tapping a
 character opens the full stat sheet, while Inventory & gear opens that same
-character's linked equipment record. Equipment uses one item per head, torso,
+character's linked equipment record. Inventory opens at the top with Writer /
+You and the wider roster collapsed; Team roster remains visible. Editable tags
+separate the wider cast into NPCs, Enemies, and Other. Equipment uses one item per head, torso,
 arms, legs, weapon, accessory, or backpack slot. Slot-matched add templates and
 picture controls are available directly on the equipment plate. An equipped
 backpack opens an expandable inventory sized by its capacity; carried items
