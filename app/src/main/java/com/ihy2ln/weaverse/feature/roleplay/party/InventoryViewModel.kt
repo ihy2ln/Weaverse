@@ -105,9 +105,13 @@ class InventoryViewModel @Inject constructor(
         slotSize: Int = 1,
         backpackCapacity: Int = template.defaultBackpackCapacity,
         equipAfterAdding: RpEquipSlot? = null,
+        imageUri: Uri? = null,
     ) {
         if (name.isBlank()) return
         viewModelScope.launch {
+            val imageMediaId = imageUri?.let { uri ->
+                runCatching { mediaRepository.importFromUri(uri).id }.getOrNull()
+            }
             val item = RpItem(
                 id = "item-${UUID.randomUUID()}",
                 name = name.trim(),
@@ -120,6 +124,7 @@ class InventoryViewModel @Inject constructor(
                 } else {
                     0
                 },
+                imageMediaId = imageMediaId,
             )
             updateItems(characterId) { items -> items + item }
             equipAfterAdding?.let { slot ->
@@ -138,6 +143,12 @@ class InventoryViewModel @Inject constructor(
             updateItems(characterId) { items ->
                 items.map { item -> if (item.id == itemId) item.copy(imageMediaId = media.id) else item }
             }
+        }
+    }
+
+    fun removeItemImage(characterId: String, itemId: String) {
+        editItems(characterId) { items ->
+            items.map { item -> if (item.id == itemId) item.copy(imageMediaId = null) else item }
         }
     }
 

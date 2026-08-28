@@ -191,7 +191,9 @@ current, maximum, and temporary hit points plus quick change controls.
   the same character-owned record. Head, torso, arms, legs, weapon, accessory,
   and backpack are single-item equipment slots. Empty slots can create an item
   from their matching template, while equipped slots can add or replace that
-  item's picture.
+  item's picture. The Add item window can attach a picture before saving it;
+  that art remains linked to the item wherever it is carried or equipped. Tap
+  existing item art to preview, replace, or remove it.
 - The equipped **Backpack** determines carried capacity. Backpack templates ask
   for a slot capacity, and every other template asks how much room each copy
   consumes. The expandable backpack panel shows used/available slots, empty
@@ -201,6 +203,10 @@ current, maximum, and temporary hit points plus quick change controls.
   sheet; recruiting changes the immediate team without deleting the wider cast.
 - **Town** is a tappable picture directory. Each shop or landmark has its own
   persistent user-added art slot; tap populated art to enter the location.
+  Shops use a game-style catalog with unit prices, a live total, minus/plus
+  controls, and a directly editable buy-amount box. **AI fill** can suggest a
+  practical amount; **BUY** delivers that quantity to the active character's
+  linked inventory.
 - **Lore** is the current campaign reference; the full shared Codex is under
   Extra.
 - **Presets** change world difficulty: Slice of life, Normal, Hard, and

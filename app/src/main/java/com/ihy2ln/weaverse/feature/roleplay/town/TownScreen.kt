@@ -6,6 +6,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,19 +15,25 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -108,6 +116,9 @@ fun TownScreen(viewModel: TownViewModel = hiltViewModel()) {
         LocationSheet(
             location = location,
             onBuy = viewModel::buy,
+            suggestedBuyAmounts = state.suggestedBuyAmounts,
+            suggestingBuyAmountKeys = state.suggestingBuyAmountKeys,
+            onSuggestAmount = { good -> viewModel.suggestBuyQuantity(location, good) },
             onAct = { viewModel.act(location, it) },
             onDismiss = viewModel::leave,
         )
@@ -206,19 +217,52 @@ private fun TownLocationCard(
 @Composable
 private fun LocationSheet(
     location: TownLocation,
-    onBuy: (ShopGood) -> Unit,
+    onBuy: (ShopGood, Int) -> Unit,
+    suggestedBuyAmounts: Map<String, Int>,
+    suggestingBuyAmountKeys: Set<String>,
+    onSuggestAmount: (ShopGood) -> Unit,
     onAct: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val tokens = inkTokens()
     val goods = TownMap.goodsFor(location.kind)
+    val amounts = remember(location.id) {
+        mutableStateMapOf<String, String>().apply { goods.forEach { put(it.name, "1") } }
+    }
+    LaunchedEffect(suggestedBuyAmounts) {
+        goods.forEach { good ->
+            suggestedBuyAmounts[shopGoodKey(location.id, good.name)]?.let { amount ->
+                amounts[good.name] = amount.toString()
+            }
+        }
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(location.name) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+            Column(
+                modifier = Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+            ) {
                 Text(location.blurb, style = MaterialTheme.typography.bodyMedium, color = tokens.secondaryText)
                 if (goods.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(inkRadiusSm()))
+                            .background(tokens.hover)
+                            .padding(InkSpacing.sm),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("SHOP", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            "Select quantity · delivered to inventory",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = tokens.secondaryText,
+                            modifier = Modifier.weight(1f).padding(start = InkSpacing.sm),
+                        )
+                        Text("GP", style = MaterialTheme.typography.labelMedium, color = tokens.activePill)
+                    }
                     Text(
                         "FOR SALE",
                         style = MaterialTheme.typography.labelSmall,
@@ -228,20 +272,83 @@ private fun LocationSheet(
                         modifier = Modifier.padding(top = InkSpacing.sm),
                     )
                     goods.forEach { good ->
-                        Row(
+                        val amount = amounts[good.name]?.toIntOrNull()?.coerceIn(1, 999) ?: 1
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(inkRadiusSm()))
                                 .border(1.dp, tokens.hairline, RoundedCornerShape(inkRadiusSm()))
-                                .clickable { onBuy(good) }
                                 .padding(InkSpacing.sm),
-                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(good.name, style = MaterialTheme.typography.bodyMedium)
-                                Text(good.note, style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .clip(RoundedCornerShape(inkRadiusSm()))
+                                        .background(tokens.hover),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(good.name.take(1).uppercase(), fontWeight = FontWeight.Bold, color = tokens.activePill)
+                                }
+                                Column(modifier = Modifier.weight(1f).padding(start = InkSpacing.sm)) {
+                                    Text(good.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                    Text(good.note, style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
+                                }
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text("${good.priceGold} gp", style = MaterialTheme.typography.labelLarge, color = tokens.activePill)
+                                    Text(
+                                        "Total ${good.priceGold * amount} gp",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = tokens.secondaryText,
+                                    )
+                                }
                             }
-                            Text("Take", style = MaterialTheme.typography.labelMedium, color = tokens.activePill)
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(top = InkSpacing.xs),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+                            ) {
+                                Text(
+                                    "−",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.clickable {
+                                        amounts[good.name] = (amount - 1).coerceAtLeast(1).toString()
+                                    }.padding(horizontal = InkSpacing.xs),
+                                )
+                                OutlinedTextField(
+                                    value = amounts[good.name].orEmpty(),
+                                    onValueChange = { value -> amounts[good.name] = value.filter(Char::isDigit).take(3) },
+                                    label = { Text("Qty") },
+                                    singleLine = true,
+                                    modifier = Modifier.width(72.dp),
+                                )
+                                Text(
+                                    "+",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.clickable {
+                                        amounts[good.name] = (amount + 1).coerceAtMost(999).toString()
+                                    }.padding(horizontal = InkSpacing.xs),
+                                )
+                                val suggestionKey = shopGoodKey(location.id, good.name)
+                                Text(
+                                    if (suggestionKey in suggestingBuyAmountKeys) "AI…" else "AI fill",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = tokens.secondaryText,
+                                    modifier = Modifier.clickable { onSuggestAmount(good) }.padding(InkSpacing.xs),
+                                )
+                                Text(
+                                    "BUY",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = tokens.activePillLabel,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(inkRadiusSm()))
+                                        .background(tokens.activePill)
+                                        .clickable { onBuy(good, amount) }
+                                        .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
+                                )
+                            }
                         }
                     }
                 }

@@ -90,13 +90,16 @@ object HelpContent {
                     "Inventory",
                     "Grouped You, then Team, then Roster — each group collapses. Tap a " +
                         "name for one-item head, torso, arms, legs, weapon, accessory, and backpack " +
-                        "slots. Empty slots create matching item templates; equipped slots add " +
-                        "pictures. The equipped backpack sets the expandable carried-item capacity.",
+                        "slots. Add item can save a picture with the item; tap existing art to " +
+                        "preview, replace, or remove it. Pictures follow items between the pack and " +
+                        "equipment. The equipped backpack sets the expandable carried-item capacity.",
                 ),
                 HelpEntry(
                     "Town",
                     "A tappable picture directory of shops and landmarks. Empty slots let you " +
-                        "add location art; once filled, tap the picture to enter that place.",
+                        "add location art; once filled, tap the picture to enter that place. Shop " +
+                        "menus include unit prices, an editable quantity, AI fill, live totals, and " +
+                        "BUY sends the chosen amount to the active character's inventory.",
                 ),
                 HelpEntry(
                     "Lore",

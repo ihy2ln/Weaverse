@@ -17,8 +17,8 @@ android {
         applicationId = "com.ihy2ln.weaverse"
         minSdk = 26
         targetSdk = 34
-        versionCode = 50
-        versionName = "1.3.4-beta"
+        versionCode = 51
+        versionName = "1.3.5-beta"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -60,7 +60,7 @@ android {
             versionNameSuffix = "-debug"
             // Keep locally installable test builds visually distinct from the
             // production app so testers cannot accidentally reopen an older release.
-            resValue("string", "app_name", "Weaverse Test 1.3.4")
+            resValue("string", "app_name", "Weaverse Test 1.3.5")
         }
     }
 

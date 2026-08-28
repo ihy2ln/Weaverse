@@ -170,3 +170,9 @@ to the transplant commit for that log in full. That codebase is gone from
 - Added Backpack as an equipment slot. Equipped backpack capacity controls an
   expandable carried-item panel with per-item slot size, empty slots, and
   over-capacity feedback.
+- Add item now accepts artwork before the item is saved. The imported picture
+  remains attached across pack and equipment views and can later be previewed,
+  replaced, or removed.
+- Town shops now use a video-game-style catalog with unit prices, live totals,
+  editable buy quantities, minus/plus controls, an AI quantity fill action, and
+  quantity-aware delivery to the active character's linked inventory.

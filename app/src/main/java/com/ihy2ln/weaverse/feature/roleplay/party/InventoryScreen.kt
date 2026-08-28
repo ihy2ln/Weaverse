@@ -1,5 +1,6 @@
 package com.ihy2ln.weaverse.feature.roleplay.party
 
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -43,6 +44,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
 import com.ihy2ln.weaverse.data.db.entities.RpEquipSlot
+import com.ihy2ln.weaverse.data.db.entities.RpItem
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
@@ -72,6 +74,8 @@ fun InventoryScreen(
     var draftBackpackCapacity by remember { mutableStateOf("12") }
     var draftTemplate by remember { mutableStateOf(InventoryItemTemplate.PackItem) }
     var equipAfterAdding by remember { mutableStateOf<RpEquipSlot?>(null) }
+    var draftImageUri by remember { mutableStateOf<Uri?>(null) }
+    var imageMenuTarget by remember { mutableStateOf<Pair<String, RpItem>?>(null) }
     var imageTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
@@ -80,6 +84,9 @@ fun InventoryScreen(
         imageTarget = null
         if (uri != null && target != null) viewModel.setItemImage(target.first, target.second, uri)
     }
+    val addImagePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri -> if (uri != null) draftImageUri = uri }
     LaunchedEffect(initialCarrierId) {
         if (!initialCarrierId.isNullOrBlank()) openCharacterId = initialCarrierId
     }
@@ -95,7 +102,17 @@ fun InventoryScreen(
         draftBackpackCapacity = template.defaultBackpackCapacity.coerceAtLeast(12).toString()
         draftTemplate = template
         equipAfterAdding = equipSlot
+        draftImageUri = null
         addingForCharacterId = carrierId
+    }
+
+    fun manageItemImage(carrierId: String, item: RpItem, imagePath: String) {
+        if (imagePath.isBlank()) {
+            imageTarget = carrierId to item.id
+            imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+        } else {
+            imageMenuTarget = carrierId to item
+        }
     }
 
     if (!state.loading && state.carriers.isEmpty()) {
@@ -217,9 +234,10 @@ fun InventoryScreen(
                             )
                         },
                         onItemImageClick = { item ->
-                            imageTarget = carrier.characterId to item.id
-                            imagePicker.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                            manageItemImage(
+                                carrier.characterId,
+                                item,
+                                carrier.itemImagePaths[item.id].orEmpty(),
                             )
                         },
                     )
@@ -237,9 +255,10 @@ fun InventoryScreen(
                         }
                     },
                     onImageClick = { item ->
-                        imageTarget = carrier.characterId to item.id
-                        imagePicker.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                        manageItemImage(
+                            carrier.characterId,
+                            item,
+                            carrier.itemImagePaths[item.id].orEmpty(),
                         )
                     },
                     onRemove = { itemId -> viewModel.removeItem(carrier.characterId, itemId) },
@@ -298,6 +317,63 @@ fun InventoryScreen(
             title = { Text("Add item") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(76.dp)
+                                .clip(RoundedCornerShape(inkRadiusSm()))
+                                .background(tokens.hover)
+                                .border(1.dp, tokens.hairline, RoundedCornerShape(inkRadiusSm()))
+                                .clickable {
+                                    addImagePicker.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                                    )
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (draftImageUri != null) {
+                                AsyncImage(
+                                    model = draftImageUri,
+                                    contentDescription = "New item picture",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            } else {
+                                Text("＋\nPicture", style = MaterialTheme.typography.labelSmall, color = tokens.activePill)
+                            }
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                if (draftImageUri == null) "Add item picture" else "Picture selected",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
+                                Text(
+                                    if (draftImageUri == null) "Choose" else "Replace",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = tokens.activePill,
+                                    modifier = Modifier.clickable {
+                                        addImagePicker.launch(
+                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                                        )
+                                    },
+                                )
+                                if (draftImageUri != null) {
+                                    Text(
+                                        "Remove",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.clickable { draftImageUri = null },
+                                    )
+                                }
+                            }
+                        }
+                    }
                     Text(
                         "ITEM TEMPLATE",
                         style = MaterialTheme.typography.labelSmall,
@@ -384,13 +460,56 @@ fun InventoryScreen(
                             backpackCapacity = draftBackpackCapacity.toIntOrNull()
                                 ?: draftTemplate.defaultBackpackCapacity,
                             equipAfterAdding = equipAfterAdding,
+                            imageUri = draftImageUri,
                         )
+                        draftImageUri = null
                         addingForCharacterId = null
                     },
                 ) { Text("Add") }
             },
             dismissButton = {
                 TextButton(onClick = { addingForCharacterId = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    imageMenuTarget?.let { (carrierId, item) ->
+        val imagePath = state.carriers
+            .firstOrNull { it.characterId == carrierId }
+            ?.itemImagePaths
+            ?.get(item.id)
+            .orEmpty()
+        AlertDialog(
+            onDismissRequest = { imageMenuTarget = null },
+            title = { Text("${item.name} picture") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
+                    if (imagePath.isNotBlank()) {
+                        AsyncImage(
+                            model = File(imagePath),
+                            contentDescription = "${item.name} picture",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(180.dp)
+                                .clip(RoundedCornerShape(inkRadiusSm())),
+                        )
+                    }
+                    Text("This picture stays linked to the item everywhere it is carried or equipped.")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    imageMenuTarget = null
+                    imageTarget = carrierId to item.id
+                    imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                }) { Text("Replace") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    viewModel.removeItemImage(carrierId, item.id)
+                    imageMenuTarget = null
+                }) { Text("Remove picture", color = MaterialTheme.colorScheme.error) }
             },
         )
     }

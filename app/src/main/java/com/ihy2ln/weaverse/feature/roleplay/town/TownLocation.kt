@@ -25,8 +25,8 @@ data class TownLocation(
     val actions: List<String>,
 )
 
-/** One item a shop will sell. Prices are flavour — there is no currency system. */
-data class ShopGood(val name: String, val note: String)
+/** One item in the game-style shop catalog. */
+data class ShopGood(val name: String, val note: String, val priceGold: Int = 1)
 
 object TownMap {
     /**
@@ -93,29 +93,29 @@ object TownMap {
 
     fun goodsFor(kind: TownLocationKind): List<ShopGood> = when (kind) {
         TownLocationKind.Commerce -> listOf(
-            ShopGood("Rope", "50ft, hemp"),
-            ShopGood("Lantern", "Burns about six hours"),
-            ShopGood("Rations", "A week, dried"),
-            ShopGood("Bedroll", "Waxed against damp"),
+            ShopGood("Rope", "50ft, hemp", 1),
+            ShopGood("Lantern", "Burns about six hours", 5),
+            ShopGood("Rations", "A week, dried", 4),
+            ShopGood("Bedroll", "Waxed against damp", 2),
         )
         TownLocationKind.Blacksmith -> listOf(
-            ShopGood("Iron helm", "Dented, honest"),
-            ShopGood("Short sword", "Well balanced"),
-            ShopGood("Buckler", "Strapped, not held"),
-            ShopGood("Chain shirt", "Heavy but quiet"),
+            ShopGood("Iron helm", "Dented, honest", 12),
+            ShopGood("Short sword", "Well balanced", 10),
+            ShopGood("Buckler", "Strapped, not held", 8),
+            ShopGood("Chain shirt", "Heavy but quiet", 50),
         )
         TownLocationKind.Apothecary -> listOf(
-            ShopGood("Healing draught", "Bitter, works"),
-            ShopGood("Antivenom", "For the marsh road"),
-            ShopGood("Bandages", "Boiled linen"),
+            ShopGood("Healing draught", "Bitter, works", 25),
+            ShopGood("Antivenom", "For the marsh road", 18),
+            ShopGood("Bandages", "Boiled linen", 2),
         )
         TownLocationKind.Stables -> listOf(
-            ShopGood("Feed sack", "Two days"),
-            ShopGood("Saddlebags", "Waxed canvas"),
+            ShopGood("Feed sack", "Two days", 2),
+            ShopGood("Saddlebags", "Waxed canvas", 8),
         )
         TownLocationKind.Tavern -> listOf(
-            ShopGood("Hot meal", "Whatever is in the pot"),
-            ShopGood("Room for the night", "Straw mattress"),
+            ShopGood("Hot meal", "Whatever is in the pot", 1),
+            ShopGood("Room for the night", "Straw mattress", 2),
         )
         TownLocationKind.Chief -> emptyList()
     }

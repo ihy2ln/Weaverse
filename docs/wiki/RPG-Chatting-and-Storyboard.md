@@ -31,9 +31,14 @@ character's linked equipment record. Equipment uses one item per head, torso,
 arms, legs, weapon, accessory, or backpack slot. Slot-matched add templates and
 picture controls are available directly on the equipment plate. An equipped
 backpack opens an expandable inventory sized by its capacity; carried items
-consume configurable space and show pictures, empty slots, and overflow.
+consume configurable space and show pictures, empty slots, and overflow. New
+items can receive a picture in the Add item window. That picture follows the
+item between pack and equipment, and tapping it opens replace/remove controls.
 Town is a grid of tappable shops and landmarks, each with a persistent slot for
-the user's own location art.
+the user's own location art. Shop interiors use a game-style catalog with unit
+prices, live totals, editable quantities, minus/plus controls, and AI fill for
+a suggested amount. Buying sends the selected quantity to the active
+character's linked inventory.
 
 ## Chatting
 

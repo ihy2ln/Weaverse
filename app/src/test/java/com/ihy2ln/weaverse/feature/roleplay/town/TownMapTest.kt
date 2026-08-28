@@ -50,6 +50,17 @@ class TownMapTest {
         }
         assertTrue(TownMap.goodsFor(TownLocationKind.Chief).isEmpty())
         // Every kind must be handled, so no building opens to an empty sheet by accident.
-        TownLocationKind.entries.forEach { assertNotNull(TownMap.goodsFor(it)) }
+        TownLocationKind.entries.forEach { kind ->
+            assertNotNull(TownMap.goodsFor(kind))
+            TownMap.goodsFor(kind).forEach { good -> assertTrue(good.priceGold > 0) }
+        }
+    }
+
+    @Test
+    fun shopQuantityFallbacksAreUsefulAndBounded() {
+        assertEquals(7, suggestedShopQuantity("Rations", 0))
+        assertEquals(2, suggestedShopQuantity("Feed sack", 20))
+        assertEquals(1, suggestedShopQuantity("Short sword", 0))
+        assertTrue(shopGoodKey("store", "Rope").startsWith("store:"))
     }
 }
