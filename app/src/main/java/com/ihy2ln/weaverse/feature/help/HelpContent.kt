@@ -67,9 +67,16 @@ object HelpContent {
                 HelpEntry(
                     "Create a campaign",
                     "Choose one or more main characters from You, Roster, or the Characters " +
-                        "Codex. Pick AI-backed setting and rules templates, select narrative tense, " +
-                        "then add setting details and campaign-specific house rules. Their full " +
+                        "Codex. Choose Character(s) or Dungeon Master mode, a single- or " +
+                        "multi-perspective point of view, AI-backed setting/rules templates, and " +
+                        "narrative tense, then add setting details and house rules. Their full " +
                         "guidance is supplied to the game master during play.",
+                ),
+                HelpEntry(
+                    "Dungeon Master mode",
+                    "You control scene framing, the world, NPCs, and rulings. The AI plays the " +
+                        "selected character party and responds to your DM prompts with its " +
+                        "decisions, actions, dialogue, and rules-aware reactions.",
                 ),
                 HelpEntry(
                     "Adventure is the play session",

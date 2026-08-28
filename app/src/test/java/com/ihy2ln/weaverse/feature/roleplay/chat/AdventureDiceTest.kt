@@ -41,4 +41,22 @@ class AdventureDiceTest {
         assertEquals("", adventureProseFrom("[[ACTION_RES"))
         assertEquals("", adventureProseFrom("[[ACTION_RESULT: Suc"))
     }
+
+    @Test
+    fun dungeonMasterModeReversesAiAndUserAuthority() {
+        val setup = "Player role: Dungeon Master\nMain character(s): Mira, Bran"
+        assertTrue(userIsDungeonMaster(setup))
+        val directive = adventureRoleDirective(setup, 4)
+        assertTrue("human user is the Dungeon Master" in directive)
+        assertTrue("You play the selected player-character party" in directive)
+        assertTrue("scene 4" in directive)
+    }
+
+    @Test
+    fun normalModeKeepsAiAsGameMaster() {
+        val directive = adventureRoleDirective("Player role: Adventurer", 2)
+        assertTrue(!userIsDungeonMaster("Player role: Adventurer"))
+        assertTrue("You are the AI game master" in directive)
+        assertTrue("scene 2" in directive)
+    }
 }

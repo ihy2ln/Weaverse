@@ -9,6 +9,13 @@ stored with the campaign, so High fantasy + D&D 3.5e supplies both a
 dungeon-fantasy world framework and that system's check, save, combat, and
 magic conventions.
 
+Campaign setup also chooses who runs the table and how the story is viewed.
+Character(s) mode keeps the AI as game master. Dungeon Master mode gives the
+user authority over scenes, NPCs, and rulings while the AI plays the selected
+party. POV choices include third-person multiple/limited, rotating first
+person, second person, omniscient ensemble, and cinematic. The Past, Present,
+and Future controls use a tighter single-row layout.
+
 Pick a campaign to enter Adventure, its dedicated play session. Adventure is
 an illustrated story rather than a messenger: a single large scene image sits
 above the narrative, player actions are marked in the story, and the action

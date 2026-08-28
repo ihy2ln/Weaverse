@@ -174,7 +174,7 @@ fun AdventurePlayScreen(
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        "Adventure story",
+                        if (state.userIsDungeonMaster) "DM mode · You run the world" else "Adventure story",
                         style = MaterialTheme.typography.labelSmall,
                         color = tokens.secondaryText,
                     )
@@ -218,7 +218,11 @@ fun AdventurePlayScreen(
                 items(state.messages, key = { it.id }) { message ->
                     if (message.role == "user") {
                         Text(
-                            "Your action — ${message.text}",
+                            if (state.userIsDungeonMaster) {
+                                "Your DM prompt — ${message.text}"
+                            } else {
+                                "Your action — ${message.text}"
+                            },
                             style = MaterialTheme.typography.bodyMedium,
                             fontStyle = FontStyle.Italic,
                             color = tokens.secondaryText,
@@ -282,6 +286,7 @@ fun AdventurePlayScreen(
             onDictate = dictate,
             onSend = viewModel::send,
             onCancel = viewModel::cancelGeneration,
+            userIsDungeonMaster = state.userIsDungeonMaster,
         )
     }
 }
@@ -297,6 +302,7 @@ private fun AdventureActionComposer(
     onDictate: () -> Unit,
     onSend: () -> Unit,
     onCancel: () -> Unit,
+    userIsDungeonMaster: Boolean,
 ) {
     val tokens = inkTokens()
     Column(
@@ -307,7 +313,11 @@ private fun AdventureActionComposer(
             .background(tokens.panel)
             .padding(InkSpacing.sm),
     ) {
-        Text("What do you do?", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+        Text(
+            if (userIsDungeonMaster) "What happens next?" else "What do you do?",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+        )
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = InkSpacing.xs),
             verticalAlignment = Alignment.CenterVertically,
@@ -332,7 +342,7 @@ private fun AdventureActionComposer(
             ) {
                 if (value.isBlank()) {
                     Text(
-                        "Describe your action…",
+                        if (userIsDungeonMaster) "Describe the scene, NPC response, or ruling…" else "Describe your action…",
                         style = MaterialTheme.typography.bodyMedium,
                         color = tokens.secondaryText,
                         maxLines = 1,

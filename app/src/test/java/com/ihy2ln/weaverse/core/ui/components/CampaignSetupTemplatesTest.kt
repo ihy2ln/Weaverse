@@ -26,4 +26,16 @@ class CampaignSetupTemplatesTest {
         assertTrue(CampaignSettingTemplates.any { it.id == "high-fantasy" && "dungeon" in it.directive })
         assertTrue(CampaignSettingTemplates.any { it.id == "custom" })
     }
+
+    @Test
+    fun perspectivesSupportSingleAndMultipleCharacterPlay() {
+        assertEquals(
+            CampaignPerspectiveTemplates.size,
+            CampaignPerspectiveTemplates.map { it.id }.distinct().size,
+        )
+        assertTrue(CampaignPerspectiveTemplates.all { it.directive.length > 80 })
+        assertTrue(CampaignPerspectiveTemplates.any { it.id == "third-multiple" })
+        assertTrue(CampaignPerspectiveTemplates.any { it.id == "first-multiple" })
+        assertTrue(CampaignPerspectiveTemplates.any { it.id == "second-person" })
+    }
 }

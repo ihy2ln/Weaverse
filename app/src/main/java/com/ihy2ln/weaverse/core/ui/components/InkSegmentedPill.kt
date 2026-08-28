@@ -35,13 +35,14 @@ fun InkSegmentedPill(
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
     scrollable: Boolean = false,
+    compact: Boolean = false,
 ) {
     Row(
         modifier = modifier
             .then(if (scrollable) Modifier.horizontalScroll(rememberScrollState()) else Modifier)
             .clip(RoundedCornerShape(999.dp))
             .background(Color.Transparent),
-        horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+        horizontalArrangement = Arrangement.spacedBy(if (compact) 0.dp else InkSpacing.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         options.forEach { option ->
@@ -52,7 +53,10 @@ fun InkSegmentedPill(
                     .clip(RoundedCornerShape(999.dp))
                     .background(if (selected) InkActivePill else Color.Transparent)
                     .clickable { onSelect(option.id) }
-                    .padding(horizontal = InkSpacing.lg, vertical = InkSpacing.sm),
+                    .padding(
+                        horizontal = if (compact) InkSpacing.md else InkSpacing.lg,
+                        vertical = if (compact) InkSpacing.xs else InkSpacing.sm,
+                    ),
                 color = if (selected) InkActivePillLabel else InkPrimaryText,
                 fontSize = 14.sp,
                 maxLines = 1,

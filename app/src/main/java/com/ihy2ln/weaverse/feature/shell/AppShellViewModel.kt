@@ -153,11 +153,15 @@ class AppShellViewModel @Inject constructor(
             ?: "persona-default"
         val mainCharacters = details.mainCharacters.joinToString(", ") { it.name }
             .ifBlank { details.pov.ifBlank { "Player-created party" } }
+        val userIsDungeonMaster = details.campaignRoleId == "dm" ||
+            details.styleGuide.contains("The user is the Dungeon Master", ignoreCase = true)
         val setup = buildString {
             appendLine("Campaign: ${details.title}")
             appendLine("Setting: ${details.genre.ifBlank { "Open fantasy setting" }}")
             appendLine("Main character(s): $mainCharacters")
             appendLine("Narrative tense: ${details.tense.ifBlank { "Past tense" }}")
+            appendLine("Narrative point of view: ${details.narrativePov.ifBlank { "Third-person multiple" }}")
+            appendLine("Player role: ${if (userIsDungeonMaster) "Dungeon Master" else "Adventurer"}")
             val rulesetLabel = CampaignRulesetTemplates
                 .firstOrNull { it.id == details.rulesetId }
                 ?.label
@@ -182,8 +186,13 @@ class AppShellViewModel @Inject constructor(
         )
         val opening = buildString {
             append("The adventure begins in ${details.genre.ifBlank { "an uncharted world" }}. ")
-            append("$mainCharacters stand at the threshold of the first scene. ")
-            append("Describe what they do in the action box below; the game master will turn each choice into the next part of the story.")
+            if (userIsDungeonMaster) {
+                append("$mainCharacters are the AI-controlled player party. ")
+                append("Describe the opening scene, world response, or ruling below; the party will decide what they do.")
+            } else {
+                append("$mainCharacters stand at the threshold of the first scene. ")
+                append("Describe what they do in the action box below; the game master will turn each choice into the next part of the story.")
+            }
         }
         db.roleplayDao().upsertMessage(
             RpMessageEntity(

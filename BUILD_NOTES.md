@@ -140,6 +140,13 @@ to the transplant commit for that log in full. That codebase is gone from
   APK SHA-256: `1365E4B3124E3D84990E846A46F0527E3CD07F22C8B3AA02DE9F8576FCA8FDC0`.
 ## RPG campaign setup and illustrated Adventure play (2026-08-28)
 
+- New Campaign now selects narrative POV, including multi-character third- or
+  first-person options, and persists the full perspective directive for AI use.
+- Added Character(s) / Dungeon Master role selection. DM mode reverses table
+  authority: the user runs the world and rulings while the AI controls the
+  selected player-character party; Adventure wording changes to match.
+- Tightened the campaign Past / Present / Future segmented control so the three
+  tense choices occupy one compact row without the previous oversized gaps.
 - Inventory now resets to the top on entry. Writer / You and the wider cast
   start collapsed, Team roster stays visible, and tagged characters are split
   into NPC, Enemy, and Other groups without a database migration.

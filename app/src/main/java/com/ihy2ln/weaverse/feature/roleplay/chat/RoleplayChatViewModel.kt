@@ -163,6 +163,7 @@ class RoleplayChatViewModel @Inject constructor(
                                 pages = pages,
                                 activePageId = activePage,
                                 activeTemplateId = activeTemplate,
+                                userIsDungeonMaster = userIsDungeonMaster(chat.authorsNote),
                             )
                         }
                         publishMessages()
@@ -1499,14 +1500,7 @@ class RoleplayChatViewModel @Inject constructor(
             "Campaign setup and house rules:\n$it"
         },
         if (mode == "dungeonMaster") {
-            "You are the AI game master for scene ${_uiState.value.sceneNumber}. " +
-                "Determine the world's action and consequences in response to the player's declared action, " +
-                "using the supplied hidden roll when a check is warranted. Write immersive adventure prose " +
-                "and end with a clear situation that invites the next action. Keep play in the current scene " +
-                "until the player asks to move on or a decisive fictional transition makes a new scene necessary. " +
-                "If you independently advance, begin the response with [[ADVANCE_SCENE: short reason]]. " +
-                "Never emit that marker otherwise, never format the response as text messages, and always obey " +
-                "a player's explicit request to stay or return to the current scene."
+            adventureRoleDirective(boundChat?.authorsNote.orEmpty(), _uiState.value.sceneNumber)
         } else {
             null
         },

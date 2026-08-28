@@ -34,6 +34,8 @@ data class NewWorkDetails(
     val mainCharacters: List<WorkCharacterOption> = emptyList(),
     val rulesetId: String = "",
     val settingId: String = "",
+    val narrativePov: String = "",
+    val campaignRoleId: String = "",
 )
 
 data class WorkCharacterOption(
@@ -52,6 +54,45 @@ data class CampaignSettingTemplate(
     val id: String,
     val label: String,
     val directive: String,
+)
+
+data class CampaignPerspectiveTemplate(
+    val id: String,
+    val label: String,
+    val directive: String,
+)
+
+val CampaignPerspectiveTemplates = listOf(
+    CampaignPerspectiveTemplate(
+        "third-multiple",
+        "Third-person multiple",
+        "Use third-person multiple perspective. Follow whichever player character is most relevant to the current beat, clearly anchor every perspective change, and never reveal knowledge that the viewpoint character does not possess.",
+    ),
+    CampaignPerspectiveTemplate(
+        "third-limited",
+        "Third-person limited",
+        "Use close third-person limited perspective centered on the active player character. Describe only what that character can perceive, infer, remember, or feel unless the scene explicitly changes viewpoint.",
+    ),
+    CampaignPerspectiveTemplate(
+        "first-multiple",
+        "First-person rotating",
+        "Use first-person perspective and rotate among selected player characters only at clear scene or section boundaries. Identify the new viewpoint immediately and keep each character's voice and knowledge distinct.",
+    ),
+    CampaignPerspectiveTemplate(
+        "second-person",
+        "Second person",
+        "Address the active player character as you. When several protagonists are present, use names to disambiguate actions and perceptions while keeping the narration player-facing.",
+    ),
+    CampaignPerspectiveTemplate(
+        "omniscient",
+        "Omniscient ensemble",
+        "Use an omniscient ensemble viewpoint that can move between characters and locations, but preserve suspense by withholding secrets when revealing them would undermine play or player agency.",
+    ),
+    CampaignPerspectiveTemplate(
+        "cinematic",
+        "Cinematic",
+        "Use a cinematic external viewpoint focused on visible action, environment, dialogue, and staging. Avoid asserting private thoughts unless expressed through behavior or speech.",
+    ),
 )
 
 val CampaignSettingTemplates = listOf(
@@ -196,6 +237,9 @@ fun CreateWorkDialog(
     var rulesetMenuOpen by remember { mutableStateOf(false) }
     var settingId by remember { mutableStateOf("high-fantasy") }
     var settingMenuOpen by remember { mutableStateOf(false) }
+    var narrativePovId by remember { mutableStateOf("third-multiple") }
+    var perspectiveMenuOpen by remember { mutableStateOf(false) }
+    var campaignRoleId by remember { mutableStateOf("player") }
     val isCampaign = vocabulary == CreateWorkVocabulary.Campaign
 
     AlertDialog(
@@ -324,6 +368,57 @@ fun CreateWorkDialog(
                             maxLines = 2,
                         )
                     }
+                    Text("Play as", style = MaterialTheme.typography.labelMedium)
+                    InkSegmentedPill(
+                        options = listOf(
+                            SegmentedOption("player", "Character(s)"),
+                            SegmentedOption("dm", "Dungeon Master"),
+                        ),
+                        selectedId = campaignRoleId,
+                        onSelect = { campaignRoleId = it },
+                        compact = true,
+                    )
+                    Text(
+                        if (campaignRoleId == "dm") {
+                            "You run the world and rulings; the AI plays the selected party."
+                        } else {
+                            "You play the selected character(s); the AI runs the world and its cast."
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tokens.secondaryText,
+                    )
+                    Text("Point of view", style = MaterialTheme.typography.labelMedium)
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        InkOutlinedButton(
+                            label = CampaignPerspectiveTemplates.first { it.id == narrativePovId }.label + " ▾",
+                            onClick = { perspectiveMenuOpen = true },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        DropdownMenu(
+                            expanded = perspectiveMenuOpen,
+                            onDismissRequest = { perspectiveMenuOpen = false },
+                        ) {
+                            CampaignPerspectiveTemplates.forEach { template ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text(template.label)
+                                            Text(
+                                                template.directive,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = tokens.secondaryText,
+                                                maxLines = 3,
+                                            )
+                                        }
+                                    },
+                                    onClick = {
+                                        narrativePovId = template.id
+                                        perspectiveMenuOpen = false
+                                    },
+                                )
+                            }
+                        }
+                    }
                     Text("Tense", style = MaterialTheme.typography.labelMedium)
                     InkSegmentedPill(
                         options = listOf(
@@ -333,6 +428,7 @@ fun CreateWorkDialog(
                         ),
                         selectedId = tense.ifBlank { "Past tense" },
                         onSelect = { tense = it },
+                        compact = true,
                     )
                     Text("Rules system", style = MaterialTheme.typography.labelMedium)
                     Box(modifier = Modifier.fillMaxWidth()) {
@@ -428,12 +524,22 @@ fun CreateWorkDialog(
                             listOf(
                                 "Setting guidance: ${CampaignSettingTemplates.first { it.id == settingId }.directive}",
                                 "Rules guidance: ${CampaignRulesetTemplates.first { it.id == rulesetId }.directive}",
+                                "Perspective guidance: ${CampaignPerspectiveTemplates.first { it.id == narrativePovId }.directive}",
+                                if (campaignRoleId == "dm") {
+                                    "User role guidance: The user is the Dungeon Master and has authority over the world, scenes, NPCs, and rulings. The AI controls the selected player-character party and must respond with their decisions, actions, and dialogue without overriding the user's world narration."
+                                } else {
+                                    "User role guidance: The user controls the selected player character(s). The AI is the Dungeon Master and controls the world, NPCs, opposition, and consequences without choosing the player's actions."
+                                },
                                 styleGuide.trim().takeIf { it.isNotBlank() }?.let { "House rules: $it" }.orEmpty(),
                             ).filter { it.isNotBlank() }.joinToString("\n\n")
                         } else styleGuide.trim(),
                         mainCharacters = characterOptions.filter { it.id in selectedCharacterIds },
                         rulesetId = if (isCampaign) rulesetId else "",
                         settingId = if (isCampaign) settingId else "",
+                        narrativePov = if (isCampaign) {
+                            CampaignPerspectiveTemplates.first { it.id == narrativePovId }.label
+                        } else "",
+                        campaignRoleId = if (isCampaign) campaignRoleId else "",
                     ),
                 )
                 onDismiss()

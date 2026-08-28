@@ -82,4 +82,6 @@ data class RoleplayChatUiState(
     val canGoToPreviousScene: Boolean = false,
     val viewingCurrentScene: Boolean = true,
     val canUndoSceneAdvance: Boolean = false,
+    /** True when the human runs the world and the AI plays the party. */
+    val userIsDungeonMaster: Boolean = false,
 )
