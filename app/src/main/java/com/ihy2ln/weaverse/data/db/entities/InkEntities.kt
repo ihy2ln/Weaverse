@@ -228,6 +228,12 @@ data class RpItem(
     val notes: String = "",
     /** Optional imported equipment/accessory illustration. */
     val imageMediaId: String? = null,
+    /** Matches a functional equipment slot or Pack item. */
+    val template: String = "Pack item",
+    /** Space consumed per item while carried in a backpack. */
+    val slotSize: Int = 1,
+    /** Positive only for backpack items; becomes active when equipped. */
+    val backpackCapacity: Int = 0,
 )
 
 private val itemsJsonCodec = Json { ignoreUnknownKeys = true }
@@ -245,6 +251,7 @@ enum class RpEquipSlot(val label: String) {
     Legs("Legs"),
     Weapon("Weapon"),
     Accessory("Accessory"),
+    Backpack("Backpack"),
 }
 
 fun decodeEquipment(json: String): Map<String, String> =

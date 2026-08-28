@@ -96,15 +96,35 @@ class InventoryViewModel @Inject constructor(
         }
     }
 
-    fun addItem(characterId: String, name: String, quantity: Int, notes: String = "") {
+    fun addItem(
+        characterId: String,
+        name: String,
+        quantity: Int,
+        notes: String = "",
+        template: InventoryItemTemplate = InventoryItemTemplate.PackItem,
+        slotSize: Int = 1,
+        backpackCapacity: Int = template.defaultBackpackCapacity,
+        equipAfterAdding: RpEquipSlot? = null,
+    ) {
         if (name.isBlank()) return
-        editItems(characterId) { items ->
-            items + RpItem(
+        viewModelScope.launch {
+            val item = RpItem(
                 id = "item-${UUID.randomUUID()}",
                 name = name.trim(),
                 quantity = quantity.coerceAtLeast(1),
                 notes = notes.trim(),
+                template = template.label,
+                slotSize = slotSize.coerceAtLeast(1),
+                backpackCapacity = if (template == InventoryItemTemplate.Backpack) {
+                    backpackCapacity.coerceAtLeast(1)
+                } else {
+                    0
+                },
             )
+            updateItems(characterId) { items -> items + item }
+            equipAfterAdding?.let { slot ->
+                updateEquipment(characterId) { current -> current + (slot.name to item.name) }
+            }
         }
     }
 
@@ -123,10 +143,12 @@ class InventoryViewModel @Inject constructor(
 
     /** Equips [itemName] in [slot]; a blank name clears the slot. */
     fun setEquipment(carrierId: String, slot: RpEquipSlot, itemName: String) {
-        editEquipment(carrierId) { current ->
-            val next = current.toMutableMap()
-            if (itemName.isBlank()) next.remove(slot.name) else next[slot.name] = itemName.trim()
-            next
+        viewModelScope.launch {
+            updateEquipment(carrierId) { current ->
+                val next = current.toMutableMap()
+                if (itemName.isBlank()) next.remove(slot.name) else next[slot.name] = itemName.trim()
+                next
+            }
         }
     }
 
@@ -146,19 +168,17 @@ class InventoryViewModel @Inject constructor(
         db.roleplayDao().upsertCharacter(character.copy(inventoryJson = encodeItems(next)))
     }
 
-    private fun editEquipment(
+    private suspend fun updateEquipment(
         carrierId: String,
         transform: (Map<String, String>) -> Map<String, String>,
     ) {
-        viewModelScope.launch {
-            db.roleplayDao().getPersona(carrierId)?.let { persona ->
-                val next = transform(decodeEquipment(persona.equipmentJson))
-                db.roleplayDao().upsertPersona(persona.copy(equipmentJson = encodeEquipment(next)))
-                return@launch
-            }
-            val character = db.roleplayDao().getCharacter(carrierId) ?: return@launch
-            val next = transform(decodeEquipment(character.equipmentJson))
-            db.roleplayDao().upsertCharacter(character.copy(equipmentJson = encodeEquipment(next)))
+        db.roleplayDao().getPersona(carrierId)?.let { persona ->
+            val next = transform(decodeEquipment(persona.equipmentJson))
+            db.roleplayDao().upsertPersona(persona.copy(equipmentJson = encodeEquipment(next)))
+            return
         }
+        val character = db.roleplayDao().getCharacter(carrierId) ?: return
+        val next = transform(decodeEquipment(character.equipmentJson))
+        db.roleplayDao().upsertCharacter(character.copy(equipmentJson = encodeEquipment(next)))
     }
 }

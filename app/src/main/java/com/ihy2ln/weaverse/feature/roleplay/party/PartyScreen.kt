@@ -48,6 +48,7 @@ import java.io.File
 fun PartyScreen(
     onOpenPersona: (String) -> Unit,
     onOpenCharacter: (String) -> Unit,
+    onOpenInventory: (String) -> Unit,
     viewModel: PartyViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -83,12 +84,20 @@ fun PartyScreen(
         if (state.players.isNotEmpty()) {
             item(key = "hdr-players") { PartyHeader("You", state.players.size) }
             items(state.players, key = { "p-${it.id}" }) { member ->
-                PartyRow(member) { onOpenPersona(member.id) }
+                PartyRow(
+                    member = member,
+                    onOpenSheet = { onOpenPersona(member.id) },
+                    onOpenInventory = { onOpenInventory(member.id) },
+                )
             }
         }
         item(key = "hdr-team") { PartyHeader("Team", state.cast.size) }
         items(state.cast, key = { "c-${it.id}" }) { member ->
-            PartyRow(member) { onOpenCharacter(member.id) }
+            PartyRow(
+                member = member,
+                onOpenSheet = { onOpenCharacter(member.id) },
+                onOpenInventory = { onOpenInventory(member.id) },
+            )
         }
         item(key = "recruit") {
             Text(
@@ -148,7 +157,11 @@ private fun PartyHeader(label: String, count: Int) {
  * labels — the shape a tabletop companion app uses for a party list.
  */
 @Composable
-private fun PartyRow(member: PartyMemberUi, onClick: () -> Unit) {
+private fun PartyRow(
+    member: PartyMemberUi,
+    onOpenSheet: () -> Unit,
+    onOpenInventory: () -> Unit,
+) {
     val tokens = inkTokens()
     Row(
         modifier = Modifier
@@ -157,7 +170,7 @@ private fun PartyRow(member: PartyMemberUi, onClick: () -> Unit) {
             .clip(RoundedCornerShape(inkRadiusSm()))
             .background(tokens.panel)
             .border(1.dp, tokens.hairline, RoundedCornerShape(inkRadiusSm()))
-            .clickable(onClick = onClick)
+            .clickable(onClick = onOpenSheet)
             .padding(InkSpacing.sm),
         horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
     ) {
@@ -223,12 +236,22 @@ private fun PartyRow(member: PartyMemberUi, onClick: () -> Unit) {
                     StatChip("AC", member.armorClassLabel)
                 }
             }
-            Text(
-                if (member.isPlayer) "Open profile ›" else "Open character sheet ›",
-                style = MaterialTheme.typography.labelSmall,
-                color = tokens.activePill,
-                modifier = Modifier.padding(top = InkSpacing.xs),
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = InkSpacing.xs),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    if (member.isPlayer) "Open profile ›" else "Open character sheet ›",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.activePill,
+                )
+                Text(
+                    "Inventory & gear ›",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.activePill,
+                    modifier = Modifier.clickable(onClick = onOpenInventory).padding(start = InkSpacing.sm),
+                )
+            }
         }
     }
 }

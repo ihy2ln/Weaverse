@@ -132,6 +132,7 @@ fun AppShell(
     var selectedCodexEntryId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedCharacterId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedPersonaId by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedInventoryCarrierId by rememberSaveable { mutableStateOf<String?>(null) }
     var notesDetailOpen by rememberSaveable { mutableStateOf(false) }
     var codexPanelHeightDp by rememberSaveable { mutableStateOf(48f) }
     var lastExpandedCodexPanelHeightDp by rememberSaveable { mutableStateOf(240f) }
@@ -805,9 +806,15 @@ fun AppShell(
                                 RoleplayDestination.Characters -> PartyScreen(
                                     onOpenPersona = { selectedPersonaId = it },
                                     onOpenCharacter = { selectedCharacterId = it },
+                                    onOpenInventory = { carrierId ->
+                                        selectedInventoryCarrierId = carrierId
+                                        rpDest = RoleplayDestination.Inventory.name
+                                    },
                                 )
                                 RoleplayDestination.Town -> TownScreen()
-                                RoleplayDestination.Inventory -> InventoryScreen()
+                                RoleplayDestination.Inventory -> InventoryScreen(
+                                    initialCarrierId = selectedInventoryCarrierId,
+                                )
                                 RoleplayDestination.Codex -> LorebookScreen(
                                     onEntryClick = { selectedCodexEntryId = it },
                                 )

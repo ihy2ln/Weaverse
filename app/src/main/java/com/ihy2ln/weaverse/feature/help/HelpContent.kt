@@ -82,15 +82,16 @@ object HelpContent {
                 HelpEntry(
                     "Roster",
                     "Portrait cards for You and the immediate team. Character cards show class, " +
-                        "level, HP, and AC; tap one for its full stat sheet. Add / remove changes " +
-                        "the team while the wider cast stays in Lore.",
+                        "level, HP, and AC; tap one for its full stat sheet, or Inventory & gear " +
+                        "for that same character's linked equipment. Add / remove changes the " +
+                        "team while the wider cast stays in Lore.",
                 ),
                 HelpEntry(
                     "Inventory",
                     "Grouped You, then Team, then Roster — each group collapses. Tap a " +
-                        "name for their equipment plate: head, torso, arms, legs, weapon, " +
-                        "accessory. Plus Item adds to the pack; tap an item's picture slot to add " +
-                        "art, and tapping an equipment slot equips from the pack.",
+                        "name for one-item head, torso, arms, legs, weapon, accessory, and backpack " +
+                        "slots. Empty slots create matching item templates; equipped slots add " +
+                        "pictures. The equipped backpack sets the expandable carried-item capacity.",
                 ),
                 HelpEntry(
                     "Town",

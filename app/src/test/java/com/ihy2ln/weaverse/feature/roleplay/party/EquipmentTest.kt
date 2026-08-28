@@ -14,7 +14,7 @@ class EquipmentTest {
     @Test
     fun everySlotACharacterPlateShows() {
         assertEquals(
-            listOf("Head", "Torso", "Arms", "Legs", "Weapon", "Accessory"),
+            listOf("Head", "Torso", "Arms", "Legs", "Weapon", "Accessory", "Backpack"),
             RpEquipSlot.entries.map { it.label },
         )
     }

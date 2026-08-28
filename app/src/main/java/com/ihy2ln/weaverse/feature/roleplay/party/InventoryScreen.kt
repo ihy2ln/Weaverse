@@ -24,6 +24,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,16 +54,24 @@ import java.io.File
  * name/quantity/notes — deliberately system-agnostic, with no rules behind them.
  */
 @Composable
-fun InventoryScreen(viewModel: InventoryViewModel = hiltViewModel()) {
+fun InventoryScreen(
+    initialCarrierId: String? = null,
+    viewModel: InventoryViewModel = hiltViewModel(),
+) {
     val state by viewModel.uiState.collectAsState()
     val tokens = inkTokens()
     var addingForCharacterId by remember { mutableStateOf<String?>(null) }
     var equippingFor by remember { mutableStateOf<Pair<String, RpEquipSlot>?>(null) }
-    var openCharacterId by remember { mutableStateOf<String?>(null) }
+    var openCharacterId by rememberSaveable { mutableStateOf<String?>(initialCarrierId) }
     // Each group collapses independently; all open to start.
     var collapsedGroups by rememberSaveable { mutableStateOf(setOf<String>()) }
+    var collapsedBackpacks by rememberSaveable { mutableStateOf(setOf<String>()) }
     var draftName by remember { mutableStateOf("") }
     var draftQty by remember { mutableStateOf("1") }
+    var draftSlotSize by remember { mutableStateOf("1") }
+    var draftBackpackCapacity by remember { mutableStateOf("12") }
+    var draftTemplate by remember { mutableStateOf(InventoryItemTemplate.PackItem) }
+    var equipAfterAdding by remember { mutableStateOf<RpEquipSlot?>(null) }
     var imageTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
@@ -70,6 +79,23 @@ fun InventoryScreen(viewModel: InventoryViewModel = hiltViewModel()) {
         val target = imageTarget
         imageTarget = null
         if (uri != null && target != null) viewModel.setItemImage(target.first, target.second, uri)
+    }
+    LaunchedEffect(initialCarrierId) {
+        if (!initialCarrierId.isNullOrBlank()) openCharacterId = initialCarrierId
+    }
+
+    fun beginAdding(
+        carrierId: String,
+        template: InventoryItemTemplate = InventoryItemTemplate.PackItem,
+        equipSlot: RpEquipSlot? = null,
+    ) {
+        draftName = ""
+        draftQty = "1"
+        draftSlotSize = "1"
+        draftBackpackCapacity = template.defaultBackpackCapacity.coerceAtLeast(12).toString()
+        draftTemplate = template
+        equipAfterAdding = equipSlot
+        addingForCharacterId = carrierId
     }
 
     if (!state.loading && state.carriers.isEmpty()) {
@@ -172,11 +198,7 @@ fun InventoryScreen(viewModel: InventoryViewModel = hiltViewModel()) {
                     )
                     InkTextButton(
                         label = "+ Item",
-                        onClick = {
-                            draftName = ""
-                            draftQty = "1"
-                            addingForCharacterId = carrier.characterId
-                        },
+                        onClick = { beginAdding(carrier.characterId) },
                     )
                 }
             }
@@ -187,87 +209,41 @@ fun InventoryScreen(viewModel: InventoryViewModel = hiltViewModel()) {
                         items = carrier.items,
                         imagePaths = carrier.itemImagePaths,
                         onSlotClick = { slot -> equippingFor = carrier.characterId to slot },
-                    )
-                }
-            }
-            if (carrier.items.isEmpty()) {
-                item(key = "empty-${carrier.characterId}") {
-                    Text(
-                        "Carrying nothing.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = tokens.secondaryText,
-                        modifier = Modifier.padding(
-                            horizontal = InkSpacing.lg,
-                            vertical = InkSpacing.xs,
-                        ),
-                    )
-                }
-            }
-            items(carrier.items, key = { "${carrier.characterId}-${it.id}" }) { item ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = InkSpacing.lg, vertical = InkSpacing.xs)
-                        .clip(RoundedCornerShape(inkRadiusSm()))
-                        .background(tokens.panel)
-                        .border(1.dp, tokens.hairline, RoundedCornerShape(inkRadiusSm()))
-                        .padding(InkSpacing.sm),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
-                ) {
-                    val imagePath = carrier.itemImagePaths[item.id].orEmpty()
-                    Box(
-                        modifier = Modifier
-                            .size(54.dp)
-                            .clip(RoundedCornerShape(inkRadiusSm()))
-                            .background(tokens.hover)
-                            .border(1.dp, tokens.hairline, RoundedCornerShape(inkRadiusSm()))
-                            .clickable {
-                                imageTarget = carrier.characterId to item.id
-                                imagePicker.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                                )
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (imagePath.isNotBlank()) {
-                            AsyncImage(
-                                model = File(imagePath),
-                                contentDescription = "${item.name} picture",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize(),
+                        onAddForSlot = { slot ->
+                            beginAdding(
+                                carrier.characterId,
+                                inventoryTemplateFor(slot),
+                                slot,
                             )
+                        },
+                        onItemImageClick = { item ->
+                            imageTarget = carrier.characterId to item.id
+                            imagePicker.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                            )
+                        },
+                    )
+                }
+            }
+            item(key = "backpack-${carrier.characterId}") {
+                BackpackPanel(
+                    carrier = carrier,
+                    collapsed = carrier.characterId in collapsedBackpacks,
+                    onToggle = {
+                        collapsedBackpacks = if (carrier.characterId in collapsedBackpacks) {
+                            collapsedBackpacks - carrier.characterId
                         } else {
-                            Text("＋\nimage", style = MaterialTheme.typography.labelSmall, color = tokens.activePill)
+                            collapsedBackpacks + carrier.characterId
                         }
-                    }
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            item.name,
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                    },
+                    onImageClick = { item ->
+                        imageTarget = carrier.characterId to item.id
+                        imagePicker.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
                         )
-                        if (item.notes.isNotBlank()) {
-                            Text(
-                                item.notes,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = tokens.secondaryText,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
-                    Text(
-                        "×${item.quantity}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = tokens.secondaryText,
-                    )
-                    InkTextButton(
-                        label = "−",
-                        onClick = { viewModel.removeItem(carrier.characterId, item.id) },
-                    )
-                }
+                    },
+                    onRemove = { itemId -> viewModel.removeItem(carrier.characterId, itemId) },
+                )
             }
             }
         }
@@ -322,6 +298,46 @@ fun InventoryScreen(viewModel: InventoryViewModel = hiltViewModel()) {
             title = { Text("Add item") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
+                    Text(
+                        "ITEM TEMPLATE",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.5.sp,
+                        color = tokens.secondaryText,
+                    )
+                    InventoryItemTemplate.entries.chunked(2).forEach { row ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                            row.forEach { template ->
+                                Text(
+                                    template.label,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = if (draftTemplate == template) {
+                                        tokens.activePillLabel
+                                    } else {
+                                        tokens.primaryText
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(inkRadiusSm()))
+                                        .background(
+                                            if (draftTemplate == template) tokens.activePill else tokens.panel,
+                                        )
+                                        .border(1.dp, tokens.hairline, RoundedCornerShape(inkRadiusSm()))
+                                        .clickable {
+                                            draftTemplate = template
+                                            equipAfterAdding = template.equipmentSlot
+                                            if (template == InventoryItemTemplate.Backpack &&
+                                                draftBackpackCapacity.toIntOrNull() == null
+                                            ) {
+                                                draftBackpackCapacity = "12"
+                                            }
+                                        }
+                                        .padding(InkSpacing.xs),
+                                )
+                            }
+                            repeat(2 - row.size) { Box(modifier = Modifier.weight(1f)) }
+                        }
+                    }
                     OutlinedTextField(
                         value = draftName,
                         onValueChange = { draftName = it },
@@ -336,6 +352,23 @@ fun InventoryScreen(viewModel: InventoryViewModel = hiltViewModel()) {
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    OutlinedTextField(
+                        value = draftSlotSize,
+                        onValueChange = { draftSlotSize = it.filter(Char::isDigit).take(2) },
+                        label = { Text("Backpack slots used per item") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (draftTemplate == InventoryItemTemplate.Backpack) {
+                        OutlinedTextField(
+                            value = draftBackpackCapacity,
+                            onValueChange = { draftBackpackCapacity = it.filter(Char::isDigit).take(3) },
+                            label = { Text("Backpack capacity") },
+                            supportingText = { Text("How many inventory slots this backpack opens") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
             },
             confirmButton = {
@@ -346,6 +379,11 @@ fun InventoryScreen(viewModel: InventoryViewModel = hiltViewModel()) {
                             characterId = characterId,
                             name = draftName,
                             quantity = draftQty.toIntOrNull()?.coerceAtLeast(1) ?: 1,
+                            template = draftTemplate,
+                            slotSize = draftSlotSize.toIntOrNull()?.coerceAtLeast(1) ?: 1,
+                            backpackCapacity = draftBackpackCapacity.toIntOrNull()
+                                ?: draftTemplate.defaultBackpackCapacity,
+                            equipAfterAdding = equipAfterAdding,
                         )
                         addingForCharacterId = null
                     },
@@ -355,6 +393,176 @@ fun InventoryScreen(viewModel: InventoryViewModel = hiltViewModel()) {
                 TextButton(onClick = { addingForCharacterId = null }) { Text("Cancel") }
             },
         )
+    }
+}
+
+@Composable
+private fun BackpackPanel(
+    carrier: CarrierUi,
+    collapsed: Boolean,
+    onToggle: () -> Unit,
+    onImageClick: (com.ihy2ln.weaverse.data.db.entities.RpItem) -> Unit,
+    onRemove: (String) -> Unit,
+) {
+    val tokens = inkTokens()
+    val backpack = equippedBackpack(carrier.items, carrier.equipment)
+    val capacity = backpackCapacity(carrier.items, carrier.equipment)
+    val contents = backpackContents(carrier.items, carrier.equipment)
+    val used = backpackUsedSlots(carrier.items, carrier.equipment)
+    val emptySlots = (capacity - used).coerceAtLeast(0).coerceAtMost(24)
+    val overBy = (used - capacity).coerceAtLeast(0)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = InkSpacing.lg, vertical = InkSpacing.xs)
+            .clip(RoundedCornerShape(inkRadiusSm()))
+            .border(1.dp, tokens.hairline, RoundedCornerShape(inkRadiusSm())),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(InkSpacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(if (collapsed) "›" else "⌄", color = tokens.secondaryText)
+            Text(
+                "BACKPACK",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.5.sp,
+                modifier = Modifier.padding(start = InkSpacing.xs),
+            )
+            Text(
+                backpack?.name ?: "No backpack equipped",
+                style = MaterialTheme.typography.labelSmall,
+                color = tokens.secondaryText,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).padding(start = InkSpacing.sm),
+            )
+            Text(
+                "$used / $capacity slots",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (overBy > 0) MaterialTheme.colorScheme.error else tokens.activePill,
+            )
+        }
+        if (!collapsed) {
+            if (capacity == 0) {
+                Text(
+                    "Equip a backpack to open storage slots. Unpacked gear remains available below.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = tokens.secondaryText,
+                    modifier = Modifier.padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
+                )
+            } else if (overBy > 0) {
+                Text(
+                    "Over capacity by $overBy slots. Equip a larger backpack or remove gear.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
+                )
+            }
+            val cells: List<com.ihy2ln.weaverse.data.db.entities.RpItem?> =
+                contents.map { it as com.ihy2ln.weaverse.data.db.entities.RpItem? } + List(emptySlots) { null }
+            if (cells.isEmpty()) {
+                Text(
+                    "The backpack is empty.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = tokens.secondaryText,
+                    modifier = Modifier.padding(InkSpacing.sm),
+                )
+            }
+            cells.chunked(2).forEach { row ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = InkSpacing.xs),
+                    horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+                ) {
+                    row.forEach { item ->
+                        if (item == null) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(bottom = InkSpacing.xs)
+                                    .height(76.dp)
+                                    .clip(RoundedCornerShape(inkRadiusSm()))
+                                    .background(tokens.hover)
+                                    .border(1.dp, tokens.hairline, RoundedCornerShape(inkRadiusSm())),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text("Empty slot", style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
+                            }
+                        } else {
+                            BackpackItemCard(
+                                item = item,
+                                imagePath = carrier.itemImagePaths[item.id].orEmpty(),
+                                onImageClick = { onImageClick(item) },
+                                onRemove = { onRemove(item.id) },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                    repeat(2 - row.size) { Box(modifier = Modifier.weight(1f)) }
+                }
+            }
+            if (capacity - used > emptySlots) {
+                Text(
+                    "+ ${capacity - used - emptySlots} more empty slots",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.secondaryText,
+                    modifier = Modifier.padding(InkSpacing.sm),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BackpackItemCard(
+    item: com.ihy2ln.weaverse.data.db.entities.RpItem,
+    imagePath: String,
+    onImageClick: () -> Unit,
+    onRemove: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tokens = inkTokens()
+    Row(
+        modifier = modifier
+            .padding(bottom = InkSpacing.xs)
+            .height(76.dp)
+            .clip(RoundedCornerShape(inkRadiusSm()))
+            .background(tokens.panel)
+            .border(1.dp, tokens.hairline, RoundedCornerShape(inkRadiusSm()))
+            .padding(InkSpacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .clip(RoundedCornerShape(inkRadiusSm()))
+                .background(tokens.hover)
+                .clickable(onClick = onImageClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (imagePath.isNotBlank()) {
+                AsyncImage(
+                    model = File(imagePath),
+                    contentDescription = "${item.name} picture",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Text("＋\nimage", style = MaterialTheme.typography.labelSmall, color = tokens.activePill)
+            }
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(item.name, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, maxLines = 1)
+            Text(
+                "${item.template} · ${item.quantity * item.slotSize.coerceAtLeast(1)} slots",
+                style = MaterialTheme.typography.labelSmall,
+                color = tokens.secondaryText,
+                maxLines = 1,
+            )
+        }
+        Text("−", color = tokens.secondaryText, modifier = Modifier.clickable(onClick = onRemove).padding(4.dp))
     }
 }
 
@@ -368,6 +576,8 @@ private fun EquipmentPlate(
     items: List<com.ihy2ln.weaverse.data.db.entities.RpItem>,
     imagePaths: Map<String, String>,
     onSlotClick: (RpEquipSlot) -> Unit,
+    onAddForSlot: (RpEquipSlot) -> Unit,
+    onItemImageClick: (com.ihy2ln.weaverse.data.db.entities.RpItem) -> Unit,
 ) {
     val tokens = inkTokens()
     Column(
@@ -412,6 +622,19 @@ private fun EquipmentPlate(
                                     .height(48.dp)
                                     .clip(RoundedCornerShape(inkRadiusSm())),
                             )
+                        } else if (equippedItem != null) {
+                            Box(
+                                modifier = Modifier
+                                    .padding(vertical = 3.dp)
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                                    .clip(RoundedCornerShape(inkRadiusSm()))
+                                    .background(tokens.hover)
+                                    .clickable { onItemImageClick(equippedItem) },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text("＋ image", style = MaterialTheme.typography.labelSmall, color = tokens.activePill)
+                            }
                         }
                         Text(
                             equipped.ifBlank { "—" },
@@ -419,6 +642,16 @@ private fun EquipmentPlate(
                             color = if (equipped.isBlank()) tokens.secondaryText else tokens.primaryText,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            if (equippedItem == null) "+ Add item" else "Change · Picture",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = tokens.activePill,
+                            modifier = Modifier
+                                .padding(top = 3.dp)
+                                .clickable {
+                                    if (equippedItem == null) onAddForSlot(slot) else onItemImageClick(equippedItem)
+                                },
                         )
                     }
                 }

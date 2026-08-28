@@ -26,10 +26,14 @@ resources/tools, biography, and settings. Health supports current, maximum, and
 temporary hit points.
 
 Roster uses portrait cards with class, level, HP, and AC summaries; tapping a
-character opens the full stat sheet. Inventory gives carried equipment and
-accessories their own user-added picture slots and repeats that art in equipped
-gear slots. Town is a grid of tappable shops and landmarks, each with a
-persistent slot for the user's own location art.
+character opens the full stat sheet, while Inventory & gear opens that same
+character's linked equipment record. Equipment uses one item per head, torso,
+arms, legs, weapon, accessory, or backpack slot. Slot-matched add templates and
+picture controls are available directly on the equipment plate. An equipped
+backpack opens an expandable inventory sized by its capacity; carried items
+consume configurable space and show pictures, empty slots, and overflow.
+Town is a grid of tappable shops and landmarks, each with a persistent slot for
+the user's own location art.
 
 ## Chatting
 

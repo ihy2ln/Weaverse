@@ -187,8 +187,15 @@ current, maximum, and temporary hit points plus quick change controls.
 ### Inventory, roster, lore, and presets
 
 - **Inventory** groups You, Team, and Roster. Open a character to manage their
-  pack and equipment slots. Every carried item, equipped weapon, and accessory
-  has a tappable picture slot for importing or replacing its art.
+  pack and equipment slots; the Inventory & gear link on each Roster card opens
+  the same character-owned record. Head, torso, arms, legs, weapon, accessory,
+  and backpack are single-item equipment slots. Empty slots can create an item
+  from their matching template, while equipped slots can add or replace that
+  item's picture.
+- The equipped **Backpack** determines carried capacity. Backpack templates ask
+  for a slot capacity, and every other template asks how much room each copy
+  consumes. The expandable backpack panel shows used/available slots, empty
+  spaces, and over-capacity warnings; item cards retain their pictures.
 - **Roster** presents the party as portrait cards. Character cards summarize
   class, level, hit points, and armor class, and open the full expandable stat
   sheet; recruiting changes the immediate team without deleting the wider cast.

@@ -163,3 +163,10 @@ to the transplant commit for that log in full. That codebase is gone from
   that open the full character sheet.
 - Inventory items now persist optional artwork, show image-picking slots, and
   reuse the selected image in equipped weapon/accessory plates.
+- Roster cards now link directly to the selected character's shared Inventory
+  record instead of requiring a separate lookup in the Inventory tab.
+- Added slot-matched inventory templates and direct equipment-slot image
+  controls. Every equipment position remains a single-item slot.
+- Added Backpack as an equipment slot. Equipped backpack capacity controls an
+  expandable carried-item panel with per-item slot size, empty slots, and
+  over-capacity feedback.
