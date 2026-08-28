@@ -1,11 +1,16 @@
 package com.ihy2ln.weaverse.core.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -26,6 +31,54 @@ data class NewWorkDetails(
     val pov: String = "",
     val tense: String = "",
     val styleGuide: String = "",
+    val mainCharacters: List<WorkCharacterOption> = emptyList(),
+    val rulesetId: String = "",
+)
+
+data class WorkCharacterOption(
+    val id: String,
+    val name: String,
+    val source: String,
+)
+
+data class CampaignRulesetTemplate(
+    val id: String,
+    val label: String,
+    val directive: String,
+)
+
+val CampaignRulesetTemplates = listOf(
+    CampaignRulesetTemplate(
+        "dnd-5e",
+        "D&D 5e",
+        "Use D&D 5e conventions: d20 ability checks, proficiency, advantage/disadvantage, armor class, hit points, spell slots, conditions, and death saves. Ask for rolls when outcomes are uncertain and state the DC before resolving when appropriate.",
+    ),
+    CampaignRulesetTemplate(
+        "pathfinder-2e",
+        "Pathfinder 2e",
+        "Use Pathfinder 2e conventions: d20 checks with level-based proficiency, four degrees of success, the three-action economy, reactions, conditions, armor class, saving throws, and encounter-appropriate DCs.",
+    ),
+    CampaignRulesetTemplate(
+        "dnd-3-5",
+        "D&D 3.5e",
+        "Use D&D 3.5e conventions: d20 checks, skill ranks, base attack bonus, fortitude/reflex/will saves, armor class categories, attacks of opportunity, prepared or spontaneous spellcasting, and tactical modifiers.",
+    ),
+    CampaignRulesetTemplate(
+        "osr",
+        "OSR / B/X",
+        "Use old-school fantasy conventions: rulings over exhaustive rules, reaction and morale checks, resource pressure, dangerous combat, exploration turns, meaningful encumbrance, and saving throws when danger cannot be avoided.",
+    ),
+    CampaignRulesetTemplate(
+        "pbta",
+        "Powered by the Apocalypse",
+        "Use Powered by the Apocalypse conventions: fiction-first moves, 2d6 results where 10+ succeeds, 7–9 succeeds with a cost, and 6- invites a game-master move. Never call for a roll unless a move is triggered by the fiction.",
+    ),
+    CampaignRulesetTemplate(
+        "fate-core",
+        "Fate Core",
+        "Use Fate Core conventions: aspects, invokes and compels, 4dF checks, overcome/create advantage/attack/defend actions, stress, consequences, and success at a cost.",
+    ),
+    CampaignRulesetTemplate("custom", "Custom / systemless", "Use only the custom house rules supplied by the player and resolve uncertain actions consistently."),
 )
 
 /**
@@ -54,12 +107,12 @@ data class CreateWorkVocabulary(
         )
         val Campaign = CreateWorkVocabulary(
             what = "campaign",
-            titleLabel = "Adventure",
-            titlePlaceholder = "Untitled Adventure",
+            titleLabel = "Campaign title",
+            titlePlaceholder = "Untitled Campaign",
             genreLabel = "Setting",
-            povLabel = "Whose eyes",
+            povLabel = "Main character(s)",
             styleLabel = "House rules",
-            styleHint = "Tone, danger level, anything the game master should honour.",
+            styleHint = "Choose a base rules system, then add campaign-specific rulings, tone, and boundaries.",
         )
         val Storyboard = CreateWorkVocabulary(
             what = "storyboard",
@@ -81,6 +134,7 @@ data class CreateWorkVocabulary(
 @Composable
 fun CreateWorkDialog(
     vocabulary: CreateWorkVocabulary,
+    characterOptions: List<WorkCharacterOption> = emptyList(),
     onDismiss: () -> Unit,
     onCreate: (NewWorkDetails) -> Unit,
 ) {
@@ -88,8 +142,14 @@ fun CreateWorkDialog(
     var title by remember { mutableStateOf("") }
     var genre by remember { mutableStateOf("") }
     var pov by remember { mutableStateOf(if (vocabulary.storyboardSpecific) "Right to left" else "") }
-    var tense by remember { mutableStateOf(if (vocabulary.storyboardSpecific) "Manga" else "") }
+    var tense by remember {
+        mutableStateOf(if (vocabulary.storyboardSpecific) "Manga" else "Past tense")
+    }
     var styleGuide by remember { mutableStateOf("") }
+    var selectedCharacterIds by remember { mutableStateOf(setOf<String>()) }
+    var rulesetId by remember { mutableStateOf("dnd-5e") }
+    var rulesetMenuOpen by remember { mutableStateOf(false) }
+    val isCampaign = vocabulary == CreateWorkVocabulary.Campaign
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -141,7 +201,7 @@ fun CreateWorkDialog(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                } else {
+                } else if (isCampaign) {
                     OutlinedTextField(
                         value = genre,
                         onValueChange = { genre = it },
@@ -149,6 +209,84 @@ fun CreateWorkDialog(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    Text("Main character(s)", style = MaterialTheme.typography.labelMedium)
+                    if (characterOptions.isEmpty()) {
+                        Text(
+                            "Add a persona, roster member, or Characters Codex entry first—or continue without one.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = tokens.secondaryText,
+                        )
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+                        ) {
+                            characterOptions.forEach { option ->
+                                val selected = option.id in selectedCharacterIds
+                                InkChip(
+                                    label = if (selected) "✓ ${option.name}" else option.name,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    selected = selected,
+                                    onClick = {
+                                        selectedCharacterIds = if (selected) {
+                                            selectedCharacterIds - option.id
+                                        } else {
+                                            selectedCharacterIds + option.id
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                        Text(
+                            characterOptions.joinToString(" · ") { "${it.name} (${it.source})" },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = tokens.secondaryText,
+                            maxLines = 2,
+                        )
+                    }
+                    Text("Tense", style = MaterialTheme.typography.labelMedium)
+                    InkSegmentedPill(
+                        options = listOf(
+                            SegmentedOption("Past tense", "Past"),
+                            SegmentedOption("Present tense", "Present"),
+                            SegmentedOption("Future tense", "Future"),
+                        ),
+                        selectedId = tense.ifBlank { "Past tense" },
+                        onSelect = { tense = it },
+                    )
+                    Text("Rules system", style = MaterialTheme.typography.labelMedium)
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        InkOutlinedButton(
+                            label = CampaignRulesetTemplates.first { it.id == rulesetId }.label + " ▾",
+                            onClick = { rulesetMenuOpen = true },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        DropdownMenu(
+                            expanded = rulesetMenuOpen,
+                            onDismissRequest = { rulesetMenuOpen = false },
+                        ) {
+                            CampaignRulesetTemplates.forEach { template ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text(template.label)
+                                            Text(
+                                                template.directive,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = tokens.secondaryText,
+                                                maxLines = 3,
+                                            )
+                                        }
+                                    },
+                                    onClick = {
+                                        rulesetId = template.id
+                                        rulesetMenuOpen = false
+                                    },
+                                )
+                            }
+                        }
+                    }
+                } else {
                     OutlinedTextField(
                         value = pov,
                         onValueChange = { pov = it },
@@ -157,19 +295,21 @@ fun CreateWorkDialog(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    OutlinedTextField(
-                        value = tense,
-                        onValueChange = { tense = it },
-                        label = { Text("Tense") },
-                        placeholder = { Text("Past, present…") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
+                    Text("Tense", style = MaterialTheme.typography.labelMedium)
+                    InkSegmentedPill(
+                        options = listOf(
+                            SegmentedOption("Past tense", "Past"),
+                            SegmentedOption("Present tense", "Present"),
+                            SegmentedOption("Future tense", "Future"),
+                        ),
+                        selectedId = tense.ifBlank { "Past tense" },
+                        onSelect = { tense = it },
                     )
                 }
                 OutlinedTextField(
                     value = styleGuide,
                     onValueChange = { styleGuide = it },
-                    label = { Text(vocabulary.styleLabel) },
+                    label = { Text(if (isCampaign) "Additional house rules" else vocabulary.styleLabel) },
                     minLines = 2,
                     maxLines = 4,
                     modifier = Modifier.fillMaxWidth(),
@@ -197,9 +337,18 @@ fun CreateWorkDialog(
                     NewWorkDetails(
                         title = title.trim().ifBlank { vocabulary.titlePlaceholder },
                         genre = genre.trim(),
-                        pov = pov.trim(),
-                        tense = tense.trim(),
-                        styleGuide = styleGuide.trim(),
+                        pov = if (isCampaign) {
+                            characterOptions.filter { it.id in selectedCharacterIds }.joinToString(", ") { it.name }
+                        } else pov.trim(),
+                        tense = tense.trim().ifBlank { if (isCampaign) "Past tense" else "" },
+                        styleGuide = if (isCampaign) {
+                            listOf(
+                                CampaignRulesetTemplates.first { it.id == rulesetId }.directive,
+                                styleGuide.trim(),
+                            ).filter { it.isNotBlank() }.joinToString("\n\nHouse rules: ")
+                        } else styleGuide.trim(),
+                        mainCharacters = characterOptions.filter { it.id in selectedCharacterIds },
+                        rulesetId = if (isCampaign) rulesetId else "",
                     ),
                 )
                 onDismiss()

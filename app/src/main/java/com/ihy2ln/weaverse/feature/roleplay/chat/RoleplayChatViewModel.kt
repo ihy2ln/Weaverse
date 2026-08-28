@@ -1157,6 +1157,7 @@ class RoleplayChatViewModel @Inject constructor(
                         history = history,
                         outputWords = state.outputWords,
                         difficultyDirective = difficulty?.directive,
+                        extraSystem = sessionSystemBlocks(mode),
                     ),
                     maxTokens = maxTokens,
                     temperature = temperature,
@@ -1272,6 +1273,7 @@ class RoleplayChatViewModel @Inject constructor(
                         history = history,
                         outputWords = words,
                         difficultyDirective = difficulty?.directive,
+                        extraSystem = sessionSystemBlocks(current.displayMode),
                     ),
                     maxTokens = (words * 1.5).toInt().coerceIn(64, 8192),
                     temperature = temperature,
@@ -1342,10 +1344,22 @@ class RoleplayChatViewModel @Inject constructor(
             history = history,
             outputWords = state.outputWords,
             difficultyDirective = difficulty?.directive,
+            extraSystem = sessionSystemBlocks(mode),
         )
         val reading = generation.meter(assembled, state.input, contextLimit)
         _uiState.update { it.copy(contextMeter = reading) }
     }
+
+    private fun sessionSystemBlocks(mode: String): List<String> = listOfNotNull(
+        boundChat?.authorsNote?.takeIf { it.isNotBlank() }?.let {
+            "Campaign setup and house rules:\n$it"
+        },
+        if (mode == "dungeonMaster") {
+            "Write the next scene as immersive adventure prose, resolve the player's declared action according to the campaign rules, and end with a clear situation that invites the next action. Do not format the response as a text-message conversation."
+        } else {
+            null
+        },
+    )
 
     private suspend fun insertStoredMessage(entity: RpMessageEntity) {
         db.roleplayDao().upsertMessage(entity)

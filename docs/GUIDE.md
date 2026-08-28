@@ -141,11 +141,23 @@ include Campaign, Adventure, Inventory, Roster, Lore, and Presets.
 | Mission | Scene |
 | Event or battle | Scene beat |
 
+### Creating a campaign
+
+New Campaign asks for a campaign title and setting, then lets you select one or
+more **Main character(s)** from your personas, Roster, and Characters Codex.
+Tense is selected rather than typed. House rules begin with a tabletop-system
+template—D&D 5e, Pathfinder 2e, D&D 3.5e, OSR/B/X, Powered by the Apocalypse,
+Fate Core, or Custom/systemless—and can be extended with campaign-specific
+rulings, tone, and boundaries.
+
 ### Campaign and Adventure
 
 Campaign shows every adventure by title and art. Choose one to enter its
-Adventure view. Adventure is the outline and play launcher for days, missions,
-events, and battles.
+Adventure play session. Adventure is not a messenger: one large scene image
+anchors the top of the page, the session unfolds below as narrative prose with
+player actions clearly marked, and the action entry remains at the bottom.
+Generated game-master responses receive the selected main characters, tense,
+rules template, house rules, and difficulty as session context.
 
 ### Character sheet
 

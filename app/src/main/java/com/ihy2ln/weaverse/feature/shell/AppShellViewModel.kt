@@ -3,9 +3,14 @@ package com.ihy2ln.weaverse.feature.shell
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ihy2ln.weaverse.core.ui.components.CreateWorkVocabulary
+import com.ihy2ln.weaverse.core.ui.components.CampaignRulesetTemplates
 import com.ihy2ln.weaverse.core.ui.components.NewWorkDetails
+import com.ihy2ln.weaverse.core.ui.components.WorkCharacterOption
+import com.ihy2ln.weaverse.core.text.Document
+import com.ihy2ln.weaverse.core.text.toJson
 import com.ihy2ln.weaverse.data.db.entities.RpChatEntity
 import com.ihy2ln.weaverse.data.db.entities.RpPageMeta
+import com.ihy2ln.weaverse.data.db.entities.RpMessageEntity
 import com.ihy2ln.weaverse.data.db.entities.encodePages
 import com.ihy2ln.weaverse.core.media.MediaRepository
 import com.ihy2ln.weaverse.data.db.entities.BookEntity
@@ -42,6 +47,25 @@ class AppShellViewModel @Inject constructor(
     private val workspaceHistory: WorkspaceHistory,
 ) : ViewModel() {
     val preferences = settings.preferences
+
+    val campaignCharacterOptions: StateFlow<List<WorkCharacterOption>> = combine(
+        db.roleplayDao().observePersonas(),
+        db.roleplayDao().observeCharacters(),
+        db.codexDao().observeAllCategories(),
+        db.codexDao().observeAllEntries(),
+    ) { personas, roster, categories, entries ->
+        val characterCategoryIds = categories
+            .filter { it.name.equals("Characters", ignoreCase = true) }
+            .map { it.id }
+            .toSet()
+        buildList {
+            personas.forEach { add(WorkCharacterOption("persona:${it.id}", it.name, "You")) }
+            roster.forEach { add(WorkCharacterOption("roster:${it.id}", it.name, "Roster")) }
+            entries.filter { it.categoryId in characterCategoryIds }.forEach {
+                add(WorkCharacterOption("codex:${it.id}", it.name, "Codex"))
+            }
+        }.distinctBy { it.name.trim().lowercase() to it.source }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
      * Creates a novel, campaign or storyboard. All three are a manuscript
@@ -85,9 +109,96 @@ class AppShellViewModel @Inject constructor(
                     ),
                 )
                 chatId = id
+            } else if (vocabulary == CreateWorkVocabulary.Campaign) {
+                chatId = createCampaignSession(book, details)
             }
             onCreated(book.id, chatId)
         }
+    }
+
+    /** Opens the one play session owned by a campaign, creating it for legacy campaigns. */
+    fun openCampaign(bookId: String, onReady: (String) -> Unit) {
+        viewModelScope.launch {
+            settings.setSelectedBookId(bookId)
+            val existing = db.roleplayDao().getChats().firstOrNull {
+                it.bookId == bookId && it.displayMode == "dungeonMaster"
+            }
+            val chatId = existing?.id ?: bookRepository.getBook(bookId)?.let { book ->
+                createCampaignSession(
+                    book,
+                    NewWorkDetails(
+                        title = book.title,
+                        genre = book.genre,
+                        pov = book.pov,
+                        tense = book.tense,
+                        styleGuide = book.styleGuide,
+                    ),
+                )
+            } ?: return@launch
+            onReady(chatId)
+        }
+    }
+
+    private suspend fun createCampaignSession(
+        book: BookEntity,
+        details: NewWorkDetails,
+    ): String {
+        val now = System.currentTimeMillis()
+        val id = "rp-campaign-${java.util.UUID.randomUUID()}"
+        val selectedPersonaId = details.mainCharacters
+            .firstOrNull { it.id.startsWith("persona:") }
+            ?.id?.substringAfter(':')
+            ?: db.roleplayDao().getPersonas().firstOrNull { it.isDefault }?.id
+            ?: db.roleplayDao().getPersonas().firstOrNull()?.id
+            ?: "persona-default"
+        val mainCharacters = details.mainCharacters.joinToString(", ") { it.name }
+            .ifBlank { details.pov.ifBlank { "Player-created party" } }
+        val setup = buildString {
+            appendLine("Campaign: ${details.title}")
+            appendLine("Setting: ${details.genre.ifBlank { "Open fantasy setting" }}")
+            appendLine("Main character(s): $mainCharacters")
+            appendLine("Narrative tense: ${details.tense.ifBlank { "Past tense" }}")
+            val rulesetLabel = CampaignRulesetTemplates
+                .firstOrNull { it.id == details.rulesetId }
+                ?.label
+                ?: "Custom / systemless"
+            appendLine("Rules system: $rulesetLabel")
+            if (details.styleGuide.isNotBlank()) append(details.styleGuide)
+        }.trim()
+        db.roleplayDao().upsertChat(
+            RpChatEntity(
+                id = id,
+                // The player controls selected protagonists; the game master must
+                // not impersonate a roster character as the chat's speaker.
+                characterId = null,
+                personaId = selectedPersonaId,
+                title = details.title,
+                authorsNote = setup,
+                displayMode = "dungeonMaster",
+                createdAt = now,
+                updatedAt = now,
+                bookId = book.id,
+            ),
+        )
+        val opening = buildString {
+            append("The adventure begins in ${details.genre.ifBlank { "an uncharted world" }}. ")
+            append("$mainCharacters stand at the threshold of the first scene. ")
+            append("Describe what they do in the action box below; the game master will turn each choice into the next part of the story.")
+        }
+        db.roleplayDao().upsertMessage(
+            RpMessageEntity(
+                id = "rpm-${java.util.UUID.randomUUID()}",
+                chatId = id,
+                swipeGroupId = "sw-${java.util.UUID.randomUUID()}",
+                swipeIndex = 0,
+                isActiveSwipe = true,
+                role = "char",
+                contentJson = Document.fromPlainText(opening).toJson(),
+                createdAt = now,
+                displayMode = "dungeonMaster",
+            ),
+        )
+        return id
     }
     val historyState = workspaceHistory.state
 

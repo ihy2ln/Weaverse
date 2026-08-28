@@ -138,3 +138,14 @@ to the transplant commit for that log in full. That codebase is gone from
   [checkpoint recovery record](docs/CHECKPOINT-v1.3.2-CODEX-NAVIGATION.md).
 - Verified `:app:compileDebugKotlin` and `:app:assembleDebug` offline. Local test
   APK SHA-256: `1365E4B3124E3D84990E846A46F0527E3CD07F22C8B3AA02DE9F8576FCA8FDC0`.
+## RPG campaign setup and illustrated Adventure play (2026-08-28)
+
+- Replaced New Campaign's free-text “Whose eyes” with multi-select Main
+  character(s) sourced from personas, Roster, and the Characters Codex.
+- Added selectable Past/Present/Future tense and rules templates for D&D 5e,
+  Pathfinder 2e, D&D 3.5e, OSR/B/X, Powered by the Apocalypse, Fate Core, and
+  custom/systemless play, with an additional house-rules field.
+- Campaigns now own a dedicated game-master session carrying those setup
+  choices into generation context.
+- Adventure now opens directly as an illustrated prose session: one large
+  scene image, a lorebook-like story/action record, and a bottom action entry.

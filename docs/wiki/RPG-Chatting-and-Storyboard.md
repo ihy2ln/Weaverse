@@ -2,9 +2,15 @@
 
 ## RPG
 
-RPG opens at Campaign, the high-level shelf. Pick a campaign to enter Adventure
-and its days, missions, events, and battles. The remaining areas manage
-Inventory, Roster, Lore, and difficulty Presets.
+RPG opens at Campaign, the high-level shelf. New Campaign selects main
+characters from personas, Roster, and the Characters Codex, plus narrative
+tense and a D&D, Pathfinder, OSR, PbtA, Fate, or custom rules template.
+
+Pick a campaign to enter Adventure, its dedicated play session. Adventure is
+an illustrated story rather than a messenger: a single large scene image sits
+above the narrative, player actions are marked in the story, and the action
+entry stays at the bottom. The game master receives the chosen characters,
+tense, rules template, extra house rules, and difficulty as context.
 
 The character sheet keeps tabletop information on one screen. Each category has
 a name and reference picture; tap either to expand. It includes health/death,

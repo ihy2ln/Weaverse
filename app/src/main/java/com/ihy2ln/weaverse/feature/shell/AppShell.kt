@@ -89,6 +89,7 @@ import com.ihy2ln.weaverse.feature.novel.snippets.SnippetsRailScreen
 import com.ihy2ln.weaverse.feature.novel.write.WriteScreen
 import com.ihy2ln.weaverse.feature.prompts.PromptsScreen
 import com.ihy2ln.weaverse.feature.roleplay.characters.CharacterDetailScreen
+import com.ihy2ln.weaverse.feature.roleplay.chat.AdventurePlayScreen
 import com.ihy2ln.weaverse.feature.roleplay.chat.RoleplayChatChrome
 import com.ihy2ln.weaverse.feature.roleplay.chat.RoleplayChatDetailScreen
 import com.ihy2ln.weaverse.feature.roleplay.chat.RoleplayChatsScreen
@@ -120,7 +121,6 @@ fun AppShell(
     var chatDest by rememberSaveable { mutableStateOf(ChattingDestination.Chats.name) }
     var storyboardDest by rememberSaveable { mutableStateOf(StoryboardDestination.Window.name) }
     var storyboardChatId by rememberSaveable { mutableStateOf<String?>(null) }
-    var rpShowChatPicker by rememberSaveable { mutableStateOf(false) }
     var creatingWork by remember { mutableStateOf<CreateWorkVocabulary?>(null) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showSearch by rememberSaveable { mutableStateOf(false) }
@@ -148,6 +148,7 @@ fun AppShell(
         initial = WorkspaceHistoryState(),
     )
     val shellInfo by shellViewModel.shellInfo.collectAsState()
+    val campaignCharacterOptions by shellViewModel.campaignCharacterOptions.collectAsState()
     val notesState by notesViewModel.uiState.collectAsState()
     val codexState by codexViewModel.uiState.collectAsState()
     val promptUi by promptViewModel.uiState.collectAsState()
@@ -160,6 +161,11 @@ fun AppShell(
     creatingWork?.let { vocabulary ->
         CreateWorkDialog(
             vocabulary = vocabulary,
+            characterOptions = if (vocabulary == CreateWorkVocabulary.Campaign) {
+                campaignCharacterOptions
+            } else {
+                emptyList()
+            },
             onDismiss = { creatingWork = null },
             onCreate = { details ->
                 // Campaigns and storyboards are both manuscripts underneath, so one
@@ -179,7 +185,7 @@ fun AppShell(
                         CreateWorkVocabulary.Campaign -> {
                             mode = AppMode.Roleplay.name
                             rpDest = RoleplayDestination.Chats.name
-                            rpShowChatPicker = false
+                            selectedRpChatId = chatId
                         }
                         else -> {
                             mode = AppMode.Novel.name
@@ -370,7 +376,6 @@ fun AppShell(
                     selectedPersonaId = null
                     notesDetailOpen = false
                     storyboardChatId = null
-                    rpShowChatPicker = false
                     rpChrome = null
                     when (next) {
                         AppMode.Novel.name -> novelDest = NovelDestination.Bookshelf.name
@@ -603,7 +608,7 @@ fun AppShell(
                         workspaceFocus,
                         listOf(
                             novelDest, rpDest, chatDest, storyboardDest,
-                            selectedRpChatId, storyboardChatId, rpShowChatPicker.toString(),
+                            selectedRpChatId, storyboardChatId,
                         ),
                     ),
                     animationSpec = tween(durationMillis = 120),
@@ -767,34 +772,20 @@ fun AppShell(
                             else -> when (roleplayDestinationOf(rd)) {
                                 RoleplayDestination.Chats -> {
                                     if (chatId != null) {
-                                        RoleplayChatDetailScreen(
+                                        AdventurePlayScreen(
                                             chatId = chatId,
-                                            onBack = {
-                                                selectedRpChatId = null
-                                                rpChrome = null
-                                            },
                                             onChromeChange = { rpChrome = it },
-                                            onOpenAiPrompt = { shellViewModel.openPrompt(PromptEntryKind.Ai) },
-                                            onOpenManualPrompt = { shellViewModel.openPrompt(PromptEntryKind.Manual) },
-                                            promptOverlayOpen = promptOverlayOpen,
-                                            // Play is the DM board.
-                                            forceDisplayMode = "dungeonMaster",
-                                            showModeSwitcher = false,
                                         )
-                                    } else if (rpShowChatPicker) {
-                                        RoleplayChatsScreen(onChatClick = {
-                                            selectedRpChatId = it
-                                            rpShowChatPicker = false
-                                        })
                                     } else {
-                                        // The campaign outline: Adventure > Day > Mission >
-                                        // Event, over the same manuscript entities Novel uses.
-                                        PlanScreen(
-                                            vocabulary = PlanVocabulary.Rpg,
-                                            onNewWork = { creatingWork = CreateWorkVocabulary.Campaign },
-                                            onWrite = { sceneId, _ ->
-                                                selectedSceneId = sceneId
-                                                rpShowChatPicker = true
+                                        WorkShelfScreen(
+                                            kind = WorkShelfKind.Campaign,
+                                            onCreate = { creatingWork = CreateWorkVocabulary.Campaign },
+                                            onOpen = { card ->
+                                                card.bookId?.let { bookId ->
+                                                    shellViewModel.openCampaign(bookId) { sessionId ->
+                                                        selectedRpChatId = sessionId
+                                                    }
+                                                }
                                             },
                                         )
                                     }
@@ -803,9 +794,12 @@ fun AppShell(
                                     kind = WorkShelfKind.Campaign,
                                     onCreate = { creatingWork = CreateWorkVocabulary.Campaign },
                                     onOpen = { card ->
-                                        card.bookId?.let(shellViewModel::setSelectedBookId)
-                                        rpDest = RoleplayDestination.Chats.name
-                                        rpShowChatPicker = false
+                                        card.bookId?.let { bookId ->
+                                            shellViewModel.openCampaign(bookId) { sessionId ->
+                                                selectedRpChatId = sessionId
+                                                rpDest = RoleplayDestination.Chats.name
+                                            }
+                                        }
                                     },
                                 )
                                 RoleplayDestination.Characters -> PartyScreen(

@@ -65,11 +65,16 @@ object HelpContent {
             summary = "Inventory · Adventure · Campaign · Roster · Lore · Presets",
             entries = listOf(
                 HelpEntry(
-                    "A campaign is shaped like a book",
-                    "Campaign is the high-level shelf for all adventures. " +
-                        "Adventure = Book, Day = Chapter, Mission = Scene, " +
-                        "Event/Battle = Scene beat. RPG reuses the same outline, so every " +
-                        "Plan feature works on a campaign too.",
+                    "Create a campaign",
+                    "Choose one or more main characters from You, Roster, or the Characters " +
+                        "Codex. Pick a D&D, Pathfinder, OSR, PbtA, Fate, or custom rules " +
+                        "template, select narrative tense, then add campaign-specific house rules.",
+                ),
+                HelpEntry(
+                    "Adventure is the play session",
+                    "Adventure is not a messenger chat. The current scene uses one large " +
+                        "illustration, an ongoing prose story, and an action box at the bottom. " +
+                        "Your actions become the next rules-aware game-master response.",
                 ),
                 HelpEntry(
                     "Roster",
