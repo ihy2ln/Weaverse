@@ -248,6 +248,31 @@ class DatabaseSeeder @Inject constructor(
                 ),
             )
         }
+        migrateLegacyPromptFolders()
+    }
+
+    /** Pre-v1.3.22 category folders; prompts were re-filed into the mode sections. */
+    private val legacyPromptFolderIds = listOf(
+        "folder-scene",
+        "folder-summarize",
+        "folder-rewrite",
+        "folder-workshop",
+        "folder-continue",
+        "folder-expand",
+        "folder-roleplay",
+        "folder-adams-haven",
+    )
+
+    private suspend fun migrateLegacyPromptFolders() {
+        val dao = db.promptDao()
+        dao.getAll()
+            .filter { it.folderId in legacyPromptFolderIds }
+            .forEach { dao.upsert(it.copy(folderId = "folder-custom")) }
+        legacyPromptFolderIds.forEach { legacy ->
+            if (dao.getAll().none { it.folderId == legacy }) {
+                dao.deleteFolder(legacy)
+            }
+        }
     }
 
     private suspend fun ensureCharacterWritingGuides() {

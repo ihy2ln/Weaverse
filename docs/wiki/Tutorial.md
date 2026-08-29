@@ -79,18 +79,59 @@ fan-service energy, romantic escalation, comedy).
 
 ### Prompt Collection (Prompts ▾ tab)
 
-Shared by Novel, Roleplay, and Notes. Categories: Adams Haven, Continue,
-Custom, Expand, Prompt Components, Roleplay, Scene Beat Completions, Scene
-Summarizations, Text Replacements, Workshop Chats.
+Shared by Novel, Roleplay, and Notes. The TEMPLATE header at the top controls
+every prompt at once:
 
-Every template is themed for adult male wish fulfilment and actively consults
-the Codex entries **WAHB, WAH, WAHO, AFM, Gender Ratio, GKOM, and Celestium**.
-The Gender Ratio is treated as lived social worldbuilding; Celestium as
-established technology/lore; acronyms keep their project-defined meanings.
+```
+┌─ TEMPLATE (grey bar)
+├─ MODE TEMPLATE ─ NOVEL · RPG · CHATTING · STORYBOARD
+├─ ADD-ON ─────── ECCHI MANGAKA OVERLAY  [ON/OFF]
+├─ GENRES ──────── two-row scrolling multi-select chips
+├─ AGE RATING ─── PG · PG-13 · R · NC-17 · X
+└─ ↻ REFRESH INSTRUCTIONS ─ rebuild effective prompt preview
+```
 
-Prompt Components (`AdditionalContext`, `AdditionalInstructions`,
-`Chat/DefaultContext`, `Chat/DefaultInstructions`) are editable building blocks
-the other prompts include.
+- **ADD-ON · ECCHI MANGAKA OVERLAY** — when ON, the hard-coded identity
+  ("the AI IS an ecchi adult-themed mangaka author"), the full Adams Haven lore
+  (Gender Ratio 1:500, AFM privileges, WAH/WAHB/WAHO/WAH-MEN physiology, GKOM,
+  Celestium), and the tonal rules are injected into every mode's prompts. When
+  OFF, every `{ECCHI: ...}` layer is stripped with zero residue and prompts
+  return to their base craft templates.
+- **MODE TEMPLATE** — choose one base instruction set: Novel prose, RPG game
+  master, in-character Chatting, or visual panel-by-panel Storyboard. The
+  selected template is persisted and sent with every model request.
+- **GENRES** — choose any number of genre chips. Every selected genre is
+  combined into one add-on line (default: "Adult male wish fulfilment").
+- **AGE RATING** — choose PG, PG-13, R, NC-17, or X. Each rating contributes a
+  distinct content-limit instruction; only NC-17 and X enable explicit
+  `{MATURE: ...}` template blocks.
+- **REFRESH INSTRUCTIONS** — rebuilds the exact effective System prompt from
+  the current mode and add-ons, then opens the Instructions tab to show it.
+  The editable base prompt remains clean and reusable.
+
+The mode, genres, age rating, and overlay are finalized once at the shared AI
+request boundary, so Novel, RPG, Chatting, Storyboard, and auxiliary generation
+flows cannot omit or duplicate the stack.
+
+Mode sections:
+
+- **Novel** — Scene Beat, Adams Haven MW, Continue Writing, Expand Passage,
+  Shorten, Extend, Scene Text Replacer, Summarizer, Describe Image, and the
+  Workshop Chat partner.
+- **RPG** — Adventure Scene Beat (live: its instructions steer every DM reply),
+  Roll Action (dice-check playbook for the ROLL flow), Scene Advance, Roster
+  Capture, Loot & Inventory, and Adventure Recap.
+- **Chatting** — Roleplay Reply, Continue Chat (short texting-voice messages),
+  and Out of Character Note.
+- **Storyboard** — Storyboard Beat (panel-by-panel direction), Panel Direction,
+  and Canvas Summary.
+- **Prompt Components** — editable building blocks (`AdditionalContext`,
+  `AdditionalInstructions`, `Chat/DefaultContext`, `Chat/DefaultInstructions`)
+  the other prompts include.
+- **Custom** — your own templates, including the seeded Wish Fulfilment Beat.
+
+Every template also actively consults the Codex entries **WAHB, WAH, WAHO,
+AFM, Gender Ratio, GKOM, and Celestium** inside its ecchi layer.
 
 ---
 

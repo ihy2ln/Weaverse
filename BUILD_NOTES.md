@@ -3,6 +3,26 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.3.26-beta — compact template controls and effective preview
+
+- Moved Mode Template to the top of TEMPLATE, immediately after its title bar.
+- Condensed genre choices into a two-row, horizontally scrollable picker.
+- Expanded age ratings to PG, PG-13, R, NC-17, and X, each with a distinct
+  persisted backend instruction and mature-block behavior.
+- Added Refresh instructions. It rebuilds a read-only effective prompt from the
+  current controls and editable System message, then opens Instructions so
+  added and removed layers are visible without modifying the base prompt.
+
+## v1.3.25-beta — selectable prompt template stack
+
+- Prompting Instructions now treats Novel, RPG, Chatting, and Storyboard as
+  persisted, selectable base templates that materially change every AI request.
+- Genre is now a multi-select chip set; selected genres are combined as add-ons
+  alongside the independent Standard/Mature rating and Ecchi Mangaka overlay.
+- Removed the unused Category text field and checkmark from Prompt Collection.
+- Final template injection now happens once at the shared AI request boundary,
+  covering every generation surface without the previous RPG duplication risk.
+
 ## v1.3.9-beta — AI-DM adventure startup
 
 - New campaigns open with the AI Dungeon Master leading setup instead of a

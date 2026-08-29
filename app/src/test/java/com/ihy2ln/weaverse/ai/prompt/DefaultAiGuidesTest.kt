@@ -54,7 +54,7 @@ class DefaultAiGuidesTest {
         val instructions = prompt.instructionsJson
 
         assertTrue(prompt.name == "Adams Haven MW")
-        assertTrue(prompt.folderId == "folder-adams-haven")
+        assertTrue(prompt.folderId == "folder-novel")
         assertTrue(prompt.type == "scene_beat")
         assertTrue(instructions.contains("adult-themed ecchi mangaka"))
         assertTrue(instructions.contains("18 or older"))

@@ -131,7 +131,9 @@ JUnit 5 + Turbine (app), a Go launcher for the Windows `.exe` shim.
 
 - Build notes / working log: [BUILD_NOTES.md](BUILD_NOTES.md)
 - **User helper guide:** [docs/GUIDE.md](docs/GUIDE.md)
-- **Hard checkpoint record:** [docs/CHECKPOINT-v1.3.2-CODEX-NAVIGATION.md](docs/CHECKPOINT-v1.3.2-CODEX-NAVIGATION.md)
+- **Latest hard checkpoint:** [docs/CHECKPOINT-v1.3.26-PROMPT-TEMPLATES.md](docs/CHECKPOINT-v1.3.26-PROMPT-TEMPLATES.md)
+- **Prompt Templates wiki guide:** [docs/wiki/Prompt-Templates-and-Add-Ons.md](docs/wiki/Prompt-Templates-and-Add-Ons.md)
+- Earlier Codex checkpoint: [docs/CHECKPOINT-v1.3.2-CODEX-NAVIGATION.md](docs/CHECKPOINT-v1.3.2-CODEX-NAVIGATION.md)
 - **RPG Adventure checkpoint:** [docs/CHECKPOINT-v1.3.2-RPG-ADVENTURE.md](docs/CHECKPOINT-v1.3.2-RPG-ADVENTURE.md)
 - Wiki-ready guide mirror: [docs/wiki/Home.md](docs/wiki/Home.md)
 - **Rebuild documentation** (architecture, data model, protocols — detailed

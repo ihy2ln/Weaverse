@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="620" viewBox="0 0 960 620" role="img" aria-labelledby="title desc">
+  <title id="title">Weaverse v1.3.26 Prompt Template controls</title>
+  <desc id="desc">A compact wireframe showing Mode Template first, the overlay toggle, two scrollable genre rows, five age ratings, and Refresh instructions.</desc>
+  <rect width="960" height="620" fill="#faf9f7"/>
+  <rect x="40" y="28" width="880" height="564" rx="22" fill="#ffffff" stroke="#d8d3cf" stroke-width="2"/>
+  <rect x="62" y="50" width="836" height="54" rx="12" fill="#efedeb"/>
+  <text x="82" y="84" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#312d2b">TEMPLATE</text>
+  <rect x="670" y="61" width="208" height="32" rx="16" fill="#211d1b"/>
+  <text x="694" y="83" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#ffffff">↻ Refresh instructions</text>
+
+  <text x="72" y="138" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#312d2b">MODE TEMPLATE</text>
+  <g font-family="Arial, sans-serif" font-size="15" font-weight="700">
+    <rect x="72" y="152" width="130" height="38" rx="19" fill="#211d1b"/><text x="111" y="177" fill="#fff">NOVEL</text>
+    <rect x="214" y="152" width="112" height="38" rx="19" fill="#f4f2f0"/><text x="252" y="177" fill="#312d2b">RPG</text>
+    <rect x="338" y="152" width="154" height="38" rx="19" fill="#f4f2f0"/><text x="366" y="177" fill="#312d2b">CHATTING</text>
+    <rect x="504" y="152" width="180" height="38" rx="19" fill="#f4f2f0"/><text x="534" y="177" fill="#312d2b">STORYBOARD</text>
+  </g>
+
+  <text x="72" y="230" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#312d2b">ADD-ON · ECCHI MANGAKA OVERLAY</text>
+  <text x="72" y="254" font-family="Arial, sans-serif" font-size="15" fill="#756e69">Independent layer added to the selected mode template</text>
+  <rect x="810" y="214" width="68" height="38" rx="19" fill="#211d1b"/><circle cx="858" cy="233" r="15" fill="#fff"/>
+
+  <text x="72" y="306" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#312d2b">GENRES · PICK ANY</text>
+  <g font-family="Arial, sans-serif" font-size="14">
+    <rect x="72" y="320" width="204" height="34" rx="17" fill="#ddd4f7" stroke="#7556b5"/><text x="91" y="342" fill="#4f3589">Adult male wish fulfilment</text>
+    <rect x="286" y="320" width="88" height="34" rx="17" fill="#f4f2f0"/><text x="309" y="342" fill="#312d2b">Action</text>
+    <rect x="384" y="320" width="108" height="34" rx="17" fill="#ddd4f7" stroke="#7556b5"/><text x="405" y="342" fill="#4f3589">Adventure</text>
+    <rect x="502" y="320" width="96" height="34" rx="17" fill="#f4f2f0"/><text x="522" y="342" fill="#312d2b">Comedy</text>
+    <rect x="72" y="364" width="124" height="34" rx="17" fill="#f4f2f0"/><text x="91" y="386" fill="#312d2b">Dark fantasy</text>
+    <rect x="206" y="364" width="84" height="34" rx="17" fill="#f4f2f0"/><text x="229" y="386" fill="#312d2b">Drama</text>
+    <rect x="300" y="364" width="82" height="34" rx="17" fill="#ddd4f7" stroke="#7556b5"/><text x="325" y="386" fill="#4f3589">Ecchi</text>
+    <rect x="392" y="364" width="92" height="34" rx="17" fill="#f4f2f0"/><text x="413" y="386" fill="#312d2b">Fantasy</text>
+  </g>
+  <path d="M710 347h150" stroke="#8e8782" stroke-width="3" stroke-linecap="round"/><path d="m849 338 12 9-12 9" fill="none" stroke="#8e8782" stroke-width="3"/>
+  <text x="714" y="330" font-family="Arial, sans-serif" font-size="13" fill="#756e69">scroll both rows</text>
+
+  <text x="72" y="448" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#312d2b">AGE RATING</text>
+  <g font-family="Arial, sans-serif" font-size="15" font-weight="700">
+    <rect x="72" y="462" width="72" height="38" rx="19" fill="#f4f2f0"/><text x="96" y="487" fill="#312d2b">PG</text>
+    <rect x="154" y="462" width="92" height="38" rx="19" fill="#f4f2f0"/><text x="175" y="487" fill="#312d2b">PG-13</text>
+    <rect x="256" y="462" width="62" height="38" rx="19" fill="#f4f2f0"/><text x="282" y="487" fill="#312d2b">R</text>
+    <rect x="328" y="462" width="104" height="38" rx="19" fill="#f4f2f0"/><text x="349" y="487" fill="#312d2b">NC-17</text>
+    <rect x="442" y="462" width="62" height="38" rx="19" fill="#211d1b"/><text x="468" y="487" fill="#fff">X</text>
+  </g>
+
+  <rect x="72" y="530" width="806" height="42" rx="10" fill="#f7f3ff" stroke="#b9a7df"/>
+  <text x="92" y="556" font-family="Arial, sans-serif" font-size="15" fill="#4f3589">Refresh opens the effective System prompt so added or removed layers are visible.</text>
+</svg>

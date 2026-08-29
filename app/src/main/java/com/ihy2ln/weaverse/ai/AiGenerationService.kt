@@ -2,6 +2,7 @@ package com.ihy2ln.weaverse.ai
 
 import com.ihy2ln.weaverse.ai.context.AssembledPrompt
 import com.ihy2ln.weaverse.ai.openrouter.OpenRouterRepository
+import com.ihy2ln.weaverse.ai.prompt.PromptAddOns
 import com.ihy2ln.weaverse.data.settings.SecureKeyStore
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
 import kotlinx.coroutines.delay
@@ -34,7 +35,7 @@ class AiGenerationService @Inject constructor(
     ): Flow<AIChunk> {
         val model = resolveModelRef(modelRef)
         val provider = registry.resolve(model)
-        val system = assembled?.systemBlocks?.joinToString("\n\n").orEmpty()
+        val system = PromptAddOns.applyTo(assembled?.systemBlocks.orEmpty()).joinToString("\n\n")
         val history = assembled?.messages.orEmpty()
         val request = AIRequest(
             modelId = registry.stripProviderPrefix(model),
@@ -83,7 +84,7 @@ class AiGenerationService @Inject constructor(
     ): AIResult {
         val model = resolveModelRef(modelRef)
         val provider = registry.resolve(model)
-        val system = assembled?.systemBlocks?.joinToString("\n\n").orEmpty()
+        val system = PromptAddOns.applyTo(assembled?.systemBlocks.orEmpty()).joinToString("\n\n")
         val history = assembled?.messages.orEmpty()
         val request = AIRequest(
             modelId = registry.stripProviderPrefix(model),

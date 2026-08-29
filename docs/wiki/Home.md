@@ -11,10 +11,13 @@ campaigns, character chats, manga/comic storyboards, and shared notes.
 - [Novel and Reader](Novel-and-Reader.md)
 - [RPG, Chatting, and Storyboard](RPG-Chatting-and-Storyboard.md)
 - [Prompts and AI](Prompts-and-AI.md)
+- [Prompt Templates and Add-ons](Prompt-Templates-and-Add-Ons.md)
 - [Backup, Sync, and Troubleshooting](Backup-Sync-and-Troubleshooting.md)
 
-This wiki matches the `checkpoint-v1.3.2-codex-navigation` source checkpoint.
+This wiki matches the v1.3.26 Prompt Templates hard checkpoint.
 The canonical single-page copy is [`docs/GUIDE.md`](../GUIDE.md).
+
+![Prompt Template controls](images/prompt-template-v1.3.26-layout.svg)
 
 ## Five mode homes
 

@@ -54,6 +54,26 @@ data class RpMessageUi(
     val isAdventureSetup: Boolean = false,
 )
 
+/** One detected character/item awaiting the user's confirmation. */
+data class CaptureCandidate(
+    val name: String,
+    val summary: String,
+    val selected: Boolean = true,
+)
+
+/**
+ * Confirmation step for the ➕👤 / ➕🎒 composer actions: the AI's read of the
+ * scene is shown as checkable candidates before anything touches the roster or
+ * inventories. [sourceText] is what was scanned (recent scene or a highlighted
+ * message).
+ */
+data class CaptureDialogState(
+    val kind: String,
+    val sourceText: String,
+    val candidates: List<CaptureCandidate>,
+    val extraction: AdventureCapture.Extraction,
+)
+
 data class RoleplayChatUiState(
     val chatId: String = "",
     val title: String = "",
@@ -71,6 +91,8 @@ data class RoleplayChatUiState(
     val ttsStatus: String = "",
     /** Short-lived confirmation for composer hold-menu actions (roster/inventory adds). */
     val composerStatus: String = "",
+    /** Non-null shows the add-to-roster / add-to-inventory confirmation dialog. */
+    val captureDialog: CaptureDialogState? = null,
     val generationVisible: Boolean = true,
     val entryMode: String = "ai",
     val minimumOutputWords: Int = 50,

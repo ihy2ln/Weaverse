@@ -12,11 +12,18 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.ihy2ln.weaverse.ai.openrouter.WritingModelSeeds
+import com.ihy2ln.weaverse.ai.prompt.PromptAddOns
+import com.ihy2ln.weaverse.ai.prompt.PromptAgeRating
+import com.ihy2ln.weaverse.ai.prompt.PromptingMode
 import com.ihy2ln.weaverse.core.ui.theme.AppThemeMode
 import com.ihy2ln.weaverse.core.ui.theme.AppearanceProfile
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -114,6 +121,14 @@ data class UserPreferences(
      */
     val extraPromptSurfaces: ExtraPromptSurfaces = ExtraPromptSurfaces(),
     val navigationOrder: NavigationOrderPreferences = NavigationOrderPreferences(),
+    /** ADD-ON: ECCHI MANGAKA overlay injected into every mode's prompts. */
+    val ecchiOverlay: Boolean = true,
+    /** AGE RATING add-on, ranging from PG through X. */
+    val promptAgeRating: PromptAgeRating = PromptAgeRating.X,
+    /** The base TEMPLATE the model follows. */
+    val promptingMode: PromptingMode = PromptingMode.Novel,
+    /** Zero or more GENRE add-ons prepended to every prompt. */
+    val selectedGenres: Set<String> = setOf(PromptAddOns.DefaultGenre),
 )
 
 data class ReaderSavedState(
@@ -187,7 +202,44 @@ class SettingsRepository @Inject constructor(
                 storyboard = prefs[KEY_NAV_STORYBOARD].orEmpty(),
                 notes = prefs[KEY_NAV_NOTES].orEmpty(),
             ),
+            ecchiOverlay = prefs[KEY_ECCHI_OVERLAY] ?: true,
+            promptAgeRating = prefs[KEY_PROMPT_AGE_RATING]?.let(PromptAgeRating::fromId)
+                ?: if (prefs[KEY_MATURE_RATING] ?: true) PromptAgeRating.X else PromptAgeRating.Pg13,
+            promptingMode = PromptingMode.fromId(prefs[KEY_PROMPTING_MODE]),
+            selectedGenres = prefs[KEY_SELECTED_GENRES]
+                ?: prefs[KEY_GENRE_LABEL]
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let(::setOf)
+                ?: setOf(PromptAddOns.DefaultGenre),
         )
+    }
+
+    init {
+        // TEMPLATE-header add-ons resolve app-wide; keep the prompt engine in sync.
+        CoroutineScope(Dispatchers.Default + SupervisorJob()).launch {
+            preferences.collect { prefs ->
+                PromptAddOns.ecchiOverlay = prefs.ecchiOverlay
+                PromptAddOns.ageRating = prefs.promptAgeRating
+                PromptAddOns.mode = prefs.promptingMode
+                PromptAddOns.selectedGenres = prefs.selectedGenres
+            }
+        }
+    }
+
+    suspend fun setEcchiOverlay(enabled: Boolean) {
+        context.dataStore.edit { it[KEY_ECCHI_OVERLAY] = enabled }
+    }
+
+    suspend fun setPromptAgeRating(rating: PromptAgeRating) {
+        context.dataStore.edit { it[KEY_PROMPT_AGE_RATING] = rating.id }
+    }
+
+    suspend fun setPromptingMode(mode: PromptingMode) {
+        context.dataStore.edit { it[KEY_PROMPTING_MODE] = mode.id }
+    }
+
+    suspend fun setSelectedGenres(genres: Set<String>) {
+        context.dataStore.edit { it[KEY_SELECTED_GENRES] = genres }
     }
 
     suspend fun setThemeMode(mode: AppThemeMode) {
@@ -475,6 +527,14 @@ class SettingsRepository @Inject constructor(
         private val KEY_NAV_CHATTING = stringPreferencesKey("nav_order_chatting")
         private val KEY_NAV_STORYBOARD = stringPreferencesKey("nav_order_storyboard")
         private val KEY_NAV_NOTES = stringPreferencesKey("nav_order_notes")
+        private val KEY_ECCHI_OVERLAY = booleanPreferencesKey("prompt_ecchi_overlay")
+        private val KEY_PROMPT_AGE_RATING = stringPreferencesKey("prompt_age_rating")
+        /** Read-only compatibility with v1.3.25's Standard/Mature toggle. */
+        private val KEY_MATURE_RATING = booleanPreferencesKey("prompt_mature_rating")
+        private val KEY_PROMPTING_MODE = stringPreferencesKey("prompt_template_mode")
+        private val KEY_SELECTED_GENRES = stringSetPreferencesKey("prompt_selected_genres")
+        /** Read-only compatibility with v1.3.24's single free-text genre field. */
+        private val KEY_GENRE_LABEL = stringPreferencesKey("prompt_genre_label")
 
         const val InkSpacingRailMin = 48f
         const val InkSpacingRailMax = 420f

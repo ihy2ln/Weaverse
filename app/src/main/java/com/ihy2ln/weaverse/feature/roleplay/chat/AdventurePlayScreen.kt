@@ -3,9 +3,11 @@ package com.ihy2ln.weaverse.feature.roleplay.chat
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +21,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -36,6 +42,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -59,6 +67,7 @@ import java.io.File
  * Messages remain the persistence/generation engine, but are rendered as story
  * paragraphs and clearly separated player actions.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AdventurePlayScreen(
     chatId: String,
@@ -71,6 +80,8 @@ fun AdventurePlayScreen(
     }
     val state by viewModel.uiState.collectAsState()
     val tokens = inkTokens()
+    val clipboard = LocalClipboardManager.current
+    var captureMenuFor by remember { mutableStateOf<RpMessageUi?>(null) }
     val storyState = rememberLazyListState()
     var promptCollapsed by rememberSaveable { mutableStateOf(false) }
     var modelsOpen by remember { mutableStateOf(false) }
@@ -249,56 +260,102 @@ fun AdventurePlayScreen(
                     }
                 }
                 items(state.messages, key = { it.id }) { message ->
+                    val menuExpanded = captureMenuFor?.id == message.id
                     if (message.role == "user") {
-                        Text(
-                            if (message.isAdventureSetup) {
-                                "Setup answer — ${message.text}"
-                            } else if (state.userIsDungeonMaster) {
-                                "Your DM prompt — ${message.text}"
-                            } else {
-                                "Your action — ${message.text}"
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontStyle = FontStyle.Italic,
-                            color = tokens.secondaryText,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(tokens.hover, RoundedCornerShape(inkRadiusMd()))
-                                .padding(InkSpacing.sm),
-                        )
-                    } else {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            if (message.isAdventureSetup) {
-                                Text(
-                                    "ADVENTURE SETUP · AI DM",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = tokens.activePill,
-                                    modifier = Modifier.padding(bottom = InkSpacing.xs),
-                                )
-                            }
-                            message.rollResult?.let { roll ->
-                                AdventureRollCard(
-                                    roll = roll,
-                                    modifier = Modifier.padding(bottom = InkSpacing.xs),
-                                )
-                            }
-                            if (message.actionResult.isNotBlank()) {
-                                Text(
-                                    "ACTION RESULT · ${message.actionResult.uppercase()}",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = tokens.activePill,
-                                    modifier = Modifier
-                                        .background(tokens.hover, RoundedCornerShape(inkRadiusMd()))
-                                        .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
-                                )
-                            }
+                        Box(modifier = Modifier.fillMaxWidth()) {
                             Text(
-                                message.text,
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = tokens.primaryText,
-                                modifier = Modifier.fillMaxWidth(),
+                                if (message.isAdventureSetup) {
+                                    "Setup answer — ${message.text}"
+                                } else if (state.userIsDungeonMaster) {
+                                    "Your DM prompt — ${message.text}"
+                                } else {
+                                    "Your action — ${message.text}"
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontStyle = FontStyle.Italic,
+                                color = tokens.secondaryText,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .combinedClickable(
+                                        onClick = {},
+                                        onLongClick = { captureMenuFor = message },
+                                    )
+                                    .background(tokens.hover, RoundedCornerShape(inkRadiusMd()))
+                                    .padding(InkSpacing.sm),
+                            )
+                            CaptureMenu(
+                                expanded = menuExpanded,
+                                onClose = { captureMenuFor = null },
+                                onRoster = {
+                                    captureMenuFor = null
+                                    viewModel.captureFromText(message.text, "roster")
+                                },
+                                onInventory = {
+                                    captureMenuFor = null
+                                    viewModel.captureFromText(message.text, "inventory")
+                                },
+                                onCopy = {
+                                    clipboard.setText(AnnotatedString(message.text))
+                                    captureMenuFor = null
+                                },
+                            )
+                        }
+                    } else {
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                if (message.isAdventureSetup) {
+                                    Text(
+                                        "ADVENTURE SETUP · AI DM",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = tokens.activePill,
+                                        modifier = Modifier.padding(bottom = InkSpacing.xs),
+                                    )
+                                }
+                                message.rollResult?.let { roll ->
+                                    AdventureRollCard(
+                                        roll = roll,
+                                        modifier = Modifier.padding(bottom = InkSpacing.xs),
+                                    )
+                                }
+                                if (message.actionResult.isNotBlank()) {
+                                    Text(
+                                        "ACTION RESULT · ${message.actionResult.uppercase()}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = tokens.activePill,
+                                        modifier = Modifier
+                                            .background(tokens.hover, RoundedCornerShape(inkRadiusMd()))
+                                            .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
+                                    )
+                                }
+                                Text(
+                                    message.text,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = tokens.primaryText,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .combinedClickable(
+                                            onClick = {},
+                                            onLongClick = { captureMenuFor = message },
+                                        ),
+                                )
+                            }
+                            CaptureMenu(
+                                expanded = menuExpanded,
+                                onClose = { captureMenuFor = null },
+                                onRoster = {
+                                    captureMenuFor = null
+                                    viewModel.captureFromText(message.text, "roster")
+                                },
+                                onInventory = {
+                                    captureMenuFor = null
+                                    viewModel.captureFromText(message.text, "inventory")
+                                },
+                                onCopy = {
+                                    clipboard.setText(AnnotatedString(message.text))
+                                    captureMenuFor = null
+                                },
                             )
                         }
                     }
@@ -419,6 +476,70 @@ fun AdventurePlayScreen(
             onDismiss = { modelsOpen = false },
         )
     }
+    state.captureDialog?.let { dialog ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissCapture,
+            title = { Text(if (dialog.kind == "roster") "Add to roster" else "Add to inventory") },
+            text = {
+                Column {
+                    Text(
+                        "Found in the scene — uncheck anything to skip:",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = tokens.secondaryText,
+                        modifier = Modifier.padding(bottom = InkSpacing.xs),
+                    )
+                    dialog.candidates.forEach { candidate ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { viewModel.toggleCaptureCandidate(candidate.name) },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(
+                                checked = candidate.selected,
+                                onCheckedChange = { viewModel.toggleCaptureCandidate(candidate.name) },
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    candidate.name,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                if (candidate.summary.isNotBlank()) {
+                                    Text(
+                                        candidate.summary,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = tokens.secondaryText,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                InkTextButton(label = "Add selected", onClick = viewModel::confirmCapture)
+            },
+            dismissButton = {
+                InkTextButton(label = "Cancel", onClick = viewModel::dismissCapture)
+            },
+        )
+    }
+    }
+}
+
+@Composable
+private fun CaptureMenu(
+    expanded: Boolean,
+    onClose: () -> Unit,
+    onRoster: () -> Unit,
+    onInventory: () -> Unit,
+    onCopy: () -> Unit,
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onClose) {
+        DropdownMenuItem(text = { Text("Add to roster") }, onClick = onRoster)
+        DropdownMenuItem(text = { Text("Add to inventory") }, onClick = onInventory)
+        DropdownMenuItem(text = { Text("Copy") }, onClick = onCopy)
     }
 }
 

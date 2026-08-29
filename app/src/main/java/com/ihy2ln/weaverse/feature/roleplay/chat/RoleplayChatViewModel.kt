@@ -54,6 +54,8 @@ import com.ihy2ln.weaverse.feature.roleplay.characters.abilityModifier
 import com.ihy2ln.weaverse.feature.roleplay.characters.decodeRpgSheet
 import com.ihy2ln.weaverse.feature.roleplay.characters.encodeRpgSheet
 import com.ihy2ln.weaverse.feature.roleplay.characters.RpgCharacterSheet
+import com.ihy2ln.weaverse.ai.prompt.PromptRenderContext
+import com.ihy2ln.weaverse.ai.prompt.PromptRenderer
 import com.ihy2ln.weaverse.feature.prompt.PromptModelSelection
 import com.ihy2ln.weaverse.feature.prompt.PromptWordLimit
 import com.ihy2ln.weaverse.feature.shell.WorkspaceHistory
@@ -66,6 +68,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -103,12 +106,15 @@ class RoleplayChatViewModel @Inject constructor(
     private val generation: RoleplayGeneration,
     private val modelCache: OpenRouterModelCache,
     private val adventureCapture: AdventureCapture,
+    private val promptRepository: com.ihy2ln.weaverse.data.repo.PromptRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(RoleplayChatUiState())
     val uiState: StateFlow<RoleplayChatUiState> = _uiState.asStateFlow()
     private var bindJob: Job? = null
     private var generateJob: Job? = null
     private var composerStatusJob: Job? = null
+    /** Live instructions from the Prompt Collection's RPG → Adventure Scene Beat prompt. */
+    private val rpgSceneBeatDirective = MutableStateFlow("")
     private var rawMessages: List<RpMessageEntity> = emptyList()
     private var boundChat: RpChatEntity? = null
     private var boundCharacter: RpCharacterEntity? = null
@@ -123,6 +129,17 @@ class RoleplayChatViewModel @Inject constructor(
         _uiState.update { it.copy(chatId = chatId) }
         bindJob?.cancel()
         bindJob = viewModelScope.launch {
+            launch {
+                // The RPG → Adventure Scene Beat prompt steers every DM generation live.
+                promptRepository.observeByType("rpg_scene_beat").collect { prompts ->
+                    val prompt = prompts.firstOrNull { it.isDefault } ?: prompts.firstOrNull()
+                    val text = prompt?.let {
+                        PromptRenderer.render(it, PromptRenderContext()).systemText
+                            .ifBlank { it.description }
+                    }.orEmpty()
+                    rpgSceneBeatDirective.value = text
+                }
+            }
             launch {
                 combine(settings.preferences, modelCache.models) { prefs, dtos ->
                     prefs.defaultModelRef to modelCache.toModelInfo(dtos)
@@ -1194,45 +1211,147 @@ class RoleplayChatViewModel @Inject constructor(
         generate()
     }
 
-    /** ✓ hold-menu 👤: capture the character(s) from the recent scene into the roster. */
+    /** ✓ hold-menu 👤: read the recent scene, then confirm what joins the roster. */
     fun addRosterCharacter() {
+        startCapture("roster")
+    }
+
+    /** ✓ hold-menu 🛍: read the recent scene, then confirm what files into inventories. */
+    fun addInventoryItem() {
+        startCapture("inventory")
+    }
+
+    /** Long-press on a message: scan that highlighted text instead of the whole scene. */
+    fun captureFromText(text: String, kind: String) {
+        viewModelScope.launch { openCapture(kind, text) }
+    }
+
+    private fun startCapture(kind: String) {
         viewModelScope.launch {
-            val chatId = _uiState.value.chatId.ifBlank { boundChat?.id.orEmpty() }
-            val extraction = runCatching { adventureCapture.extract(recentSceneText()) }.getOrNull()
-            val added = extraction?.characters?.let { adventureCapture.applyCharacters(it) }.orEmpty()
+            openCapture(kind, recentSceneText())
+        }
+    }
+
+    private suspend fun openCapture(kind: String, source: String) {
+        val chatId = _uiState.value.chatId.ifBlank { boundChat?.id.orEmpty() }
+        if (source.isBlank()) {
+            setComposerStatus("Nothing to read yet — play a scene first.")
+            return
+        }
+        val extraction = runCatching { adventureCapture.extract(source) }.getOrNull()
+        if (kind == "roster") {
+            val chars = extraction?.characters.orEmpty().filter { it.name.isNotBlank() }
+            if (chars.isEmpty()) {
+                adventureCapture.addBlankCharacter()
+                setComposerStatus("No characters detected — added a blank roster character to edit.")
+                return
+            }
             _uiState.update {
                 it.copy(
-                    composerStatus = if (added.isEmpty()) {
-                        "No characters found in the scene — added a blank roster character to edit."
-                    } else {
-                        "Added to roster: ${added.joinToString()}"
-                    },
+                    captureDialog = CaptureDialogState(
+                        kind = kind,
+                        sourceText = source,
+                        extraction = extraction!!,
+                        candidates = chars.map { char ->
+                            CaptureCandidate(
+                                name = char.name,
+                                summary = listOf(
+                                    char.characterClass,
+                                    char.species,
+                                    if (char.level > 0) "Lv ${char.level}" else "",
+                                    if (char.maxHp > 0) "HP ${char.currentHp}/${char.maxHp}" else "",
+                                    if (char.inParty) "party" else "",
+                                ).filter { it.isNotBlank() }.joinToString(" · ")
+                                    .ifBlank { char.notes },
+                            )
+                        },
+                    ),
                 )
             }
-            if (added.isEmpty()) adventureCapture.addBlankCharacter()
+        } else {
+            val items = extraction?.items.orEmpty().filter { it.name.isNotBlank() }
+            if (items.isEmpty()) {
+                val carrier = adventureCapture.addBlankItem(chatId)
+                setComposerStatus(
+                    if (carrier == null) {
+                        "No inventory carrier found — add or mark a character first."
+                    } else {
+                        "No items detected — added a blank item to $carrier's inventory."
+                    },
+                )
+                return
+            }
+            _uiState.update {
+                it.copy(
+                    captureDialog = CaptureDialogState(
+                        kind = kind,
+                        sourceText = source,
+                        extraction = extraction!!,
+                        candidates = items.map { item ->
+                            CaptureCandidate(
+                                name = item.name,
+                                summary = listOf(
+                                    "×${item.quantity.coerceAtLeast(1)}",
+                                    item.carrier.ifBlank { "party" },
+                                    item.notes,
+                                ).filter { it.isNotBlank() }.joinToString(" · "),
+                            )
+                        },
+                    ),
+                )
+            }
+        }
+    }
+
+    fun toggleCaptureCandidate(name: String) {
+        _uiState.update { state ->
+            val dialog = state.captureDialog ?: return@update state
+            state.copy(
+                captureDialog = dialog.copy(
+                    candidates = dialog.candidates.map {
+                        if (it.name == name) it.copy(selected = !it.selected) else it
+                    },
+                ),
+            )
+        }
+    }
+
+    /** Applies only the checked candidates. */
+    fun confirmCapture() {
+        val dialog = _uiState.value.captureDialog ?: return
+        val chatId = _uiState.value.chatId.ifBlank { boundChat?.id.orEmpty() }
+        viewModelScope.launch {
+            val selected = dialog.candidates.filter { it.selected }.map { it.name }.toSet()
+            val message = when (dialog.kind) {
+                "roster" -> {
+                    val chosen = dialog.extraction.characters.filter { it.name in selected }
+                    if (chosen.isEmpty()) {
+                        "Nothing selected."
+                    } else {
+                        "Added to roster: ${adventureCapture.applyCharacters(chosen).joinToString()}"
+                    }
+                }
+                else -> {
+                    val chosen = dialog.extraction.items.filter { it.name in selected }
+                    if (chosen.isEmpty()) {
+                        "Nothing selected."
+                    } else {
+                        "Items filed: ${adventureCapture.applyItems(chosen, chatId)}"
+                    }
+                }
+            }
+            _uiState.update { it.copy(captureDialog = null, composerStatus = message) }
             startComposerStatusTimer()
         }
     }
 
-    /** ✓ hold-menu 🛍: capture the item(s) from the recent scene into inventories. */
-    fun addInventoryItem() {
-        viewModelScope.launch {
-            val chatId = _uiState.value.chatId.ifBlank { boundChat?.id.orEmpty() }
-            val extraction = runCatching { adventureCapture.extract(recentSceneText()) }.getOrNull()
-            val items = extraction?.items.orEmpty()
-            val summary = if (items.isEmpty()) {
-                val carrier = adventureCapture.addBlankItem(chatId)
-                if (carrier == null) {
-                    "No inventory carrier found — add or mark a character first."
-                } else {
-                    "Added a blank item to $carrier's inventory."
-                }
-            } else {
-                "Items filed: ${adventureCapture.applyItems(items, chatId)}"
-            }
-            _uiState.update { it.copy(composerStatus = summary) }
-            startComposerStatusTimer()
-        }
+    fun dismissCapture() {
+        _uiState.update { it.copy(captureDialog = null) }
+    }
+
+    private fun setComposerStatus(message: String) {
+        _uiState.update { it.copy(composerStatus = message) }
+        startComposerStatusTimer()
     }
 
     private fun recentSceneText(): String = rawMessages
@@ -1976,6 +2095,11 @@ class RoleplayChatViewModel @Inject constructor(
             null
         },
         if (mode == "dungeonMaster") adventureWorldUpdateDirective() else null,
+        if (mode == "dungeonMaster" && rpgSceneBeatDirective.value.isNotBlank()) {
+            "Campaign scene engine (Prompt Collection → RPG → Adventure Scene Beat):\n${rpgSceneBeatDirective.value}"
+        } else {
+            null
+        },
         "The user is an adult. Apply no app-level NSFW filter or automatic sanitization to lawful " +
             "adult fictional themes; follow the requested rating, tone, and level of detail. External " +
             "model-provider requirements still apply.",
