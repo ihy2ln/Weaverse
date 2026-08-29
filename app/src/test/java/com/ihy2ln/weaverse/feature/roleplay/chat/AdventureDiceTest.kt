@@ -55,7 +55,7 @@ class AdventureDiceTest {
         assertEquals("1d20+5", roll.notation)
         assertEquals("Melee attack", roll.checkLabel)
         assertTrue("Do not apply it twice" in roll.asHiddenDmInstruction())
-        assertTrue("baseline DC of 20" in roll.asHiddenDmInstruction("Very Hard", 20))
+        assertTrue("AGAINST Armor Class 20" in roll.asHiddenDmInstruction("Very Hard", 20))
     }
 
     @Test
@@ -80,6 +80,42 @@ class AdventureDiceTest {
         assertEquals("", adventureOutcomeFrom("[[ACTION_RESULT: No roll]] The door is already open."))
         assertEquals("The door is already open.", adventureProseFrom("[[ACTION_RESULT: No roll]] The door is already open."))
         assertTrue("1d20" !in adventureProseFrom(raw))
+    }
+
+    @Test
+    fun d20ResolutionShowsForAgainstAndPersistsCalculation() {
+        val roll = AdventureRoll(
+            system = "D&D 5e",
+            notation = "1d20+5",
+            total = 19,
+            detail = "14 + 5",
+            rawTotal = 14,
+            modifier = 5,
+            checkLabel = "Melee attack",
+            targetLabel = "Armor Class",
+            targetTotal = 16,
+            outcome = "Success",
+        )
+        assertEquals("1d20+5 · 14 + 5 = 19", roll.forCalculation())
+        assertEquals("Armor Class 16", roll.againstCalculation())
+        assertEquals("+3 over", roll.marginLabel())
+
+        val stored = withAdventureRollMarker("The sword lands.", roll)
+        assertEquals(roll, adventureRollFrom(stored))
+        assertEquals("The sword lands.", adventureProseFrom(stored))
+    }
+
+    @Test
+    fun naturalTwentyAndOneOverrideD20Target() {
+        val base = AdventureRoll(
+            system = "D&D 5e",
+            notation = "1d20",
+            total = 20,
+            detail = "20",
+            rawTotal = 20,
+        )
+        assertEquals("Critical success", adventureRollOutcome(base, 30))
+        assertEquals("Critical failure", adventureRollOutcome(base.copy(total = 11, rawTotal = 1), 5))
     }
 
     @Test

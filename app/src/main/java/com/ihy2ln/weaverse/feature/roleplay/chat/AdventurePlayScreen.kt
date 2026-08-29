@@ -4,6 +4,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -272,6 +273,12 @@ fun AdventurePlayScreen(
                                     modifier = Modifier.padding(bottom = InkSpacing.xs),
                                 )
                             }
+                            message.rollResult?.let { roll ->
+                                AdventureRollCard(
+                                    roll = roll,
+                                    modifier = Modifier.padding(bottom = InkSpacing.xs),
+                                )
+                            }
                             if (message.actionResult.isNotBlank()) {
                                 Text(
                                     "ACTION RESULT · ${message.actionResult.uppercase()}",
@@ -364,8 +371,10 @@ fun AdventurePlayScreen(
             onSpoken = { spoken ->
                 viewModel.onInputChange(mergeSpokenText(state.input, spoken))
             },
-            onAdd = viewModel::requestMediaPick,
-            addSelected = sceneArt != null,
+            compactSingleLine = true,
+            extraActionLabel = "ROLL",
+            onExtraAction = viewModel::rollAction,
+            extraActionEnabled = state.input.isNotBlank() && wordRangeValid && !startupPending,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
@@ -394,5 +403,52 @@ fun AdventurePlayScreen(
             onDismiss = { modelsOpen = false },
         )
     }
+    }
+}
+
+@Composable
+private fun AdventureRollCard(roll: AdventureRoll, modifier: Modifier = Modifier) {
+    val tokens = inkTokens()
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(inkRadiusMd()))
+            .background(Color(0x147341A8))
+            .border(1.dp, Color(0xFF7341A8), RoundedCornerShape(inkRadiusMd()))
+            .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(
+                "${roll.checkLabel.uppercase()} · ${roll.system}",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF7341A8),
+            )
+            Text(
+                roll.outcome.uppercase(),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = tokens.activePill,
+            )
+        }
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
+            Text(
+                "FOR · ${roll.forCalculation()}",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                "AGAINST · ${roll.againstCalculation()}",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Text(
+            "Natural ${roll.rawTotal} · modifier ${if (roll.modifier >= 0) "+${roll.modifier}" else roll.modifier} · ${roll.marginLabel()}",
+            style = MaterialTheme.typography.labelSmall,
+            color = tokens.secondaryText,
+        )
     }
 }

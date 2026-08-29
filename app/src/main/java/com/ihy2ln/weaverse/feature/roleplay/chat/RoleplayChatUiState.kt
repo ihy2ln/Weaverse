@@ -46,8 +46,10 @@ data class RpMessageUi(
     val mediaStackPaths: Map<String, List<String>> = emptyMap(),
     val mediaCollapsed: Map<String, Boolean> = emptyMap(),
     val usageText: String = "",
-    /** Resolved check outcome; the underlying roll remains private. */
+    /** Resolved check outcome paired with the player-visible calculation below. */
     val actionResult: String = "",
+    /** Persisted player-facing FOR versus AGAINST tabletop calculation. */
+    val rollResult: AdventureRoll? = null,
     /** Campaign-opening choice/interview content, before ordinary scene actions begin. */
     val isAdventureSetup: Boolean = false,
 )

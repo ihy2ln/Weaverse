@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -72,6 +73,10 @@ fun UnifiedPromptBar(
     onSpoken: (String) -> Unit,
     onAdd: (() -> Unit)? = null,
     addSelected: Boolean = false,
+    compactSingleLine: Boolean = false,
+    extraActionLabel: String = "",
+    onExtraAction: (() -> Unit)? = null,
+    extraActionEnabled: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val tokens = inkTokens()
@@ -111,6 +116,136 @@ fun UnifiedPromptBar(
             }
         }
         if (collapsed) return@Column
+
+        if (compactSingleLine) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(1.dp),
+            ) {
+                if (onExtraAction != null && extraActionLabel.isNotBlank()) {
+                    Text(
+                        extraActionLabel,
+                        modifier = Modifier
+                            .width(38.dp)
+                            .clip(RoundedCornerShape(inkRadiusSm()))
+                            .background(Color(0xFF7341A8))
+                            .clickable(enabled = extraActionEnabled && !streaming, onClick = onExtraAction)
+                            .padding(vertical = 7.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(tokens.hover)
+                        .padding(horizontal = 5.dp, vertical = 6.dp),
+                ) {
+                    if (value.isBlank()) {
+                        Text(
+                            placeholder,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = tokens.secondaryText,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    BasicTextField(
+                        value = value,
+                        onValueChange = onValueChange,
+                        enabled = !streaming,
+                        textStyle = MaterialTheme.typography.labelMedium.copy(color = tokens.primaryText),
+                        cursorBrush = SolidColor(tokens.primaryText),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Row(
+                    modifier = Modifier.width(70.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(1.dp),
+                ) {
+                    Text("W", style = MaterialTheme.typography.labelSmall, fontSize = 8.sp, color = tokens.secondaryText)
+                    UnifiedNumberField(
+                        minimumWords,
+                        onMinimumWordsChange,
+                        "Minimum words",
+                        !streaming,
+                        wordRangeValid,
+                        widthDp = 25,
+                    )
+                    Text("–", style = MaterialTheme.typography.labelSmall, fontSize = 8.sp)
+                    UnifiedNumberField(
+                        maximumWords,
+                        onMaximumWordsChange,
+                        "Maximum words",
+                        !streaming,
+                        wordRangeValid,
+                        widthDp = 25,
+                    )
+                }
+                Row(
+                    modifier = Modifier
+                        .width(62.dp)
+                        .clip(RoundedCornerShape(inkRadiusSm()))
+                        .clickable(enabled = !streaming, onClick = onModelClick)
+                        .padding(horizontal = 2.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("M·", style = MaterialTheme.typography.labelSmall, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        modelLabel,
+                        modifier = Modifier.weight(1f).basicMarquee(iterations = Int.MAX_VALUE),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 8.sp,
+                        color = tokens.secondaryText,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                }
+                Text(
+                    if (aiMode) "/A" else "\\M",
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(inkRadiusSm()))
+                        .background(InkAccentBlue.copy(alpha = 0.12f))
+                        .clickable(enabled = !streaming, onClick = onToggleMode)
+                        .padding(horizontal = 3.dp, vertical = 7.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = InkAccentBlue,
+                )
+                if (streaming) {
+                    Text(
+                        "×",
+                        modifier = Modifier.size(23.dp).clickable(onClick = onCancel),
+                        style = MaterialTheme.typography.titleMedium,
+                        textAlign = TextAlign.Center,
+                    )
+                } else {
+                    InkCheckIconButton(
+                        onClick = onSubmit,
+                        enabled = canSubmit,
+                        contentDescription = if (aiMode) "Generate" else "Accept",
+                        modifier = Modifier.size(23.dp),
+                    )
+                }
+                InkClearIconButton(onClick = onClear, enabled = canClear, modifier = Modifier.size(23.dp))
+                VoiceInputButton(
+                    onSpoken = onSpoken,
+                    enabled = !streaming,
+                    compact = true,
+                    modifier = Modifier.size(23.dp),
+                )
+            }
+            return@Column
+        }
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -227,6 +362,7 @@ private fun UnifiedNumberField(
     description: String,
     enabled: Boolean,
     valid: Boolean,
+    widthDp: Int = 34,
 ) {
     val tokens = inkTokens()
     BasicTextField(
@@ -239,7 +375,7 @@ private fun UnifiedNumberField(
             color = if (enabled) tokens.primaryText else tokens.secondaryText,
             textAlign = TextAlign.Center,
         ),
-        modifier = Modifier.width(34.dp).semantics { contentDescription = description },
+        modifier = Modifier.width(widthDp.dp).semantics { contentDescription = description },
         decorationBox = { inner ->
             Box(
                 Modifier.border(

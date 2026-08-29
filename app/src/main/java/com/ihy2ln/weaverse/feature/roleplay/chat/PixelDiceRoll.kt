@@ -64,7 +64,7 @@ fun PixelDiceRollOverlay(
             face = Random.nextInt(1, 21)
             delay(64)
         }
-        face = roll.total
+        face = roll.rawTotal
         resolved = true
         delay(1050)
         visible = false
@@ -107,16 +107,33 @@ fun PixelDiceRollOverlay(
                     textAlign = TextAlign.Center,
                 )
             }
-            Text(
-                if (resolved && roll != null) {
-                    "${roll.system} · ${roll.notation} = ${roll.total}"
-                } else {
-                    "ROLLING ${roll?.notation.orEmpty()}"
-                },
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = if (resolved) Color(0xFF8FE3B2) else Color.White,
-            )
+            if (resolved && roll != null) {
+                Text(
+                    "FOR · ${roll.forCalculation()}",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                )
+                Text(
+                    "AGAINST · ${roll.againstCalculation()}",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                )
+                Text(
+                    "${roll.outcome.uppercase()} · ${roll.marginLabel()}",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Black,
+                    color = Color(0xFF8FE3B2),
+                )
+            } else {
+                Text(
+                    "ROLLING ${roll?.notation.orEmpty()} FOR ${roll?.checkLabel.orEmpty().uppercase()}",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                )
+            }
         }
     }
 }

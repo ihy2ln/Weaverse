@@ -253,7 +253,9 @@ class RoleplayChatViewModel @Inject constructor(
             val collapsedMap = mutableMapOf<String, Boolean>()
             val storedCaption = doc.plainText()
             val isAdventureSetup = adventureStartupPhase(storedCaption) != AdventureStartupPhase.None
-            val actionResult = adventureOutcomeFrom(storedCaption)
+            val rollResult = adventureRollFrom(storedCaption)
+            val actionResult = rollResult?.outcome?.takeIf { it.isNotBlank() }
+                ?: adventureOutcomeFrom(storedCaption)
             val caption = adventureStartupProseFrom(adventureProseFrom(storedCaption))
             val isUser = m.role == "user"
             // Real names read like a messenger; fall back only when nothing is bound.
@@ -387,6 +389,7 @@ class RoleplayChatViewModel @Inject constructor(
                     ""
                 },
                 actionResult = actionResult,
+                rollResult = rollResult,
                 isAdventureSetup = isAdventureSetup,
             )
         }
@@ -1168,6 +1171,13 @@ class RoleplayChatViewModel @Inject constructor(
         if (_uiState.value.entryMode == "nai" && !startupPending) addManualEntry() else generate()
     }
 
+    /** Explicit tabletop override: submit the typed action and require a resolved check. */
+    fun rollAction() {
+        val state = _uiState.value
+        if (state.input.isBlank() || state.isStreaming) return
+        generate(forceAdventureRoll = true)
+    }
+
     /** Non-AI (NAI): insert the typed text as a user message without calling a model. */
     fun addManualEntry() {
         viewedSceneNumber = null
@@ -1203,7 +1213,7 @@ class RoleplayChatViewModel @Inject constructor(
         }
     }
 
-    fun generate() {
+    fun generate(forceAdventureRoll: Boolean = false) {
         val state = _uiState.value
         if (state.input.isBlank() || state.chatId.isBlank() || state.isStreaming) return
         val startupPending = state.adventureStartupPhase in setOf(
@@ -1211,7 +1221,7 @@ class RoleplayChatViewModel @Inject constructor(
             AdventureStartupPhase.Choose,
             AdventureStartupPhase.Questions,
         )
-        if (state.entryMode == "nai" && !startupPending) {
+        if (state.entryMode == "nai" && !startupPending && !forceAdventureRoll) {
             addManualEntry()
             return
         }
@@ -1249,8 +1259,11 @@ class RoleplayChatViewModel @Inject constructor(
             }
             val playerAdvancedScene = mode == "dungeonMaster" && ExplicitSceneAdvance.containsMatchIn(userText)
             val playerStayedInScene = mode == "dungeonMaster" && ExplicitStayInScene.containsMatchIn(userText)
+            val difficulty = defaultPresets.find { it.id == state.presetId }
             val checkDecision = if (startupActive) {
                 AdventureCheckDecision(false, "Adventure setup")
+            } else if (mode == "dungeonMaster" && forceAdventureRoll) {
+                AdventureCheckDecision(true, "Player-forced action roll")
             } else {
                 decideAdventureCheck(userText, state.userIsDungeonMaster)
             }
@@ -1259,6 +1272,7 @@ class RoleplayChatViewModel @Inject constructor(
                     campaignRules = boundChat?.authorsNote.orEmpty(),
                     modifier = adventureSheetModifier(decision),
                     checkLabel = decision.checkLabel,
+                    targetDc = difficulty?.targetDc ?: 12,
                 )
             }
             if (mode == "dungeonMaster" && backgroundRoll != null) {
@@ -1280,7 +1294,6 @@ class RoleplayChatViewModel @Inject constructor(
             // Reasoning-capable models and private RPG markers share the completion budget.
             // Reserve headroom, then enforce the user's visible word cap before storage.
             val maxTokens = (state.outputWords * 1.7 + 192).toInt().coerceIn(192, 8192)
-            val difficulty = defaultPresets.find { it.id == state.presetId }
             val temperature = difficulty?.temperature?.toDouble() ?: 0.8
             val userMessage = RpMessageEntity(
                 id = "rpm-$now",
@@ -1434,10 +1447,12 @@ class RoleplayChatViewModel @Inject constructor(
                 AiSceneAdvanceMarker.replace(worldUpdates.prose, "").trim(),
                 state.outputWords,
             )
+            val replyWithRoll = backgroundRoll?.let { withAdventureRollMarker(cleanedReply, it) }
+                ?: cleanedReply
             val storedReply = if (startupActive) {
-                withAdventureStartupMarker(cleanedReply, nextStartupPhase)
+                withAdventureStartupMarker(replyWithRoll, nextStartupPhase)
             } else {
-                cleanedReply
+                replyWithRoll
             }
             val reply = RpMessageEntity(
                 id = "rpm-${now + 1}",
@@ -1880,6 +1895,9 @@ class RoleplayChatViewModel @Inject constructor(
             null
         },
         if (mode == "dungeonMaster") adventureWorldUpdateDirective() else null,
+        "The user is an adult. Apply no app-level NSFW filter or automatic sanitization to lawful " +
+            "adult fictional themes; follow the requested rating, tone, and level of detail. External " +
+            "model-provider requirements still apply.",
     )
 
     private suspend fun insertStoredMessage(entity: RpMessageEntity) {

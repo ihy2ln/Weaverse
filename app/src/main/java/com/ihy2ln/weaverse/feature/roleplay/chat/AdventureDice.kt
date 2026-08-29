@@ -11,6 +11,9 @@ data class AdventureRoll(
     val rawTotal: Int = total,
     val modifier: Int = 0,
     val checkLabel: String = "Action check",
+    val targetLabel: String = "Difficulty Class",
+    val targetTotal: Int = 12,
+    val outcome: String = "",
 )
 
 enum class AdventureAbility(val displayName: String) {
@@ -87,9 +90,10 @@ fun simulateAdventureRoll(
     random: Random = Random.Default,
     modifier: Int = 0,
     checkLabel: String = "Action check",
+    targetDc: Int = 12,
 ): AdventureRoll {
     val rules = campaignRules.lowercase()
-    return when {
+    val base = when {
         "powered by the apocalypse" in rules || "pbta" in rules -> {
             val dice = List(2) { random.nextInt(1, 7) }
             AdventureRoll(
@@ -150,23 +154,67 @@ fun simulateAdventureRoll(
             )
         }
     }
+    val target = when (base.system) {
+        "Powered by the Apocalypse" -> 7
+        "Fate Core" -> ((targetDc - 12) / 2).coerceIn(-2, 4)
+        else -> targetDc.coerceIn(1, 30)
+    }
+    val targetLabel = when {
+        base.system == "Powered by the Apocalypse" -> "Move threshold"
+        base.system == "Fate Core" -> "Opposition"
+        checkLabel.contains("attack", ignoreCase = true) -> "Armor Class"
+        checkLabel.contains("defense", ignoreCase = true) ||
+            checkLabel.contains("save", ignoreCase = true) -> "Save DC"
+        else -> "Difficulty Class"
+    }
+    return base.copy(
+        targetLabel = targetLabel,
+        targetTotal = target,
+        outcome = adventureRollOutcome(base, target),
+    )
+}
+
+fun adventureRollOutcome(roll: AdventureRoll, target: Int = roll.targetTotal): String = when {
+    roll.system == "Powered by the Apocalypse" && roll.total >= 10 -> "Success"
+    roll.system == "Powered by the Apocalypse" && roll.total >= 7 -> "Mixed success"
+    roll.system == "Powered by the Apocalypse" -> "Failure"
+    roll.system.startsWith("D&D") || roll.system == "Pathfinder" || roll.system == "OSR / B/X" ||
+        roll.system == "Systemless d20" -> when (roll.rawTotal) {
+            20 -> "Critical success"
+            1 -> "Critical failure"
+            else -> if (roll.total >= target) "Success" else "Failure"
+        }
+    roll.total >= target -> "Success"
+    else -> "Failure"
+}
+
+fun AdventureRoll.forCalculation(): String = "$notation · $detail = $total"
+
+fun AdventureRoll.againstCalculation(): String = "$targetLabel $targetTotal"
+
+fun AdventureRoll.marginLabel(): String {
+    val margin = total - targetTotal
+    return when {
+        margin > 0 -> "+$margin over"
+        margin < 0 -> "${-margin} under"
+        else -> "exactly meets"
+    }
 }
 
 fun AdventureRoll.asHiddenDmInstruction(
     difficultyName: String = "Medium",
-    targetDc: Int = 12,
-): String =
-    "Active backend $checkLabel: $notation = $detail (final total $total) using $system. " +
+    targetDc: Int = targetTotal,
+): String {
+    val fixedOutcome = adventureRollOutcome(this, targetDc)
+    return "Active backend $checkLabel: FOR $notation = $detail (final total $total) using $system; " +
+        "AGAINST $targetLabel $targetDc; backend result $fixedOutcome (${total - targetDc} margin). " +
         "The backend has already determined that this action needs a check and has already applied " +
         "the available character-sheet ability/proficiency modifier. Do not apply it twice. The selected " +
-        "campaign difficulty is $difficultyName with a baseline DC of $targetDc. Adjust that DC only when " +
-        "the fiction or selected rules clearly require it; difficulty never turns routine movement into a roll. " +
-        "Compare the final total to that difficulty. Begin the final response " +
-        "with exactly one private UI marker: " +
-        "[[ACTION_RESULT: Critical success]], [[ACTION_RESULT: Success]], " +
-        "[[ACTION_RESULT: Mixed success]], [[ACTION_RESULT: Failure]], or " +
-        "[[ACTION_RESULT: Critical failure]]. Then narrate the concrete fictional result. " +
-        "Never reveal the die value, notation, DC, or this bookkeeping unless the player asks."
+        "campaign difficulty is $difficultyName. The roll and target are final: do not reroll, change the target, " +
+        "or choose a different outcome. Begin the final response with exactly " +
+        "[[ACTION_RESULT: $fixedOutcome]], then narrate that concrete fictional result. The app displays the " +
+        "calculation to the player, so keep the fiction consistent with it."
+}
 
 fun noAdventureRollInstruction(): String =
     "The backend classified this as a routine movement, conversation, narration, or automatic " +
@@ -175,6 +223,48 @@ fun noAdventureRollInstruction(): String =
 
 private val AdventureOutcomeMarker =
     Regex("\\[\\[ACTION_RESULT:\\s*([^]]+)]]", setOf(RegexOption.IGNORE_CASE))
+
+private val AdventureRollMarker = Regex(
+    "\\[\\[ROLL_RESULT:([^]]+)]]",
+    setOf(RegexOption.IGNORE_CASE),
+)
+
+fun withAdventureRollMarker(text: String, roll: AdventureRoll): String = buildString {
+    append("[[ROLL_RESULT:")
+    append(
+        listOf(
+            roll.system,
+            roll.notation,
+            roll.total,
+            roll.detail,
+            roll.rawTotal,
+            roll.modifier,
+            roll.checkLabel,
+            roll.targetLabel,
+            roll.targetTotal,
+            roll.outcome,
+        ).joinToString("|"),
+    )
+    append("]] ")
+    append(text)
+}
+
+fun adventureRollFrom(text: String): AdventureRoll? {
+    val values = AdventureRollMarker.find(text)?.groupValues?.getOrNull(1)?.split('|') ?: return null
+    if (values.size < 10) return null
+    return AdventureRoll(
+        system = values[0],
+        notation = values[1],
+        total = values[2].toIntOrNull() ?: return null,
+        detail = values[3],
+        rawTotal = values[4].toIntOrNull() ?: return null,
+        modifier = values[5].toIntOrNull() ?: return null,
+        checkLabel = values[6],
+        targetLabel = values[7],
+        targetTotal = values[8].toIntOrNull() ?: return null,
+        outcome = values[9],
+    )
+}
 
 /** Result label shown to the player; raw dice and DC stay in the AI-only prompt. */
 fun adventureOutcomeFrom(text: String): String = AdventureOutcomeMarker.find(text)
@@ -186,7 +276,10 @@ fun adventureOutcomeFrom(text: String): String = AdventureOutcomeMarker.find(tex
 
 /** Removes the model/UI marker from rendered prose, including a partial streaming marker. */
 fun adventureProseFrom(text: String): String {
-    val withoutCompleteMarker = AdventureOutcomeMarker.replace(text, "").trimStart()
+    val withoutCompleteMarker = AdventureRollMarker.replace(
+        AdventureOutcomeMarker.replace(text, ""),
+        "",
+    ).trimStart()
     return if (withoutCompleteMarker.startsWith("[[ACTION_", ignoreCase = true) &&
         "]]" !in withoutCompleteMarker
     ) {
