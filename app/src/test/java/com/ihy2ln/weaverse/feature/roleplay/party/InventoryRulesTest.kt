@@ -19,8 +19,18 @@ class InventoryRulesTest {
         name = "Longsword",
         template = InventoryItemTemplate.Weapon.label,
         slotSize = 2,
+        weightLb = 3.0,
+        costGp = 15.0,
+        tags = "Combat, Martial",
     )
-    private val rations = RpItem(id = "food", name = "Rations", quantity = 3, slotSize = 1)
+    private val rations = RpItem(
+        id = "food",
+        name = "Rations",
+        quantity = 3,
+        slotSize = 1,
+        weightLb = 2.0,
+        tags = "Consumable, Survival",
+    )
 
     @Test
     fun equippedBackpackControlsCapacity() {
@@ -48,5 +58,18 @@ class InventoryRulesTest {
             assertEquals(slot, inventoryTemplateFor(slot).equipmentSlot)
         }
         assertTrue(InventoryItemTemplate.PackItem.equipmentSlot == null)
+    }
+
+    @Test
+    fun weightUsesQuantityAndFiltersSearchAcrossTags() {
+        assertEquals(9.0, inventoryWeight(listOf(sword, rations)))
+        assertEquals(listOf(sword), filteredInventory(listOf(sword, rations), "martial", InventoryFilter.All))
+        assertEquals(listOf(rations), filteredInventory(listOf(sword, rations), "", InventoryFilter.Backpack))
+    }
+
+    @Test
+    fun attunementFilterOnlyShowsAttunedItems() {
+        val ring = RpItem(id = "ring", name = "Ring", attuned = true)
+        assertEquals(listOf(ring), filteredInventory(listOf(sword, ring), "", InventoryFilter.Attunement))
     }
 }

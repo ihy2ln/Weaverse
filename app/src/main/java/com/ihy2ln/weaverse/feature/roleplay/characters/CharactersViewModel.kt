@@ -46,12 +46,21 @@ class CharactersViewModel @Inject constructor(
     private val _pendingOpenId = MutableStateFlow<String?>(null)
 
     val uiState: StateFlow<CharactersUiState> = combine(
+        db.roleplayDao().observePersonas(),
         db.roleplayDao().observeCharacters(),
         collapsed,
         _importStatus,
         _pendingOpenId,
-    ) { characters, collapsedIds, status, pendingOpen ->
-        val grouped = characters.groupBy { categoryOf(it) }
+    ) { personas, characters, collapsedIds, status, pendingOpen ->
+        val linkedNames = personas
+            .filter { persona -> characters.any { it.defaultCodexId == "persona:${persona.id}" } }
+            .map { it.name.trim().lowercase() }
+            .toSet()
+        val visibleCharacters = characters.filterNot { character ->
+            character.defaultCodexId?.startsWith("persona:") == true ||
+                character.name.trim().lowercase() in linkedNames
+        }
+        val grouped = visibleCharacters.groupBy { categoryOf(it) }
             .toSortedMap()
             .map { (name, entries) ->
                 CharacterCategoryGroup(

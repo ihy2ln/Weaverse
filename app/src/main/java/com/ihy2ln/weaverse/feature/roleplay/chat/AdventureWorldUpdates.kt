@@ -100,7 +100,7 @@ fun adventureWorldProseFrom(text: String): String {
 }
 
 fun adventureWorldUpdateDirective(): String =
-    "Maintain the adventure's backend records. Begin every resolved adventure response with " +
+    "Maintain the adventure's backend records. After the visible adventure response, emit " +
         "[[SCENE_SYNOPSIS: one concise cumulative synopsis of the current scene so far]]. When a named " +
         "character is first created or first met, " +
         "emit one private marker before the visible prose: [[ROSTER_CHARACTER|name=Name|species=Species|" +

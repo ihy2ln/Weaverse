@@ -72,24 +72,35 @@ class InventoryViewModel @Inject constructor(
                 mediaRepository.observeAll(),
             ) { personas, characters, media ->
                 val mediaById = media.associateBy { it.id }
+                val playerSheets = characters
+                    .filter { it.defaultCodexId?.startsWith("persona:") == true }
+                    .associateBy { it.defaultCodexId!!.substringAfter(':') }
+                val legacyPlayerNames = personas
+                    .filter { playerSheets.containsKey(it.id) }
+                    .map { it.name.trim().lowercase() }
+                    .toSet()
                 fun imagePaths(items: List<RpItem>): Map<String, String> = items.mapNotNull { item ->
                     item.imageMediaId
                         ?.let(mediaById::get)
                         ?.let { item.id to mediaRepository.resolveFile(it).absolutePath }
                 }.toMap()
                 // Writer first, then team, NPCs, enemies, and uncategorized cast.
-                val you = personas.map {
-                    val items = decodeItems(it.inventoryJson)
+                val you = personas.map { persona ->
+                    val character = playerSheets[persona.id]
+                    val items = decodeItems(character?.inventoryJson ?: persona.inventoryJson)
                     CarrierUi(
-                        characterId = it.id,
-                        name = it.name,
+                        characterId = character?.id ?: persona.id,
+                        name = persona.name,
                         items = items,
-                        equipment = decodeEquipment(it.equipmentJson),
+                        equipment = decodeEquipment(character?.equipmentJson ?: persona.equipmentJson),
                         itemImagePaths = imagePaths(items),
                         kind = CarrierKind.You,
                     )
                 }
-                val rest = characters.map {
+                val rest = characters.filterNot { character ->
+                    character.defaultCodexId?.startsWith("persona:") == true ||
+                        character.name.trim().lowercase() in legacyPlayerNames
+                }.map {
                     val items = decodeItems(it.inventoryJson)
                     CarrierUi(
                         characterId = it.id,
@@ -115,6 +126,10 @@ class InventoryViewModel @Inject constructor(
         name: String,
         quantity: Int,
         notes: String = "",
+        weightLb: Double = 0.0,
+        costGp: Double = 0.0,
+        tags: String = "",
+        attuned: Boolean = false,
         template: InventoryItemTemplate = InventoryItemTemplate.PackItem,
         slotSize: Int = 1,
         backpackCapacity: Int = template.defaultBackpackCapacity,
@@ -131,6 +146,10 @@ class InventoryViewModel @Inject constructor(
                 name = name.trim(),
                 quantity = quantity.coerceAtLeast(1),
                 notes = notes.trim(),
+                weightLb = weightLb.coerceAtLeast(0.0),
+                costGp = costGp.coerceAtLeast(0.0),
+                tags = tags.trim(),
+                attuned = attuned,
                 template = template.label,
                 slotSize = slotSize.coerceAtLeast(1),
                 backpackCapacity = if (template == InventoryItemTemplate.Backpack) {
@@ -163,6 +182,12 @@ class InventoryViewModel @Inject constructor(
     fun removeItemImage(characterId: String, itemId: String) {
         editItems(characterId) { items ->
             items.map { item -> if (item.id == itemId) item.copy(imageMediaId = null) else item }
+        }
+    }
+
+    fun toggleItemActive(characterId: String, itemId: String) {
+        editItems(characterId) { items ->
+            items.map { item -> if (item.id == itemId) item.copy(active = !item.active) else item }
         }
     }
 

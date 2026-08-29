@@ -226,6 +226,16 @@ data class RpItem(
     val name: String,
     val quantity: Int = 1,
     val notes: String = "",
+    /** Per-item weight used by the compact tabletop inventory ledger. */
+    val weightLb: Double = 0.0,
+    /** Per-item value in gold pieces; currency conversion stays campaign-specific. */
+    val costGp: Double = 0.0,
+    /** Comma-separated searchable labels such as Utility, Combat, or Consumable. */
+    val tags: String = "",
+    /** Whether an attunement-style item is currently bonded to the carrier. */
+    val attuned: Boolean = false,
+    /** Quick active/equipped marker shown in the inventory table. */
+    val active: Boolean = false,
     /** Optional imported equipment/accessory illustration. */
     val imageMediaId: String? = null,
     /** Matches a functional equipment slot or Pack item. */

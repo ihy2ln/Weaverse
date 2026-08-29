@@ -18,6 +18,36 @@ enum class InventoryItemTemplate(
     Backpack("Backpack", RpEquipSlot.Backpack, defaultBackpackCapacity = 12),
 }
 
+enum class InventoryFilter(val label: String) {
+    All("All"),
+    Equipment("Equipment"),
+    Backpack("Backpack"),
+    Attunement("Attunement"),
+}
+
+fun inventoryWeight(items: List<RpItem>): Double = items.sumOf { item ->
+    item.weightLb.coerceAtLeast(0.0) * item.quantity.coerceAtLeast(1)
+}
+
+fun filteredInventory(
+    items: List<RpItem>,
+    query: String,
+    filter: InventoryFilter,
+): List<RpItem> {
+    val needle = query.trim().lowercase()
+    return items.filter { item ->
+        val matchesFilter = when (filter) {
+            InventoryFilter.All -> true
+            InventoryFilter.Equipment -> item.template != InventoryItemTemplate.PackItem.label
+            InventoryFilter.Backpack -> item.template == InventoryItemTemplate.Backpack.label ||
+                item.template == InventoryItemTemplate.PackItem.label
+            InventoryFilter.Attunement -> item.attuned
+        }
+        val searchable = listOf(item.name, item.template, item.tags, item.notes).joinToString(" ").lowercase()
+        matchesFilter && (needle.isBlank() || needle in searchable)
+    }
+}
+
 fun inventoryTemplateFor(slot: RpEquipSlot): InventoryItemTemplate =
     InventoryItemTemplate.entries.first { it.equipmentSlot == slot }
 

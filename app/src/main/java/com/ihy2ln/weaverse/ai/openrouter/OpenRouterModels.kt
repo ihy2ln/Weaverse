@@ -62,6 +62,13 @@ data class OpenRouterChatRequest(
     val temperature: Double? = null,
     @SerialName("top_p") val topP: Double? = null,
     val stream: Boolean = false,
+    val reasoning: OpenRouterReasoning? = null,
+)
+
+@Serializable
+data class OpenRouterReasoning(
+    val effort: String = "minimal",
+    val exclude: Boolean = true,
 )
 
 @Serializable

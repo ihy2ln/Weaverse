@@ -11,6 +11,7 @@ import com.ihy2ln.weaverse.core.text.toJson
 import com.ihy2ln.weaverse.data.db.entities.RpChatEntity
 import com.ihy2ln.weaverse.data.db.entities.RpPageMeta
 import com.ihy2ln.weaverse.data.db.entities.RpMessageEntity
+import com.ihy2ln.weaverse.data.db.entities.RpCharacterEntity
 import com.ihy2ln.weaverse.data.db.entities.encodePages
 import com.ihy2ln.weaverse.core.media.MediaRepository
 import com.ihy2ln.weaverse.data.db.entities.BookEntity
@@ -21,6 +22,8 @@ import com.ihy2ln.weaverse.data.settings.SettingsRepository
 import com.ihy2ln.weaverse.feature.prompt.PromptEntryBus
 import com.ihy2ln.weaverse.feature.prompt.PromptEntryKind
 import com.ihy2ln.weaverse.feature.roleplay.chat.adventureStartupPrompt
+import com.ihy2ln.weaverse.feature.roleplay.characters.RpgCharacterSheet
+import com.ihy2ln.weaverse.feature.roleplay.characters.encodeRpgSheet
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -55,13 +58,17 @@ class AppShellViewModel @Inject constructor(
         db.codexDao().observeAllCategories(),
         db.codexDao().observeAllEntries(),
     ) { personas, roster, categories, entries ->
+        val playerNames = personas.map { it.name.trim().lowercase() }.toSet()
         val characterCategoryIds = categories
             .filter { it.name.equals("Characters", ignoreCase = true) }
             .map { it.id }
             .toSet()
         buildList {
             personas.forEach { add(WorkCharacterOption("persona:${it.id}", it.name, "You")) }
-            roster.forEach { add(WorkCharacterOption("roster:${it.id}", it.name, "Roster")) }
+            roster.filterNot {
+                it.defaultCodexId?.startsWith("persona:") == true ||
+                    it.name.trim().lowercase() in playerNames
+            }.forEach { add(WorkCharacterOption("roster:${it.id}", it.name, "Roster")) }
             entries.filter { it.categoryId in characterCategoryIds }.forEach {
                 add(WorkCharacterOption("codex:${it.id}", it.name, "Codex"))
             }
@@ -124,6 +131,7 @@ class AppShellViewModel @Inject constructor(
             val existing = db.roleplayDao().getChats().firstOrNull {
                 it.bookId == bookId && it.displayMode == "dungeonMaster"
             }
+            existing?.personaId?.let { ensurePlayerSheet(it, System.currentTimeMillis()) }
             val chatId = existing?.id ?: bookRepository.getBook(bookId)?.let { book ->
                 createCampaignSession(
                     book,
@@ -146,7 +154,12 @@ class AppShellViewModel @Inject constructor(
     ): String {
         val now = System.currentTimeMillis()
         val id = "rp-campaign-${java.util.UUID.randomUUID()}"
-        details.mainCharacters
+        val effectiveCharacters = details.mainCharacters.map { option ->
+            if (!option.id.startsWith("persona:")) return@map option
+            val personaId = option.id.substringAfter(':')
+            ensurePlayerSheet(personaId, now) ?: option
+        }
+        effectiveCharacters
             .filter { it.id.startsWith("roster:") }
             .forEach { option ->
                 db.roleplayDao().getCharacter(option.id.substringAfter(':'))?.let { character ->
@@ -159,7 +172,7 @@ class AppShellViewModel @Inject constructor(
             ?: db.roleplayDao().getPersonas().firstOrNull { it.isDefault }?.id
             ?: db.roleplayDao().getPersonas().firstOrNull()?.id
             ?: "persona-default"
-        val mainCharacters = details.mainCharacters.joinToString(", ") { it.name }
+        val mainCharacters = effectiveCharacters.joinToString(", ") { it.name }
             .ifBlank { "None selected — guided character creation required" }
         val userIsDungeonMaster = details.campaignRoleId == "dm" ||
             details.styleGuide.contains("The user is the Dungeon Master", ignoreCase = true)
@@ -168,7 +181,7 @@ class AppShellViewModel @Inject constructor(
             appendLine("Setting: ${details.genre.ifBlank { "Open fantasy setting" }}")
             appendLine("Main character(s): $mainCharacters")
             appendLine(
-                "Main character IDs: " + details.mainCharacters
+                "Main character IDs: " + effectiveCharacters
                     .joinToString(", ") { it.id }
                     .ifBlank { "none" },
             )
@@ -215,6 +228,25 @@ class AppShellViewModel @Inject constructor(
             ),
         )
         return id
+    }
+
+    /** Migrates each player persona to one stable, initially blank tabletop character sheet. */
+    private suspend fun ensurePlayerSheet(personaId: String, now: Long): WorkCharacterOption? {
+        val persona = db.roleplayDao().getPersona(personaId) ?: return null
+        val sheetId = "rpc-player-$personaId"
+        val sheet = db.roleplayDao().getCharacter(sheetId) ?: RpCharacterEntity(
+            id = sheetId,
+            name = persona.name,
+            avatarMediaId = persona.avatarMediaId,
+            description = persona.description,
+            tagsJson = "[\"Player\"]",
+            extensionsJson = encodeRpgSheet("{}", RpgCharacterSheet()),
+            defaultCodexId = "persona:$personaId",
+            inParty = true,
+            createdAt = now,
+        )
+        db.roleplayDao().upsertCharacter(sheet.copy(inParty = true))
+        return WorkCharacterOption("roster:$sheetId", persona.name, "Player roster")
     }
     val historyState = workspaceHistory.state
 

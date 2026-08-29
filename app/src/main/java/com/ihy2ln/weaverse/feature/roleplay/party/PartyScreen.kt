@@ -86,8 +86,10 @@ fun PartyScreen(
             items(state.players, key = { "p-${it.id}" }) { member ->
                 PartyRow(
                     member = member,
-                    onOpenSheet = { onOpenPersona(member.id) },
-                    onOpenInventory = { onOpenInventory(member.id) },
+                    onOpenSheet = {
+                        member.sheetCharacterId?.let(onOpenCharacter) ?: onOpenPersona(member.id)
+                    },
+                    onOpenInventory = { onOpenInventory(member.sheetCharacterId ?: member.id) },
                 )
             }
         }
@@ -241,7 +243,11 @@ private fun PartyRow(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
-                    if (member.isPlayer) "Open profile ›" else "Open character sheet ›",
+                    if (member.isPlayer && member.sheetCharacterId == null) {
+                        "Open profile ›"
+                    } else {
+                        "Open character sheet ›"
+                    },
                     style = MaterialTheme.typography.labelSmall,
                     color = tokens.activePill,
                 )

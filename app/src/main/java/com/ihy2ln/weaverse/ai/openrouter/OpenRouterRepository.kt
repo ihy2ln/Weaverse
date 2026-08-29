@@ -117,6 +117,7 @@ class OpenRouterRepository @Inject constructor(
                 maxTokens = request.maxTokens,
                 temperature = request.temperature,
                 topP = request.topP,
+                reasoning = OpenRouterReasoning(effort = "minimal", exclude = true),
             ),
         )
 
@@ -204,6 +205,7 @@ class OpenRouterRepository @Inject constructor(
                 maxTokens = request.maxTokens,
                 temperature = request.temperature,
                 topP = request.topP,
+                reasoning = OpenRouterReasoning(effort = "minimal", exclude = true),
             ),
         )
 

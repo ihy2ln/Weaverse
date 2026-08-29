@@ -1277,7 +1277,9 @@ class RoleplayChatViewModel @Inject constructor(
             } else if (backgroundRoll == null) {
                 _uiState.update { it.copy(activeRoll = null) }
             }
-            val maxTokens = (state.outputWords * 1.5).toInt().coerceIn(64, 8192)
+            // Reasoning-capable models and private RPG markers share the completion budget.
+            // Reserve headroom, then enforce the user's visible word cap before storage.
+            val maxTokens = (state.outputWords * 1.7 + 192).toInt().coerceIn(192, 8192)
             val difficulty = defaultPresets.find { it.id == state.presetId }
             val temperature = difficulty?.temperature?.toDouble() ?: 0.8
             val userMessage = RpMessageEntity(
@@ -1398,6 +1400,21 @@ class RoleplayChatViewModel @Inject constructor(
             }
             val rawReply = builder.toString()
             val worldUpdates = adventureWorldUpdatesFrom(rawReply)
+            val visibleReply = adventureStartupProseFrom(
+                adventureProseFrom(AiSceneAdvanceMarker.replace(worldUpdates.prose, "").trim()),
+            )
+            if (visibleReply.isBlank()) {
+                db.roleplayDao().deleteMessage(userMessage.id)
+                _uiState.update {
+                    it.copy(
+                        input = userText,
+                        isStreaming = false,
+                        streamingText = "",
+                        errorMessage = "The selected model returned no visible DM response. Your action was restored; tap ✓ to retry or choose another model.",
+                    )
+                }
+                return@launch
+            }
             persistAdventureWorldUpdates(worldUpdates)
             val aiAdvanceMatch = AiSceneAdvanceMarker.find(worldUpdates.prose)
             val aiAdvancedScene = mode == "dungeonMaster" && aiAdvanceMatch != null &&
@@ -1517,7 +1534,7 @@ class RoleplayChatViewModel @Inject constructor(
                             PromptWordLimit.instruction(state.minimumOutputWords, words),
                     ),
                     modelRef = activeModelRef,
-                    maxTokens = (words * 1.5).toInt().coerceIn(64, 8192),
+                    maxTokens = (words * 1.7 + 192).toInt().coerceIn(192, 8192),
                     temperature = temperature,
                 )
             }.onSuccess { reply ->
@@ -1756,7 +1773,6 @@ class RoleplayChatViewModel @Inject constructor(
                 defaultCodexId = codexEntry.id,
                 colorHex = existing?.colorHex ?: avatarColorHexFor(update.name, null),
                 inParty = categoryName == "Team" || existing?.inParty == true,
-                updatedAt = now,
             )
             db.roleplayDao().upsertCharacter(character)
             if (character.inParty && boundCharacter == null) {
@@ -1790,7 +1806,6 @@ class RoleplayChatViewModel @Inject constructor(
                 name = category,
                 colorHex = if (category.equals("Characters", true)) "#3F7A5A" else "#6B5B95",
                 sortOrder = categories.size,
-                updatedAt = now,
             ).also { db.codexDao().upsertCategory(it) }
         val existing = db.codexDao().getEntries(scopeId)
             .firstOrNull { it.categoryId == categoryEntity.id && it.name.equals(name, ignoreCase = true) }

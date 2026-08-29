@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,9 +17,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
@@ -81,6 +84,11 @@ fun InventoryScreen(
     val inventoryListState = rememberLazyListState()
     var draftName by remember { mutableStateOf("") }
     var draftQty by remember { mutableStateOf("1") }
+    var draftNotes by remember { mutableStateOf("") }
+    var draftWeight by remember { mutableStateOf("0") }
+    var draftCost by remember { mutableStateOf("0") }
+    var draftTags by remember { mutableStateOf("") }
+    var draftAttuned by remember { mutableStateOf(false) }
     var draftSlotSize by remember { mutableStateOf("1") }
     var draftBackpackCapacity by remember { mutableStateOf("12") }
     var draftTemplate by remember { mutableStateOf(InventoryItemTemplate.PackItem) }
@@ -88,6 +96,8 @@ fun InventoryScreen(
     var draftImageUri by remember { mutableStateOf<Uri?>(null) }
     var imageMenuTarget by remember { mutableStateOf<Pair<String, RpItem>?>(null) }
     var imageTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var inventoryQuery by rememberSaveable { mutableStateOf("") }
+    var inventoryFilterName by rememberSaveable { mutableStateOf(InventoryFilter.All.name) }
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
     ) { uri ->
@@ -119,6 +129,11 @@ fun InventoryScreen(
     ) {
         draftName = ""
         draftQty = "1"
+        draftNotes = ""
+        draftWeight = "0"
+        draftCost = "0"
+        draftTags = ""
+        draftAttuned = false
         draftSlotSize = "1"
         draftBackpackCapacity = template.defaultBackpackCapacity.coerceAtLeast(12).toString()
         draftTemplate = template
@@ -241,6 +256,25 @@ fun InventoryScreen(
                 }
             }
             if (openCharacterId == carrier.characterId) {
+                item(key = "ledger-${carrier.characterId}") {
+                    InventoryLedger(
+                        carrier = carrier,
+                        query = inventoryQuery,
+                        filter = InventoryFilter.valueOf(inventoryFilterName),
+                        onQueryChange = { inventoryQuery = it },
+                        onFilterChange = { inventoryFilterName = it.name },
+                        onToggleActive = { itemId ->
+                            viewModel.toggleItemActive(carrier.characterId, itemId)
+                        },
+                        onImageClick = { item ->
+                            manageItemImage(
+                                carrier.characterId,
+                                item,
+                                carrier.itemImagePaths[item.id].orEmpty(),
+                            )
+                        },
+                    )
+                }
                 item(key = "equip-${carrier.characterId}") {
                     EquipmentPlate(
                         equipment = carrier.equipment,
@@ -449,6 +483,45 @@ fun InventoryScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    Row(horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                        OutlinedTextField(
+                            value = draftWeight,
+                            onValueChange = { draftWeight = it.filter { char -> char.isDigit() || char == '.' }.take(8) },
+                            label = { Text("Weight (lb)") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedTextField(
+                            value = draftCost,
+                            onValueChange = { draftCost = it.filter { char -> char.isDigit() || char == '.' }.take(8) },
+                            label = { Text("Cost (gp)") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    OutlinedTextField(
+                        value = draftTags,
+                        onValueChange = { draftTags = it },
+                        label = { Text("Tags") },
+                        supportingText = { Text("Examples: Combat, Utility, Consumable") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = draftNotes,
+                        onValueChange = { draftNotes = it },
+                        label = { Text("Notes") },
+                        minLines = 2,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        if (draftAttuned) "✓ Attunement required" else "□ No attunement",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (draftAttuned) tokens.activePill else tokens.secondaryText,
+                        modifier = Modifier
+                            .clickable { draftAttuned = !draftAttuned }
+                            .padding(vertical = InkSpacing.xs),
+                    )
                     OutlinedTextField(
                         value = draftSlotSize,
                         onValueChange = { draftSlotSize = it.filter(Char::isDigit).take(2) },
@@ -476,6 +549,11 @@ fun InventoryScreen(
                             characterId = characterId,
                             name = draftName,
                             quantity = draftQty.toIntOrNull()?.coerceAtLeast(1) ?: 1,
+                            notes = draftNotes,
+                            weightLb = draftWeight.toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0,
+                            costGp = draftCost.toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0,
+                            tags = draftTags,
+                            attuned = draftAttuned,
                             template = draftTemplate,
                             slotSize = draftSlotSize.toIntOrNull()?.coerceAtLeast(1) ?: 1,
                             backpackCapacity = draftBackpackCapacity.toIntOrNull()
@@ -534,6 +612,197 @@ fun InventoryScreen(
             },
         )
     }
+}
+
+/** Compact tabletop ledger layered above the existing visual gear and backpack views. */
+@Composable
+private fun InventoryLedger(
+    carrier: CarrierUi,
+    query: String,
+    filter: InventoryFilter,
+    onQueryChange: (String) -> Unit,
+    onFilterChange: (InventoryFilter) -> Unit,
+    onToggleActive: (String) -> Unit,
+    onImageClick: (RpItem) -> Unit,
+) {
+    val tokens = inkTokens()
+    val shown = filteredInventory(carrier.items, query, filter)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = InkSpacing.lg, vertical = InkSpacing.xs),
+        verticalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "WEIGHT CARRIED",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.4.sp,
+                    color = tokens.secondaryText,
+                )
+                Text(
+                    "${"%.1f".format(inventoryWeight(carrier.items))} lb",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            Text(
+                "${carrier.items.sumOf { it.quantity.coerceAtLeast(1) }} items",
+                style = MaterialTheme.typography.labelMedium,
+                color = tokens.secondaryText,
+            )
+        }
+        OutlinedTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            label = { Text("Search items, types, rarities, or tags") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+        ) {
+            InventoryFilter.entries.forEach { choice ->
+                Text(
+                    choice.label.uppercase(),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (choice == filter) tokens.activePillLabel else tokens.secondaryText,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(inkRadiusSm()))
+                        .background(if (choice == filter) tokens.activePill else tokens.panel)
+                        .border(1.dp, tokens.hairline, RoundedCornerShape(inkRadiusSm()))
+                        .clickable { onFilterChange(choice) }
+                        .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
+                )
+            }
+        }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(inkRadiusSm()))
+                .border(1.dp, tokens.hairline, RoundedCornerShape(inkRadiusSm()))
+                .horizontalScroll(rememberScrollState()),
+        ) {
+            InventoryLedgerHeader()
+            if (shown.isEmpty()) {
+                Text(
+                    if (carrier.items.isEmpty()) "No items yet. Use + Item to add equipment or supplies."
+                    else "No inventory matches this search and filter.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = tokens.secondaryText,
+                    modifier = Modifier.width(760.dp).padding(InkSpacing.md),
+                )
+            } else {
+                shown.forEach { item ->
+                    InventoryLedgerRow(
+                        item = item,
+                        imagePath = carrier.itemImagePaths[item.id].orEmpty(),
+                        onToggleActive = { onToggleActive(item.id) },
+                        onImageClick = { onImageClick(item) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InventoryLedgerHeader() {
+    val tokens = inkTokens()
+    Row(
+        modifier = Modifier.width(760.dp).background(tokens.hover).padding(InkSpacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        LedgerCell("ACTIVE", 54, true)
+        LedgerCell("NAME", 230, true)
+        LedgerCell("WEIGHT", 72, true)
+        LedgerCell("QTY", 52, true)
+        LedgerCell("COST (GP)", 78, true)
+        LedgerCell("NOTES", 250, true)
+    }
+}
+
+@Composable
+private fun InventoryLedgerRow(
+    item: RpItem,
+    imagePath: String,
+    onToggleActive: () -> Unit,
+    onImageClick: () -> Unit,
+) {
+    val tokens = inkTokens()
+    Row(
+        modifier = Modifier
+            .width(760.dp)
+            .border(0.5.dp, tokens.hairline)
+            .padding(InkSpacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            if (item.active) "■" else "□",
+            color = if (item.active) tokens.activePill else tokens.secondaryText,
+            modifier = Modifier.width(54.dp).clickable(onClick = onToggleActive).padding(8.dp),
+        )
+        Row(
+            modifier = Modifier.width(230.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(RoundedCornerShape(inkRadiusSm()))
+                    .background(tokens.hover)
+                    .clickable(onClick = onImageClick),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (imagePath.isNotBlank()) {
+                    AsyncImage(
+                        model = File(imagePath),
+                        contentDescription = "${item.name} picture",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    Text("＋", style = MaterialTheme.typography.labelMedium, color = tokens.activePill)
+                }
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(item.name, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text(
+                    listOf(item.template, item.tags).filter(String::isNotBlank).joinToString(" · "),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.secondaryText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        LedgerCell("${"%.1f".format(item.weightLb)} lb", 72)
+        LedgerCell(item.quantity.toString(), 52)
+        LedgerCell("%.2f".format(item.costGp), 78)
+        LedgerCell(
+            listOf(item.notes, if (item.attuned) "Attunement" else "").filter(String::isNotBlank).joinToString(" · "),
+            250,
+        )
+    }
+}
+
+@Composable
+private fun LedgerCell(text: String, width: Int, header: Boolean = false) {
+    val tokens = inkTokens()
+    Text(
+        text,
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = if (header) FontWeight.Bold else FontWeight.Normal,
+        color = if (header) tokens.secondaryText else tokens.primaryText,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.width(width.dp).padding(horizontal = 3.dp),
+    )
 }
 
 @Composable

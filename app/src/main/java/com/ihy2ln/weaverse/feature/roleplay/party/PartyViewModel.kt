@@ -28,6 +28,8 @@ data class PartyMemberUi(
     val armorClassLabel: String = "",
     /** Player personas open the persona editor; everyone else the character editor. */
     val isDefaultPersona: Boolean = false,
+    /** Stable blank/full sheet created for this player when an adventure begins. */
+    val sheetCharacterId: String? = null,
 )
 
 data class PartyUiState(
@@ -62,25 +64,45 @@ class PartyViewModel @Inject constructor(
                 mediaRepository.observeAll(),
             ) { personas, characters, media ->
                 val mediaById = media.associateBy { it.id }
+                val playerSheets = characters
+                    .filter { it.defaultCodexId?.startsWith("persona:") == true }
+                    .associateBy { it.defaultCodexId!!.substringAfter(':') }
+                val legacyPlayerNames = personas
+                    .filter { playerSheets.containsKey(it.id) }
+                    .map { it.name.trim().lowercase() }
+                    .toSet()
+                val nonPlayerCharacters = characters.filterNot { character ->
+                    character.defaultCodexId?.startsWith("persona:") == true ||
+                        character.name.trim().lowercase() in legacyPlayerNames
+                }
                 fun portraitPath(mediaId: String?): String = mediaId
                     ?.let(mediaById::get)
                     ?.let { mediaRepository.resolveFile(it).absolutePath }
                     .orEmpty()
                 PartyUiState(
                     players = personas.map { persona ->
+                        val character = playerSheets[persona.id]
+                        val sheet = character?.let { decodeRpgSheet(it.extensionsJson) }
                         PartyMemberUi(
                             id = persona.id,
                             name = persona.name,
-                            avatarColorHex = avatarColorHexFor(persona.name, null),
-                            summary = persona.description.lineSequence().firstOrNull()?.trim().orEmpty(),
-                            personality = "",
+                            avatarColorHex = avatarColorHexFor(persona.name, character?.colorHex),
+                            summary = character?.description
+                                ?.lineSequence()?.firstOrNull()?.trim()
+                                .orEmpty()
+                                .ifBlank { persona.description.lineSequence().firstOrNull()?.trim().orEmpty() },
+                            personality = character?.personality.orEmpty(),
                             isPlayer = true,
-                            portraitPath = portraitPath(persona.avatarMediaId),
+                            portraitPath = portraitPath(character?.avatarMediaId ?: persona.avatarMediaId),
+                            sheetLabel = sheet?.let { "${it.characterClass} ${it.level}" }.orEmpty(),
+                            hpLabel = sheet?.let { "${it.currentHp}/${it.maxHp}" }.orEmpty(),
+                            armorClassLabel = sheet?.armorClass?.toString().orEmpty(),
                             isDefaultPersona = persona.isDefault,
+                            sheetCharacterId = character?.id,
                         )
                     },
                     // Roster is the immediate team only — the wider cast lives in Lore.
-                    cast = characters.filter { it.inParty }.map { character ->
+                    cast = nonPlayerCharacters.filter { it.inParty }.map { character ->
                         val sheet = decodeRpgSheet(character.extensionsJson)
                         PartyMemberUi(
                             id = character.id,
@@ -95,7 +117,7 @@ class PartyViewModel @Inject constructor(
                             armorClassLabel = sheet.armorClass.toString(),
                         )
                     },
-                    bench = characters.filterNot { it.inParty }.map { character ->
+                    bench = nonPlayerCharacters.filterNot { it.inParty }.map { character ->
                         val sheet = decodeRpgSheet(character.extensionsJson)
                         PartyMemberUi(
                             id = character.id,
