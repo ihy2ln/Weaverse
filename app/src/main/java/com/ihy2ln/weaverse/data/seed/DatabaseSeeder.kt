@@ -242,7 +242,10 @@ class DatabaseSeeder @Inject constructor(
         DefaultAiGuides.seedPrompts(now).forEach { incoming ->
             val existing = existingById[incoming.id]
             db.promptDao().upsert(
-                incoming.copy(createdAt = existing?.createdAt ?: incoming.createdAt),
+                incoming.copy(
+                    isDefault = existing?.isDefault ?: incoming.isDefault,
+                    createdAt = existing?.createdAt ?: incoming.createdAt,
+                ),
             )
         }
     }

@@ -33,6 +33,21 @@ class DefaultAiGuidesTest {
     }
 
     @Test
+    fun adamsHavenMw_isSeededAsAnAdultOnlySceneTemplateWithRequestedCanon() {
+        val prompt = DefaultAiGuides.seedPrompts(0L).single { it.id == "prompt-adams-haven-mw" }
+        val instructions = prompt.instructionsJson
+
+        assertTrue(prompt.name == "Adams Haven MW")
+        assertTrue(prompt.folderId == "folder-adams-haven")
+        assertTrue(prompt.type == "scene_beat")
+        assertTrue(instructions.contains("adult-themed ecchi mangaka"))
+        assertTrue(instructions.contains("18 or older"))
+        listOf("WAHB", "WAH", "WAHO", "AFM", "Gender Ratio", "GKOM", "Celestium").forEach { term ->
+            assertTrue(instructions.contains(term), "Adams Haven MW should include $term")
+        }
+    }
+
+    @Test
     fun thinSystemPrompt_detectsOldDefaults() {
         assertTrue(DefaultAiGuides.isThinSystemPrompt("Amara", ""))
         assertTrue(DefaultAiGuides.isThinSystemPrompt("Amara", "You are Amara. Stay in character."))

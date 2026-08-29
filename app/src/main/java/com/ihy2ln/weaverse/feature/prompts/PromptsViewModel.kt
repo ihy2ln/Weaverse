@@ -218,6 +218,12 @@ class PromptsViewModel @Inject constructor(
                 isDefault = state.isDefault,
                 createdAt = existing?.createdAt ?: System.currentTimeMillis(),
             )
+            if (entity.isDefault) {
+                state.folders
+                    .flatMap { it.prompts }
+                    .filter { it.id != entity.id && it.type == entity.type && it.isDefault }
+                    .forEach { promptRepository.upsert(it.copy(isDefault = false)) }
+            }
             promptRepository.upsert(entity)
             if (existing != null && existing != entity) {
                 workspaceHistory.record(

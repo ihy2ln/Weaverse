@@ -207,11 +207,79 @@ object DefaultAiGuides {
         PromptFolderEntity("folder-continue", "Continue", "continue", isSystem = true),
         PromptFolderEntity("folder-expand", "Expand", "expand", isSystem = true),
         PromptFolderEntity("folder-roleplay", "Roleplay", "roleplay", isSystem = true),
+        PromptFolderEntity("folder-adams-haven", "Adams Haven", "adams_haven", isSystem = true),
         PromptFolderEntity("folder-components", "Prompt Components", PromptComponentType, isSystem = true),
         PromptFolderEntity("folder-custom", "Custom", "custom", isSystem = false),
     )
 
     fun seedPrompts(now: Long): List<PromptEntity> = listOf(
+        PromptEntity(
+            id = "prompt-adams-haven-mw",
+            folderId = "folder-adams-haven",
+            name = "Adams Haven MW",
+            type = "scene_beat",
+            description = "Adult male-wish-fulfilment prose with the visual rhythm and sensual energy of an ecchi mangaka.",
+            instructionsJson = messagesJson(
+                system(
+                    """
+                    You are the creative engine for Adams Haven MW. Write from the craft perspective of a fictional adult-themed ecchi mangaka: visual scene composition, expressive reactions, playful sensual tension, confident fan-service, romantic escalation, comedy, and emotionally satisfying adult male wish fulfilment translated into polished prose.
+
+                    This is fiction for adults. Every character who participates in romantic or sexual material must be unambiguously 18 or older. Match the user's requested level of mature detail while keeping character agency, established characterization, and story continuity intact.
+
+                    $styleRules
+
+                    {include("Weaverse/AdditionalInstructions")}
+
+                    Adams Haven canon requirements:
+                    - Treat the attached Codex as the authority and actively consult the entries or aliases WAHB, WAH, WAHO, AFM, Gender Ratio, GKOM, and Celestium whenever they apply.
+                    - Preserve the project-defined meaning of each of those terms. Do not invent a replacement expansion for an acronym when its Codex entry supplies the meaning.
+                    - Use the Gender Ratio as a lived social and relationship-worldbuilding force, not a detached statistic.
+                    - Keep Celestium consistent as established technology, material, object, or lore in the attached Codex.
+                    - Weave relevant canon into action, dialogue, attraction, social expectations, and consequences instead of dumping exposition.
+
+                    $stopEarlyRules
+                    """.trimIndent(),
+                ),
+                user(
+                    """
+                    {include("Weaverse/Personas")}
+
+                    {include("Weaverse/Codex")}
+
+                    {#if storySoFar}
+                    The story so far:
+                    {storySoFar}
+                    {#endif}
+                    """.trimIndent(),
+                ),
+                ai(
+                    """
+                    {#if and(isStartOfText, pov.character is pov.character(scene.previous))}
+                    {lastWords(scene.fullText(scene.previous), 650)}
+                    {#endif}
+                    {textBefore}
+                    """.trimIndent(),
+                ),
+                user(
+                    """
+                    Write no more than {input("Words")} words that continue the story using this beat:
+                    <instructions>
+                    {pov}
+
+                    {message}
+                    </instructions>
+
+                    {include("Weaverse/AdditionalContext")}
+                    """.trimIndent(),
+                ),
+            ),
+            advancedJson = advancedJson(
+                bias = "adult-ecchi-male-wish-fulfilment",
+                guidance = "Use WAHB, WAH, WAHO, AFM, Gender Ratio, GKOM, and Celestium as active canon. All romantic or sexual participants are adults.",
+            ),
+            isSystem = true,
+            createdAt = now,
+        ),
         PromptEntity(
             id = "prompt-scene-beat",
             folderId = "folder-scene",

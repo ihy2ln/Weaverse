@@ -51,7 +51,9 @@ class WritePromptAssembler @Inject constructor(
         }
         val prompts = promptRepository.observeByType(type).first()
             .ifEmpty { promptRepository.observeByType(commandId).first() }
-        val prompt = prompts.firstOrNull { it.isDefault } ?: prompts.firstOrNull()
+        val prompt = prompts.firstOrNull { it.isDefault }
+            ?: prompts.firstOrNull { it.id == "prompt-$type" }
+            ?: prompts.firstOrNull()
         if (prompt == null) {
             return LibraryPromptBundle(
                 promptId = null,
