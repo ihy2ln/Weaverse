@@ -35,24 +35,27 @@ data class RpPreset(
     val description: String,
     val temperature: Float,
     val directive: String,
+    val targetDc: Int,
 )
 
 val defaultPresets = listOf(
     RpPreset(
         id = "preset-slice",
-        name = "Slice of life",
-        description = "Warm and low-stakes. Setbacks are small and nobody really loses.",
+        name = "Easy",
+        description = "Favorable events and forgiving checks. Most reasonable plans work.",
         temperature = 0.95f,
         directive = "Keep the stakes gentle. Conflicts resolve kindly, injuries are minor, " +
-            "and the story favours warmth, humour and everyday moments over danger.",
+            "and the story favours the party. Use mostly easy DCs near 8; reserve harder checks for clearly dangerous feats.",
+        targetDc = 8,
     ),
     RpPreset(
         id = "preset-balanced",
-        name = "Normal",
-        description = "A fair world. Effort is usually rewarded, mistakes usually recoverable.",
+        name = "Medium",
+        description = "A fair tabletop baseline with meaningful but recoverable setbacks.",
         temperature = 0.8f,
         directive = "Let outcomes follow effort. Reasonable plans tend to work, mistakes cost " +
-            "something but are recoverable, and danger is real without being punishing.",
+            "something but are recoverable, and danger is real without being punishing. Use standard DCs near 12.",
+        targetDc = 12,
     ),
     RpPreset(
         id = "preset-hard",
@@ -61,15 +64,17 @@ val defaultPresets = listOf(
         temperature = 0.7f,
         directive = "Make the world push back. Careless choices fail, resources run short, " +
             "and opponents act intelligently. Success must be earned.",
+        targetDc = 16,
     ),
     RpPreset(
         id = "preset-ruthless",
-        name = "Ruthless",
-        description = "Unforgiving. Bad decisions can end the run.",
+        name = "Very Hard",
+        description = "Hostile events, demanding checks, and lasting consequences.",
         temperature = 0.6f,
         directive = "Be unforgiving. Enemies exploit every weakness, luck does not rescue bad " +
             "decisions, and lasting loss — including death — is on the table. Never soften an " +
-            "outcome to spare the player.",
+            "outcome to spare the player. Use demanding DCs near 20 while still honoring clever automatic solutions.",
+        targetDc = 20,
     ),
 )
 
@@ -79,7 +84,7 @@ fun PresetsScreen(viewModel: PresetsViewModel = hiltViewModel()) {
     Column(modifier = Modifier.fillMaxSize().padding(InkSpacing.lg)) {
         Text("Presets", style = MaterialTheme.typography.titleLarge)
         Text(
-            "Sampler settings for roleplay chats — tap to select",
+            "Adventure difficulty for events and active dice checks — tap to select",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = InkSpacing.md),
         )

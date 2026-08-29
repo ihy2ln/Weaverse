@@ -1,8 +1,10 @@
 package com.ihy2ln.weaverse.feature.roleplay.characters
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ihy2ln.weaverse.core.roleplay.CharacterCardExporter
+import com.ihy2ln.weaverse.core.media.MediaRepository
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
 import com.ihy2ln.weaverse.data.db.entities.RpCharacterEntity
 import com.ihy2ln.weaverse.data.db.entities.decodeEquipment
@@ -29,6 +31,8 @@ data class CharacterDetailUiState(
     val postHistoryInstructions: String = "",
     val tags: String = "",
     val colorHex: String = "",
+    val avatarMediaId: String? = null,
+    val portraitPath: String = "",
     val sheet: RpgCharacterSheet = RpgCharacterSheet(),
     val inventory: List<String> = emptyList(),
     val equipment: List<String> = emptyList(),
@@ -41,6 +45,7 @@ class CharacterDetailViewModel @Inject constructor(
     private val db: WeaverseDatabase,
     private val workspaceHistory: WorkspaceHistory,
     private val cardExporter: CharacterCardExporter,
+    private val mediaRepository: MediaRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(CharacterDetailUiState())
     val uiState: StateFlow<CharacterDetailUiState> = _uiState.asStateFlow()
@@ -68,6 +73,8 @@ class CharacterDetailViewModel @Inject constructor(
                         postHistoryInstructions = entity.postHistoryInstructions,
                         tags = tagsFromJson(entity.tagsJson),
                         colorHex = entity.colorHex.orEmpty(),
+                        avatarMediaId = entity.avatarMediaId,
+                        portraitPath = portraitPath(entity.avatarMediaId),
                         sheet = decodeRpgSheet(entity.extensionsJson),
                         inventory = decodeItems(entity.inventoryJson).map { item ->
                             if (item.quantity > 1) "${item.name} ×${item.quantity}" else item.name
@@ -90,6 +97,27 @@ class CharacterDetailViewModel @Inject constructor(
     fun onPostHistory(value: String) = _uiState.update { it.copy(postHistoryInstructions = value, saved = false) }
     fun onTags(value: String) = _uiState.update { it.copy(tags = value, saved = false) }
     fun onColorHex(value: String) = _uiState.update { it.copy(colorHex = value, saved = false) }
+    fun setPortrait(uri: Uri) {
+        viewModelScope.launch {
+            runCatching { mediaRepository.importFromUri(uri) }
+                .onSuccess { media ->
+                    _uiState.update {
+                        it.copy(
+                            avatarMediaId = media.id,
+                            portraitPath = mediaRepository.resolveFile(media).absolutePath,
+                            saved = false,
+                            statusMessage = "Portrait ready — save the sheet to keep it",
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update { it.copy(statusMessage = "Portrait failed: ${error.message}") }
+                }
+        }
+    }
+    fun removePortrait() = _uiState.update {
+        it.copy(avatarMediaId = null, portraitPath = "", saved = false, statusMessage = "Portrait removed")
+    }
     fun onSheet(value: RpgCharacterSheet) = _uiState.update { it.copy(sheet = value, saved = false) }
     fun adjustHp(delta: Int) = _uiState.update {
         it.copy(sheet = it.sheet.withCurrentHp(it.sheet.currentHp + delta), saved = false)
@@ -124,6 +152,7 @@ class CharacterDetailViewModel @Inject constructor(
                 postHistoryInstructions = state.postHistoryInstructions,
                 tagsJson = tagsToJson(state.tags),
                 colorHex = state.colorHex.takeIf { it.isNotBlank() },
+                avatarMediaId = state.avatarMediaId,
                 extensionsJson = encodeRpgSheet(existing.extensionsJson, state.sheet),
             )
             db.roleplayDao().upsertCharacter(updated)
@@ -175,6 +204,8 @@ class CharacterDetailViewModel @Inject constructor(
                 postHistoryInstructions = entity.postHistoryInstructions,
                 tags = tagsFromJson(entity.tagsJson),
                 colorHex = entity.colorHex.orEmpty(),
+                avatarMediaId = entity.avatarMediaId,
+                portraitPath = portraitPath(entity.avatarMediaId),
                 sheet = decodeRpgSheet(entity.extensionsJson),
                 inventory = decodeItems(entity.inventoryJson).map { item ->
                     if (item.quantity > 1) "${item.name} ×${item.quantity}" else item.name
@@ -197,6 +228,11 @@ class CharacterDetailViewModel @Inject constructor(
             .filter { it.isNotBlank() }
             .joinToString(", ")
     }
+
+    private suspend fun portraitPath(mediaId: String?): String = mediaId
+        ?.let { mediaRepository.getById(it) }
+        ?.let { mediaRepository.resolveFile(it).absolutePath }
+        .orEmpty()
 
     private fun tagsToJson(tags: String): String {
         val parts = tags.split(",")

@@ -120,6 +120,7 @@ fun AdventurePlayScreen(
 
     val sceneArt = state.mediaPanels.lastOrNull { it.path.isNotBlank() && !it.isAudio }
     val startupPending = state.adventureStartupPhase in setOf(
+        AdventureStartupPhase.Character,
         AdventureStartupPhase.Choose,
         AdventureStartupPhase.Questions,
     )
@@ -315,7 +316,9 @@ fun AdventurePlayScreen(
         UnifiedPromptBar(
             value = state.input,
             onValueChange = viewModel::onInputChange,
-            placeholder = if (state.adventureStartupPhase == AdventureStartupPhase.Choose) {
+            placeholder = if (state.adventureStartupPhase == AdventureStartupPhase.Character) {
+                "Describe your character or say surprise me…"
+            } else if (state.adventureStartupPhase == AdventureStartupPhase.Choose) {
                 "Choose 1, 2, or 3…"
             } else if (state.adventureStartupPhase == AdventureStartupPhase.Questions) {
                 "Answer the AI DM's setup questions…"

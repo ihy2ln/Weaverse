@@ -18,9 +18,14 @@ class RpgCharacterSheetTest {
     }
 
     @Test fun `sheet persistence preserves imported extension fields`() {
-        val encoded = encodeRpgSheet("{\"talkativeness\":0.8}", RpgCharacterSheet(characterClass = "Wizard", level = 3))
+        val encoded = encodeRpgSheet(
+            "{\"talkativeness\":0.8}",
+            RpgCharacterSheet(characterClass = "Wizard", species = "Elf", subclass = "Evoker", level = 3),
+        )
         assertTrue(encoded.contains("talkativeness"))
         assertEquals("Wizard", decodeRpgSheet(encoded).characterClass)
         assertEquals(3, decodeRpgSheet(encoded).level)
+        assertEquals("Elf", decodeRpgSheet(encoded).species)
+        assertEquals("Evoker", decodeRpgSheet(encoded).subclass)
     }
 }

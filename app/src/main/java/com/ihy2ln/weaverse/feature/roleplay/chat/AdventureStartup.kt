@@ -4,6 +4,7 @@ import kotlin.random.Random
 
 enum class AdventureStartupPhase(val storageName: String) {
     None(""),
+    Character("character"),
     Choose("choose"),
     Questions("questions"),
     Complete("complete"),
@@ -16,7 +17,7 @@ enum class AdventureStartupChoice {
 }
 
 private val StartupMarker = Regex(
-    "\\[\\[ADVENTURE_STARTUP:\\s*(choose|questions|complete)]]",
+    "\\[\\[ADVENTURE_STARTUP:\\s*(character|choose|questions|complete)]]",
     RegexOption.IGNORE_CASE,
 )
 
@@ -37,11 +38,27 @@ private val RandomOpenings = listOf(
     "the party wakes inside a moving colossal creature with a map tattooed across their shared memories",
 )
 
-fun adventureStartupPrompt(userIsDungeonMaster: Boolean): String {
+fun adventureStartupPrompt(userIsDungeonMaster: Boolean, needsCharacter: Boolean = false): String {
     val perspective = if (userIsDungeonMaster) {
         "I’ll help frame the opening before you take over as Dungeon Master."
     } else {
         "I’m your AI Dungeon Master. I’ll frame the first situation before asking what your party does."
+    }
+    if (needsCharacter) {
+        return withAdventureStartupMarker(
+            buildString {
+                appendLine("Create your first adventurer")
+                appendLine("No main character is selected, so I’ll help you make one before the adventure begins.")
+                appendLine()
+                appendLine("Answer as much or as little as you want:")
+                appendLine("1 · Name, pronouns, species/ancestry, class, and background")
+                appendLine("2 · Character concept, personality, appearance, and main motivation")
+                appendLine("3 · Choose Standard Array (15, 14, 13, 12, 10, 8), roll-style stats, or give your own six scores")
+                appendLine("4 · Starting equipment, notable skill, spell, or signature weapon")
+                append("You can also say “surprise me.” I’ll build a complete editable roster sheet and visual portrait brief, then we’ll choose the opening.")
+            },
+            AdventureStartupPhase.Character,
+        )
     }
     return withAdventureStartupMarker(
         buildString {
@@ -61,6 +78,7 @@ fun adventureStartupPrompt(userIsDungeonMaster: Boolean): String {
 fun adventureStartupPhase(text: String): AdventureStartupPhase = when (
     StartupMarker.find(text)?.groupValues?.getOrNull(1)?.lowercase()
 ) {
+    "character" -> AdventureStartupPhase.Character
     "choose" -> AdventureStartupPhase.Choose
     "questions" -> AdventureStartupPhase.Questions
     "complete" -> AdventureStartupPhase.Complete
@@ -88,6 +106,7 @@ fun nextAdventureStartupPhase(
     current: AdventureStartupPhase,
     input: String,
 ): AdventureStartupPhase = when (current) {
+    AdventureStartupPhase.Character -> AdventureStartupPhase.Choose
     AdventureStartupPhase.Choose -> if (adventureStartupChoice(input) == AdventureStartupChoice.Interview) {
         AdventureStartupPhase.Questions
     } else {
@@ -102,6 +121,15 @@ fun adventureStartupDirective(
     input: String,
     random: Random = Random.Default,
 ): String = when (current) {
+    AdventureStartupPhase.Character ->
+        "Create one complete level-1 player character from the player's answers. Fill harmless omissions " +
+            "with genre-appropriate defaults and use the selected campaign rules. Before your visible reply, " +
+            "emit exactly one machine marker in this format: [[ROSTER_CHARACTER|name=Name|species=Species|" +
+            "class=Class|background=Background|level=1|strength=10|dexterity=10|constitution=10|" +
+            "intelligence=10|wisdom=10|charisma=10|role=Team|description=One sentence|" +
+            "portrait=Concise visual portrait brief]]. Do not use the | character inside a value. Then briefly " +
+            "introduce the finished editable character and present the three opening choices: 1 classic D&D, " +
+            "2 build it together, or 3 random. Do not begin the adventure and do not roll dice."
     AdventureStartupPhase.Choose -> when (adventureStartupChoice(input)) {
         AdventureStartupChoice.Classic ->
             openingDirective("Classic tabletop opening selected: ${ClassicOpenings.random(random)}.")

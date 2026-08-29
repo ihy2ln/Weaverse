@@ -55,6 +55,7 @@ class AdventureDiceTest {
         assertEquals("1d20+5", roll.notation)
         assertEquals("Melee attack", roll.checkLabel)
         assertTrue("Do not apply it twice" in roll.asHiddenDmInstruction())
+        assertTrue("baseline DC of 20" in roll.asHiddenDmInstruction("Very Hard", 20))
     }
 
     @Test

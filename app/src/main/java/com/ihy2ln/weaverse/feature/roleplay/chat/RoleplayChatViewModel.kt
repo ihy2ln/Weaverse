@@ -42,6 +42,8 @@ import com.ihy2ln.weaverse.data.db.WeaverseDatabase
 import com.ihy2ln.weaverse.data.db.entities.RpCharacterEntity
 import com.ihy2ln.weaverse.data.db.entities.RpChatEntity
 import com.ihy2ln.weaverse.data.db.entities.RpMessageEntity
+import com.ihy2ln.weaverse.data.db.entities.CodexCategoryEntity
+import com.ihy2ln.weaverse.data.db.entities.CodexEntryEntity
 import com.ihy2ln.weaverse.data.db.entities.RpPageMeta
 import com.ihy2ln.weaverse.data.db.entities.RpPersonaEntity
 import com.ihy2ln.weaverse.data.db.entities.decodePages
@@ -50,6 +52,8 @@ import com.ihy2ln.weaverse.data.settings.SettingsRepository
 import com.ihy2ln.weaverse.feature.roleplay.presets.defaultPresets
 import com.ihy2ln.weaverse.feature.roleplay.characters.abilityModifier
 import com.ihy2ln.weaverse.feature.roleplay.characters.decodeRpgSheet
+import com.ihy2ln.weaverse.feature.roleplay.characters.encodeRpgSheet
+import com.ihy2ln.weaverse.feature.roleplay.characters.RpgCharacterSheet
 import com.ihy2ln.weaverse.feature.prompt.PromptModelSelection
 import com.ihy2ln.weaverse.feature.prompt.PromptWordLimit
 import com.ihy2ln.weaverse.feature.shell.WorkspaceHistory
@@ -148,7 +152,12 @@ class RoleplayChatViewModel @Inject constructor(
                 db.roleplayDao().observeChats().collect { chats ->
                     chats.find { it.id == chatId }?.let { chat ->
                         boundChat = chat
-                        val character = chat.characterId?.let { id ->
+                        val selectedRosterId = Regex("Main character IDs:\\s*([^\\n]+)", RegexOption.IGNORE_CASE)
+                            .find(chat.authorsNote)?.groupValues?.getOrNull(1)
+                            ?.split(',')?.map { it.trim() }
+                            ?.firstOrNull { it.startsWith("roster:") }
+                            ?.substringAfter("roster:")
+                        val character = (chat.characterId ?: selectedRosterId)?.let { id ->
                             db.roleplayDao().getCharacter(id)
                         }
                         boundCharacter = character
@@ -1152,6 +1161,7 @@ class RoleplayChatViewModel @Inject constructor(
 
     fun send() {
         val startupPending = _uiState.value.adventureStartupPhase in setOf(
+            AdventureStartupPhase.Character,
             AdventureStartupPhase.Choose,
             AdventureStartupPhase.Questions,
         )
@@ -1174,6 +1184,7 @@ class RoleplayChatViewModel @Inject constructor(
                 removeLatestSceneMarker()
             }
             if (currentDisplayMode() == "dungeonMaster" && ExplicitSceneAdvance.containsMatchIn(text)) {
+                upsertCurrentSceneLore(reason = "The player explicitly advanced the scene.")
                 insertSceneMarker(state.chatId, "The player explicitly advanced the scene.", now - 1)
             }
             val entity = RpMessageEntity(
@@ -1196,6 +1207,7 @@ class RoleplayChatViewModel @Inject constructor(
         val state = _uiState.value
         if (state.input.isBlank() || state.chatId.isBlank() || state.isStreaming) return
         val startupPending = state.adventureStartupPhase in setOf(
+            AdventureStartupPhase.Character,
             AdventureStartupPhase.Choose,
             AdventureStartupPhase.Questions,
         )
@@ -1220,7 +1232,11 @@ class RoleplayChatViewModel @Inject constructor(
             val mode = currentDisplayMode()
             val startupPhase = currentAdventureStartupPhase()
             val startupActive = mode == "dungeonMaster" &&
-                startupPhase in setOf(AdventureStartupPhase.Choose, AdventureStartupPhase.Questions)
+                startupPhase in setOf(
+                    AdventureStartupPhase.Character,
+                    AdventureStartupPhase.Choose,
+                    AdventureStartupPhase.Questions,
+                )
             val startupDirective = if (startupActive) {
                 adventureStartupDirective(startupPhase, userText)
             } else {
@@ -1284,6 +1300,7 @@ class RoleplayChatViewModel @Inject constructor(
             if (playerStayedInScene) {
                 removeLatestSceneMarker()
             } else if (playerAdvancedScene) {
+                upsertCurrentSceneLore(reason = "The player explicitly advanced the scene.")
                 insertSceneMarker(state.chatId, "The player explicitly advanced the scene.", now - 1)
             }
             db.roleplayDao().upsertMessage(userMessage)
@@ -1323,7 +1340,10 @@ class RoleplayChatViewModel @Inject constructor(
                             listOfNotNull(startupDirective.takeIf { it.isNotBlank() }) +
                             if (mode == "dungeonMaster") {
                             listOf(
-                                backgroundRoll?.asHiddenDmInstruction()
+                                backgroundRoll?.asHiddenDmInstruction(
+                                    difficultyName = difficulty?.name ?: "Medium",
+                                    targetDc = difficulty?.targetDc ?: 12,
+                                )
                                     ?: noAdventureRollInstruction(),
                             )
                         } else {
@@ -1339,11 +1359,11 @@ class RoleplayChatViewModel @Inject constructor(
                             builder.append(chunk.text)
                             _uiState.update {
                                 it.copy(
-                                    streamingText = adventureStartupProseFrom(
+                                    streamingText = adventureStartupProseFrom(adventureWorldProseFrom(
                                         adventureProseFrom(
                                             AiSceneAdvanceMarker.replace(builder.toString(), "").trimStart(),
                                         ),
-                                    ),
+                                    )),
                                 )
                             }
                         }
@@ -1377,10 +1397,15 @@ class RoleplayChatViewModel @Inject constructor(
                 return@launch
             }
             val rawReply = builder.toString()
-            val aiAdvanceMatch = AiSceneAdvanceMarker.find(rawReply)
+            val worldUpdates = adventureWorldUpdatesFrom(rawReply)
+            persistAdventureWorldUpdates(worldUpdates)
+            val aiAdvanceMatch = AiSceneAdvanceMarker.find(worldUpdates.prose)
             val aiAdvancedScene = mode == "dungeonMaster" && aiAdvanceMatch != null &&
                 !playerAdvancedScene && !ExplicitStayInScene.containsMatchIn(userText)
             if (aiAdvancedScene) {
+                upsertCurrentSceneLore(
+                    reason = aiAdvanceMatch?.groupValues?.getOrNull(1).orEmpty(),
+                )
                 insertSceneMarker(
                     state.chatId,
                     aiAdvanceMatch?.groupValues?.getOrNull(1)?.ifBlank { "The game master advanced the scene." }
@@ -1389,7 +1414,7 @@ class RoleplayChatViewModel @Inject constructor(
                 )
             }
             val cleanedReply = PromptWordLimit.trim(
-                AiSceneAdvanceMarker.replace(rawReply, "").trim(),
+                AiSceneAdvanceMarker.replace(worldUpdates.prose, "").trim(),
                 state.outputWords,
             )
             val storedReply = if (startupActive) {
@@ -1412,6 +1437,12 @@ class RoleplayChatViewModel @Inject constructor(
                 costUsd = costUsd,
             )
             db.roleplayDao().upsertMessage(reply)
+            if (mode == "dungeonMaster") {
+                upsertCurrentSceneLore(
+                    summaryOverride = worldUpdates.sceneSynopsis,
+                    extraMessages = listOf(userMessage, reply),
+                )
+            }
             val added = listOf(userMessage, reply)
             workspaceHistory.record(
                 undo = { added.forEach { db.roleplayDao().deleteMessage(it.id) } },
@@ -1598,7 +1629,13 @@ class RoleplayChatViewModel @Inject constructor(
         db.roleplayDao().upsertMessage(
             opening.copy(
                 contentJson = Document.fromPlainText(
-                    adventureStartupPrompt(userIsDungeonMaster(chat.authorsNote)),
+                    adventureStartupPrompt(
+                        userIsDungeonMaster = userIsDungeonMaster(chat.authorsNote),
+                        needsCharacter = chat.authorsNote.contains(
+                            "Main character IDs: none",
+                            ignoreCase = true,
+                        ),
+                    ),
                 ).toJson(),
             ),
         )
@@ -1614,6 +1651,7 @@ class RoleplayChatViewModel @Inject constructor(
                 publishMessages()
             } else {
                 viewedSceneNumber = null
+                upsertCurrentSceneLore(reason = reason)
                 insertSceneMarker(state.chatId, reason, System.currentTimeMillis())
             }
         }
@@ -1665,6 +1703,158 @@ class RoleplayChatViewModel @Inject constructor(
         return marker
     }
 
+    private suspend fun persistAdventureWorldUpdates(updates: AdventureWorldUpdates) {
+        val chat = boundChat ?: return
+        val scopeId = chat.bookId ?: return
+        val now = System.currentTimeMillis()
+        updates.characters.forEach { update ->
+            val existing = db.roleplayDao().getCharacters()
+                .firstOrNull { it.name.equals(update.name, ignoreCase = true) }
+            val categoryName = when (update.role.lowercase()) {
+                "team", "party", "player" -> "Team"
+                "enemy", "enemies", "hostile" -> "Enemies"
+                "npc", "npcs" -> "NPCs"
+                else -> "Other"
+            }
+            val codexEntry = upsertAdventureCodexEntry(
+                scopeId = scopeId,
+                category = "Characters",
+                name = update.name,
+                summary = buildString {
+                    if (update.description.isNotBlank()) appendLine(update.description)
+                    append("${update.species.ifBlank { "Unknown species" }} · ${update.characterClass} level ${update.level}")
+                    if (update.portraitBrief.isNotBlank()) append("\nPortrait brief: ${update.portraitBrief}")
+                },
+                now = now,
+            )
+            val generatedSheet = RpgCharacterSheet(
+                species = update.species,
+                characterClass = update.characterClass,
+                level = update.level,
+                background = update.background,
+                strength = update.strength,
+                dexterity = update.dexterity,
+                constitution = update.constitution,
+                intelligence = update.intelligence,
+                wisdom = update.wisdom,
+                charisma = update.charisma,
+            )
+            val sheet = existing?.let { decodeRpgSheet(it.extensionsJson) } ?: generatedSheet
+            val character = (existing ?: RpCharacterEntity(
+                id = "rpc-${UUID.randomUUID()}",
+                name = update.name,
+                createdAt = now,
+            )).copy(
+                name = update.name,
+                description = existing?.description?.takeIf { it.isNotBlank() } ?: update.description,
+                creatorNotes = listOfNotNull(
+                    existing?.creatorNotes?.takeIf { it.isNotBlank() },
+                    update.portraitBrief.takeIf { it.isNotBlank() }?.let { "Portrait brief: $it" },
+                ).distinct().joinToString("\n"),
+                tagsJson = "[\"$categoryName\"]",
+                extensionsJson = encodeRpgSheet(existing?.extensionsJson ?: "{}", sheet),
+                defaultCodexId = codexEntry.id,
+                colorHex = existing?.colorHex ?: avatarColorHexFor(update.name, null),
+                inParty = categoryName == "Team" || existing?.inParty == true,
+                updatedAt = now,
+            )
+            db.roleplayDao().upsertCharacter(character)
+            if (character.inParty && boundCharacter == null) {
+                boundCharacter = character
+                val revisedNote = chat.authorsNote
+                    .replace("Main character(s): None selected — guided character creation required", "Main character(s): ${character.name}")
+                    .replace("Main character IDs: none", "Main character IDs: roster:${character.id}")
+                val revisedChat = chat.copy(authorsNote = revisedNote, updatedAt = now)
+                db.roleplayDao().upsertChat(revisedChat)
+                boundChat = revisedChat
+            }
+        }
+        updates.lore.forEach { update ->
+            upsertAdventureCodexEntry(scopeId, update.category, update.name, update.summary, now)
+        }
+    }
+
+    private suspend fun upsertAdventureCodexEntry(
+        scopeId: String,
+        category: String,
+        name: String,
+        summary: String,
+        now: Long,
+    ): CodexEntryEntity {
+        val categories = db.codexDao().getCategories(scopeId)
+        val categoryEntity = categories.firstOrNull { it.name.equals(category, ignoreCase = true) }
+            ?: CodexCategoryEntity(
+                id = "rpg-cat-${UUID.randomUUID()}",
+                scopeType = "book",
+                scopeId = scopeId,
+                name = category,
+                colorHex = if (category.equals("Characters", true)) "#3F7A5A" else "#6B5B95",
+                sortOrder = categories.size,
+                updatedAt = now,
+            ).also { db.codexDao().upsertCategory(it) }
+        val existing = db.codexDao().getEntries(scopeId)
+            .firstOrNull { it.categoryId == categoryEntity.id && it.name.equals(name, ignoreCase = true) }
+        val text = summary.trim().ifBlank { name }
+        val entry = existing?.copy(
+            docJson = Document.fromPlainText(text).toJson(),
+            plainText = text,
+            isAiGenerated = true,
+            updatedAt = now,
+        ) ?: CodexEntryEntity(
+            id = "rpg-codex-${UUID.randomUUID()}",
+            categoryId = categoryEntity.id,
+            scopeType = "book",
+            scopeId = scopeId,
+            name = name,
+            docJson = Document.fromPlainText(text).toJson(),
+            plainText = text,
+            isAiGenerated = true,
+            createdAt = now,
+            updatedAt = now,
+        )
+        db.codexDao().upsertEntry(entry)
+        return entry
+    }
+
+    /** Keeps an adventure-journal synopsis current after every resolved DM turn and scene change. */
+    private suspend fun upsertCurrentSceneLore(
+        reason: String = "",
+        summaryOverride: String = "",
+        extraMessages: List<RpMessageEntity> = emptyList(),
+    ) {
+        val chat = boundChat ?: return
+        val scopeId = chat.bookId ?: return
+        val startup = currentAdventureStartupPhase()
+        if (startup !in setOf(AdventureStartupPhase.None, AdventureStartupPhase.Complete)) return
+        val lastMarkerAt = rawMessages
+            .filter { it.role == ADVENTURE_SCENE_ROLE && it.isActiveSwipe }
+            .maxOfOrNull { it.createdAt } ?: Long.MIN_VALUE
+        val sceneMessages = (rawMessages + extraMessages)
+            .distinctBy { it.id }
+            .filter {
+                it.isActiveSwipe && it.displayMode == "dungeonMaster" &&
+                    it.role != ADVENTURE_SCENE_ROLE && it.createdAt > lastMarkerAt
+            }
+        val synopsis = summaryOverride.trim().ifBlank { sceneMessages
+            .filter { it.role == "char" }
+            .joinToString(" ") { message ->
+                adventureStartupProseFrom(adventureWorldProseFrom(adventureProseFrom(
+                    documentFromJson(message.contentJson).plainText(),
+                )))
+            }
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .take(1_200)
+            .ifBlank { reason.trim().ifBlank { "The scene is in progress." } } }
+        upsertAdventureCodexEntry(
+            scopeId = scopeId,
+            category = "Adventure Journal",
+            name = "Scene ${_uiState.value.sceneNumber} · ${chat.title}",
+            summary = synopsis,
+            now = System.currentTimeMillis(),
+        )
+    }
+
     private fun sessionSystemBlocks(mode: String): List<String> = listOfNotNull(
         boundChat?.authorsNote?.takeIf { it.isNotBlank() }?.let {
             "Campaign setup and house rules:\n$it"
@@ -1674,6 +1864,7 @@ class RoleplayChatViewModel @Inject constructor(
         } else {
             null
         },
+        if (mode == "dungeonMaster") adventureWorldUpdateDirective() else null,
     )
 
     private suspend fun insertStoredMessage(entity: RpMessageEntity) {

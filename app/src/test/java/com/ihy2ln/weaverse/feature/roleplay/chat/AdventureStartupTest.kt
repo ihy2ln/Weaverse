@@ -8,6 +8,20 @@ import org.junit.jupiter.api.Test
 
 class AdventureStartupTest {
     @Test
+    fun noSelectedCharacterStartsGuidedSheetCreation() {
+        val stored = adventureStartupPrompt(userIsDungeonMaster = false, needsCharacter = true)
+        assertEquals(AdventureStartupPhase.Character, adventureStartupPhase(stored))
+        val visible = adventureStartupProseFrom(stored)
+        assertTrue("Standard Array" in visible)
+        assertTrue("complete editable roster sheet" in visible)
+        assertEquals(
+            AdventureStartupPhase.Choose,
+            nextAdventureStartupPhase(AdventureStartupPhase.Character, "surprise me"),
+        )
+        assertTrue("[[ROSTER_CHARACTER" in adventureStartupDirective(AdventureStartupPhase.Character, "surprise me"))
+    }
+
+    @Test
     fun initialDmPromptOffersAllThreeStartupPaths() {
         val stored = adventureStartupPrompt(userIsDungeonMaster = false)
         assertEquals(AdventureStartupPhase.Choose, adventureStartupPhase(stored))

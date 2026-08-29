@@ -152,11 +152,16 @@ fun simulateAdventureRoll(
     }
 }
 
-fun AdventureRoll.asHiddenDmInstruction(): String =
+fun AdventureRoll.asHiddenDmInstruction(
+    difficultyName: String = "Medium",
+    targetDc: Int = 12,
+): String =
     "Active backend $checkLabel: $notation = $detail (final total $total) using $system. " +
         "The backend has already determined that this action needs a check and has already applied " +
-        "the available character-sheet ability/proficiency modifier. Do not apply it twice. Compare " +
-        "the final total to a rules- and fiction-appropriate difficulty. Begin the final response " +
+        "the available character-sheet ability/proficiency modifier. Do not apply it twice. The selected " +
+        "campaign difficulty is $difficultyName with a baseline DC of $targetDc. Adjust that DC only when " +
+        "the fiction or selected rules clearly require it; difficulty never turns routine movement into a roll. " +
+        "Compare the final total to that difficulty. Begin the final response " +
         "with exactly one private UI marker: " +
         "[[ACTION_RESULT: Critical success]], [[ACTION_RESULT: Success]], " +
         "[[ACTION_RESULT: Mixed success]], [[ACTION_RESULT: Failure]], or " +

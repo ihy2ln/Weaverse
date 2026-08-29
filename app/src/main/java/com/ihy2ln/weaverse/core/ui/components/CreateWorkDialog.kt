@@ -361,8 +361,13 @@ fun CreateWorkDialog(
                                 )
                             }
                         }
+                        val selectedCharacters = characterOptions.filter { it.id in selectedCharacterIds }
                         Text(
-                            characterOptions.joinToString(" · ") { "${it.name} (${it.source})" },
+                            if (selectedCharacters.isEmpty()) {
+                                "No character selected — the AI DM will help you create one when play begins."
+                            } else {
+                                selectedCharacters.joinToString(" · ") { "${it.name} (${it.source})" }
+                            },
                             style = MaterialTheme.typography.labelSmall,
                             color = tokens.secondaryText,
                             maxLines = 2,

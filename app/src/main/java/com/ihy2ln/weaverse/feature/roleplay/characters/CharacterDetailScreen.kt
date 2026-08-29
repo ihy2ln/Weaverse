@@ -1,5 +1,7 @@
 package com.ihy2ln.weaverse.feature.roleplay.characters
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -17,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -27,6 +30,8 @@ import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import com.ihy2ln.weaverse.core.ui.util.AlwaysScrollEndPadding
 import com.ihy2ln.weaverse.feature.roleplay.friends.CharacterAvatar
+import coil3.compose.AsyncImage
+import java.io.File
 
 private enum class SheetSection(val label: String, val symbol: String, val hint: String) {
     Abilities("Abilities & Skills", "◆", "Scores, modifiers, skills and proficiencies"),
@@ -50,6 +55,9 @@ fun CharacterDetailScreen(
 ) {
     LaunchedEffect(characterId) { viewModel.load(characterId) }
     val state by viewModel.uiState.collectAsState()
+    val portraitPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) viewModel.setPortrait(uri)
+    }
     val expanded = remember { mutableStateMapOf(SheetSection.Abilities to true) }
     val tokens = inkTokens()
 
@@ -61,7 +69,12 @@ fun CharacterDetailScreen(
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
             Text(state.name.ifBlank { "Character" }, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         }
-        CharacterCombatHeader(state, viewModel::adjustHp)
+        CharacterCombatHeader(
+            state = state,
+            adjustHp = viewModel::adjustHp,
+            choosePortrait = { portraitPicker.launch(arrayOf("image/*")) },
+            removePortrait = viewModel::removePortrait,
+        )
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = InkSpacing.md),
         ) {
@@ -106,12 +119,31 @@ fun CharacterDetailScreen(
 }
 
 @Composable
-private fun CharacterCombatHeader(state: CharacterDetailUiState, adjustHp: (Int) -> Unit) {
+private fun CharacterCombatHeader(
+    state: CharacterDetailUiState,
+    adjustHp: (Int) -> Unit,
+    choosePortrait: () -> Unit,
+    removePortrait: () -> Unit,
+) {
     val s = state.sheet
     val tokens = inkTokens()
     Column(Modifier.fillMaxWidth().background(tokens.panel).padding(InkSpacing.md)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
-            CharacterAvatar(state.name, state.colorHex, size = 68.dp)
+            Box(
+                Modifier.size(72.dp).clip(RoundedCornerShape(12.dp)).clickable(onClick = choosePortrait),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (state.portraitPath.isNotBlank()) {
+                    AsyncImage(
+                        model = File(state.portraitPath),
+                        contentDescription = "${state.name} portrait",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    CharacterAvatar(state.name, state.colorHex, size = 68.dp)
+                }
+            }
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     MiniRoundButton(false) { adjustHp(-1) }
@@ -138,6 +170,12 @@ private fun CharacterCombatHeader(state: CharacterDetailUiState, adjustHp: (Int)
             HeaderStat("PB", signed(s.proficiencyBonus))
             HeaderStat("SPEED", "${s.speedFeet}ft")
             HeaderStat("INIT", signed(s.initiative))
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = choosePortrait) {
+                Text(if (state.portraitPath.isBlank()) "Add portrait" else "Replace portrait")
+            }
+            if (state.portraitPath.isNotBlank()) TextButton(onClick = removePortrait) { Text("Remove") }
         }
     }
 }
@@ -212,19 +250,33 @@ private fun SheetSectionContent(section: SheetSection, state: CharacterDetailUiS
         SheetSection.Saves -> NotesPanel("Saving throws", sheet.savingThrows) {
             vm.onSheet(sheet.copy(savingThrows = it))
         }
-        SheetSection.Attacks -> NotesPanel("Attacks & actions", sheet.attacksAndActions) {
-            vm.onSheet(sheet.copy(attacksAndActions = it))
+        SheetSection.Attacks -> {
+            NotesPanel("Weapons & damage cantrips", sheet.weaponsAndDamageCantrips) {
+                vm.onSheet(sheet.copy(weaponsAndDamageCantrips = it))
+            }
+            NotesPanel("Attacks & actions", sheet.attacksAndActions) {
+                vm.onSheet(sheet.copy(attacksAndActions = it))
+            }
         }
-        SheetSection.Spells -> NotesPanel("Spells", sheet.spells) { vm.onSheet(sheet.copy(spells = it)) }
-        SheetSection.Features -> NotesPanel("Features & traits", sheet.featuresAndTraits) {
-            vm.onSheet(sheet.copy(featuresAndTraits = it))
-        }
-        SheetSection.Inventory -> InventoryPanel(state.inventory, state.equipment, sheet.currency) {
-            vm.onSheet(sheet.copy(currency = it))
+        SheetSection.Spells -> SpellPanel(sheet, vm::onSheet)
+        SheetSection.Features -> FeaturePanel(sheet, vm::onSheet)
+        SheetSection.Inventory -> {
+            InventoryPanel(state.inventory, state.equipment, sheet.currency) {
+                vm.onSheet(sheet.copy(currency = it))
+            }
+            NotesPanel("Equipment notes", sheet.equipmentNotes) {
+                vm.onSheet(sheet.copy(equipmentNotes = it))
+            }
+            NotesPanel("Magic item attunement", sheet.magicItemAttunement) {
+                vm.onSheet(sheet.copy(magicItemAttunement = it))
+            }
         }
         SheetSection.Resources -> {
             NotesPanel("Resources & tools", sheet.resourcesAndTools) { vm.onSheet(sheet.copy(resourcesAndTools = it)) }
             NotesPanel("Languages", sheet.languages) { vm.onSheet(sheet.copy(languages = it)) }
+            NotesPanel("Armor training", sheet.armorTraining) { vm.onSheet(sheet.copy(armorTraining = it)) }
+            NotesPanel("Weapon proficiencies", sheet.weaponProficiencies) { vm.onSheet(sheet.copy(weaponProficiencies = it)) }
+            NotesPanel("Tool proficiencies", sheet.toolProficiencies) { vm.onSheet(sheet.copy(toolProficiencies = it)) }
         }
         SheetSection.Bio -> BioPanel(state, vm)
         SheetSection.Settings -> SettingsPanel(state, vm)
@@ -285,6 +337,8 @@ private fun CombatPanel(s: RpgCharacterSheet, change: (RpgCharacterSheet) -> Uni
     NumberEditor("Proficiency bonus", s.proficiencyBonus, 0) { change(s.copy(proficiencyBonus = it)) }
     NumberEditor("Speed (feet)", s.speedFeet, 0) { change(s.copy(speedFeet = it)) }
     NumberEditor("Initiative", s.initiative, -20) { change(s.copy(initiative = it)) }
+    NumberEditor("Passive perception", s.passivePerception, 0) { change(s.copy(passivePerception = it)) }
+    VoiceToTextField(s.size, { change(s.copy(size = it)) }, label = "Size", singleLine = true)
     NotesPanel("Conditions & defenses", s.conditions) { change(s.copy(conditions = it)) }
     NotesPanel("Combat notes", s.combatNotes) { change(s.copy(combatNotes = it)) }
 }
@@ -313,12 +367,36 @@ private fun NumberEditor(label: String, value: Int, min: Int, modifier: Modifier
     NotesPanel("Currency & valuables", currency, changeCurrency)
 }
 
+@Composable private fun SpellPanel(s: RpgCharacterSheet, change: (RpgCharacterSheet) -> Unit) {
+    PanelTitle("SPELLCASTING")
+    VoiceToTextField(s.spellcastingAbility, { change(s.copy(spellcastingAbility = it)) }, label = "Spellcasting ability", singleLine = true)
+    NumberEditor("Spell save DC", s.spellSaveDc, 0) { change(s.copy(spellSaveDc = it)) }
+    NumberEditor("Spellcasting modifier", s.spellcastingModifier, -20) { change(s.copy(spellcastingModifier = it)) }
+    NumberEditor("Spell attack bonus", s.spellAttackBonus, -20) { change(s.copy(spellAttackBonus = it)) }
+    NotesPanel("Spell slots (levels 1–9)", s.spellSlots) { change(s.copy(spellSlots = it)) }
+    NotesPanel("Cantrips & prepared spells", s.preparedSpells.ifBlank { s.spells }) {
+        change(s.copy(preparedSpells = it, spells = it))
+    }
+}
+
+@Composable private fun FeaturePanel(s: RpgCharacterSheet, change: (RpgCharacterSheet) -> Unit) {
+    NotesPanel("Class features", s.classFeatures.ifBlank { s.featuresAndTraits }) {
+        change(s.copy(classFeatures = it, featuresAndTraits = it))
+    }
+    NotesPanel("Species traits", s.speciesTraits) { change(s.copy(speciesTraits = it)) }
+    NotesPanel("Feats", s.feats) { change(s.copy(feats = it)) }
+}
+
 @Composable private fun BioPanel(state: CharacterDetailUiState, vm: CharacterDetailViewModel) {
     PanelTitle("CHARACTER BIO")
     VoiceToTextField(state.description, vm::onDescription, label = "Description", minLines = 3)
     VoiceToTextField(state.personality, vm::onPersonality, label = "Personality", minLines = 3, modifier = Modifier.padding(top = InkSpacing.sm))
     VoiceToTextField(state.scenario, vm::onScenario, label = "Scenario", minLines = 3, modifier = Modifier.padding(top = InkSpacing.sm))
     VoiceToTextField(state.firstMes, vm::onFirstMes, label = "First message", minLines = 3, modifier = Modifier.padding(top = InkSpacing.sm))
+    val s = state.sheet
+    VoiceToTextField(s.appearance, { vm.onSheet(s.copy(appearance = it)) }, label = "Appearance", minLines = 3, modifier = Modifier.padding(top = InkSpacing.sm))
+    VoiceToTextField(s.backstoryAndPersonality, { vm.onSheet(s.copy(backstoryAndPersonality = it)) }, label = "Backstory & personality", minLines = 4, modifier = Modifier.padding(top = InkSpacing.sm))
+    VoiceToTextField(s.alignment, { vm.onSheet(s.copy(alignment = it)) }, label = "Alignment", singleLine = true, modifier = Modifier.padding(top = InkSpacing.sm))
 }
 
 @Composable private fun SettingsPanel(state: CharacterDetailUiState, vm: CharacterDetailViewModel) {
@@ -326,9 +404,19 @@ private fun NumberEditor(label: String, value: Int, min: Int, modifier: Modifier
     PanelTitle("CHARACTER SETTINGS")
     VoiceToTextField(state.name, vm::onName, label = "Name", singleLine = true)
     VoiceToTextField(s.characterClass, { vm.onSheet(s.copy(characterClass = it)) }, label = "Class", singleLine = true, modifier = Modifier.padding(top = InkSpacing.sm))
+    VoiceToTextField(s.subclass, { vm.onSheet(s.copy(subclass = it)) }, label = "Subclass", singleLine = true, modifier = Modifier.padding(top = InkSpacing.sm))
+    VoiceToTextField(s.species, { vm.onSheet(s.copy(species = it)) }, label = "Species / ancestry", singleLine = true, modifier = Modifier.padding(top = InkSpacing.sm))
     NumberEditor("Level", s.level, 1, max = 20) { vm.onSheet(s.copy(level = it)) }
+    NumberEditor("Experience points", s.experiencePoints, 0, max = 999999) { vm.onSheet(s.copy(experiencePoints = it)) }
     VoiceToTextField(s.background, { vm.onSheet(s.copy(background = it)) }, label = "Background", singleLine = true)
     VoiceToTextField(s.hitDieType, { vm.onSheet(s.copy(hitDieType = it)) }, label = "Hit die (for example d8)", singleLine = true, modifier = Modifier.padding(top = InkSpacing.sm))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(
+            checked = s.heroicInspiration,
+            onCheckedChange = { vm.onSheet(s.copy(heroicInspiration = it)) },
+        )
+        Text("Heroic inspiration")
+    }
     VoiceToTextField(state.tags, vm::onTags, label = "Tags (comma-separated)", singleLine = true, modifier = Modifier.padding(top = InkSpacing.sm))
     VoiceToTextField(state.systemPrompt, vm::onSystemPrompt, label = "System prompt", minLines = 2, modifier = Modifier.padding(top = InkSpacing.sm))
 }

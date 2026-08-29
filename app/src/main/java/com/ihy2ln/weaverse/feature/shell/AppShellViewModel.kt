@@ -146,6 +146,13 @@ class AppShellViewModel @Inject constructor(
     ): String {
         val now = System.currentTimeMillis()
         val id = "rp-campaign-${java.util.UUID.randomUUID()}"
+        details.mainCharacters
+            .filter { it.id.startsWith("roster:") }
+            .forEach { option ->
+                db.roleplayDao().getCharacter(option.id.substringAfter(':'))?.let { character ->
+                    if (!character.inParty) db.roleplayDao().upsertCharacter(character.copy(inParty = true))
+                }
+            }
         val selectedPersonaId = details.mainCharacters
             .firstOrNull { it.id.startsWith("persona:") }
             ?.id?.substringAfter(':')
@@ -153,13 +160,18 @@ class AppShellViewModel @Inject constructor(
             ?: db.roleplayDao().getPersonas().firstOrNull()?.id
             ?: "persona-default"
         val mainCharacters = details.mainCharacters.joinToString(", ") { it.name }
-            .ifBlank { details.pov.ifBlank { "Player-created party" } }
+            .ifBlank { "None selected — guided character creation required" }
         val userIsDungeonMaster = details.campaignRoleId == "dm" ||
             details.styleGuide.contains("The user is the Dungeon Master", ignoreCase = true)
         val setup = buildString {
             appendLine("Campaign: ${details.title}")
             appendLine("Setting: ${details.genre.ifBlank { "Open fantasy setting" }}")
             appendLine("Main character(s): $mainCharacters")
+            appendLine(
+                "Main character IDs: " + details.mainCharacters
+                    .joinToString(", ") { it.id }
+                    .ifBlank { "none" },
+            )
             appendLine("Narrative tense: ${details.tense.ifBlank { "Past tense" }}")
             appendLine("Narrative point of view: ${details.narrativePov.ifBlank { "Third-person multiple" }}")
             appendLine("Player role: ${if (userIsDungeonMaster) "Dungeon Master" else "Adventurer"}")
@@ -185,7 +197,10 @@ class AppShellViewModel @Inject constructor(
                 bookId = book.id,
             ),
         )
-        val opening = adventureStartupPrompt(userIsDungeonMaster)
+        val opening = adventureStartupPrompt(
+            userIsDungeonMaster = userIsDungeonMaster,
+            needsCharacter = details.mainCharacters.isEmpty() && !userIsDungeonMaster,
+        )
         db.roleplayDao().upsertMessage(
             RpMessageEntity(
                 id = "rpm-${java.util.UUID.randomUUID()}",
