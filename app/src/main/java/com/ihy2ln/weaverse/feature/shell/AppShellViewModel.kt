@@ -20,6 +20,7 @@ import com.ihy2ln.weaverse.data.repo.SeriesRepository
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
 import com.ihy2ln.weaverse.feature.prompt.PromptEntryBus
 import com.ihy2ln.weaverse.feature.prompt.PromptEntryKind
+import com.ihy2ln.weaverse.feature.roleplay.chat.adventureStartupPrompt
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -184,16 +185,7 @@ class AppShellViewModel @Inject constructor(
                 bookId = book.id,
             ),
         )
-        val opening = buildString {
-            append("The adventure begins in ${details.genre.ifBlank { "an uncharted world" }}. ")
-            if (userIsDungeonMaster) {
-                append("$mainCharacters are the AI-controlled player party. ")
-                append("Describe the opening scene, world response, or ruling below; the party will decide what they do.")
-            } else {
-                append("$mainCharacters stand at the threshold of the first scene. ")
-                append("Describe what they do in the action box below; the game master will turn each choice into the next part of the story.")
-            }
-        }
+        val opening = adventureStartupPrompt(userIsDungeonMaster)
         db.roleplayDao().upsertMessage(
             RpMessageEntity(
                 id = "rpm-${java.util.UUID.randomUUID()}",

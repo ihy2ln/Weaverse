@@ -3,6 +3,22 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.3.9-beta — AI-DM adventure startup
+
+- New campaigns open with the AI Dungeon Master leading setup instead of a
+  passive paragraph asking the player to invent the first action.
+- The first screen offers three startup paths: a classic tabletop opening, a
+  short setup interview, or a fully randomized opening.
+- Interview mode asks for where, when, who, what is happening, and the main
+  goal, then uses the answers to frame the actual opening scene.
+- Classic and Random modes immediately establish the location, time, cast,
+  active situation, and quest objective before inviting the first player
+  decision.
+- Adventure setup is stateful, forces AI mode, never rolls dice, hides scene
+  navigation until complete, and labels setup answers separately from actions.
+- Campaigns containing the exact legacy passive opening are migrated to the
+  new AI-DM startup when opened.
+
 ## v1.3.8-beta — selective tabletop checks and unified prompt
 
 - Adventure actions now pass through a backend tabletop ruling before dice

@@ -48,6 +48,8 @@ data class RpMessageUi(
     val usageText: String = "",
     /** Resolved check outcome; the underlying roll remains private. */
     val actionResult: String = "",
+    /** Campaign-opening choice/interview content, before ordinary scene actions begin. */
+    val isAdventureSetup: Boolean = false,
 )
 
 data class RoleplayChatUiState(
@@ -86,6 +88,7 @@ data class RoleplayChatUiState(
     val editingOverlay: Triple<String, String, String>? = null,
     val contextMeter: ContextMeterReading? = null,
     /** Adventure scene markers are hidden storage records, not chat messages. */
+    val adventureStartupPhase: AdventureStartupPhase = AdventureStartupPhase.None,
     val sceneNumber: Int = 1,
     val totalScenes: Int = 1,
     val canGoToPreviousScene: Boolean = false,

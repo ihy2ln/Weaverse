@@ -180,6 +180,7 @@ class RoleplayChatViewModel @Inject constructor(
                                 userIsDungeonMaster = userIsDungeonMaster(chat.authorsNote),
                             )
                         }
+                        migrateLegacyAdventureOpeningIfNeeded(chat)
                         publishMessages()
                     }
                 }
@@ -210,6 +211,11 @@ class RoleplayChatViewModel @Inject constructor(
 
     private suspend fun publishMessages() {
         val allActive = rawMessages.filter { it.isActiveSwipe }
+        val startupPhase = allActive.asSequence()
+            .sortedByDescending { it.createdAt }
+            .map { adventureStartupPhase(documentFromJson(it.contentJson).plainText()) }
+            .firstOrNull { it != AdventureStartupPhase.None }
+            ?: AdventureStartupPhase.None
         val sceneMarkers = allActive
             .filter { it.role == ADVENTURE_SCENE_ROLE }
             .sortedBy { it.createdAt }
@@ -237,8 +243,9 @@ class RoleplayChatViewModel @Inject constructor(
             val stackPaths = mutableMapOf<String, List<String>>()
             val collapsedMap = mutableMapOf<String, Boolean>()
             val storedCaption = doc.plainText()
+            val isAdventureSetup = adventureStartupPhase(storedCaption) != AdventureStartupPhase.None
             val actionResult = adventureOutcomeFrom(storedCaption)
-            val caption = adventureProseFrom(storedCaption)
+            val caption = adventureStartupProseFrom(adventureProseFrom(storedCaption))
             val isUser = m.role == "user"
             // Real names read like a messenger; fall back only when nothing is bound.
             val speaker = if (isUser) {
@@ -371,6 +378,7 @@ class RoleplayChatViewModel @Inject constructor(
                     ""
                 },
                 actionResult = actionResult,
+                isAdventureSetup = isAdventureSetup,
             )
         }
         _uiState.update {
@@ -378,6 +386,7 @@ class RoleplayChatViewModel @Inject constructor(
                 messages = ui,
                 mediaPanels = panels,
                 canPasteMedia = mediaClipboard.hasPayload,
+                adventureStartupPhase = startupPhase,
                 sceneNumber = targetScene,
                 totalScenes = totalScenes,
                 canGoToPreviousScene = targetScene > 1,
@@ -1142,7 +1151,11 @@ class RoleplayChatViewModel @Inject constructor(
     }
 
     fun send() {
-        if (_uiState.value.entryMode == "nai") addManualEntry() else generate()
+        val startupPending = _uiState.value.adventureStartupPhase in setOf(
+            AdventureStartupPhase.Choose,
+            AdventureStartupPhase.Questions,
+        )
+        if (_uiState.value.entryMode == "nai" && !startupPending) addManualEntry() else generate()
     }
 
     /** Non-AI (NAI): insert the typed text as a user message without calling a model. */
@@ -1182,7 +1195,11 @@ class RoleplayChatViewModel @Inject constructor(
     fun generate() {
         val state = _uiState.value
         if (state.input.isBlank() || state.chatId.isBlank() || state.isStreaming) return
-        if (state.entryMode == "nai") {
+        val startupPending = state.adventureStartupPhase in setOf(
+            AdventureStartupPhase.Choose,
+            AdventureStartupPhase.Questions,
+        )
+        if (state.entryMode == "nai" && !startupPending) {
             addManualEntry()
             return
         }
@@ -1201,9 +1218,26 @@ class RoleplayChatViewModel @Inject constructor(
             val groupId = "sw-$now"
             val userText = state.input
             val mode = currentDisplayMode()
+            val startupPhase = currentAdventureStartupPhase()
+            val startupActive = mode == "dungeonMaster" &&
+                startupPhase in setOf(AdventureStartupPhase.Choose, AdventureStartupPhase.Questions)
+            val startupDirective = if (startupActive) {
+                adventureStartupDirective(startupPhase, userText)
+            } else {
+                ""
+            }
+            val nextStartupPhase = if (startupActive) {
+                nextAdventureStartupPhase(startupPhase, userText)
+            } else {
+                AdventureStartupPhase.None
+            }
             val playerAdvancedScene = mode == "dungeonMaster" && ExplicitSceneAdvance.containsMatchIn(userText)
             val playerStayedInScene = mode == "dungeonMaster" && ExplicitStayInScene.containsMatchIn(userText)
-            val checkDecision = decideAdventureCheck(userText, state.userIsDungeonMaster)
+            val checkDecision = if (startupActive) {
+                AdventureCheckDecision(false, "Adventure setup")
+            } else {
+                decideAdventureCheck(userText, state.userIsDungeonMaster)
+            }
             val backgroundRoll = checkDecision.takeIf { it.requiresRoll }?.let { decision ->
                 simulateAdventureRoll(
                     campaignRules = boundChat?.authorsNote.orEmpty(),
@@ -1237,7 +1271,13 @@ class RoleplayChatViewModel @Inject constructor(
                 swipeIndex = 0,
                 isActiveSwipe = true,
                 role = "user",
-                contentJson = Document.fromPlainText(userText).toJson(),
+                contentJson = Document.fromPlainText(
+                    if (startupActive) {
+                        withAdventureStartupMarker(userText, startupPhase)
+                    } else {
+                        userText
+                    },
+                ).toJson(),
                 createdAt = now,
                 displayMode = mode,
             )
@@ -1280,6 +1320,7 @@ class RoleplayChatViewModel @Inject constructor(
                         difficultyDirective = difficulty?.directive,
                         extraSystem = sessionSystemBlocks(mode) +
                             PromptWordLimit.instruction(state.minimumOutputWords, state.outputWords) +
+                            listOfNotNull(startupDirective.takeIf { it.isNotBlank() }) +
                             if (mode == "dungeonMaster") {
                             listOf(
                                 backgroundRoll?.asHiddenDmInstruction()
@@ -1298,8 +1339,10 @@ class RoleplayChatViewModel @Inject constructor(
                             builder.append(chunk.text)
                             _uiState.update {
                                 it.copy(
-                                    streamingText = adventureProseFrom(
-                                        AiSceneAdvanceMarker.replace(builder.toString(), "").trimStart(),
+                                    streamingText = adventureStartupProseFrom(
+                                        adventureProseFrom(
+                                            AiSceneAdvanceMarker.replace(builder.toString(), "").trimStart(),
+                                        ),
                                     ),
                                 )
                             }
@@ -1349,6 +1392,11 @@ class RoleplayChatViewModel @Inject constructor(
                 AiSceneAdvanceMarker.replace(rawReply, "").trim(),
                 state.outputWords,
             )
+            val storedReply = if (startupActive) {
+                withAdventureStartupMarker(cleanedReply, nextStartupPhase)
+            } else {
+                cleanedReply
+            }
             val reply = RpMessageEntity(
                 id = "rpm-${now + 1}",
                 chatId = state.chatId,
@@ -1356,7 +1404,7 @@ class RoleplayChatViewModel @Inject constructor(
                 swipeIndex = 0,
                 isActiveSwipe = true,
                 role = "char",
-                contentJson = Document.fromPlainText(cleanedReply).toJson(),
+                contentJson = Document.fromPlainText(storedReply).toJson(),
                 createdAt = now + if (aiAdvancedScene) 2 else 1,
                 displayMode = mode,
                 promptTokens = promptTokens,
@@ -1529,6 +1577,31 @@ class RoleplayChatViewModel @Inject constructor(
             null -> 10
         }
         return abilityModifier(score) + if (decision.addProficiency) sheet.proficiencyBonus else 0
+    }
+
+    private fun currentAdventureStartupPhase(): AdventureStartupPhase = rawMessages
+        .asSequence()
+        .filter { it.isActiveSwipe && it.displayMode == "dungeonMaster" }
+        .sortedByDescending { it.createdAt }
+        .map { adventureStartupPhase(documentFromJson(it.contentJson).plainText()) }
+        .firstOrNull { it != AdventureStartupPhase.None }
+        ?: AdventureStartupPhase.None
+
+    private suspend fun migrateLegacyAdventureOpeningIfNeeded(chat: RpChatEntity) {
+        if (chat.displayMode != "dungeonMaster") return
+        val messages = db.roleplayDao().getMessagesForMode(chat.id, "dungeonMaster")
+            .filter { it.isActiveSwipe && it.role != ADVENTURE_SCENE_ROLE }
+        if (messages.size != 1) return
+        val opening = messages.single()
+        val text = documentFromJson(opening.contentJson).plainText()
+        if (!isLegacyPassiveAdventureOpening(text)) return
+        db.roleplayDao().upsertMessage(
+            opening.copy(
+                contentJson = Document.fromPlainText(
+                    adventureStartupPrompt(userIsDungeonMaster(chat.authorsNote)),
+                ).toJson(),
+            ),
+        )
     }
 
     /** Player-owned scene controls always override the AI game master's pacing. */

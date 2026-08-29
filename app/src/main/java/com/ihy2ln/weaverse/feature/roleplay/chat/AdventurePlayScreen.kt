@@ -119,6 +119,10 @@ fun AdventurePlayScreen(
     }
 
     val sceneArt = state.mediaPanels.lastOrNull { it.path.isNotBlank() && !it.isAudio }
+    val startupPending = state.adventureStartupPhase in setOf(
+        AdventureStartupPhase.Choose,
+        AdventureStartupPhase.Questions,
+    )
 
     Box(
         modifier = Modifier
@@ -192,7 +196,7 @@ fun AdventurePlayScreen(
             ) {
                 Column {
                     Text(
-                        "Scene ${state.sceneNumber}",
+                        if (startupPending) "Adventure setup" else "Scene ${state.sceneNumber}",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                     )
@@ -202,7 +206,7 @@ fun AdventurePlayScreen(
                         color = tokens.secondaryText,
                     )
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                if (!startupPending) Row(verticalAlignment = Alignment.CenterVertically) {
                     if (state.canGoToPreviousScene) {
                         InkTextButton(
                             label = "‹ Previous",
@@ -241,7 +245,9 @@ fun AdventurePlayScreen(
                 items(state.messages, key = { it.id }) { message ->
                     if (message.role == "user") {
                         Text(
-                            if (state.userIsDungeonMaster) {
+                            if (message.isAdventureSetup) {
+                                "Setup answer — ${message.text}"
+                            } else if (state.userIsDungeonMaster) {
                                 "Your DM prompt — ${message.text}"
                             } else {
                                 "Your action — ${message.text}"
@@ -256,6 +262,15 @@ fun AdventurePlayScreen(
                         )
                     } else {
                         Column(modifier = Modifier.fillMaxWidth()) {
+                            if (message.isAdventureSetup) {
+                                Text(
+                                    "ADVENTURE SETUP · AI DM",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = tokens.activePill,
+                                    modifier = Modifier.padding(bottom = InkSpacing.xs),
+                                )
+                            }
                             if (message.actionResult.isNotBlank()) {
                                 Text(
                                     "ACTION RESULT · ${message.actionResult.uppercase()}",
@@ -300,7 +315,11 @@ fun AdventurePlayScreen(
         UnifiedPromptBar(
             value = state.input,
             onValueChange = viewModel::onInputChange,
-            placeholder = if (state.userIsDungeonMaster) {
+            placeholder = if (state.adventureStartupPhase == AdventureStartupPhase.Choose) {
+                "Choose 1, 2, or 3…"
+            } else if (state.adventureStartupPhase == AdventureStartupPhase.Questions) {
+                "Answer the AI DM's setup questions…"
+            } else if (state.userIsDungeonMaster) {
                 "What happens next? · Describe the scene, NPC response, or ruling…"
             } else {
                 "What do you do? · Describe your action…"
@@ -327,10 +346,12 @@ fun AdventurePlayScreen(
                 state.writingModels,
             ),
             onModelClick = { modelsOpen = true },
-            aiMode = state.entryMode != "nai",
+            aiMode = startupPending || state.entryMode != "nai",
             streaming = state.isStreaming,
             onToggleMode = {
-                viewModel.setEntryMode(if (state.entryMode == "nai") "ai" else "nai")
+                if (!startupPending) {
+                    viewModel.setEntryMode(if (state.entryMode == "nai") "ai" else "nai")
+                }
             },
             canSubmit = state.input.isNotBlank() && wordRangeValid,
             canClear = state.input.isNotBlank(),
