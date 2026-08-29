@@ -48,10 +48,15 @@ import com.ihy2ln.weaverse.data.db.entities.decodePages
 import com.ihy2ln.weaverse.data.db.entities.encodePages
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
 import com.ihy2ln.weaverse.feature.roleplay.presets.defaultPresets
+import com.ihy2ln.weaverse.feature.roleplay.characters.abilityModifier
+import com.ihy2ln.weaverse.feature.roleplay.characters.decodeRpgSheet
+import com.ihy2ln.weaverse.feature.prompt.PromptModelSelection
+import com.ihy2ln.weaverse.feature.prompt.PromptWordLimit
 import com.ihy2ln.weaverse.feature.shell.WorkspaceHistory
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -114,9 +119,18 @@ class RoleplayChatViewModel @Inject constructor(
         bindJob = viewModelScope.launch {
             launch {
                 combine(settings.preferences, modelCache.models) { prefs, dtos ->
-                    ContextMeter.limitFor(prefs.defaultModelRef, modelCache.toModelInfo(dtos))
-                }.collect { limit ->
-                    contextLimit = limit
+                    prefs.defaultModelRef to modelCache.toModelInfo(dtos)
+                }.collect { (defaultModelRef, models) ->
+                    _uiState.update {
+                        it.copy(defaultModelRef = defaultModelRef, writingModels = models)
+                    }
+                    contextLimit = ContextMeter.limitFor(
+                        PromptModelSelection.effectiveModelRef(
+                            _uiState.value.selectedModelRef,
+                            defaultModelRef,
+                        ),
+                        models,
+                    )
                     refreshContextMeter()
                 }
             }
@@ -486,6 +500,28 @@ class RoleplayChatViewModel @Inject constructor(
 
     fun updateOutputWords(words: Int) {
         _uiState.update { it.copy(outputWords = words.coerceIn(50, 4000)) }
+        refreshContextMeter()
+    }
+
+    fun updateMinimumOutputWords(words: Int) {
+        _uiState.update { it.copy(minimumOutputWords = words.coerceIn(50, 4000)) }
+        refreshContextMeter()
+    }
+
+    fun selectModel(modelId: String) {
+        val ref = PromptModelSelection.modelRef(modelId)
+        _uiState.update { it.copy(selectedModelRef = ref) }
+        contextLimit = ContextMeter.limitFor(ref, _uiState.value.writingModels)
+        refreshContextMeter()
+    }
+
+    fun useDefaultModel() {
+        _uiState.update { it.copy(selectedModelRef = "") }
+        contextLimit = ContextMeter.limitFor(
+            _uiState.value.defaultModelRef,
+            _uiState.value.writingModels,
+        )
+        refreshContextMeter()
     }
 
     fun setGenerationVisible(visible: Boolean) {
@@ -1153,7 +1189,11 @@ class RoleplayChatViewModel @Inject constructor(
         generateJob?.cancel()
         viewedSceneNumber = null
         generateJob = viewModelScope.launch {
-            if (!aiGeneration.hasApiKey()) {
+            val activeModelRef = PromptModelSelection.effectiveModelRef(
+                state.selectedModelRef,
+                state.defaultModelRef,
+            )
+            if (!aiGeneration.hasApiKey(activeModelRef)) {
                 _uiState.update { it.copy(errorMessage = AIError.NoApiKey().message.orEmpty()) }
                 return@launch
             }
@@ -1163,7 +1203,30 @@ class RoleplayChatViewModel @Inject constructor(
             val mode = currentDisplayMode()
             val playerAdvancedScene = mode == "dungeonMaster" && ExplicitSceneAdvance.containsMatchIn(userText)
             val playerStayedInScene = mode == "dungeonMaster" && ExplicitStayInScene.containsMatchIn(userText)
-            val backgroundRoll = simulateAdventureRoll(boundChat?.authorsNote.orEmpty())
+            val checkDecision = decideAdventureCheck(userText, state.userIsDungeonMaster)
+            val backgroundRoll = checkDecision.takeIf { it.requiresRoll }?.let { decision ->
+                simulateAdventureRoll(
+                    campaignRules = boundChat?.authorsNote.orEmpty(),
+                    modifier = adventureSheetModifier(decision),
+                    checkLabel = decision.checkLabel,
+                )
+            }
+            if (mode == "dungeonMaster" && backgroundRoll != null) {
+                _uiState.update {
+                    it.copy(
+                        input = "",
+                        isStreaming = true,
+                        streamingText = "",
+                        errorMessage = "",
+                        activeRoll = backgroundRoll,
+                        rollAnimationId = System.nanoTime(),
+                    )
+                }
+                // Let the player see the physical roll before the DM begins narrating its consequence.
+                delay(850)
+            } else if (backgroundRoll == null) {
+                _uiState.update { it.copy(activeRoll = null) }
+            }
             val maxTokens = (state.outputWords * 1.5).toInt().coerceIn(64, 8192)
             val difficulty = defaultPresets.find { it.id == state.presetId }
             val temperature = difficulty?.temperature?.toDouble() ?: 0.8
@@ -1215,12 +1278,18 @@ class RoleplayChatViewModel @Inject constructor(
                         history = history,
                         outputWords = state.outputWords,
                         difficultyDirective = difficulty?.directive,
-                        extraSystem = sessionSystemBlocks(mode) + if (mode == "dungeonMaster") {
-                            listOf(backgroundRoll.asHiddenDmInstruction())
+                        extraSystem = sessionSystemBlocks(mode) +
+                            PromptWordLimit.instruction(state.minimumOutputWords, state.outputWords) +
+                            if (mode == "dungeonMaster") {
+                            listOf(
+                                backgroundRoll?.asHiddenDmInstruction()
+                                    ?: noAdventureRollInstruction(),
+                            )
                         } else {
                             emptyList()
                         },
                     ),
+                    modelRef = activeModelRef,
                     maxTokens = maxTokens,
                     temperature = temperature,
                 ).collect { chunk ->
@@ -1276,7 +1345,10 @@ class RoleplayChatViewModel @Inject constructor(
                     now + 1,
                 )
             }
-            val cleanedReply = AiSceneAdvanceMarker.replace(rawReply, "").trim()
+            val cleanedReply = PromptWordLimit.trim(
+                AiSceneAdvanceMarker.replace(rawReply, "").trim(),
+                state.outputWords,
+            )
             val reply = RpMessageEntity(
                 id = "rpm-${now + 1}",
                 chatId = state.chatId,
@@ -1330,12 +1402,17 @@ class RoleplayChatViewModel @Inject constructor(
     fun regenerate(messageId: String) {
         viewModelScope.launch {
             val current = rawMessages.find { it.id == messageId && it.role == "char" } ?: return@launch
-            if (!aiGeneration.hasApiKey()) {
+            val state = _uiState.value
+            val activeModelRef = PromptModelSelection.effectiveModelRef(
+                state.selectedModelRef,
+                state.defaultModelRef,
+            )
+            if (!aiGeneration.hasApiKey(activeModelRef)) {
                 _uiState.update { it.copy(errorMessage = AIError.NoApiKey().message.orEmpty()) }
                 return@launch
             }
             val siblings = rawMessages.filter { it.swipeGroupId == current.swipeGroupId && it.role == "char" }
-            val words = _uiState.value.outputWords
+            val words = state.outputWords
             val difficulty = defaultPresets.find { it.id == _uiState.value.presetId }
             val temperature = difficulty?.temperature?.toDouble() ?: 0.8
             _uiState.update { it.copy(isStreaming = true, errorMessage = "") }
@@ -1357,8 +1434,10 @@ class RoleplayChatViewModel @Inject constructor(
                         history = history,
                         outputWords = words,
                         difficultyDirective = difficulty?.directive,
-                        extraSystem = sessionSystemBlocks(current.displayMode),
+                        extraSystem = sessionSystemBlocks(current.displayMode) +
+                            PromptWordLimit.instruction(state.minimumOutputWords, words),
                     ),
+                    modelRef = activeModelRef,
                     maxTokens = (words * 1.5).toInt().coerceIn(64, 8192),
                     temperature = temperature,
                 )
@@ -1372,7 +1451,9 @@ class RoleplayChatViewModel @Inject constructor(
                     swipeIndex = siblings.size,
                     isActiveSwipe = true,
                     role = "char",
-                    contentJson = Document.fromPlainText(reply.text).toJson(),
+                    contentJson = Document.fromPlainText(
+                        PromptWordLimit.trim(reply.text, words),
+                    ).toJson(),
                     createdAt = now,
                     displayMode = current.displayMode.ifBlank { currentDisplayMode() },
                 )
@@ -1428,10 +1509,26 @@ class RoleplayChatViewModel @Inject constructor(
             history = history,
             outputWords = state.outputWords,
             difficultyDirective = difficulty?.directive,
-            extraSystem = sessionSystemBlocks(mode),
+            extraSystem = sessionSystemBlocks(mode) +
+                PromptWordLimit.instruction(state.minimumOutputWords, state.outputWords),
         )
         val reading = generation.meter(assembled, state.input, contextLimit)
         _uiState.update { it.copy(contextMeter = reading) }
+    }
+
+    private fun adventureSheetModifier(decision: AdventureCheckDecision): Int {
+        val character = boundCharacter ?: return 0
+        val sheet = decodeRpgSheet(character.extensionsJson)
+        val score = when (decision.ability) {
+            AdventureAbility.Strength -> sheet.strength
+            AdventureAbility.Dexterity -> sheet.dexterity
+            AdventureAbility.Constitution -> sheet.constitution
+            AdventureAbility.Intelligence -> sheet.intelligence
+            AdventureAbility.Wisdom -> sheet.wisdom
+            AdventureAbility.Charisma -> sheet.charisma
+            null -> 10
+        }
+        return abilityModifier(score) + if (decision.addProficiency) sheet.proficiencyBonus else 0
     }
 
     /** Player-owned scene controls always override the AI game master's pacing. */

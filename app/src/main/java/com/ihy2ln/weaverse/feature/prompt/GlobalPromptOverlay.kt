@@ -121,20 +121,6 @@ fun GlobalPromptOverlay(
         state.selectedModelRef,
         state.defaultModelRef,
     )
-    val shape = RoundedCornerShape(inkRadiusMd())
-    val fieldColors = OutlinedTextFieldDefaults.colors(
-        focusedBorderColor = Color.Transparent,
-        unfocusedBorderColor = Color.Transparent,
-        disabledBorderColor = Color.Transparent,
-        focusedTextColor = tokens.primaryText,
-        unfocusedTextColor = tokens.primaryText,
-        disabledTextColor = tokens.primaryText.copy(alpha = 0.7f),
-        cursorColor = tokens.primaryText,
-        focusedPlaceholderColor = tokens.secondaryText,
-        unfocusedPlaceholderColor = tokens.secondaryText,
-        disabledPlaceholderColor = tokens.secondaryText,
-    )
-
     val dockModifier = if (collapsed) {
         modifier.padding(start = InkSpacing.sm, bottom = InkSpacing.xxs)
     } else {
@@ -142,134 +128,43 @@ fun GlobalPromptOverlay(
             .fillMaxWidth()
             .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xxs)
     }
-    Column(
-        modifier = dockModifier
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.97f))
-            .border(1.dp, InkAccentBlue, shape)
-            .padding(
-                horizontal = if (collapsed) 4.dp else InkSpacing.xs,
-                vertical = if (collapsed) 1.dp else InkSpacing.xxs,
-            ),
-    ) {
-        Text(
-            "PROMPT ${if (collapsed) "▴" else "▾"}",
-            modifier = Modifier
-                .clickable { collapsed = !collapsed }
-                .padding(horizontal = 2.dp, vertical = 2.dp),
-            style = MaterialTheme.typography.labelSmall,
-            fontSize = 8.sp,
-            color = InkAccentBlue,
-            maxLines = 1,
-        )
-        if (!collapsed) {
-            OutlinedTextField(
-                value = state.text,
-                onValueChange = viewModel::onTextChange,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp, max = 92.dp),
-                placeholder = { Text(state.errorMessage.ifBlank { placeholder }) },
-                enabled = !state.isStreaming,
-                minLines = 1,
-                maxLines = 3,
-                colors = fieldColors,
+    UnifiedPromptBar(
+        value = state.text,
+        onValueChange = viewModel::onTextChange,
+        placeholder = state.errorMessage.ifBlank { placeholder },
+        collapsed = collapsed,
+        onCollapsedChange = { collapsed = it },
+        contextLabel = state.contextMeterLabel,
+        minimumWords = minimumWordsText,
+        maximumWords = maximumWordsText,
+        onMinimumWordsChange = { value ->
+            minimumWordsText = value.filter(Char::isDigit).take(4)
+            minimumWordsText.toIntOrNull()?.let(viewModel::updateMinimumOutputWords)
+        },
+        onMaximumWordsChange = { value ->
+            maximumWordsText = value.filter(Char::isDigit).take(4)
+            maximumWordsText.toIntOrNull()?.let(viewModel::updateOutputWords)
+        },
+        wordRangeValid = wordRangeValid,
+        modelLabel = PromptModelSelection.shortLabel(activeModelRef, state.writingModels),
+        onModelClick = { modelsOpen = true },
+        aiMode = kind == PromptEntryKind.Ai,
+        onToggleMode = {
+            viewModel.selectEntryKind(
+                if (kind == PromptEntryKind.Ai) PromptEntryKind.Manual else PromptEntryKind.Ai,
             )
-            if (state.contextMeterLabel.isNotBlank()) {
-                Text(
-                    state.contextMeterLabel,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = tokens.secondaryText,
-                    modifier = Modifier.padding(bottom = 4.dp),
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Start,
-            ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                Text("W", style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
-                CompactNumberField(
-                    minimumWordsText,
-                    { value ->
-                        minimumWordsText = value.filter(Char::isDigit).take(4)
-                        minimumWordsText.toIntOrNull()?.let(viewModel::updateMinimumOutputWords)
-                    },
-                    "Minimum words",
-                    !state.isStreaming,
-                    wordRangeValid,
-                )
-                Text("–", style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
-                CompactNumberField(
-                    maximumWordsText,
-                    { value ->
-                        maximumWordsText = value.filter(Char::isDigit).take(4)
-                        maximumWordsText.toIntOrNull()?.let(viewModel::updateOutputWords)
-                    },
-                    "Maximum words",
-                    !state.isStreaming,
-                    wordRangeValid,
-                )
-            }
-            Row(
-                modifier = Modifier.weight(1f).clip(RoundedCornerShape(inkRadiusSm()))
-                    .clickable(enabled = !state.isStreaming) { modelsOpen = true }
-                    .semantics {
-                        contentDescription = "Model: ${PromptModelSelection.shortLabel(activeModelRef, state.writingModels)}"
-                    }
-                    .padding(horizontal = 4.dp, vertical = 7.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("Model · ", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                Text(
-                    PromptModelSelection.shortLabel(activeModelRef, state.writingModels),
-                    modifier = Modifier.weight(1f).basicMarquee(iterations = Int.MAX_VALUE),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = tokens.secondaryText,
-                    maxLines = 1,
-                    softWrap = false,
-                )
-            }
-            if (kind == PromptEntryKind.Ai) {
-                Text(
-                    if (state.imagePath != null) "▣✓" else "▣",
-                    modifier = Modifier.clickable(enabled = !state.isStreaming) { viewModel.requestImage() }
-                        .padding(horizontal = 3.dp, vertical = 7.dp),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = tokens.secondaryText,
-                )
-            }
-            PromptKindSelector(
-                selectedKind = kind ?: PromptEntryKind.Manual,
-                enabled = !state.isStreaming,
-                onSelect = viewModel::selectEntryKind,
-            )
-            if (state.isStreaming) {
-                InkTextButton(label = "Cancel", onClick = viewModel::cancelGeneration)
-            } else {
-                InkCheckIconButton(
-                    onClick = viewModel::submit,
-                    enabled = canSubmit,
-                    contentDescription = acceptDescription,
-                    modifier = Modifier.size(26.dp),
-                )
-            }
-            InkClearIconButton(
-                onClick = viewModel::clearText,
-                enabled = canClear,
-                modifier = Modifier.size(26.dp),
-            )
-            VoiceInputButton(
-                onSpoken = { viewModel.onTextChange(mergeSpokenText(state.text, it)) },
-                enabled = !state.isStreaming,
-                compact = true,
-                modifier = Modifier.size(26.dp),
-            )
-        }
-    }
-    }
+        },
+        streaming = state.isStreaming,
+        canSubmit = canSubmit,
+        canClear = canClear,
+        onSubmit = viewModel::submit,
+        onCancel = viewModel::cancelGeneration,
+        onClear = viewModel::clearText,
+        onSpoken = { viewModel.onTextChange(mergeSpokenText(state.text, it)) },
+        onAdd = if (kind == PromptEntryKind.Ai) viewModel::requestImage else null,
+        addSelected = state.imagePath != null,
+        modifier = dockModifier,
+    )
     if (modelsOpen) {
         PromptModelPickerDialog(
             models = state.writingModels,
@@ -355,7 +250,7 @@ private fun CompactNumberField(
 }
 
 @Composable
-private fun PromptModelPickerDialog(
+fun PromptModelPickerDialog(
     models: List<ModelInfo>,
     search: String,
     onSearchChange: (String) -> Unit,

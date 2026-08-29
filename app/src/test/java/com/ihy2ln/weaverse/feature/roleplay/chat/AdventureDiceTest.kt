@@ -13,6 +13,51 @@ class AdventureDiceTest {
     }
 
     @Test
+    fun routineMovementAndConversationDoNotRoll() {
+        assertTrue(!decideAdventureCheck("I walk across the room and open the door.").requiresRoll)
+        assertTrue(!decideAdventureCheck("I greet the innkeeper and ask for a room.").requiresRoll)
+        assertTrue(!decideAdventureCheck("I pick up my backpack and follow the road.").requiresRoll)
+    }
+
+    @Test
+    fun combatDefenseAndAbilityChecksActivateRolls() {
+        val attack = decideAdventureCheck("I attack the orc with my sword.")
+        assertTrue(attack.requiresRoll)
+        assertEquals(AdventureAbility.Strength, attack.ability)
+        assertTrue(attack.addProficiency)
+
+        assertEquals(
+            AdventureAbility.Dexterity,
+            decideAdventureCheck("I dodge the falling rocks.").ability,
+        )
+        assertEquals(
+            AdventureAbility.Charisma,
+            decideAdventureCheck("I try to persuade the guard.").ability,
+        )
+    }
+
+    @Test
+    fun dmNarrationDoesNotRollUnlessItCallsForPartyActionOrARoll() {
+        assertTrue(!decideAdventureCheck("The storm begins and the tavern closes.", true).requiresRoll)
+        assertTrue(decideAdventureCheck("The party attacks the owlbear.", true).requiresRoll)
+        assertTrue(decideAdventureCheck("Make a Wisdom check for the party.", true).requiresRoll)
+    }
+
+    @Test
+    fun d20RollAppliesCharacterSheetModifierOnce() {
+        val roll = simulateAdventureRoll(
+            campaignRules = "Rules system: D&D 5e",
+            random = Random(7),
+            modifier = 5,
+            checkLabel = "Melee attack",
+        )
+        assertEquals(roll.rawTotal + 5, roll.total)
+        assertEquals("1d20+5", roll.notation)
+        assertEquals("Melee attack", roll.checkLabel)
+        assertTrue("Do not apply it twice" in roll.asHiddenDmInstruction())
+    }
+
+    @Test
     fun pbtaUsesTwoD6() {
         val roll = simulateAdventureRoll("Powered by the Apocalypse", Random(3))
         assertEquals("2d6", roll.notation)

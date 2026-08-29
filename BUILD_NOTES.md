@@ -3,6 +3,24 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.3.8-beta — selective tabletop checks and unified prompt
+
+- Adventure actions now pass through a backend tabletop ruling before dice
+  are generated. Routine movement, conversation, item handling, and DM
+  narration resolve without a roll.
+- Attacks, defenses, saves, contested actions, explicit roll requests, and
+  uncertain Strength/Dexterity/Constitution/Intelligence/Wisdom/Charisma
+  actions activate the campaign's dice system.
+- D&D/Pathfinder d20 checks apply the active roster character's ability
+  modifier and attack/spell proficiency bonus once, then provide that exact
+  result to the AI DM and the pixelized low-poly roll animation.
+- Adventure and the global writing surfaces now share the same compact prompt
+  control with context, word range, model, AI/manual, media, submit, clear,
+  and voice controls.
+- Local beta artifacts now go to
+  `S:\AI\Novel\Weaververse\Beta.Test.Build`; tagged builds continue to GitHub
+  Releases.
+
 ## Resume state (2026-08-16)
 
 **The app codebase in this repo was replaced today.** Everything under

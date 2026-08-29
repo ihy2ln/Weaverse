@@ -25,26 +25,31 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import com.ihy2ln.weaverse.core.ui.components.CollapsibleUsageStrip
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
 import com.ihy2ln.weaverse.core.ui.components.mergeSpokenText
-import com.ihy2ln.weaverse.core.ui.components.rememberSpeechToText
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
+import com.ihy2ln.weaverse.feature.prompt.PromptModelPickerDialog
+import com.ihy2ln.weaverse.feature.prompt.PromptModelSelection
+import com.ihy2ln.weaverse.feature.prompt.PromptWordLimit
+import com.ihy2ln.weaverse.feature.prompt.UnifiedPromptBar
 import java.io.File
 
 /**
@@ -65,9 +70,26 @@ fun AdventurePlayScreen(
     val state by viewModel.uiState.collectAsState()
     val tokens = inkTokens()
     val storyState = rememberLazyListState()
-    val dictate = rememberSpeechToText { spoken ->
-        viewModel.onInputChange(mergeSpokenText(state.input, spoken))
+    var promptCollapsed by rememberSaveable { mutableStateOf(false) }
+    var modelsOpen by remember { mutableStateOf(false) }
+    var modelSearch by rememberSaveable { mutableStateOf("") }
+    var minimumWordsText by rememberSaveable { mutableStateOf(state.minimumOutputWords.toString()) }
+    var maximumWordsText by rememberSaveable { mutableStateOf(state.outputWords.toString()) }
+    LaunchedEffect(state.minimumOutputWords) {
+        if (minimumWordsText.toIntOrNull() != state.minimumOutputWords) {
+            minimumWordsText = state.minimumOutputWords.toString()
+        }
     }
+    LaunchedEffect(state.outputWords) {
+        if (maximumWordsText.toIntOrNull() != state.outputWords) {
+            maximumWordsText = state.outputWords.toString()
+        }
+    }
+    val minWords = minimumWordsText.toIntOrNull()
+    val maxWords = maximumWordsText.toIntOrNull()
+    val wordRangeValid = minWords != null && maxWords != null &&
+        minWords in PromptWordLimit.Minimum..PromptWordLimit.Maximum &&
+        maxWords in PromptWordLimit.Minimum..PromptWordLimit.Maximum && minWords <= maxWords
 
     LaunchedEffect(state.title) {
         onChromeChange(
@@ -98,11 +120,12 @@ fun AdventurePlayScreen(
 
     val sceneArt = state.mediaPanels.lastOrNull { it.path.isNotBlank() && !it.isAudio }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(tokens.background),
     ) {
+    Column(modifier = Modifier.fillMaxSize()) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -274,111 +297,78 @@ fun AdventurePlayScreen(
             )
         }
         CollapsibleUsageStrip(state.lastUsage, Modifier.padding(horizontal = InkSpacing.lg))
-        AdventureActionComposer(
+        UnifiedPromptBar(
             value = state.input,
             onValueChange = viewModel::onInputChange,
+            placeholder = if (state.userIsDungeonMaster) {
+                "What happens next? · Describe the scene, NPC response, or ruling…"
+            } else {
+                "What do you do? · Describe your action…"
+            },
+            collapsed = promptCollapsed,
+            onCollapsedChange = { promptCollapsed = it },
+            contextLabel = state.contextMeter?.label.orEmpty(),
+            minimumWords = minimumWordsText,
+            maximumWords = maximumWordsText,
+            onMinimumWordsChange = { value ->
+                minimumWordsText = value.filter(Char::isDigit).take(4)
+                minimumWordsText.toIntOrNull()?.let(viewModel::updateMinimumOutputWords)
+            },
+            onMaximumWordsChange = { value ->
+                maximumWordsText = value.filter(Char::isDigit).take(4)
+                maximumWordsText.toIntOrNull()?.let(viewModel::updateOutputWords)
+            },
+            wordRangeValid = wordRangeValid,
+            modelLabel = PromptModelSelection.shortLabel(
+                PromptModelSelection.effectiveModelRef(
+                    state.selectedModelRef,
+                    state.defaultModelRef,
+                ),
+                state.writingModels,
+            ),
+            onModelClick = { modelsOpen = true },
             aiMode = state.entryMode != "nai",
             streaming = state.isStreaming,
             onToggleMode = {
                 viewModel.setEntryMode(if (state.entryMode == "nai") "ai" else "nai")
             },
-            onAddArt = viewModel::requestMediaPick,
-            onDictate = dictate,
-            onSend = viewModel::send,
+            canSubmit = state.input.isNotBlank() && wordRangeValid,
+            canClear = state.input.isNotBlank(),
+            onSubmit = viewModel::send,
             onCancel = viewModel::cancelGeneration,
-            userIsDungeonMaster = state.userIsDungeonMaster,
+            onClear = { viewModel.onInputChange("") },
+            onSpoken = { spoken ->
+                viewModel.onInputChange(mergeSpokenText(state.input, spoken))
+            },
+            onAdd = viewModel::requestMediaPick,
+            addSelected = sceneArt != null,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
         )
     }
-}
-
-@Composable
-private fun AdventureActionComposer(
-    value: String,
-    onValueChange: (String) -> Unit,
-    aiMode: Boolean,
-    streaming: Boolean,
-    onToggleMode: () -> Unit,
-    onAddArt: () -> Unit,
-    onDictate: () -> Unit,
-    onSend: () -> Unit,
-    onCancel: () -> Unit,
-    userIsDungeonMaster: Boolean,
-) {
-    val tokens = inkTokens()
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.sm)
-            .clip(RoundedCornerShape(inkRadiusMd()))
-            .background(tokens.panel)
-            .padding(InkSpacing.sm),
-    ) {
-        Text(
-            if (userIsDungeonMaster) "What happens next?" else "What do you do?",
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold,
+    PixelDiceRollOverlay(
+        roll = state.activeRoll,
+        sequence = state.rollAnimationId,
+        modifier = Modifier.align(Alignment.Center),
+    )
+    if (modelsOpen) {
+        PromptModelPickerDialog(
+            models = state.writingModels,
+            search = modelSearch,
+            onSearchChange = { modelSearch = it },
+            selectedRef = state.selectedModelRef,
+            defaultRef = state.defaultModelRef,
+            onSelect = { id ->
+                viewModel.selectModel(id)
+                modelsOpen = false
+            },
+            onUseDefault = {
+                viewModel.useDefaultModel()
+                modelsOpen = false
+            },
+            onDismiss = { modelsOpen = false },
         )
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = InkSpacing.xs),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
-        ) {
-            Text(
-                "＋",
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(tokens.hover)
-                    .clickable(onClickLabel = "Add scene art", onClick = onAddArt)
-                    .padding(8.dp),
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(tokens.hover)
-                    .padding(horizontal = InkSpacing.md, vertical = InkSpacing.sm),
-            ) {
-                if (value.isBlank()) {
-                    Text(
-                        if (userIsDungeonMaster) "Describe the scene, NPC response, or ruling…" else "Describe your action…",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = tokens.secondaryText,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                androidx.compose.foundation.text.BasicTextField(
-                    value = value,
-                    onValueChange = onValueChange,
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = tokens.primaryText),
-                    cursorBrush = SolidColor(tokens.primaryText),
-                    minLines = 1,
-                    maxLines = 5,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            Text(
-                if (aiMode) "/A" else "\\M",
-                style = MaterialTheme.typography.labelMedium,
-                color = if (aiMode) tokens.activePill else tokens.secondaryText,
-                modifier = Modifier.clickable(onClick = onToggleMode).padding(InkSpacing.xs),
-            )
-            Text(
-                if (streaming) "×" else if (value.isNotBlank()) "➤" else "🎙",
-                style = MaterialTheme.typography.titleMedium,
-                color = tokens.activePill,
-                modifier = Modifier
-                    .clickable {
-                        when {
-                            streaming -> onCancel()
-                            value.isNotBlank() -> onSend()
-                            else -> onDictate()
-                        }
-                    }
-                    .padding(InkSpacing.xs),
-            )
-        }
+    }
     }
 }

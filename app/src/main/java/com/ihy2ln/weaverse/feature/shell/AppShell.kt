@@ -856,6 +856,7 @@ fun AppShell(
             ),
             novelDest = novelDest,
             active = activeWritingDestination &&
+                !(mode == AppMode.Roleplay.name && rpChrome?.displayMode == "dungeonMaster") &&
                 chromeTool == null &&
                 workspaceFocus != WorkspaceFocus.Pictures.name &&
                 selectedCodexEntryId == null &&

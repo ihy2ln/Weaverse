@@ -93,8 +93,13 @@ target — `:sync-core` and `:desktop` are pure JVM).
 ./gradlew :sync-core:test                  # shared sync-protocol tests
 ```
 
-- Android APK → `app/build/outputs/apk/debug/`
+- Android's intermediate APK → `app/build/outputs/apk/debug/`
+- Local test/beta deliverables → `S:\AI\Novel\Weaververse\Beta.Test.Build`
+  (run `scripts/copy-beta-build.ps1` after assembling)
 - Desktop zip → `releases/desktop/Weaverse-Desktop-v1.2.5-beta.zip`
+
+Tagged betas are also published through [GitHub Releases](https://github.com/ihy2ln/weaverse/releases);
+the local beta folder is the canonical on-PC handoff location.
 
 To build a release APK signed with your own key, set the `KEYSTORE_PATH` /
 `KEYSTORE_PASSWORD` / `KEY_ALIAS` / `KEY_PASSWORD` environment variables (CI

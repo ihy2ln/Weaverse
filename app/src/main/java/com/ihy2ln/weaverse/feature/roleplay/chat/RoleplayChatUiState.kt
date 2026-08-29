@@ -1,6 +1,7 @@
 package com.ihy2ln.weaverse.feature.roleplay.chat
 
 import com.ihy2ln.weaverse.ai.context.ContextMeterReading
+import com.ihy2ln.weaverse.ai.ModelInfo
 import com.ihy2ln.weaverse.core.text.TextOverlay
 import com.ihy2ln.weaverse.data.db.entities.RpPageMeta
 
@@ -66,7 +67,15 @@ data class RoleplayChatUiState(
     val ttsStatus: String = "",
     val generationVisible: Boolean = true,
     val entryMode: String = "ai",
+    val minimumOutputWords: Int = 200,
     val outputWords: Int = 400,
+    /** Blank means follow the Writing model selected in Settings. */
+    val selectedModelRef: String = "",
+    val defaultModelRef: String = "",
+    val writingModels: List<ModelInfo> = emptyList(),
+    /** Exact backend roll currently being animated for the submitted action. */
+    val activeRoll: AdventureRoll? = null,
+    val rollAnimationId: Long = 0L,
     val selectedMediaKey: String? = null,
     val canPasteMedia: Boolean = false,
     val presetId: String = "preset-balanced",
