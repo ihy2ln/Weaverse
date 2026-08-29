@@ -30,12 +30,16 @@ class WriteDocumentOps @Inject constructor(
 
     suspend fun getScene(sceneId: String): SceneEntity? = manuscriptRepository.getScene(sceneId)
 
-    suspend fun persist(base: SceneEntity, doc: Document): SceneEntity {
+    /**
+     * Writes [doc] over [base]. Callers pass a strictly increasing [timestamp]
+     * so the Room echo can be told apart from older snapshots racing back.
+     */
+    suspend fun persist(base: SceneEntity, doc: Document, timestamp: Long = System.currentTimeMillis()): SceneEntity {
         val updated = base.copy(
             docJson = doc.toJson(),
             plainText = doc.plainText(),
             wordCount = doc.wordCount(),
-            updatedAt = System.currentTimeMillis(),
+            updatedAt = timestamp,
         )
         manuscriptRepository.saveScene(updated)
         sceneRevisions.snapshotIfDue(updated)
@@ -44,14 +48,18 @@ class WriteDocumentOps @Inject constructor(
 
     suspend fun saveScene(scene: SceneEntity) = manuscriptRepository.saveScene(scene)
 
-    suspend fun restoreBlocks(sceneId: String, blocks: List<Block>): SceneEntity? {
+    suspend fun restoreBlocks(
+        sceneId: String,
+        blocks: List<Block>,
+        timestamp: Long = System.currentTimeMillis(),
+    ): SceneEntity? {
         val doc = Document(blocks)
         val base = manuscriptRepository.getScene(sceneId) ?: return null
         val updated = base.copy(
             docJson = doc.toJson(),
             plainText = doc.plainText(),
             wordCount = doc.wordCount(),
-            updatedAt = System.currentTimeMillis(),
+            updatedAt = timestamp,
         )
         manuscriptRepository.saveScene(updated)
         return updated

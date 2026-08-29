@@ -69,10 +69,12 @@ data class RoleplayChatUiState(
     val audioPickRequestId: Long = 0L,
     val composerMinLines: Int = 1,
     val ttsStatus: String = "",
+    /** Short-lived confirmation for composer hold-menu actions (roster/inventory adds). */
+    val composerStatus: String = "",
     val generationVisible: Boolean = true,
     val entryMode: String = "ai",
-    val minimumOutputWords: Int = 200,
-    val outputWords: Int = 400,
+    val minimumOutputWords: Int = 50,
+    val outputWords: Int = 100,
     /** Blank means follow the Writing model selected in Settings. */
     val selectedModelRef: String = "",
     val defaultModelRef: String = "",

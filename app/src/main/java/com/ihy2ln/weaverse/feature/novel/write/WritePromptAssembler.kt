@@ -86,7 +86,7 @@ class WritePromptAssembler @Inject constructor(
         entries: List<CodexEntryEntity>,
         codexBlock: String,
         message: String = "",
-        outputWords: Int = 200,
+        outputWords: Int = 100,
     ): PromptRenderContext {
         val book = db.bookDao().getById(bookId)
         val series = book?.seriesId?.let { id -> db.seriesDao().observeById(id).first() }

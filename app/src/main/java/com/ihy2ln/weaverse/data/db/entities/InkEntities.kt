@@ -17,6 +17,7 @@ data class SeriesEntity(
     val rollingSummary: String = "",
     val summaryUpdatedAt: Long? = null,
     val createdAt: Long,
+    val updatedAt: Long = 0L,
 )
 
 @Entity(tableName = "books", indices = [Index("seriesId")])
@@ -42,6 +43,7 @@ data class ActEntity(
     val bookId: String,
     val title: String,
     val sortOrder: Int,
+    val updatedAt: Long = 0L,
 )
 
 @Entity(tableName = "chapters", indices = [Index("actId")])
@@ -51,6 +53,7 @@ data class ChapterEntity(
     val title: String,
     val sortOrder: Int,
     val summary: String = "",
+    val updatedAt: Long = 0L,
 )
 
 @Entity(tableName = "scenes", indices = [Index("chapterId")])
@@ -82,6 +85,7 @@ data class SceneCodexLinkEntity(
     val sceneId: String,
     val entryId: String,
     val source: String = "manual",
+    val updatedAt: Long = 0L,
 )
 
 @Entity(tableName = "scene_revisions", indices = [Index("sceneId")])
@@ -107,6 +111,7 @@ data class CodexCategoryEntity(
     val sortOrder: Int = 0,
     val isSystem: Boolean = false,
     val isBuiltIn: Boolean = false,
+    val updatedAt: Long = 0L,
 )
 
 @Entity(tableName = "codex_entries", indices = [Index("categoryId"), Index("scopeId")])
@@ -149,6 +154,7 @@ data class CodexEntryLoreEntity(
     val tokenBudgetWeight: Float = 1f,
     val recursionAllowed: Boolean = true,
     val groupName: String = "",
+    val updatedAt: Long = 0L,
 )
 
 @Entity(tableName = "snippets")
@@ -161,6 +167,7 @@ data class SnippetEntity(
     val category: String = "",
     val pinned: Boolean = false,
     val createdAt: Long,
+    val updatedAt: Long = 0L,
 )
 
 @Entity(tableName = "chat_threads")
@@ -217,6 +224,7 @@ data class RpCharacterEntity(
     val inParty: Boolean = false,
     /** Equipped item per slot, keyed by RpEquipSlot.name. */
     val equipmentJson: String = "{}",
+    val updatedAt: Long = 0L,
 )
 
 /** One carried item. System-agnostic on purpose — no rules engine behind it. */
@@ -281,6 +289,7 @@ data class RpPersonaEntity(
     /** You carry gear the same way the rest of the team does. */
     val inventoryJson: String = "[]",
     val equipmentJson: String = "{}",
+    val updatedAt: Long = 0L,
 )
 
 @Entity(tableName = "rp_chats")

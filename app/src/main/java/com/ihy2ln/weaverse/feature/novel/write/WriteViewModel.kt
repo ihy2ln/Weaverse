@@ -40,9 +40,11 @@ import com.ihy2ln.weaverse.feature.novel.write.editor.SlashCommand
 import com.ihy2ln.weaverse.core.ui.components.MediaEditAction
 import com.ihy2ln.weaverse.feature.prompt.PromptEntryBus
 import com.ihy2ln.weaverse.feature.prompt.PromptEntryKind
+import com.ihy2ln.weaverse.feature.prompt.PromptInsertAnchor
 import com.ihy2ln.weaverse.feature.shell.WorkspaceHistory
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -68,6 +70,7 @@ class WriteViewModel @Inject constructor(
     private val promptEntryBus: PromptEntryBus,
     private val workspaceHistory: WorkspaceHistory,
     private val modelCache: OpenRouterModelCache,
+    private val writeStamps: com.ihy2ln.weaverse.data.repo.SceneWriteStamps,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(WriteUiState())
     val uiState: StateFlow<WriteUiState> = _uiState.asStateFlow()
@@ -83,6 +86,13 @@ class WriteViewModel @Inject constructor(
     private val unregisterHistoryFlush = workspaceHistory.registerPreUndo { flushTypingHistory() }
     private var contextLimit = ContextMeter.DEFAULT_LIMIT
     private var revisionJob: Job? = null
+    /** docJson of the most recent local write — identifies our own Room echoes. */
+    private var lastPersistedDocJson: String? = null
+
+    /** Conflated so bursts of keystrokes persist once, serialized in a single consumer. */
+    private val persistQueue = Channel<PendingSceneWrite>(Channel.CONFLATED)
+
+    private data class PendingSceneWrite(val sceneId: String, val doc: Document)
 
     init {
         viewModelScope.launch {
@@ -137,6 +147,7 @@ class WriteViewModel @Inject constructor(
                 _uiState.update { it.copy(codexNames = names, codexMentionTargets = mentionTargets) }
             }
         }
+        viewModelScope.launch { drainPersistQueue() }
     }
 
     private var pendingJumpKind: String = "Scene"
@@ -153,6 +164,10 @@ class WriteViewModel @Inject constructor(
             typingBaseline = null
             workspaceHistory.removePendingUndo()
         }
+        // Scene switched: drop the previous scene's echo identity so its persisted
+        // docJson can never suppress the first echo of the newly loaded scene.
+        loadedScene = null
+        lastPersistedDocJson = null
         sceneJob = viewModelScope.launch {
             documentOps.observeScene(sceneId).collect { scene ->
                 if (scene != null) applyScene(scene)
@@ -227,6 +242,7 @@ class WriteViewModel @Inject constructor(
                         commandId = "scene_beat",
                         label = "SCENE BEAT",
                         insertAfterIndex = index,
+                        anchorBlockId = beat.id,
                         prompt = beat.prompt,
                         systemInstructions = library.systemInstructions,
                         promptId = library.promptId,
@@ -246,6 +262,13 @@ class WriteViewModel @Inject constructor(
     }
 
     private fun applyScene(scene: SceneEntity) {
+        // Every local keystroke writes the scene to Room and the observe flow echoes it
+        // back here. While the user keeps typing, an echo can lag behind newer local
+        // state; applying it would clobber fresher keystrokes (dropped/jumping text).
+        // Own echoes carry the last persisted docJson; stale echoes carry an older stamp.
+        val knownUpdatedAt = loadedScene?.updatedAt ?: 0L
+        if (scene.updatedAt < knownUpdatedAt) return
+        if (scene.docJson == lastPersistedDocJson) return
         loadedScene = scene
         val doc = documentFromJson(scene.docJson)
         val blocks = doc.blocks.ifEmpty { listOf(Paragraph("new-p", listOf(Span("")))) }
@@ -262,6 +285,18 @@ class WriteViewModel @Inject constructor(
                     canUndo = workspaceHistory.state.value.canUndo,
                     canRedo = workspaceHistory.state.value.canRedo,
                 )
+            }
+            // Back-end insert target: as soon as a scene is open, anchor ⌖ at the end
+            // of its last paragraph so dock prompts always have a valid destination.
+            // Tapping anywhere in the editor re-anchors it from then on.
+            if (promptEntryBus.insertAnchor.value?.sceneId != scene.id) {
+                val lastPara = blocks.indexOfLast { it is Paragraph }
+                if (lastPara >= 0) {
+                    val caret = (blocks[lastPara] as Paragraph).plainText().length
+                    promptEntryBus.setInsertAnchor(
+                        PromptInsertAnchor(sceneId = scene.id, blockIndex = lastPara, caret = caret),
+                    )
+                }
             }
             val jump = pendingJumpKind
             pendingJumpKind = "Scene"
@@ -287,6 +322,16 @@ class WriteViewModel @Inject constructor(
                     blockIndex = blockIndex,
                     start = range.start,
                     end = range.end,
+                ),
+            )
+        }
+        // Publish the caret so the prompt dock can target "⌖ Cursor" insertions.
+        loadedScene?.id?.let { sceneId ->
+            promptEntryBus.setInsertAnchor(
+                PromptInsertAnchor(
+                    sceneId = sceneId,
+                    blockIndex = blockIndex,
+                    caret = range.max,
                 ),
             )
         }
@@ -626,6 +671,7 @@ class WriteViewModel @Inject constructor(
                         commandId = commandId,
                         label = label.uppercase(),
                         insertAfterIndex = sel.blockIndex,
+                        anchorBlockId = _uiState.value.blocks.getOrNull(sel.blockIndex)?.id,
                         prompt = "",
                         systemInstructions = buildString {
                             append(library.systemInstructions)
@@ -635,10 +681,7 @@ class WriteViewModel @Inject constructor(
                             }
                         },
                         promptId = library.promptId,
-                        outputWords = when (commandId) {
-                            "shorten" -> 300
-                            else -> 750
-                        },
+                        outputWords = 100,
                         replaceBlockIndex = if (replaceInPlace) sel.blockIndex else null,
                         replaceStart = if (replaceInPlace) sel.min else null,
                         replaceEnd = if (replaceInPlace) sel.max else null,
@@ -959,7 +1002,7 @@ class WriteViewModel @Inject constructor(
                 )
             }.onSuccess { result ->
                 val summary = result.text.trim()
-                val updated = scene.copy(summary = summary, updatedAt = System.currentTimeMillis())
+                val updated = scene.copy(summary = summary, updatedAt = nextWriteStamp())
                 documentOps.saveScene(updated)
                 loadedScene = updated
                 _uiState.update { it.copy(isSummarizing = false, statusMessage = "Scene summarized") }
@@ -1105,7 +1148,9 @@ class WriteViewModel @Inject constructor(
     private suspend fun restoreSceneBlocks(sceneId: String, blocks: List<Block>) {
         applyingHistory = true
         try {
-            documentOps.restoreBlocks(sceneId, blocks)
+            // Queued behind keystroke persists so a pending write can never land after
+            // the snapshot and resurrect newer text over it.
+            persistQueue.send(PendingSceneWrite(sceneId, Document(blocks)))
         } finally {
             applyingHistory = false
         }
@@ -1115,13 +1160,14 @@ class WriteViewModel @Inject constructor(
         if (recordHistory) flushTypingHistory()
         var before: List<Block> = emptyList()
         var after: List<Block> = emptyList()
+        var nextDoc: Document? = null
         _uiState.update { state ->
             before = state.blocks.toList()
             val blocks = state.blocks.toMutableList()
             mutator(blocks)
             after = blocks.toList()
             val doc = Document(blocks)
-            persistScene(doc)
+            nextDoc = doc
             state.copy(
                 blocks = blocks,
                 wordCount = doc.wordCount(),
@@ -1129,6 +1175,7 @@ class WriteViewModel @Inject constructor(
                 canRedo = workspaceHistory.state.value.canRedo,
             )
         }
+        nextDoc?.let { persistScene(it) }
         if (recordHistory) recordDocumentEdit(before, after)
         _uiState.update {
             it.copy(
@@ -1143,12 +1190,25 @@ class WriteViewModel @Inject constructor(
     }
 
     private fun persistScene(doc: Document) {
-        viewModelScope.launch {
-            val base = loadedScene ?: return@launch
-            loadedScene = documentOps.persist(base, doc)
+        val sceneId = loadedScene?.id ?: return
+        persistQueue.trySend(PendingSceneWrite(sceneId, doc))
+    }
+
+    /**
+     * Single consumer persists scene writes strictly in order. Keystrokes arrive faster
+     * than Room writes; out-of-order writes would let a stale document win on disk.
+     */
+    private suspend fun drainPersistQueue() {
+        for (write in persistQueue) {
+            val base = loadedScene?.takeIf { it.id == write.sceneId } ?: continue
+            val updated = documentOps.persist(base, write.doc, nextWriteStamp())
+            loadedScene = updated
+            lastPersistedDocJson = updated.docJson
             refreshContextMeter()
         }
     }
+
+    private fun nextWriteStamp(): Long = writeStamps.next()
 
     private fun recomputeFindMatches() {
         val next = documentOps.recomputeFind(_uiState.value.blocks, _uiState.value.findReplace)

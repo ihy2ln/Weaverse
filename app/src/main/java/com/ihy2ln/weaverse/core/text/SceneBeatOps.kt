@@ -47,6 +47,35 @@ fun List<Block>.appendParagraphs(text: String): List<Block> {
 fun Document.appendParagraphs(text: String): Document =
     copy(blocks = blocks.appendParagraphs(text))
 
+/**
+ * Insert generated prose at a caret anchor: the anchor paragraph splits at the
+ * caret and the prose paragraph lands between the halves. An empty anchor
+ * paragraph is replaced outright; non-paragraph or out-of-range anchors append.
+ */
+fun Document.insertProseAt(blockIndex: Int, caret: Int, text: String): Document {
+    val incoming = text.trim()
+    if (incoming.isEmpty()) return this
+    val block = blocks.getOrNull(blockIndex)
+    if (block !is Paragraph) return appendParagraphs(text)
+    val existing = block.plainText()
+    val split = caret.coerceIn(0, existing.length)
+    val before = existing.take(split).trimEnd()
+    val after = existing.drop(split).trimStart()
+    val next = blocks.toMutableList()
+    if (before.isBlank() && after.isBlank()) {
+        next[blockIndex] = Paragraph(UUID.randomUUID().toString(), listOf(Span(incoming)))
+        return copy(blocks = next)
+    }
+    val replacement = buildList {
+        if (before.isNotBlank()) add(Paragraph(block.id, listOf(Span(before))))
+        add(Paragraph(UUID.randomUUID().toString(), listOf(Span(incoming))))
+        if (after.isNotBlank()) add(Paragraph(UUID.randomUUID().toString(), listOf(Span(after))))
+    }
+    next.removeAt(blockIndex)
+    next.addAll(blockIndex, replacement)
+    return copy(blocks = next)
+}
+
 fun List<Block>.withSceneBeatPrompt(index: Int, prompt: String): List<Block> {
     val beat = getOrNull(index) as? SceneBeatBlock ?: return this
     if (beat.prompt == prompt) return this

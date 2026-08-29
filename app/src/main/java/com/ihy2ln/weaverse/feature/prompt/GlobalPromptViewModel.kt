@@ -20,6 +20,7 @@ import com.ihy2ln.weaverse.core.media.MediaRepository
 import com.ihy2ln.weaverse.core.text.Document
 import com.ihy2ln.weaverse.core.text.appendParagraphs
 import com.ihy2ln.weaverse.core.text.documentFromJson
+import com.ihy2ln.weaverse.core.text.insertProseAt
 import com.ihy2ln.weaverse.core.text.plainText
 import com.ihy2ln.weaverse.core.text.toJson
 import com.ihy2ln.weaverse.core.text.wordCount
@@ -46,10 +47,16 @@ import java.util.UUID
 import javax.inject.Inject
 
 data class GlobalPromptUiState(
-    val kind: PromptEntryKind? = null,
+    val kind: PromptEntryKind? = PromptEntryKind.Ai,
     val text: String = "",
-    val minimumOutputWords: Int = 500,
-    val outputWords: Int = 750,
+    val minimumOutputWords: Int = 50,
+    val outputWords: Int = 100,
+    /** True inserts generated prose at the tapped editor caret; false appends at scene end. */
+    val insertAtCursor: Boolean = false,
+    /** Scene block id of the insert anchor when targeting the cursor. */
+    val anchorLabel: String = "",
+    /** Last submitted prompt text, for the ↻ retry/resubmit action. */
+    val lastPrompt: String = "",
     val streamingText: String = "",
     val isStreaming: Boolean = false,
     val errorMessage: String = "",
@@ -84,6 +91,7 @@ class GlobalPromptViewModel @Inject constructor(
     private val settings: SettingsRepository,
     private val modelCache: OpenRouterModelCache,
     private val workspaceHistory: WorkspaceHistory,
+    private val writeStamps: com.ihy2ln.weaverse.data.repo.SceneWriteStamps,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(GlobalPromptUiState())
     val uiState: StateFlow<GlobalPromptUiState> = _uiState.asStateFlow()
@@ -95,6 +103,20 @@ class GlobalPromptViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             bus.openRequests.collect { kind -> open(kind) }
+        }
+        viewModelScope.launch {
+            // Keep the ⌖ chip's paragraph number live as the user taps the document.
+            bus.insertAnchor.collect { anchor ->
+                _uiState.update { state ->
+                    if (!state.insertAtCursor) {
+                        state
+                    } else {
+                        state.copy(
+                            anchorLabel = anchor?.let { "¶${it.blockIndex + 1}" } ?: "",
+                        )
+                    }
+                }
+            }
         }
         viewModelScope.launch {
             settings.preferences.collect { prefs ->
@@ -125,8 +147,8 @@ class GlobalPromptViewModel @Inject constructor(
                 isStreaming = false,
                 imageMediaId = null,
                 imagePath = null,
-                minimumOutputWords = if (kind == PromptEntryKind.Ai) 500 else it.minimumOutputWords,
-                outputWords = if (kind == PromptEntryKind.Ai) 750 else it.outputWords,
+                minimumOutputWords = if (kind == PromptEntryKind.Ai) 50 else it.minimumOutputWords,
+                outputWords = if (kind == PromptEntryKind.Ai) 100 else it.outputWords,
             )
         }
         refreshContextMeter(reloadSystem = true)
@@ -134,7 +156,8 @@ class GlobalPromptViewModel @Inject constructor(
 
     fun dismiss() {
         generateJob?.cancel()
-        _uiState.update { it.copy(kind = null, isStreaming = false) }
+        // Reset to the default entry option (/A) when the dock closes.
+        _uiState.update { it.copy(kind = PromptEntryKind.Ai, isStreaming = false) }
     }
 
     fun cancelGeneration() {
@@ -161,12 +184,12 @@ class GlobalPromptViewModel @Inject constructor(
                 errorMessage = "",
                 statusMessage = "",
                 minimumOutputWords = if (kind == PromptEntryKind.Ai && it.kind != PromptEntryKind.Ai) {
-                    500
+                    50
                 } else {
                     it.minimumOutputWords
                 },
                 outputWords = if (kind == PromptEntryKind.Ai && it.kind != PromptEntryKind.Ai) {
-                    750
+                    100
                 } else {
                     it.outputWords
                 },
@@ -178,6 +201,66 @@ class GlobalPromptViewModel @Inject constructor(
         _uiState.update {
             it.copy(text = "", streamingText = "", errorMessage = "", statusMessage = "")
         }
+    }
+
+    /** ⇥/⌖ target chip: toggle between appending at scene end and the tapped caret. */
+    fun toggleInsertTarget() {
+        _uiState.update { state ->
+            val next = !state.insertAtCursor
+            val label = if (next) {
+                "¶${(bus.insertAnchor.value?.blockIndex ?: 0) + 1}"
+            } else {
+                ""
+            }
+            state.copy(insertAtCursor = next, anchorLabel = label)
+        }
+    }
+
+    /** ↻ hold-menu action: resubmit the last prompt (falls back to the current text). */
+    fun retryPrompt() {
+        val state = _uiState.value
+        if (state.isStreaming) return
+        val text = state.text.ifBlank { state.lastPrompt }
+        if (text.isBlank() && state.imageMediaId == null) return
+        generateAi(state.copy(text = text))
+    }
+
+    /** » hold-menu action: keep writing from where the document left off. */
+    fun continuePrompt() {
+        val state = _uiState.value
+        if (state.isStreaming) return
+        // Blank text falls through to the mode's continue draft in generateAi.
+        generateAi(state.copy(text = ""))
+    }
+
+    /** 🎲 composer hold-menu action: append a fresh d20 roll to the prompt text. */
+    fun rollDice() {
+        val roll = (1..20).random()
+        _uiState.update {
+            val base = it.text.trimEnd()
+            it.copy(text = if (base.isBlank()) "[d20: $roll]" else "$base [d20: $roll]")
+        }
+    }
+
+    /** ↻ action: reset the prompt entry to its defaults (/A, 50–100 words, empty input). */
+    fun refreshPrompt() {
+        generateJob?.cancel()
+        _uiState.update {
+            it.copy(
+                kind = PromptEntryKind.Ai,
+                text = "",
+                streamingText = "",
+                errorMessage = "",
+                statusMessage = "",
+                usageText = "",
+                isStreaming = false,
+                imageMediaId = null,
+                imagePath = null,
+                minimumOutputWords = 50,
+                outputWords = 100,
+            )
+        }
+        refreshContextMeter(reloadSystem = true)
     }
 
     fun updateOutputWords(words: Int) {
@@ -226,7 +309,7 @@ class GlobalPromptViewModel @Inject constructor(
 
     fun submit() {
         val state = _uiState.value
-        val kind = state.kind ?: PromptEntryKind.Manual
+        val kind = state.kind ?: PromptEntryKind.Ai
         if (state.text.isBlank() && state.imageMediaId == null) return
         if (kind == PromptEntryKind.Ai && state.minimumOutputWords > state.outputWords) {
             _uiState.update { it.copy(errorMessage = "Minimum words must not exceed maximum words") }
@@ -253,6 +336,9 @@ class GlobalPromptViewModel @Inject constructor(
 
     private fun generateAi(state: GlobalPromptUiState) {
         generateJob?.cancel()
+        if (state.text.isNotBlank()) {
+            _uiState.update { it.copy(lastPrompt = state.text) }
+        }
         generateJob = viewModelScope.launch {
             if (!aiGeneration.hasApiKey()) {
                 _uiState.update { it.copy(errorMessage = AIError.NoApiKey().message.orEmpty()) }
@@ -354,11 +440,12 @@ class GlobalPromptViewModel @Inject constructor(
                 return@launch
             }
             _uiState.update {
+                val target = if (_uiState.value.insertAtCursor) " at cursor" else ""
                 it.copy(
                     isStreaming = false,
                     streamingText = result,
                     usageText = usage,
-                    statusMessage = "Inserted · ${PromptWordLimit.count(result)}/${state.outputWords} words",
+                    statusMessage = "Inserted$target · ${PromptWordLimit.count(result)}/${state.outputWords} words",
                     text = "",
                 )
             }
@@ -443,7 +530,15 @@ class GlobalPromptViewModel @Inject constructor(
     private suspend fun insertNovelAi(generated: String) {
         val sceneId = context.sceneId ?: error("Open a scene in Write first")
         val scene = db.manuscriptDao().getScene(sceneId) ?: error("Scene not found")
-        persistSceneWithHistory(scene, documentFromJson(scene.docJson).appendParagraphs(generated))
+        val doc = documentFromJson(scene.docJson)
+        val anchor = bus.insertAnchor.value
+        val targeted = _uiState.value.insertAtCursor && anchor != null && anchor.sceneId == sceneId
+        val next = if (targeted) {
+            doc.insertProseAt(anchor.blockIndex, anchor.caret, generated)
+        } else {
+            doc.appendParagraphs(generated)
+        }
+        persistSceneWithHistory(scene, next)
     }
 
     private suspend fun persistSceneWithHistory(scene: com.ihy2ln.weaverse.data.db.entities.SceneEntity, next: Document) {
@@ -451,7 +546,7 @@ class GlobalPromptViewModel @Inject constructor(
             docJson = next.toJson(),
             plainText = next.plainText(),
             wordCount = next.wordCount(),
-            updatedAt = System.currentTimeMillis(),
+            updatedAt = writeStamps.next(),
         )
         db.manuscriptDao().upsertScene(after)
         workspaceHistory.record(

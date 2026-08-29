@@ -13,27 +13,37 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ihy2ln.weaverse.core.ui.components.ComposerMenuButton
 import com.ihy2ln.weaverse.core.ui.components.InkCheckIconButton
 import com.ihy2ln.weaverse.core.ui.components.InkClearIconButton
+import com.ihy2ln.weaverse.core.ui.components.PromptActionMenuButton
 import com.ihy2ln.weaverse.core.ui.components.VoiceInputButton
 import com.ihy2ln.weaverse.core.ui.theme.InkAccentBlue
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
@@ -71,16 +81,37 @@ fun UnifiedPromptBar(
     onCancel: () -> Unit,
     onClear: () -> Unit,
     onSpoken: (String) -> Unit,
+    /** Long-press menu actions: ↻ retry/resubmit and » continue. Null hides them. */
+    onRetry: (() -> Unit)? = null,
+    onContinue: (() -> Unit)? = null,
+    /** Set false to drop the big clear ✕ (the dock's ↻ reset already covers it). */
+    showClear: Boolean = true,
+    /** Insert-target chip label, e.g. "⌖¶3" / "→End". Blank hides the chip. */
+    targetLabel: String = "",
+    onTargetClick: (() -> Unit)? = null,
+    /** When set, the compact row's trailing control is the combined +/ROLL/🎤 button. */
+    onMicTap: (() -> Unit)? = null,
+    /** Roll action surfaced inside the combined composer hold-menu. */
+    onRoll: (() -> Unit)? = null,
+    /** Roster/inventory quick-adds inside the combined composer hold-menu. */
+    onAddCharacter: (() -> Unit)? = null,
+    onAddItem: (() -> Unit)? = null,
     onAdd: (() -> Unit)? = null,
     addSelected: Boolean = false,
     compactSingleLine: Boolean = false,
-    extraActionLabel: String = "",
     onExtraAction: (() -> Unit)? = null,
-    extraActionEnabled: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val tokens = inkTokens()
     val shape = RoundedCornerShape(inkRadiusMd())
+    // Hoisted TextFieldValue keeps the caret where the user left it, even when the
+    // parent recomposes or focus moves away to the document and comes back.
+    var fieldValue by remember { mutableStateOf(TextFieldValue(value)) }
+    LaunchedEffect(value) {
+        if (fieldValue.text != value) {
+            fieldValue = TextFieldValue(value, TextRange(value.length))
+        }
+    }
     Column(
         modifier = modifier
             .clip(shape)
@@ -100,6 +131,21 @@ fun UnifiedPromptBar(
                 fontWeight = FontWeight.Bold,
                 color = InkAccentBlue,
                 maxLines = 1,
+            )
+            // Model lives next to the prompt label to keep the entry row short.
+            Text(
+                "· $modelLabel",
+                modifier = Modifier
+                    .clip(RoundedCornerShape(inkRadiusSm()))
+                    .clickable(enabled = !streaming, onClick = onModelClick)
+                    .padding(horizontal = 3.dp)
+                    .basicMarquee(iterations = Int.MAX_VALUE)
+                    .widthIn(max = 110.dp),
+                style = MaterialTheme.typography.labelSmall,
+                fontSize = 8.sp,
+                color = tokens.secondaryText,
+                maxLines = 1,
+                softWrap = false,
             )
             if (!collapsed && contextLabel.isNotBlank()) {
                 Text(
@@ -123,23 +169,6 @@ fun UnifiedPromptBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(1.dp),
             ) {
-                if (onExtraAction != null && extraActionLabel.isNotBlank()) {
-                    Text(
-                        extraActionLabel,
-                        modifier = Modifier
-                            .width(38.dp)
-                            .clip(RoundedCornerShape(inkRadiusSm()))
-                            .background(Color(0xFF7341A8))
-                            .clickable(enabled = extraActionEnabled && !streaming, onClick = onExtraAction)
-                            .padding(vertical = 7.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontSize = 8.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                    )
-                }
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -157,8 +186,11 @@ fun UnifiedPromptBar(
                         )
                     }
                     BasicTextField(
-                        value = value,
-                        onValueChange = onValueChange,
+                        value = fieldValue,
+                        onValueChange = { next ->
+                            fieldValue = next
+                            onValueChange(next.text)
+                        },
                         enabled = !streaming,
                         textStyle = MaterialTheme.typography.labelMedium.copy(color = tokens.primaryText),
                         cursorBrush = SolidColor(tokens.primaryText),
@@ -190,23 +222,19 @@ fun UnifiedPromptBar(
                         widthDp = 25,
                     )
                 }
-                Row(
-                    modifier = Modifier
-                        .width(62.dp)
-                        .clip(RoundedCornerShape(inkRadiusSm()))
-                        .clickable(enabled = !streaming, onClick = onModelClick)
-                        .padding(horizontal = 2.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("M·", style = MaterialTheme.typography.labelSmall, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                if (targetLabel.isNotBlank() && onTargetClick != null) {
                     Text(
-                        modelLabel,
-                        modifier = Modifier.weight(1f).basicMarquee(iterations = Int.MAX_VALUE),
+                        targetLabel,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(inkRadiusSm()))
+                            .background(InkAccentBlue.copy(alpha = 0.12f))
+                            .clickable(enabled = !streaming, onClick = onTargetClick)
+                            .padding(horizontal = 3.dp, vertical = 2.dp),
                         style = MaterialTheme.typography.labelSmall,
-                        fontSize = 8.sp,
-                        color = tokens.secondaryText,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = InkAccentBlue,
                         maxLines = 1,
-                        softWrap = false,
                     )
                 }
                 Text(
@@ -229,20 +257,47 @@ fun UnifiedPromptBar(
                         textAlign = TextAlign.Center,
                     )
                 } else {
-                    InkCheckIconButton(
-                        onClick = onSubmit,
+                    PromptActionMenuButton(
+                        onConfirm = onSubmit,
                         enabled = canSubmit,
-                        contentDescription = if (aiMode) "Generate" else "Accept",
+                        onRetry = onRetry,
+                        onContinue = onContinue,
+                    )
+                }
+                if (showClear) {
+                    InkClearIconButton(onClick = onClear, enabled = canClear, modifier = Modifier.size(23.dp))
+                }
+                if (onMicTap != null) {
+                    ComposerMenuButton(
+                        onMicTap = onMicTap,
+                        enabled = !streaming,
+                        onAdd = onAdd,
+                        onRoll = onRoll ?: onExtraAction,
+                        onAddCharacter = onAddCharacter,
+                        onAddItem = onAddItem,
+                    )
+                } else {
+                    VoiceInputButton(
+                        onSpoken = onSpoken,
+                        enabled = !streaming,
+                        compact = true,
                         modifier = Modifier.size(23.dp),
                     )
                 }
-                InkClearIconButton(onClick = onClear, enabled = canClear, modifier = Modifier.size(23.dp))
-                VoiceInputButton(
-                    onSpoken = onSpoken,
-                    enabled = !streaming,
-                    compact = true,
-                    modifier = Modifier.size(23.dp),
-                )
+                if (onAdd != null && onMicTap == null) {
+                    Text(
+                        if (addSelected) "▣" else "+",
+                        modifier = Modifier
+                            .size(23.dp)
+                            .clip(RoundedCornerShape(inkRadiusSm()))
+                            .clickable(enabled = !streaming, onClick = onAdd)
+                            .padding(vertical = 2.dp),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontSize = 12.sp,
+                        color = if (addSelected) InkAccentBlue else tokens.primaryText,
+                        textAlign = TextAlign.Center,
+                    )
+                }
             }
             return@Column
         }
@@ -252,17 +307,6 @@ fun UnifiedPromptBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            if (onAdd != null) {
-                Text(
-                    if (addSelected) "▣" else "+",
-                    modifier = Modifier.size(32.dp).clip(RoundedCornerShape(16.dp))
-                        .background(tokens.hover).clickable(enabled = !streaming, onClick = onAdd)
-                        .padding(5.dp),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = if (addSelected) InkAccentBlue else tokens.primaryText,
-                    textAlign = TextAlign.Center,
-                )
-            }
             Box(
                 modifier = Modifier.weight(1f).clip(RoundedCornerShape(18.dp))
                     .background(tokens.hover).padding(horizontal = InkSpacing.sm, vertical = 7.dp),
@@ -277,8 +321,11 @@ fun UnifiedPromptBar(
                     )
                 }
                 BasicTextField(
-                    value = value,
-                    onValueChange = onValueChange,
+                    value = fieldValue,
+                    onValueChange = { next ->
+                        fieldValue = next
+                        onValueChange(next.text)
+                    },
                     enabled = !streaming,
                     textStyle = MaterialTheme.typography.bodyMedium.copy(color = tokens.primaryText),
                     cursorBrush = SolidColor(tokens.primaryText),
@@ -306,24 +353,39 @@ fun UnifiedPromptBar(
                     color = tokens.primaryText,
                 )
             } else {
-                InkCheckIconButton(
-                    onClick = onSubmit,
+                PromptActionMenuButton(
+                    onConfirm = onSubmit,
                     enabled = canSubmit,
-                    contentDescription = if (aiMode) "Generate" else "Accept",
+                    onRetry = onRetry,
+                    onContinue = onContinue,
+                )
+            }
+            if (showClear) {
+                InkClearIconButton(
+                    onClick = onClear,
+                    enabled = canClear,
                     modifier = Modifier.size(26.dp),
                 )
             }
-            InkClearIconButton(
-                onClick = onClear,
-                enabled = canClear,
-                modifier = Modifier.size(26.dp),
-            )
             VoiceInputButton(
                 onSpoken = onSpoken,
                 enabled = !streaming,
                 compact = true,
                 modifier = Modifier.size(26.dp),
             )
+            if (onAdd != null) {
+                Text(
+                    if (addSelected) "▣" else "+",
+                    modifier = Modifier
+                        .size(26.dp)
+                        .clip(RoundedCornerShape(inkRadiusSm()))
+                        .clickable(enabled = !streaming, onClick = onAdd)
+                        .padding(vertical = 3.dp),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (addSelected) InkAccentBlue else tokens.primaryText,
+                    textAlign = TextAlign.Center,
+                )
+            }
         }
 
         Row(
@@ -349,6 +411,21 @@ fun UnifiedPromptBar(
                     color = tokens.secondaryText,
                     maxLines = 1,
                     softWrap = false,
+                )
+            }
+            if (targetLabel.isNotBlank() && onTargetClick != null) {
+                Text(
+                    targetLabel,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(inkRadiusSm()))
+                        .background(InkAccentBlue.copy(alpha = 0.12f))
+                        .clickable(enabled = !streaming, onClick = onTargetClick)
+                        .padding(horizontal = 3.dp, vertical = 2.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = InkAccentBlue,
+                    maxLines = 1,
                 )
             }
         }

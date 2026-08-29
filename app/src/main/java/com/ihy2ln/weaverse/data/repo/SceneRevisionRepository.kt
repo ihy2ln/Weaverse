@@ -11,6 +11,7 @@ import java.util.UUID
 @Singleton
 class SceneRevisionRepository @Inject constructor(
     private val db: WeaverseDatabase,
+    private val writeStamps: SceneWriteStamps,
 ) {
     fun observe(sceneId: String): Flow<List<SceneRevisionEntity>> =
         db.manuscriptDao().observeRevisions(sceneId)
@@ -55,7 +56,7 @@ class SceneRevisionRepository @Inject constructor(
             docJson = revision.docJson,
             plainText = revision.plainText,
             wordCount = revision.wordCount,
-            updatedAt = System.currentTimeMillis(),
+            updatedAt = writeStamps.next(),
         )
         db.manuscriptDao().upsertScene(restored)
         snapshotNow(restored, kind = "restore-point")

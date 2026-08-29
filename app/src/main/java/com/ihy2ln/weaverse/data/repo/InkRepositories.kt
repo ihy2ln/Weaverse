@@ -234,6 +234,7 @@ class BookRepository @Inject constructor(
 @Singleton
 class ManuscriptRepository @Inject constructor(
     private val db: WeaverseDatabase,
+    private val writeStamps: SceneWriteStamps,
 ) {
     fun observeScene(id: String): Flow<SceneEntity?> = db.manuscriptDao().observeScene(id)
     suspend fun getScene(id: String): SceneEntity? = db.manuscriptDao().getScene(id)
@@ -307,7 +308,7 @@ class ManuscriptRepository @Inject constructor(
             docJson = next.toJson(),
             plainText = next.plainText(),
             wordCount = next.wordCount(),
-            updatedAt = System.currentTimeMillis(),
+            updatedAt = writeStamps.next(),
         )
         db.manuscriptDao().upsertScene(updated)
         return updated

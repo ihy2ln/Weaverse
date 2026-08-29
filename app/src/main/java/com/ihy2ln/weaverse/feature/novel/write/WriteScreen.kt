@@ -43,6 +43,7 @@ import com.ihy2ln.weaverse.core.ui.components.InkConfirmButton
 import com.ihy2ln.weaverse.core.ui.components.InkFilledButton
 import com.ihy2ln.weaverse.core.ui.components.InkModeCapsule
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
+import com.ihy2ln.weaverse.core.ui.components.PromptActionMenuButton
 import com.ihy2ln.weaverse.core.ui.components.TextColorPickerDialog
 import com.ihy2ln.weaverse.core.ui.components.VoiceToTextField
 import com.ihy2ln.weaverse.core.ui.components.rememberSpeechToText
@@ -430,12 +431,10 @@ fun WriteScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
                     ) {
-                        InkConfirmButton(
-                            onClick = viewModel::acceptAiResult,
-                            label = "Accept",
-                            contentDescription = "Accept",
+                        PromptActionMenuButton(
+                            onConfirm = viewModel::acceptAiResult,
+                            onRetry = viewModel::retryAiGeneration,
                         )
-                        InkModeCapsule(label = "Retry", onClick = viewModel::retryAiGeneration)
                     }
                 }
                 if (overlay.errorMessage.isNotBlank()) {

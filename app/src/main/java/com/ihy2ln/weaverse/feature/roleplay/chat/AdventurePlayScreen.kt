@@ -44,6 +44,7 @@ import coil3.compose.AsyncImage
 import com.ihy2ln.weaverse.core.ui.components.CollapsibleUsageStrip
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
 import com.ihy2ln.weaverse.core.ui.components.mergeSpokenText
+import com.ihy2ln.weaverse.core.ui.components.rememberSpeechToText
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
@@ -108,6 +109,9 @@ fun AdventurePlayScreen(
         contract = ActivityResultContracts.PickMultipleVisualMedia(),
     ) { uris ->
         if (uris.isNotEmpty()) viewModel.attachMedia(uris) else viewModel.clearMediaPickRequest()
+    }
+    val startDictate = rememberSpeechToText { spoken ->
+        viewModel.onInputChange(mergeSpokenText(state.input, spoken))
     }
     LaunchedEffect(state.mediaPickRequestId) {
         if (state.mediaPickRequestId > 0L) {
@@ -319,6 +323,14 @@ fun AdventurePlayScreen(
                 modifier = Modifier.padding(horizontal = InkSpacing.lg),
             )
         }
+        if (state.composerStatus.isNotBlank()) {
+            Text(
+                state.composerStatus,
+                style = MaterialTheme.typography.labelMedium,
+                color = tokens.secondaryText,
+                modifier = Modifier.padding(horizontal = InkSpacing.lg),
+            )
+        }
         CollapsibleUsageStrip(state.lastUsage, Modifier.padding(horizontal = InkSpacing.lg))
         UnifiedPromptBar(
             value = state.input,
@@ -368,13 +380,17 @@ fun AdventurePlayScreen(
             onSubmit = viewModel::send,
             onCancel = viewModel::cancelGeneration,
             onClear = { viewModel.onInputChange("") },
+            onRetry = viewModel::regenerateLatestReply,
+            onContinue = viewModel::continueAdventure,
+            onMicTap = { if (!state.isStreaming) startDictate() },
+            onExtraAction = viewModel::rollAction,
+            onAdd = viewModel::requestMediaPick,
+            onAddCharacter = viewModel::addRosterCharacter,
+            onAddItem = viewModel::addInventoryItem,
             onSpoken = { spoken ->
                 viewModel.onInputChange(mergeSpokenText(state.input, spoken))
             },
             compactSingleLine = true,
-            extraActionLabel = "ROLL",
-            onExtraAction = viewModel::rollAction,
-            extraActionEnabled = state.input.isNotBlank() && wordRangeValid && !startupPending,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),

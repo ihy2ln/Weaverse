@@ -102,11 +102,13 @@ class RoleplayChatViewModel @Inject constructor(
     private val workspaceHistory: WorkspaceHistory,
     private val generation: RoleplayGeneration,
     private val modelCache: OpenRouterModelCache,
+    private val adventureCapture: AdventureCapture,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(RoleplayChatUiState())
     val uiState: StateFlow<RoleplayChatUiState> = _uiState.asStateFlow()
     private var bindJob: Job? = null
     private var generateJob: Job? = null
+    private var composerStatusJob: Job? = null
     private var rawMessages: List<RpMessageEntity> = emptyList()
     private var boundChat: RpChatEntity? = null
     private var boundCharacter: RpCharacterEntity? = null
@@ -1178,6 +1180,74 @@ class RoleplayChatViewModel @Inject constructor(
         generate(forceAdventureRoll = true)
     }
 
+    /** ✓ hold-menu ↻: reroll the latest AI reply without retyping anything. */
+    fun regenerateLatestReply() {
+        if (_uiState.value.isStreaming) return
+        val latest = rawMessages.lastOrNull { it.role == "char" && it.isActiveSwipe } ?: return
+        regenerate(latest.id)
+    }
+
+    /** ✓ hold-menu »: keep the adventure going from where it left off. */
+    fun continueAdventure() {
+        if (_uiState.value.isStreaming) return
+        onInputChange("Continue the scene.")
+        generate()
+    }
+
+    /** ✓ hold-menu 👤: capture the character(s) from the recent scene into the roster. */
+    fun addRosterCharacter() {
+        viewModelScope.launch {
+            val chatId = _uiState.value.chatId.ifBlank { boundChat?.id.orEmpty() }
+            val extraction = runCatching { adventureCapture.extract(recentSceneText()) }.getOrNull()
+            val added = extraction?.characters?.let { adventureCapture.applyCharacters(it) }.orEmpty()
+            _uiState.update {
+                it.copy(
+                    composerStatus = if (added.isEmpty()) {
+                        "No characters found in the scene — added a blank roster character to edit."
+                    } else {
+                        "Added to roster: ${added.joinToString()}"
+                    },
+                )
+            }
+            if (added.isEmpty()) adventureCapture.addBlankCharacter()
+            startComposerStatusTimer()
+        }
+    }
+
+    /** ✓ hold-menu 🛍: capture the item(s) from the recent scene into inventories. */
+    fun addInventoryItem() {
+        viewModelScope.launch {
+            val chatId = _uiState.value.chatId.ifBlank { boundChat?.id.orEmpty() }
+            val extraction = runCatching { adventureCapture.extract(recentSceneText()) }.getOrNull()
+            val items = extraction?.items.orEmpty()
+            val summary = if (items.isEmpty()) {
+                val carrier = adventureCapture.addBlankItem(chatId)
+                if (carrier == null) {
+                    "No inventory carrier found — add or mark a character first."
+                } else {
+                    "Added a blank item to $carrier's inventory."
+                }
+            } else {
+                "Items filed: ${adventureCapture.applyItems(items, chatId)}"
+            }
+            _uiState.update { it.copy(composerStatus = summary) }
+            startComposerStatusTimer()
+        }
+    }
+
+    private fun recentSceneText(): String = rawMessages
+        .filter { it.isActiveSwipe && it.role != ADVENTURE_SCENE_ROLE }
+        .takeLast(6)
+        .joinToString("\n") { documentFromJson(it.contentJson).plainText() }
+
+    private fun startComposerStatusTimer() {
+        composerStatusJob?.cancel()
+        composerStatusJob = viewModelScope.launch {
+            delay(5000)
+            _uiState.update { it.copy(composerStatus = "") }
+        }
+    }
+
     /** Non-AI (NAI): insert the typed text as a user message without calling a model. */
     fun addManualEntry() {
         viewedSceneNumber = null
@@ -1429,6 +1499,11 @@ class RoleplayChatViewModel @Inject constructor(
                 return@launch
             }
             persistAdventureWorldUpdates(worldUpdates)
+            // Auto-bookkeeping: pull character/item facts into roster + inventory.
+            if (mode == "dungeonMaster") {
+                val captureChatId = state.chatId
+                viewModelScope.launch { adventureCapture.captureAndApply(rawReply, captureChatId) }
+            }
             val aiAdvanceMatch = AiSceneAdvanceMarker.find(worldUpdates.prose)
             val aiAdvancedScene = mode == "dungeonMaster" && aiAdvanceMatch != null &&
                 !playerAdvancedScene && !ExplicitStayInScene.containsMatchIn(userText)
@@ -1570,6 +1645,12 @@ class RoleplayChatViewModel @Inject constructor(
                 )
                 deactivated.forEach { db.roleplayDao().upsertMessage(it) }
                 db.roleplayDao().upsertMessage(generated)
+                if (current.displayMode.ifBlank { currentDisplayMode() } == "dungeonMaster") {
+                    val captureChatId = current.chatId
+                    viewModelScope.launch {
+                        adventureCapture.captureAndApply(reply.text, captureChatId)
+                    }
+                }
                 workspaceHistory.record(
                     undo = {
                         db.roleplayDao().deleteMessage(generated.id)

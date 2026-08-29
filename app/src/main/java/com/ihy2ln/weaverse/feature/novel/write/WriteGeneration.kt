@@ -73,7 +73,12 @@ class WriteGeneration @Inject constructor(
     }
 
     fun acceptIntoBlocks(blocks: List<Block>, overlay: AiOverlayState, text: String): List<Block> {
-        val replaceIndex = overlay.replaceBlockIndex
+        // Blocks can shift while the generation streams; re-resolve the anchor by
+        // block id so the prose still lands next to the beat/selection it came from.
+        val anchored = overlay.anchorBlockId
+            ?.let { id -> blocks.indexOfFirst { it.id == id } }
+            ?.takeIf { it >= 0 }
+        val replaceIndex = overlay.replaceBlockIndex?.let { anchored ?: it }
         val replaceStart = overlay.replaceStart
         val replaceEnd = overlay.replaceEnd
         if (replaceIndex != null && replaceStart != null && replaceEnd != null) {
@@ -88,7 +93,7 @@ class WriteGeneration @Inject constructor(
             }
         }
         return blocks.insertGeneratedProseAfter(
-            insertAfterIndex = overlay.insertAfterIndex,
+            insertAfterIndex = anchored ?: overlay.insertAfterIndex,
             generatedText = text,
             beatPrompt = overlay.prompt.takeIf { overlay.commandId == "scene_beat" },
         )

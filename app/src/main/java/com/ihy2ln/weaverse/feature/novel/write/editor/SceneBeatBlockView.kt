@@ -35,10 +35,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ihy2ln.weaverse.core.text.SceneBeatBlock
 import com.ihy2ln.weaverse.core.text.findCodexMentionRanges
-import com.ihy2ln.weaverse.core.ui.components.InkConfirmButton
 import com.ihy2ln.weaverse.core.ui.components.InkFilledButton
 import com.ihy2ln.weaverse.core.ui.components.InkModeCapsule
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
+import com.ihy2ln.weaverse.core.ui.components.PromptActionMenuButton
 import com.ihy2ln.weaverse.core.ui.components.VoiceToTextField
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
@@ -145,12 +145,10 @@ fun SceneBeatBlockView(
                 horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
             ) {
                 if (hasResult && !generating) {
-                    InkConfirmButton(
-                        onClick = onAccept,
-                        label = "Accept",
-                        contentDescription = "Accept",
+                    PromptActionMenuButton(
+                        onConfirm = onAccept,
+                        onRetry = onRetry,
                     )
-                    InkModeCapsule(label = "Retry", onClick = onRetry)
                 }
                 Spacer(modifier = Modifier.weight(1f))
                 InkFilledButton(

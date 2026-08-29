@@ -55,6 +55,7 @@ import com.ihy2ln.weaverse.core.ui.components.InkClearIconButton
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
 import com.ihy2ln.weaverse.core.ui.components.VoiceInputButton
 import com.ihy2ln.weaverse.core.ui.components.mergeSpokenText
+import com.ihy2ln.weaverse.core.ui.components.rememberSpeechToText
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.InkAccentBlue
@@ -74,6 +75,9 @@ fun GlobalPromptOverlay(
     if (!PromptSurface.usesGlobalOverlay(context.mode, novelDest)) return
     val state by viewModel.uiState.collectAsState()
     val tokens = inkTokens()
+    val startDictate = rememberSpeechToText { spoken ->
+        viewModel.onTextChange(mergeSpokenText(state.text, spoken))
+    }
     LaunchedEffect(context) { viewModel.updateContext(context) }
 
     val imagePicker = rememberLauncherForActivityResult(
@@ -117,6 +121,14 @@ fun GlobalPromptOverlay(
         maximumWordsValue in PromptWordLimit.Minimum..PromptWordLimit.Maximum &&
         minimumWordsValue <= maximumWordsValue
     val canSubmit = (state.text.isNotBlank() || state.imagePath != null) && wordRangeValid
+    // Insert-target chip only makes sense over the novel editor.
+    val targetVisible = context.mode == com.ihy2ln.weaverse.feature.shell.AppMode.Novel &&
+        context.sceneId != null
+    val targetLabel = when {
+        !targetVisible -> ""
+        state.insertAtCursor -> "⌖${state.anchorLabel.ifBlank { "¶?" }}"
+        else -> "→End"
+    }
     val activeModelRef = PromptModelSelection.effectiveModelRef(
         state.selectedModelRef,
         state.defaultModelRef,
@@ -160,6 +172,14 @@ fun GlobalPromptOverlay(
         onSubmit = viewModel::submit,
         onCancel = viewModel::cancelGeneration,
         onClear = viewModel::clearText,
+        onRetry = viewModel::retryPrompt,
+        onContinue = viewModel::continuePrompt,
+        showClear = false,
+        targetLabel = targetLabel,
+        onTargetClick = viewModel::toggleInsertTarget,
+        onMicTap = { if (!state.isStreaming) startDictate() },
+        onRoll = viewModel::rollDice,
+        compactSingleLine = true,
         onSpoken = { viewModel.onTextChange(mergeSpokenText(state.text, it)) },
         onAdd = if (kind == PromptEntryKind.Ai) viewModel::requestImage else null,
         addSelected = state.imagePath != null,

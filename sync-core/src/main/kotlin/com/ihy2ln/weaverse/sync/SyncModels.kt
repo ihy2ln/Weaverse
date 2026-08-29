@@ -3,7 +3,7 @@ package com.ihy2ln.weaverse.sync
 import kotlinx.serialization.Serializable
 
 /** Wire protocol version for Wi‑Fi / remote sync packages. */
-const val SYNC_PROTOCOL_VERSION = 1
+const val SYNC_PROTOCOL_VERSION = 2
 
 const val DEFAULT_SYNC_PORT = 8787
 

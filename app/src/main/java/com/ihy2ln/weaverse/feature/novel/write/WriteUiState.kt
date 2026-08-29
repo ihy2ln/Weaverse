@@ -21,7 +21,9 @@ data class AiOverlayState(
     val prompt: String = "",
     val systemInstructions: String = "",
     val promptId: String? = null,
-    val outputWords: Int = 750,
+    val outputWords: Int = 100,
+    /** Block the result is anchored to; resolved by id at accept so edits during generation can't misplace it. */
+    val anchorBlockId: String? = null,
     val streamingText: String = "",
     val isStreaming: Boolean = false,
     val errorMessage: String = "",

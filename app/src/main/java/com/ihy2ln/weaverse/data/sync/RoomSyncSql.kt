@@ -1,10 +1,13 @@
 package com.ihy2ln.weaverse.data.sync
 
-import android.database.Cursor
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.ihy2ln.weaverse.sync.SyncSql
 
-/** Room-backed [SyncSql] so record-level merge runs on the open live connection. */
+/**
+ * [SyncSql] implementation backed by Room's underlying SQLite database.
+ * Raw writes through this wrapper still fire Room's invalidation triggers,
+ * so live queries refresh automatically after a merge — no app restart.
+ */
 class RoomSyncSql(private val db: SupportSQLiteDatabase) : SyncSql {
 
     override fun exec(sql: String, vararg binds: Any?) {
@@ -16,19 +19,34 @@ class RoomSyncSql(private val db: SupportSQLiteDatabase) : SyncSql {
     }
 
     override fun select(sql: String, vararg binds: Any?): SyncSql.QueryResult {
-        val cursor = if (binds.isEmpty()) db.query(sql) else db.query(sql, binds)
-        return cursor.use { readCursor(it) }
+        db.query(sql, binds).use { cursor ->
+            val columns = cursor.columnNames.toList()
+            val rows = buildList {
+                while (cursor.moveToNext()) {
+                    add(columns.indices.map { c ->
+                        when (cursor.getType(c)) {
+                            android.database.Cursor.FIELD_TYPE_NULL -> null
+                            android.database.Cursor.FIELD_TYPE_INTEGER -> cursor.getLong(c)
+                            android.database.Cursor.FIELD_TYPE_FLOAT -> cursor.getDouble(c)
+                            android.database.Cursor.FIELD_TYPE_BLOB -> null
+                            else -> cursor.getString(c)
+                        }
+                    })
+                }
+            }
+            return SyncSql.QueryResult(columns, rows)
+        }
     }
 
     override fun columnsOf(table: String): List<String> {
-        val pragma = if ('.' in table) {
-            val schema = table.substringBefore('.')
-            val name = table.substringAfter('.')
-            "PRAGMA $schema.table_info($name)"
-        } else {
-            "PRAGMA table_info($table)"
+        val schema = table.substringBefore('.')
+        val name = table.substringAfter('.')
+        db.query("PRAGMA $schema.table_info($name)").use { cursor ->
+            val idx = cursor.getColumnIndex("name")
+            val out = mutableListOf<String>()
+            while (cursor.moveToNext()) out += cursor.getString(idx)
+            return out
         }
-        return select(pragma).rows.mapNotNull { it.getOrNull(1) as? String }
     }
 
     override fun transaction(block: () -> Unit) {
@@ -39,26 +57,5 @@ class RoomSyncSql(private val db: SupportSQLiteDatabase) : SyncSql {
         } finally {
             db.endTransaction()
         }
-    }
-
-    private fun readCursor(cursor: Cursor): SyncSql.QueryResult {
-        val columns = cursor.columnNames.toList()
-        val rows = buildList {
-            while (cursor.moveToNext()) {
-                add(
-                    columns.indices.map { i ->
-                        when (cursor.getType(i)) {
-                            Cursor.FIELD_TYPE_NULL -> null
-                            Cursor.FIELD_TYPE_INTEGER -> cursor.getLong(i)
-                            Cursor.FIELD_TYPE_FLOAT -> cursor.getDouble(i)
-                            Cursor.FIELD_TYPE_STRING -> cursor.getString(i)
-                            Cursor.FIELD_TYPE_BLOB -> cursor.getBlob(i)
-                            else -> cursor.getString(i)
-                        }
-                    },
-                )
-            }
-        }
-        return SyncSql.QueryResult(columns, rows)
     }
 }

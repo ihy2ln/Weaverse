@@ -308,7 +308,7 @@ class WorkshopChatViewModel @Inject constructor(
             val assembled = contextBuilder.build(
                 entries,
                 ContextBuildRequest(
-                    scanText = input + " WAHM WAHB WAHO WAH-MEN GR GKOM WAH",
+                    scanText = input + " WAHB WAH WAHO AFM Gender Ratio GKOM Celestium",
                     userMessage = input,
                     manualIncludeIds = manualIncludeIds,
                     manualExcludeIds = excludedEntryIds,
