@@ -12,6 +12,7 @@ import com.ihy2ln.weaverse.ai.openrouter.OpenRouterModelCache
 import com.ihy2ln.weaverse.ai.openrouter.OpenRouterRepository
 import com.ihy2ln.weaverse.core.crash.CrashLogStore
 import com.ihy2ln.weaverse.core.media.MediaRepository
+import com.ihy2ln.weaverse.core.media.TopicMediaLibrary
 import com.ihy2ln.weaverse.core.ui.theme.AppThemeMode
 import com.ihy2ln.weaverse.core.ui.theme.AppearanceProfile
 import com.ihy2ln.weaverse.data.backup.AutoBackupScheduler
@@ -59,6 +60,7 @@ data class SettingsUiState(
     val sync: SyncUiSnapshot = SyncUiSnapshot(),
     val otherProviderModels: List<ModelInfo> = emptyList(),
     val crashLogText: String = "",
+    val topicMediaStatus: String = "No media library selected",
 )
 
 @HiltViewModel
@@ -69,8 +71,10 @@ class SettingsViewModel @Inject constructor(
     private val modelCache: OpenRouterModelCache,
     private val backupManager: BackupManager,
     private val mediaRepository: MediaRepository,
+    private val topicMediaLibrary: TopicMediaLibrary,
     private val syncCoordinator: SyncCoordinator,
 ) : ViewModel() {
+    private var lastScannedTopicMediaRoot: String? = null
     val preferences: StateFlow<UserPreferences> = settings.preferences
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UserPreferences())
 
@@ -110,6 +114,10 @@ class SettingsViewModel @Inject constructor(
                             ""
                         },
                     )
+                }
+                if (lastScannedTopicMediaRoot != prefs.topicMediaLibraryRoot) {
+                    lastScannedTopicMediaRoot = prefs.topicMediaLibraryRoot
+                    refreshTopicMedia(prefs.topicMediaLibraryRoot)
                 }
             }
         }
@@ -391,6 +399,46 @@ class SettingsViewModel @Inject constructor(
 
     fun setExtraPromptSurface(surface: ExtraPromptSurface, enabled: Boolean) {
         viewModelScope.launch { settings.setExtraPromptSurface(surface, enabled) }
+    }
+
+    fun chooseTopicMediaFolder(uri: Uri) {
+        runCatching {
+            appContext.contentResolver.takePersistableUriPermission(
+                uri,
+                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+        }
+        setTopicMediaLibraryRoot(uri.toString())
+    }
+
+    fun setTopicMediaLibraryRoot(root: String) {
+        viewModelScope.launch {
+            settings.setTopicMediaLibraryRoot(root)
+            refreshTopicMedia(root)
+        }
+    }
+
+    fun setTopicMediaAutoAttach(enabled: Boolean) {
+        viewModelScope.launch { settings.setTopicMediaAutoAttach(enabled) }
+    }
+
+    fun refreshTopicMedia(root: String = _uiState.value.prefs.topicMediaLibraryRoot) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(topicMediaStatus = if (root.isBlank()) "No media library selected" else "Scanning…") }
+            runCatching { topicMediaLibrary.snapshot(root) }
+                .onSuccess { snapshot ->
+                    val message = when {
+                        root.isBlank() -> "No media library selected"
+                        snapshot.topics.isEmpty() -> "No topic folders found or this device cannot read the path"
+                        else -> "${snapshot.topics.size} topics: ${snapshot.topics.take(8).joinToString(", ")}" +
+                            if (snapshot.topics.size > 8) "…" else ""
+                    }
+                    _uiState.update { it.copy(topicMediaStatus = message) }
+                }
+                .onFailure { error ->
+                    _uiState.update { it.copy(topicMediaStatus = "Could not read library: ${error.message}") }
+                }
+        }
     }
 
     fun importBackground(uri: Uri) {

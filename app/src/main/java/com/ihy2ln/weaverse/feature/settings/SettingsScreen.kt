@@ -81,6 +81,7 @@ fun SettingsScreen(
 
     var appearanceExpanded by rememberSaveable { mutableStateOf(false) }
     var promptEntryExpanded by rememberSaveable { mutableStateOf(true) }
+    var topicMediaExpanded by rememberSaveable { mutableStateOf(true) }
     var openRouterExpanded by rememberSaveable { mutableStateOf(true) }
     var modelsExpanded by rememberSaveable { mutableStateOf(false) }
     var otherProvidersExpanded by rememberSaveable { mutableStateOf(false) }
@@ -95,6 +96,14 @@ fun SettingsScreen(
         contract = ActivityResultContracts.PickVisualMedia(),
     ) { uri ->
         if (uri != null) viewModel.importBackground(uri)
+    }
+    val topicMediaFolderPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree(),
+    ) { uri ->
+        if (uri != null) viewModel.chooseTopicMediaFolder(uri)
+    }
+    var topicMediaRootDraft by rememberSaveable(state.prefs.topicMediaLibraryRoot) {
+        mutableStateOf(state.prefs.topicMediaLibraryRoot)
     }
 
 
@@ -401,6 +410,62 @@ fun SettingsScreen(
                     modifier = Modifier.padding(start = InkSpacing.sm),
                 )
             }
+        }
+
+        ExpandableSection(
+            title = "AI topic media library",
+            subtitle = "Attach local pictures or videos when the AI discusses a matching topic",
+            expanded = topicMediaExpanded,
+            onToggle = { topicMediaExpanded = !topicMediaExpanded },
+            modifier = Modifier.padding(top = InkSpacing.md),
+        ) {
+            Text(
+                "Choose a root folder, then make one subfolder per topic: helmet/, people/, landscapes/, objects/, and so on. " +
+                    "The folder setting is local to this device, so your phone and computer can use different paths. " +
+                    "Only topic names are sent to the model; the path and filenames stay local.",
+                style = MaterialTheme.typography.bodySmall,
+                color = inkTokens().secondaryText,
+            )
+            PromptSurfaceToggle(
+                label = "Automatically attach matching topic media",
+                checked = state.prefs.topicMediaAutoAttach,
+                onCheckedChange = viewModel::setTopicMediaAutoAttach,
+            )
+            OutlinedTextField(
+                value = topicMediaRootDraft,
+                onValueChange = { topicMediaRootDraft = it },
+                label = { Text("Media-library folder or path") },
+                supportingText = { Text("Phone: use Choose folder. Computer/local storage: a readable filesystem path also works.") },
+                modifier = Modifier.fillMaxWidth().padding(top = InkSpacing.sm),
+                singleLine = true,
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(top = InkSpacing.sm),
+            ) {
+                InkFilledButton(
+                    label = "Choose folder",
+                    onClick = { topicMediaFolderPicker.launch(null) },
+                )
+                InkOutlinedButton(
+                    label = "Save path",
+                    onClick = { viewModel.setTopicMediaLibraryRoot(topicMediaRootDraft) },
+                    modifier = Modifier.padding(start = InkSpacing.sm),
+                )
+                InkOutlinedButton(
+                    label = "Refresh",
+                    onClick = { viewModel.refreshTopicMedia(topicMediaRootDraft) },
+                    modifier = Modifier.padding(start = InkSpacing.sm),
+                )
+            }
+            Text(
+                state.topicMediaStatus,
+                style = MaterialTheme.typography.bodySmall,
+                color = inkTokens().secondaryText,
+                modifier = Modifier.padding(top = InkSpacing.sm),
+            )
         }
 
         ExpandableSection(

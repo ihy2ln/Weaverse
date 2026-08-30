@@ -91,6 +91,32 @@ class MediaRepository @Inject constructor(
         return out
     }
 
+    /** Imports a file from a user-configured local library into durable app storage. */
+    suspend fun importFromFile(source: File, mimeType: String): MediaEntity = withContext(Dispatchers.IO) {
+        require(source.isFile) { "Media file is missing: ${source.name}" }
+        ensureMediaDir()
+        val id = UUID.randomUUID().toString()
+        val ext = source.extension.lowercase().ifBlank {
+            if (mimeType.startsWith("video/")) "mp4" else "jpg"
+        }
+        val relativePath = "media/$id.$ext"
+        val file = File(context.filesDir, relativePath)
+        source.inputStream().use { input ->
+            file.outputStream().use { output -> input.copyTo(output) }
+        }
+        require(file.length() > 0L) { "Failed to copy media into app storage" }
+        val type = if (mimeType.startsWith("video/")) "video" else "image"
+        MediaEntity(
+            id = id,
+            type = type,
+            relativePath = relativePath,
+            mimeType = mimeType,
+            byteSize = file.length(),
+            thumbnailPath = if (type == "image") relativePath else null,
+            createdAt = System.currentTimeMillis(),
+        ).also { db.mediaDao().upsert(it) }
+    }
+
     suspend fun importFromBytes(
         bytes: ByteArray,
         id: String = UUID.randomUUID().toString(),

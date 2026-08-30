@@ -12,6 +12,11 @@ import com.ihy2ln.weaverse.ai.openrouter.OpenRouterModelCache
 import com.ihy2ln.weaverse.core.media.MediaClipboard
 import com.ihy2ln.weaverse.core.media.MediaClipboardPayload
 import com.ihy2ln.weaverse.core.media.MediaRepository
+import com.ihy2ln.weaverse.core.media.TopicMediaLibrary
+import com.ihy2ln.weaverse.core.media.TopicMediaSnapshot
+import com.ihy2ln.weaverse.core.media.parseTopicMediaReply
+import com.ihy2ln.weaverse.core.media.topicMediaRequestsFor
+import com.ihy2ln.weaverse.core.media.topicMediaVisibleText
 import com.ihy2ln.weaverse.core.roleplay.avatarColorHexFor
 import com.ihy2ln.weaverse.core.ui.components.MediaEditAction
 import com.ihy2ln.weaverse.core.text.Block
@@ -99,6 +104,7 @@ class RoleplayChatViewModel @Inject constructor(
     private val db: WeaverseDatabase,
     private val aiGeneration: AiGenerationService,
     private val mediaRepository: MediaRepository,
+    private val topicMediaLibrary: TopicMediaLibrary,
     private val settings: SettingsRepository,
     private val tts: com.ihy2ln.weaverse.core.tts.TtsService,
     private val mediaClipboard: MediaClipboard,
@@ -1429,6 +1435,7 @@ class RoleplayChatViewModel @Inject constructor(
             val groupId = "sw-$now"
             val userText = state.input
             val mode = currentDisplayMode()
+            val topicMedia = currentTopicMediaSnapshot()
             val startupPhase = currentAdventureStartupPhase()
             val startupActive = mode == "dungeonMaster" &&
                 startupPhase in setOf(
@@ -1540,6 +1547,7 @@ class RoleplayChatViewModel @Inject constructor(
                         outputWords = state.outputWords,
                         difficultyDirective = difficulty?.directive,
                         extraSystem = sessionSystemBlocks(mode) +
+                            listOfNotNull(topicMedia.promptDirective()) +
                             PromptWordLimit.instruction(state.minimumOutputWords, state.outputWords) +
                             listOfNotNull(startupDirective.takeIf { it.isNotBlank() }) +
                             if (mode == "dungeonMaster") {
@@ -1565,7 +1573,10 @@ class RoleplayChatViewModel @Inject constructor(
                                 it.copy(
                                     streamingText = adventureStartupProseFrom(adventureWorldProseFrom(
                                         adventureProseFrom(
-                                            AiSceneAdvanceMarker.replace(builder.toString(), "").trimStart(),
+                                            AiSceneAdvanceMarker.replace(
+                                                topicMediaVisibleText(builder.toString()),
+                                                "",
+                                            ).trimStart(),
                                         ),
                                     )),
                                 )
@@ -1601,7 +1612,8 @@ class RoleplayChatViewModel @Inject constructor(
                 return@launch
             }
             val rawReply = builder.toString()
-            val worldUpdates = adventureWorldUpdatesFrom(rawReply)
+            val topicMediaReply = parseTopicMediaReply(rawReply)
+            val worldUpdates = adventureWorldUpdatesFrom(topicMediaReply.visibleText)
             val visibleReply = adventureStartupProseFrom(
                 adventureProseFrom(AiSceneAdvanceMarker.replace(worldUpdates.prose, "").trim()),
             )
@@ -1648,6 +1660,10 @@ class RoleplayChatViewModel @Inject constructor(
             } else {
                 replyWithRoll
             }
+            val mediaRequests = topicMediaRequestsFor(
+                topicMediaReply.copy(visibleText = visibleReply),
+                topicMedia.topics,
+            )
             val reply = RpMessageEntity(
                 id = "rpm-${now + 1}",
                 chatId = state.chatId,
@@ -1655,7 +1671,7 @@ class RoleplayChatViewModel @Inject constructor(
                 swipeIndex = 0,
                 isActiveSwipe = true,
                 role = "char",
-                contentJson = Document.fromPlainText(storedReply).toJson(),
+                contentJson = documentWithTopicMedia(storedReply, topicMedia, mediaRequests).toJson(),
                 createdAt = now + if (aiAdvancedScene) 2 else 1,
                 displayMode = mode,
                 promptTokens = promptTokens,
@@ -1720,6 +1736,7 @@ class RoleplayChatViewModel @Inject constructor(
             val words = state.outputWords
             val difficulty = defaultPresets.find { it.id == _uiState.value.presetId }
             val temperature = difficulty?.temperature?.toDouble() ?: 0.8
+            val topicMedia = currentTopicMediaSnapshot()
             _uiState.update { it.copy(isStreaming = true, errorMessage = "") }
             val history = rawMessages
                 .filter {
@@ -1740,6 +1757,7 @@ class RoleplayChatViewModel @Inject constructor(
                         outputWords = words,
                         difficultyDirective = difficulty?.directive,
                         extraSystem = sessionSystemBlocks(current.displayMode) +
+                            listOfNotNull(topicMedia.promptDirective()) +
                             PromptWordLimit.instruction(state.minimumOutputWords, words),
                     ),
                     modelRef = activeModelRef,
@@ -1748,6 +1766,12 @@ class RoleplayChatViewModel @Inject constructor(
                 )
             }.onSuccess { reply ->
                 val now = System.currentTimeMillis()
+                val topicMediaReply = parseTopicMediaReply(reply.text)
+                val trimmedReply = PromptWordLimit.trim(topicMediaReply.visibleText, words)
+                val mediaRequests = topicMediaRequestsFor(
+                    topicMediaReply.copy(visibleText = trimmedReply),
+                    topicMedia.topics,
+                )
                 val deactivated = siblings.map { it.copy(isActiveSwipe = false) }
                 val generated = RpMessageEntity(
                     id = "rpm-$now",
@@ -1756,9 +1780,7 @@ class RoleplayChatViewModel @Inject constructor(
                     swipeIndex = siblings.size,
                     isActiveSwipe = true,
                     role = "char",
-                    contentJson = Document.fromPlainText(
-                        PromptWordLimit.trim(reply.text, words),
-                    ).toJson(),
+                    contentJson = documentWithTopicMedia(trimmedReply, topicMedia, mediaRequests).toJson(),
                     createdAt = now,
                     displayMode = current.displayMode.ifBlank { currentDisplayMode() },
                 )
@@ -2104,6 +2126,39 @@ class RoleplayChatViewModel @Inject constructor(
             "adult fictional themes; follow the requested rating, tone, and level of detail. External " +
             "model-provider requirements still apply.",
     )
+
+    private suspend fun currentTopicMediaSnapshot(): TopicMediaSnapshot {
+        val prefs = settings.preferences.first()
+        if (!prefs.topicMediaAutoAttach || prefs.topicMediaLibraryRoot.isBlank()) {
+            return TopicMediaSnapshot()
+        }
+        return runCatching { topicMediaLibrary.snapshot(prefs.topicMediaLibraryRoot) }
+            .getOrDefault(TopicMediaSnapshot())
+    }
+
+    private suspend fun documentWithTopicMedia(
+        text: String,
+        snapshot: TopicMediaSnapshot,
+        requests: List<com.ihy2ln.weaverse.core.media.TopicMediaRequest>,
+    ): Document {
+        val base = Document.fromPlainText(text)
+        val attachments = runCatching { topicMediaLibrary.importRequested(snapshot, requests) }
+            .getOrDefault(emptyList())
+        if (attachments.isEmpty()) return base
+        return Document(
+            blocks = base.blocks + attachments.map { attachment ->
+                MediaBlock(
+                    id = "media-${UUID.randomUUID()}",
+                    mediaId = attachment.media.id,
+                    kind = MediaRepository.kindForType(attachment.media.type),
+                    caption = listOf(Span(attachment.topic)),
+                    autoplay = false,
+                    loop = false,
+                    muted = true,
+                )
+            },
+        )
+    }
 
     private suspend fun insertStoredMessage(entity: RpMessageEntity) {
         db.roleplayDao().upsertMessage(entity)

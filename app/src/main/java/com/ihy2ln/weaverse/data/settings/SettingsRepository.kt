@@ -129,6 +129,10 @@ data class UserPreferences(
     val promptingMode: PromptingMode = PromptingMode.Novel,
     /** Zero or more GENRE add-ons prepended to every prompt. */
     val selectedGenres: Set<String> = setOf(PromptAddOns.DefaultGenre),
+    /** Per-device root: an Android Storage Access Framework tree URI or a local filesystem path. */
+    val topicMediaLibraryRoot: String = "",
+    /** When enabled, AI replies may attach an image/video from a matching topic subfolder. */
+    val topicMediaAutoAttach: Boolean = false,
 )
 
 data class ReaderSavedState(
@@ -211,6 +215,8 @@ class SettingsRepository @Inject constructor(
                     ?.takeIf { it.isNotBlank() }
                     ?.let(::setOf)
                 ?: setOf(PromptAddOns.DefaultGenre),
+            topicMediaLibraryRoot = prefs[KEY_TOPIC_MEDIA_LIBRARY_ROOT].orEmpty(),
+            topicMediaAutoAttach = prefs[KEY_TOPIC_MEDIA_AUTO_ATTACH] ?: false,
         )
     }
 
@@ -240,6 +246,14 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setSelectedGenres(genres: Set<String>) {
         context.dataStore.edit { it[KEY_SELECTED_GENRES] = genres }
+    }
+
+    suspend fun setTopicMediaLibraryRoot(root: String) {
+        context.dataStore.edit { it[KEY_TOPIC_MEDIA_LIBRARY_ROOT] = root.trim() }
+    }
+
+    suspend fun setTopicMediaAutoAttach(enabled: Boolean) {
+        context.dataStore.edit { it[KEY_TOPIC_MEDIA_AUTO_ATTACH] = enabled }
     }
 
     suspend fun setThemeMode(mode: AppThemeMode) {
@@ -533,6 +547,8 @@ class SettingsRepository @Inject constructor(
         private val KEY_MATURE_RATING = booleanPreferencesKey("prompt_mature_rating")
         private val KEY_PROMPTING_MODE = stringPreferencesKey("prompt_template_mode")
         private val KEY_SELECTED_GENRES = stringSetPreferencesKey("prompt_selected_genres")
+        private val KEY_TOPIC_MEDIA_LIBRARY_ROOT = stringPreferencesKey("topic_media_library_root")
+        private val KEY_TOPIC_MEDIA_AUTO_ATTACH = booleanPreferencesKey("topic_media_auto_attach")
         /** Read-only compatibility with v1.3.24's single free-text genre field. */
         private val KEY_GENRE_LABEL = stringPreferencesKey("prompt_genre_label")
 
