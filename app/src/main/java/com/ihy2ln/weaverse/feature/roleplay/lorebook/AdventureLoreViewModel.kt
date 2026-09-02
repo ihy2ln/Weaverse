@@ -2,7 +2,11 @@ package com.ihy2ln.weaverse.feature.roleplay.lorebook
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ihy2ln.weaverse.core.media.MediaRepository
+import com.ihy2ln.weaverse.data.db.WeaverseDatabase
 import com.ihy2ln.weaverse.data.repo.CodexRepository
+import com.ihy2ln.weaverse.feature.novel.codex.CodexEntryUi
+import com.ihy2ln.weaverse.feature.novel.codex.CodexRosterLink
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,15 +17,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-data class LoreEntryUi(
-    val id: String,
-    val name: String,
-    val category: String,
-    val summary: String,
-)
-
 data class AdventureLoreUiState(
-    val entries: List<LoreEntryUi> = emptyList(),
+    /** Roster plates, the same format the Codex and Roster lists use. */
+    val entries: List<CodexEntryUi> = emptyList(),
     val loading: Boolean = true,
 )
 
@@ -36,6 +34,9 @@ data class AdventureLoreUiState(
 @HiltViewModel
 class AdventureLoreViewModel @Inject constructor(
     private val codexRepository: CodexRepository,
+    private val rosterLink: CodexRosterLink,
+    private val mediaRepository: MediaRepository,
+    private val db: WeaverseDatabase,
     settings: SettingsRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(AdventureLoreUiState())
@@ -47,23 +48,22 @@ class AdventureLoreViewModel @Inject constructor(
                 codexRepository.observeAllCategories(),
                 codexRepository.observeAllEntries(),
                 settings.preferences.map { it.selectedBookId },
-            ) { categories, entries, adventureId ->
+                db.roleplayDao().observeCharacters(),
+                mediaRepository.observeAll(),
+            ) { categories, entries, adventureId, characters, media ->
                 val categoryName = categories.associate { it.id to it.name }
+                val linked = rosterLink.linkedByEntryId(characters)
+                val mediaById = media.associateBy { it.id }
                 AdventureLoreUiState(
                     entries = entries
                         .filter { it.scopeId == adventureId && !it.disabled }
                         .sortedBy { it.name.lowercase() }
                         .map { entry ->
-                            LoreEntryUi(
-                                id = entry.id,
-                                name = entry.name,
-                                category = categoryName[entry.categoryId].orEmpty(),
-                                summary = entry.plainText
-                                    .lineSequence()
-                                    .firstOrNull { it.isNotBlank() }
-                                    ?.trim()
-                                    .orEmpty()
-                                    .take(140),
+                            rosterLink.decorate(
+                                entry = entry,
+                                categoryName = categoryName[entry.categoryId].orEmpty(),
+                                linked = linked,
+                                mediaById = mediaById,
                             )
                         },
                     loading = false,

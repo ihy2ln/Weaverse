@@ -597,10 +597,10 @@ private fun CodexEntryDto.toEntity() = CodexEntryEntity(
 private fun SnippetEntity.toDto() = SnippetDto(id, scopeType, scopeId, title, body, category, pinned, createdAt)
 private fun SnippetDto.toEntity() = SnippetEntity(id, scopeType, scopeId, title, body, category, pinned, createdAt)
 private fun ChatThreadEntity.toDto() = ChatThreadDto(
-    id, scopeId, name, pinned, promptId, modelRef, sceneId, createdAt, updatedAt,
+    id, scopeId, name, pinned, promptId, modelRef, sceneId, parentThreadId, createdAt, updatedAt,
 )
 private fun ChatThreadDto.toEntity() = ChatThreadEntity(
-    id, scopeId, name, pinned, promptId, modelRef, sceneId, createdAt, updatedAt,
+    id, scopeId, name, pinned, promptId, modelRef, sceneId, parentThreadId, createdAt, updatedAt,
 )
 private fun ChatMessageEntity.toDto() = ChatMessageDto(
     id, threadId, role, contentJson, contextUsedJson, tokenCount, wordCount, createdAt,

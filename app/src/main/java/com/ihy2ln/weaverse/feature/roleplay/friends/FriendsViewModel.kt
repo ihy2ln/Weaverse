@@ -97,6 +97,8 @@ class FriendsViewModel @Inject constructor(
                 displayMode = "messenger",
                 createdAt = now,
                 updatedAt = now,
+                // Friend DMs surface under Home in the Discord-style Chatting workspace.
+                roomKind = com.ihy2ln.weaverse.feature.chatting.ROOM_KIND_DM,
             )
             db.roleplayDao().upsertChat(chat)
             seedGreeting(chat, character, now)

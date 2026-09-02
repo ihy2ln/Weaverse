@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Casino
@@ -196,21 +197,28 @@ fun InkCheckIconButton(
     }
 }
 
-/** Compact X for Clear inside the prompt box. */
+/**
+ * Backspace button for deleting the prompt entry: tap deletes the text,
+ * press-and-hold undoes the last deletion when [onUndo] is provided.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun InkClearIconButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    contentDescription: String = "Clear",
+    contentDescription: String = "Delete entry — hold to undo",
+    onUndo: (() -> Unit)? = null,
 ) {
-    IconButton(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = modifier.size(PromptActionButtonSize),
+    Box(
+        modifier = modifier.size(PromptActionButtonSize).combinedClickable(
+            onClick = { if (enabled) onClick() },
+            onLongClick = { if (enabled && onUndo != null) onUndo() },
+        ),
+        contentAlignment = Alignment.Center,
     ) {
         Icon(
-            imageVector = Icons.Default.Close,
+            imageVector = Icons.AutoMirrored.Filled.Backspace,
             contentDescription = contentDescription,
             modifier = Modifier.size(PromptActionIconSize),
             tint = if (enabled) {

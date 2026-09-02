@@ -51,7 +51,10 @@ private enum class SheetSection(val label: String, val symbol: String, val hint:
 fun CharacterDetailScreen(
     characterId: String,
     onBack: () -> Unit,
-    viewModel: CharacterDetailViewModel = hiltViewModel(),
+    /** Hidden when the sheet is embedded somewhere with its own toolbar (the Codex). */
+    showBackRow: Boolean = true,
+    // Keyed per character so an embedded sheet never shares state with the roster's.
+    viewModel: CharacterDetailViewModel = hiltViewModel(key = "character-sheet-$characterId"),
 ) {
     LaunchedEffect(characterId) { viewModel.load(characterId) }
     val state by viewModel.uiState.collectAsState()
@@ -62,12 +65,14 @@ fun CharacterDetailScreen(
     val tokens = inkTokens()
 
     Column(Modifier.fillMaxSize().background(tokens.background)) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
-            Text(state.name.ifBlank { "Character" }, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        if (showBackRow) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
+                Text(state.name.ifBlank { "Character" }, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            }
         }
         CharacterCombatHeader(
             state = state,
@@ -395,6 +400,13 @@ private fun NumberEditor(label: String, value: Int, min: Int, modifier: Modifier
     VoiceToTextField(state.firstMes, vm::onFirstMes, label = "First message", minLines = 3, modifier = Modifier.padding(top = InkSpacing.sm))
     val s = state.sheet
     VoiceToTextField(s.appearance, { vm.onSheet(s.copy(appearance = it)) }, label = "Appearance", minLines = 3, modifier = Modifier.padding(top = InkSpacing.sm))
+    VoiceToTextField(
+        s.bodyDescription,
+        { vm.onSheet(s.copy(bodyDescription = it)) },
+        label = "Body description — hair, eyes, height, weight, three sizes, skin tone…",
+        minLines = 3,
+        modifier = Modifier.padding(top = InkSpacing.sm),
+    )
     VoiceToTextField(s.backstoryAndPersonality, { vm.onSheet(s.copy(backstoryAndPersonality = it)) }, label = "Backstory & personality", minLines = 4, modifier = Modifier.padding(top = InkSpacing.sm))
     VoiceToTextField(s.alignment, { vm.onSheet(s.copy(alignment = it)) }, label = "Alignment", singleLine = true, modifier = Modifier.padding(top = InkSpacing.sm))
 }

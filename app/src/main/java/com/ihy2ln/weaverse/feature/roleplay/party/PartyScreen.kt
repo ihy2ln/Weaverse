@@ -64,7 +64,7 @@ fun PartyScreen(
         )
     }
 
-    if (!state.loading && state.players.isEmpty() && state.cast.isEmpty() && state.bench.isEmpty()) {
+    if (!state.loading && state.cast.isEmpty() && state.bench.isEmpty()) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -81,18 +81,6 @@ fun PartyScreen(
     }
 
     LazyColumn(modifier = Modifier.fillMaxSize()) {
-        if (state.players.isNotEmpty()) {
-            item(key = "hdr-players") { PartyHeader("You", state.players.size) }
-            items(state.players, key = { "p-${it.id}" }) { member ->
-                PartyRow(
-                    member = member,
-                    onOpenSheet = {
-                        member.sheetCharacterId?.let(onOpenCharacter) ?: onOpenPersona(member.id)
-                    },
-                    onOpenInventory = { onOpenInventory(member.sheetCharacterId ?: member.id) },
-                )
-            }
-        }
         item(key = "hdr-team") { PartyHeader("Team", state.cast.size) }
         items(state.cast, key = { "c-${it.id}" }) { member ->
             PartyRow(

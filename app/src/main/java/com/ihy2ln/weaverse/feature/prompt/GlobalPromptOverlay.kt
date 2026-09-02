@@ -61,7 +61,6 @@ import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.InkAccentBlue
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
-
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun GlobalPromptOverlay(
@@ -69,6 +68,8 @@ fun GlobalPromptOverlay(
     novelDest: String? = null,
     modifier: Modifier = Modifier,
     active: Boolean = true,
+    /** Battle focus: collapse the dock to just its header line while set. */
+    forceCollapsed: Boolean = false,
     viewModel: GlobalPromptViewModel = hiltViewModel(),
 ) {
     if (!active) return
@@ -133,13 +134,11 @@ fun GlobalPromptOverlay(
         state.selectedModelRef,
         state.defaultModelRef,
     )
-    val dockModifier = if (collapsed) {
-        modifier.padding(start = InkSpacing.sm, bottom = InkSpacing.xxs)
-    } else {
-        modifier
-            .fillMaxWidth()
-            .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xxs)
-    }
+    // The dock always spans the screen horizontally — collapsed keeps just the
+    // header line, expanded adds the composer — so it never shrinks to a pill.
+    val dockModifier = modifier
+        .fillMaxWidth()
+        .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xxs)
     UnifiedPromptBar(
         value = state.text,
         onValueChange = viewModel::onTextChange,
@@ -172,6 +171,7 @@ fun GlobalPromptOverlay(
         onSubmit = viewModel::submit,
         onCancel = viewModel::cancelGeneration,
         onClear = viewModel::clearText,
+        onUndoClear = viewModel::undoClearText,
         onRetry = viewModel::retryPrompt,
         onContinue = viewModel::continuePrompt,
         showClear = false,
@@ -179,7 +179,9 @@ fun GlobalPromptOverlay(
         onTargetClick = viewModel::toggleInsertTarget,
         onMicTap = { if (!state.isStreaming) startDictate() },
         onRoll = viewModel::rollDice,
-        compactSingleLine = true,
+            compactSingleLine = true,
+            showCommandPopup = true,
+            forceCollapsed = forceCollapsed,
         onSpoken = { viewModel.onTextChange(mergeSpokenText(state.text, it)) },
         onAdd = if (kind == PromptEntryKind.Ai) viewModel::requestImage else null,
         addSelected = state.imagePath != null,

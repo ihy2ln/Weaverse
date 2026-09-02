@@ -6,6 +6,8 @@ import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -29,6 +32,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableFloatStateOf
@@ -40,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -49,6 +54,7 @@ import androidx.compose.ui.unit.sp
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
+import kotlinx.coroutines.delay
 
 @Composable
 fun InkTextTab(
@@ -163,26 +169,47 @@ fun WorkspaceChrome(
 ) {
     val tokens = inkTokens()
     var arrangeMenu by remember { mutableStateOf<ArrangeMenu?>(null) }
+    // The bar rests at half opacity and condenses; any touch lights it up to
+    // full opacity for a moment, and open arrange menus keep it lit too.
+    var touchedAt by remember { mutableStateOf(0L) }
+    val chromeActive = arrangeMenu != null || touchedAt > 0
+    val chromeAlpha by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (chromeActive) 1f else 0.5f,
+        label = "chromeAlpha",
+    )
+    LaunchedEffect(touchedAt) {
+        if (touchedAt > 0) {
+            delay(2_500)
+            touchedAt = 0L
+        }
+    }
     Column(
         modifier = modifier
             .fillMaxWidth()
             .background(tokens.panel)
-            .padding(top = InkSpacing.sm)
+            .graphicsLayer { alpha = chromeAlpha }
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    touchedAt = System.currentTimeMillis()
+                }
+            }
+            .padding(top = InkSpacing.xxs)
             .border(width = InkSpacing.hairline, color = tokens.hairline),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
-                .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xxs),
+                .padding(horizontal = InkSpacing.xs, vertical = 0.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(InkSpacing.xxs),
         ) {
-            IconButton(onClick = onLibrary) {
-                Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = "Library")
+            IconButton(onClick = onLibrary, modifier = Modifier.size(34.dp)) {
+                Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = "Library", modifier = Modifier.size(20.dp))
             }
-            IconButton(onClick = onSettings) {
-                Icon(Icons.Default.Settings, contentDescription = "Settings")
+            IconButton(onClick = onSettings, modifier = Modifier.size(34.dp)) {
+                Icon(Icons.Default.Settings, contentDescription = "Settings", modifier = Modifier.size(20.dp))
             }
             InkMenuChip(
                 label = "Workspace",
@@ -227,7 +254,7 @@ fun WorkspaceChrome(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = InkSpacing.md, end = InkSpacing.md, bottom = InkSpacing.sm),
+                .padding(start = InkSpacing.md, end = InkSpacing.md, bottom = InkSpacing.xxs),
             contentAlignment = Alignment.CenterStart,
         ) {
             Text(
@@ -243,7 +270,7 @@ fun WorkspaceChrome(
                 color = tokens.primaryText,
                 fontFamily = FontFamily.Serif,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = 16.sp,
+                fontSize = 13.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Clip,
                 softWrap = false,

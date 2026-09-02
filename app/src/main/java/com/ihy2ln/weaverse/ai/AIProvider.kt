@@ -15,7 +15,9 @@ data class ModelInfo(
     val isTts: Boolean = false,
     /** True when model accepts image inputs (vision). */
     val supportsImages: Boolean = false,
-    /** Display tags e.g. TTS, Vision. */
+    /** True for text-to-image models (Nano Banana, Flux, GPT-Image…). */
+    val generatesImages: Boolean = false,
+    /** Display tags e.g. TTS, Vision, Image generation. */
     val tags: List<String> = emptyList(),
 )
 

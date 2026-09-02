@@ -22,11 +22,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -42,9 +45,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.ihy2ln.weaverse.core.ui.components.InkDeleteButton
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
-import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.InkThemeTokens
@@ -65,6 +66,7 @@ fun CodexRailScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val tokens = inkTokens()
+    var showAddCategory by remember { mutableStateOf(false) }
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -87,37 +89,17 @@ fun CodexRailScreen(
                 selectedEntryId = selectedEntryId,
                 onEntryClick = onEntryClick,
                 onAddEntry = viewModel::addEntry,
+                onAddCategory = { showAddCategory = true },
             )
         } else LazyColumn {
             items(state.grouped, key = { it.category.id }) { group ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { viewModel.toggleCategory(group.category.id) }
-                        .padding(
-                            horizontal = InkSpacing.md,
-                            vertical = if (compact) InkSpacing.xs else InkSpacing.sm,
-                        ),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        if (group.expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        contentDescription = if (group.expanded) "Collapse" else "Expand",
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Text(
-                        text = "${group.category.name} · ${group.entries.size}",
-                        modifier = Modifier.weight(1f).padding(start = InkSpacing.xs),
-                        style = MaterialTheme.typography.labelLarge,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        softWrap = false,
-                    )
-                    InkTextButton(
-                        label = "+",
-                        onClick = { viewModel.addEntry(group.category.id) },
-                    )
-                }
+                CodexCategoryHeader(
+                    label = group.category.name,
+                    count = group.entries.size,
+                    expanded = group.expanded,
+                    onToggle = { viewModel.toggleCategory(group.category.id) },
+                    onAdd = { viewModel.addEntry(group.category.id) },
+                )
                 AnimatedVisibility(
                     visible = group.expanded,
                     enter = expandVertically(),
@@ -129,56 +111,68 @@ fun CodexRailScreen(
                             .background(codexListBackground(tokens)),
                     ) {
                         group.entries.forEach { entry ->
-                            val selected = entry.id == selectedEntryId
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(
-                                        if (selected) {
-                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-                                        } else {
-                                            codexListBackground(tokens)
-                                        },
-                                    )
-                                    .clickable { onEntryClick(entry.id) }
-                                    .padding(horizontal = InkSpacing.md, vertical = InkSpacing.sm),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                val tint = parseHexColor(entry.colorHex, MaterialTheme.colorScheme.primary)
-                                Box(
-                                    modifier = Modifier
-                                        .size(InkSpacing.iconTile)
-                                        .clip(RoundedCornerShape(inkRadiusSm()))
-                                        .background(tint.copy(alpha = 0.15f)),
-                                )
-                                Column(modifier = Modifier.padding(start = InkSpacing.md).weight(1f)) {
-                                    Text(
-                                        entry.name,
-                                        color = tint,
-                                        fontWeight = FontWeight.SemiBold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        softWrap = false,
-                                    )
-                                    Text(
-                                        entry.plainText,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis,
-                                        color = tokens.secondaryText,
-                                        fontSize = 12.sp,
-                                    )
-                                }
-                                InkDeleteButton(
-                                    itemName = entry.name,
-                                    onConfirmedDelete = { viewModel.removeEntry(entry.id) },
-                                )
-                            }
+                            CodexEntryPlate(
+                                entry = entry,
+                                selected = entry.id == selectedEntryId,
+                                onClick = { onEntryClick(entry.id) },
+                                onDelete = { viewModel.removeEntry(entry.id) },
+                            )
                         }
                     }
                 }
             }
+            item(key = "add-category") {
+                Text(
+                    "+ New category",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showAddCategory = true }
+                        .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.sm),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = tokens.secondaryText,
+                )
+            }
         }
     }
+    if (showAddCategory) {
+        AddCategoryDialog(
+            onCreate = { name ->
+                viewModel.addCategory(name)
+                showAddCategory = false
+            },
+            onDismiss = { showAddCategory = false },
+        )
+    }
+}
+
+@Composable
+private fun AddCategoryDialog(
+    onCreate: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("New category") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Category name") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onCreate(name) }, enabled = name.isNotBlank()) {
+                Text("Create")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
 
 /** One-line master list used while a Codex entry is open. */
@@ -188,6 +182,7 @@ private fun CompactCodexStrip(
     selectedEntryId: String?,
     onEntryClick: (String) -> Unit,
     onAddEntry: (String) -> Unit,
+    onAddCategory: () -> Unit,
 ) {
     val tokens = inkTokens()
     var categoryMenuOpen by remember { mutableStateOf(false) }
@@ -219,7 +214,7 @@ private fun CompactCodexStrip(
                     modifier = Modifier
                         .clip(RoundedCornerShape(inkRadiusSm()))
                         .background(tokens.hover)
-                        .clickable(enabled = groups.isNotEmpty()) { categoryMenuOpen = true }
+                        .clickable { categoryMenuOpen = true }
                         .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -255,6 +250,19 @@ private fun CompactCodexStrip(
                             },
                         )
                     }
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                "＋ New category…",
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        },
+                        onClick = {
+                            categoryMenuOpen = false
+                            onAddCategory()
+                        },
+                    )
                 }
             }
         }

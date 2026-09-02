@@ -30,6 +30,16 @@ enum class AppearanceProfile(
     Synthwave("Synthwave", "Neon on deep violet, wide and glowing."),
     Chill("Chill", "Soft, muted and roomy — easy on the eyes."),
     Tabletop("Tabletop", "Rulebook dark — near-black, crimson, serif headings."),
+    Noir("Noir", "Black and white crime drama — stark and cinematic."),
+    Storybook("Storybook", "Warm cream pages with forest-green ink."),
+    Cyberdeck("Cyberdeck", "Gunmetal terminal with cyan readouts."),
+    Meadow("Meadow", "Sunlit greens and buttercream — friendly and roomy."),
+    Ember("Ember", "Charcoal panels lit by forge-orange glow."),
+    DeepSea("Deep Sea", "Abyssal navy lit by bioluminescent teal."),
+    Sakura("Sakura", "Petal pink on clean white — soft spring serif."),
+    Sunset("Sunset", "Amber skies fading into violet dusk."),
+    Frost("Frost", "Glacial blues on clean ice."),
+    Royal("Royal", "Deep purple halls with gold trim."),
     ;
 
     /** Styled profiles fix their own mood; only Classic honours all four modes. */
@@ -42,6 +52,16 @@ enum class AppearanceProfile(
         Synthwave -> if (mode.isDark) SynthwaveDark else SynthwaveLight
         Chill -> if (mode.isDark) ChillDark else ChillLight
         Tabletop -> if (mode.isDark) TabletopDark else TabletopLight
+        Noir -> if (mode.isDark) NoirDark else NoirLight
+        Storybook -> if (mode.isDark) StorybookDark else StorybookLight
+        Cyberdeck -> if (mode.isDark) CyberdeckDark else CyberdeckLight
+        Meadow -> if (mode.isDark) MeadowDark else MeadowLight
+        Ember -> if (mode.isDark) EmberDark else EmberLight
+        DeepSea -> if (mode.isDark) DeepSeaDark else DeepSeaLight
+        Sakura -> if (mode.isDark) SakuraDark else SakuraLight
+        Sunset -> if (mode.isDark) SunsetDark else SunsetLight
+        Frost -> if (mode.isDark) FrostDark else FrostLight
+        Royal -> if (mode.isDark) RoyalDark else RoyalLight
     }
 
     val typography: Typography get() = when (this) {
@@ -51,6 +71,16 @@ enum class AppearanceProfile(
         Synthwave -> SynthwaveTypography
         Chill -> ChillTypography
         Tabletop -> TabletopTypography
+        Noir -> NoirTypography
+        Storybook -> StorybookTypography
+        Cyberdeck -> CyberdeckTypography
+        Meadow -> MeadowTypography
+        Ember -> EmberTypography
+        DeepSea -> DeepSeaTypography
+        Sakura -> SakuraTypography
+        Sunset -> SunsetTypography
+        Frost -> FrostTypography
+        Royal -> RoyalTypography
     }
 
     /** Corner rounding is the cheapest, loudest shape signal: 0dp reads as pixel art. */
@@ -62,6 +92,16 @@ enum class AppearanceProfile(
         Chill -> 20.dp
         // Rulebook apps keep corners tight so panels read as printed plates.
         Tabletop -> 3.dp
+        Noir -> 2.dp
+        Storybook -> 6.dp
+        Cyberdeck -> 2.dp
+        Meadow -> 18.dp
+        Ember -> 8.dp
+        DeepSea -> 10.dp
+        Sakura -> 16.dp
+        Sunset -> 12.dp
+        Frost -> 14.dp
+        Royal -> 6.dp
     }
 
     val shapes: Shapes get() = Shapes(
@@ -201,6 +241,246 @@ private val TabletopDark = InkThemeTokens(
     activePillLabel = Color(0xFFFFFFFF),
 )
 
+private val NoirLight = InkThemeTokens(
+    background = Color(0xFFE8E8E8),
+    panel = Color(0xFFF4F4F4),
+    page = Color(0xFFFFFFFF),
+    hairline = Color(0xFF1A1A1A),
+    hover = Color(0xFFD8D8D8),
+    primaryText = Color(0xFF111111),
+    secondaryText = Color(0xFF555555),
+    activePill = Color(0xFF111111),
+    activePillLabel = Color(0xFFFFFFFF),
+)
+
+private val NoirDark = InkThemeTokens(
+    background = Color(0xFF0A0A0A),
+    panel = Color(0xFF141414),
+    page = Color(0xFF101010),
+    hairline = Color(0xFF333333),
+    hover = Color(0xFF1E1E1E),
+    primaryText = Color(0xFFEDEDED),
+    secondaryText = Color(0xFF9A9A9A),
+    activePill = Color(0xFFEDEDED),
+    activePillLabel = Color(0xFF0A0A0A),
+)
+
+private val StorybookLight = InkThemeTokens(
+    background = Color(0xFFF3EAD7),
+    panel = Color(0xFFFAF3E3),
+    page = Color(0xFFFFFBF0),
+    hairline = Color(0xFF4F6B4A),
+    hover = Color(0xFFE7DCC2),
+    primaryText = Color(0xFF2E3B2C),
+    secondaryText = Color(0xFF6B7A64),
+    activePill = Color(0xFF4F7A4E),
+    activePillLabel = Color(0xFFFFFFFF),
+)
+
+private val StorybookDark = InkThemeTokens(
+    background = Color(0xFF1A241C),
+    panel = Color(0xFF243328),
+    page = Color(0xFF202E24),
+    hairline = Color(0xFF4E6B52),
+    hover = Color(0xFF2C3E30),
+    primaryText = Color(0xFFE8F0E4),
+    secondaryText = Color(0xFFA3B89F),
+    activePill = Color(0xFF8FBF7F),
+    activePillLabel = Color(0xFF1A241C),
+)
+
+private val CyberdeckLight = InkThemeTokens(
+    background = Color(0xFFC9D2D6),
+    panel = Color(0xFFDEE6EA),
+    page = Color(0xFFEEF4F7),
+    hairline = Color(0xFF0E3A46),
+    hover = Color(0xFFB7C6CC),
+    primaryText = Color(0xFF0B1F26),
+    secondaryText = Color(0xFF2E5A66),
+    activePill = Color(0xFF0891B2),
+    activePillLabel = Color(0xFFFFFFFF),
+)
+
+private val CyberdeckDark = InkThemeTokens(
+    background = Color(0xFF0A1418),
+    panel = Color(0xFF102025),
+    page = Color(0xFF0D1B20),
+    hairline = Color(0xFF22D3EE),
+    hover = Color(0xFF16323A),
+    primaryText = Color(0xFFD9FBFF),
+    secondaryText = Color(0xFF67E8F9),
+    activePill = Color(0xFF22D3EE),
+    activePillLabel = Color(0xFF06222A),
+)
+
+private val MeadowLight = InkThemeTokens(
+    background = Color(0xFFEAF4DC),
+    panel = Color(0xFFF5FBEA),
+    page = Color(0xFFFFFFFF),
+    hairline = Color(0xFFA3B86C),
+    hover = Color(0xFFDCEBBF),
+    primaryText = Color(0xFF2C3B1E),
+    secondaryText = Color(0xFF6B7A50),
+    activePill = Color(0xFF76A83B),
+    activePillLabel = Color(0xFFFFFFFF),
+)
+
+private val MeadowDark = InkThemeTokens(
+    background = Color(0xFF17200F),
+    panel = Color(0xFF212D17),
+    page = Color(0xFF1C2713),
+    hairline = Color(0xFF5C7A3A),
+    hover = Color(0xFF2A3A1D),
+    primaryText = Color(0xFFEAF4DC),
+    secondaryText = Color(0xFFA8C285),
+    activePill = Color(0xFF97C255),
+    activePillLabel = Color(0xFF17200F),
+)
+
+private val EmberLight = InkThemeTokens(
+    background = Color(0xFFEFE4DA),
+    panel = Color(0xFFF8EFE7),
+    page = Color(0xFFFFFFFF),
+    hairline = Color(0xFFC2410C),
+    hover = Color(0xFFE8D5C4),
+    primaryText = Color(0xFF291A10),
+    secondaryText = Color(0xFF7A5C42),
+    activePill = Color(0xFFEA580C),
+    activePillLabel = Color(0xFFFFFFFF),
+)
+
+private val EmberDark = InkThemeTokens(
+    background = Color(0xFF140D08),
+    panel = Color(0xFF221610),
+    page = Color(0xFF1B120C),
+    hairline = Color(0xFF9A3412),
+    hover = Color(0xFF2E1D12),
+    primaryText = Color(0xFFF5E4D5),
+    secondaryText = Color(0xFFC88A5E),
+    activePill = Color(0xFFF97316),
+    activePillLabel = Color(0xFF1A0E06),
+)
+
+private val DeepSeaLight = InkThemeTokens(
+    background = Color(0xFFDCE8EE),
+    panel = Color(0xFFEAF2F6),
+    page = Color(0xFFFFFFFF),
+    hairline = Color(0xFF155E75),
+    hover = Color(0xFFC4D8E2),
+    primaryText = Color(0xFF0B1F2A),
+    secondaryText = Color(0xFF33647A),
+    activePill = Color(0xFF0E7490),
+    activePillLabel = Color(0xFFFFFFFF),
+)
+
+private val DeepSeaDark = InkThemeTokens(
+    background = Color(0xFF050D14),
+    panel = Color(0xFF0B1822),
+    page = Color(0xFF081420),
+    hairline = Color(0xFF155E75),
+    hover = Color(0xFF12242F),
+    primaryText = Color(0xFFDCF2F8),
+    secondaryText = Color(0xFF7FB6C9),
+    activePill = Color(0xFF06B6D4),
+    activePillLabel = Color(0xFF04222B),
+)
+
+private val SakuraLight = InkThemeTokens(
+    background = Color(0xFFFBE9ED),
+    panel = Color(0xFFFDF4F6),
+    page = Color(0xFFFFFFFF),
+    hairline = Color(0xFFD98BA0),
+    hover = Color(0xFFF5D9E0),
+    primaryText = Color(0xFF3B1723),
+    secondaryText = Color(0xFF99647A),
+    activePill = Color(0xFFC2527A),
+    activePillLabel = Color(0xFFFFFFFF),
+)
+
+private val SakuraDark = InkThemeTokens(
+    background = Color(0xFF200D13),
+    panel = Color(0xFF2E151D),
+    page = Color(0xFF271119),
+    hairline = Color(0xFF7A3A4E),
+    hover = Color(0xFF3A1D26),
+    primaryText = Color(0xFFF9E4EA),
+    secondaryText = Color(0xFFC98BA0),
+    activePill = Color(0xFFE16E93),
+    activePillLabel = Color(0xFF200D13),
+)
+
+private val SunsetLight = InkThemeTokens(
+    background = Color(0xFFFBEADB),
+    panel = Color(0xFFFDF3E7),
+    page = Color(0xFFFFFFFF),
+    hairline = Color(0xFFC2703D),
+    hover = Color(0xFFF4DFC8),
+    primaryText = Color(0xFF331B0E),
+    secondaryText = Color(0xFF8A5C3A),
+    activePill = Color(0xFFD97706),
+    activePillLabel = Color(0xFFFFFFFF),
+)
+
+private val SunsetDark = InkThemeTokens(
+    background = Color(0xFF170D1E),
+    panel = Color(0xFF251230),
+    page = Color(0xFF1E0F27),
+    hairline = Color(0xFF6D28D9),
+    hover = Color(0xFF2E1A3A),
+    primaryText = Color(0xFFFCEADD),
+    secondaryText = Color(0xFFC99BB4),
+    activePill = Color(0xFFF59E0B),
+    activePillLabel = Color(0xFF1F1104),
+)
+
+private val FrostLight = InkThemeTokens(
+    background = Color(0xFFE3EEF9),
+    panel = Color(0xFFF1F7FD),
+    page = Color(0xFFFFFFFF),
+    hairline = Color(0xFF93B8D4),
+    hover = Color(0xFFD3E4F2),
+    primaryText = Color(0xFF12283C),
+    secondaryText = Color(0xFF4A6E8C),
+    activePill = Color(0xFF2F7BBF),
+    activePillLabel = Color(0xFFFFFFFF),
+)
+
+private val FrostDark = InkThemeTokens(
+    background = Color(0xFF0A1220),
+    panel = Color(0xFF122032),
+    page = Color(0xFF0E1A2A),
+    hairline = Color(0xFF2E5C86),
+    hover = Color(0xFF1A2C42),
+    primaryText = Color(0xFFE2EFF9),
+    secondaryText = Color(0xFF8FB4D1),
+    activePill = Color(0xFF4FA8E0),
+    activePillLabel = Color(0xFF08131F),
+)
+
+private val RoyalLight = InkThemeTokens(
+    background = Color(0xFFEAE4F4),
+    panel = Color(0xFFF5F1FB),
+    page = Color(0xFFFFFFFF),
+    hairline = Color(0xFF6D5BA6),
+    hover = Color(0xFFDDD4EC),
+    primaryText = Color(0xFF241A3D),
+    secondaryText = Color(0xFF5E5480),
+    activePill = Color(0xFF5B3FA8),
+    activePillLabel = Color(0xFFFFFFFF),
+)
+
+private val RoyalDark = InkThemeTokens(
+    background = Color(0xFF120C1E),
+    panel = Color(0xFF1C1430),
+    page = Color(0xFF171126),
+    hairline = Color(0xFF4C3A7A),
+    hover = Color(0xFF241A3D),
+    primaryText = Color(0xFFEDE7F8),
+    secondaryText = Color(0xFFA794D1),
+    activePill = Color(0xFF8B5CF6),
+    activePillLabel = Color(0xFF140D24),
+)
+
 // ---------------------------------------------------------------------------
 // Typography
 // ---------------------------------------------------------------------------
@@ -304,4 +584,78 @@ private val ChillTypography = typographyOf(
     headingSpacing = 0.3.sp,
     bodyLineHeight = 30.sp,
     bodySpacing = 0.2.sp,
+)
+
+private val NoirTypography = typographyOf(
+    display = FontFamily.Serif,
+    body = FontFamily.SansSerif,
+    headingWeight = FontWeight.Bold,
+    headingSpacing = 0.5.sp,
+    bodyLineHeight = 26.sp,
+)
+
+private val StorybookTypography = typographyOf(
+    display = FontFamily.Serif,
+    body = FontFamily.Serif,
+    headingWeight = FontWeight.Bold,
+    bodyLineHeight = 28.sp,
+)
+
+private val CyberdeckTypography = typographyOf(
+    display = FontFamily.Monospace,
+    body = FontFamily.Monospace,
+    headingWeight = FontWeight.Bold,
+    headingSpacing = 1.5.sp,
+    bodyLineHeight = 24.sp,
+    bodySpacing = 0.5.sp,
+)
+
+private val MeadowTypography = typographyOf(
+    display = FontFamily.SansSerif,
+    body = FontFamily.SansSerif,
+    headingWeight = FontWeight.SemiBold,
+    bodyLineHeight = 28.sp,
+)
+
+private val EmberTypography = typographyOf(
+    display = FontFamily.SansSerif,
+    body = FontFamily.SansSerif,
+    headingWeight = FontWeight.SemiBold,
+    bodyLineHeight = 26.sp,
+)
+
+private val DeepSeaTypography = typographyOf(
+    display = FontFamily.SansSerif,
+    body = FontFamily.SansSerif,
+    headingWeight = FontWeight.SemiBold,
+    bodyLineHeight = 26.sp,
+)
+
+private val SakuraTypography = typographyOf(
+    display = FontFamily.Serif,
+    body = FontFamily.Serif,
+    headingWeight = FontWeight.Normal,
+    bodyLineHeight = 28.sp,
+)
+
+private val SunsetTypography = typographyOf(
+    display = FontFamily.SansSerif,
+    body = FontFamily.SansSerif,
+    headingWeight = FontWeight.SemiBold,
+    bodyLineHeight = 26.sp,
+)
+
+private val FrostTypography = typographyOf(
+    display = FontFamily.SansSerif,
+    body = FontFamily.SansSerif,
+    headingWeight = FontWeight.Medium,
+    bodyLineHeight = 26.sp,
+)
+
+private val RoyalTypography = typographyOf(
+    display = FontFamily.Serif,
+    body = FontFamily.SansSerif,
+    headingWeight = FontWeight.Bold,
+    headingSpacing = 1.sp,
+    bodyLineHeight = 26.sp,
 )

@@ -4,6 +4,9 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -24,6 +27,11 @@ import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -46,7 +54,10 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
@@ -54,13 +65,16 @@ import com.ihy2ln.weaverse.core.ui.LocalPromptShortcutHandler
 import com.ihy2ln.weaverse.core.ui.PromptShortcutKind
 import com.ihy2ln.weaverse.core.ui.components.CreateWorkDialog
 import com.ihy2ln.weaverse.core.ui.components.CreateWorkVocabulary
+import com.ihy2ln.weaverse.core.ui.components.NewWorkDetails
 import com.ihy2ln.weaverse.core.ui.components.InkSegmentedPill
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
+import com.ihy2ln.weaverse.core.ui.components.LoopingVideoBackground
 import com.ihy2ln.weaverse.core.ui.components.SegmentedOption
 import com.ihy2ln.weaverse.core.ui.components.WorkspaceChrome
 import com.ihy2ln.weaverse.core.ui.components.VerticalResizeHandle
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
+import com.ihy2ln.weaverse.core.ui.theme.ProfileBackgroundArt
 import com.ihy2ln.weaverse.core.ui.util.resolveSectionColor
 import com.ihy2ln.weaverse.feature.export.ExportImportScreen
 import com.ihy2ln.weaverse.feature.library.LibraryScreen
@@ -90,13 +104,15 @@ import com.ihy2ln.weaverse.feature.novel.write.WriteScreen
 import com.ihy2ln.weaverse.feature.prompts.PromptsScreen
 import com.ihy2ln.weaverse.feature.roleplay.characters.CharacterDetailScreen
 import com.ihy2ln.weaverse.feature.roleplay.chat.AdventurePlayScreen
+import com.ihy2ln.weaverse.feature.chatting.DiscordChatScreen
 import com.ihy2ln.weaverse.feature.roleplay.chat.RoleplayChatChrome
 import com.ihy2ln.weaverse.feature.roleplay.chat.RoleplayChatDetailScreen
-import com.ihy2ln.weaverse.feature.roleplay.chat.RoleplayChatsScreen
 import com.ihy2ln.weaverse.feature.roleplay.chat.roleplayModeSubtitle
+import com.ihy2ln.weaverse.feature.roleplay.textgame.TextGamesScreen
 import com.ihy2ln.weaverse.feature.roleplay.friends.FriendsScreen
 import com.ihy2ln.weaverse.feature.roleplay.lorebook.LorebookScreen
 import com.ihy2ln.weaverse.feature.roleplay.personas.PersonaDetailScreen
+import com.ihy2ln.weaverse.feature.brainstorm.BrainstormChatScreen
 import com.ihy2ln.weaverse.feature.roleplay.party.InventoryScreen
 import com.ihy2ln.weaverse.feature.roleplay.party.PartyScreen
 import com.ihy2ln.weaverse.feature.roleplay.town.TownScreen
@@ -121,6 +137,11 @@ fun AppShell(
     var chatDest by rememberSaveable { mutableStateOf(ChattingDestination.Chats.name) }
     var storyboardDest by rememberSaveable { mutableStateOf(StoryboardDestination.Window.name) }
     var storyboardChatId by rememberSaveable { mutableStateOf<String?>(null) }
+    // + Storyboard: choose between a fresh storyboard and importing a whole file.
+    var storyboardPlusMenu by rememberSaveable { mutableStateOf(false) }
+    var mangaImportUri by rememberSaveable { mutableStateOf<String?>(null) }
+    var mangaImportTitle by rememberSaveable { mutableStateOf("") }
+    var mangaImportLabel by rememberSaveable { mutableStateOf("") }
     var creatingWork by remember { mutableStateOf<CreateWorkVocabulary?>(null) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showSearch by rememberSaveable { mutableStateOf(false) }
@@ -129,6 +150,13 @@ fun AppShell(
     var workspaceFocus by rememberSaveable { mutableStateOf(WorkspaceFocus.Story.name) }
     var chromeTool by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedRpChatId by rememberSaveable { mutableStateOf<String?>(null) }
+    // Games owns its session independently; sharing selectedRpChatId caused workspace
+    // switches and text-game creation to fall back into the RPG workspace.
+    var selectedGameSessionId by rememberSaveable { mutableStateOf<String?>(null) }
+    /** Text Game battle focus: collapses the prompt dock to its header line. */
+    var textGameBattleFocus by remember { mutableStateOf(false) }
+    // Chatting mode: which work-server is open in the Discord rail (null = Home/DMs).
+    var chatServerId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedCodexEntryId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedCharacterId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedPersonaId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -162,7 +190,7 @@ fun AppShell(
     creatingWork?.let { vocabulary ->
         CreateWorkDialog(
             vocabulary = vocabulary,
-            characterOptions = if (vocabulary == CreateWorkVocabulary.Campaign) {
+            characterOptions = if (vocabulary.campaignSpecific) {
                 campaignCharacterOptions
             } else {
                 emptyList()
@@ -188,12 +216,140 @@ fun AppShell(
                             rpDest = RoleplayDestination.Chats.name
                             selectedRpChatId = chatId
                         }
+                        CreateWorkVocabulary.TextGame -> {
+                            mode = AppMode.Games.name
+                            selectedGameSessionId = chatId
+                        }
                         else -> {
                             mode = AppMode.Novel.name
                             novelDest = NovelDestination.Plan.name
                         }
                     }
                 }
+            },
+        )
+    }
+
+    // + Storyboard: create new, or import a whole manga/comic file.
+    val appContext = LocalContext.current
+    val mangaImportPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) {
+            mangaImportUri = uri.toString()
+            runCatching {
+                appContext.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val column = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (cursor.moveToFirst() && column >= 0) {
+                        val name = cursor.getString(column).orEmpty()
+                        mangaImportLabel = name
+                        mangaImportTitle = name.substringBeforeLast('.').ifBlank { "Imported manga" }
+                    }
+                }
+            }
+        }
+    }
+    if (storyboardPlusMenu) {
+        AlertDialog(
+            onDismissRequest = { storyboardPlusMenu = false },
+            title = { Text("Add storyboard") },
+            text = {
+                Column {
+                    Text(
+                        "Create new",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                storyboardPlusMenu = false
+                                creatingWork = CreateWorkVocabulary.Storyboard
+                            }
+                            .padding(InkSpacing.md),
+                    )
+                    Text(
+                        "Import a whole manga / comic / webtoon file (PDF, CBZ/ZIP, long strip)",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                storyboardPlusMenu = false
+                                mangaImportPicker.launch(
+                                    arrayOf(
+                                        "application/pdf",
+                                        "application/zip",
+                                        "application/x-cbz",
+                                        "application/octet-stream",
+                                        "image/*",
+                                    ),
+                                )
+                            }
+                            .padding(InkSpacing.md),
+                    )
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { storyboardPlusMenu = false }) { Text("Cancel") }
+            },
+        )
+    }
+    if (mangaImportUri != null) {
+        AlertDialog(
+            onDismissRequest = { mangaImportUri = null },
+            title = { Text("Import manga / comic") },
+            text = {
+                Column {
+                    Text(
+                        "File: ${mangaImportLabel.ifBlank { "selected file" }}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = inkTokens().secondaryText,
+                    )
+                    OutlinedTextField(
+                        value = mangaImportTitle,
+                        onValueChange = { mangaImportTitle = it },
+                        label = { Text("Title") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = InkSpacing.sm),
+                    )
+                    Text(
+                        "Every page of the file is imported as its own storyboard page, " +
+                            "ready for picture tools and panel separation.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = inkTokens().secondaryText,
+                        modifier = Modifier.padding(top = InkSpacing.sm),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val uri = mangaImportUri
+                        storyboardPlusMenu = false
+                        mangaImportUri = null
+                        if (uri != null) {
+                            shellViewModel.createWork(
+                                CreateWorkVocabulary.Storyboard,
+                                NewWorkDetails(
+                                    title = mangaImportTitle.trim().ifBlank { "Imported manga" },
+                                    mangaFileUri = uri,
+                                    mangaFileName = mangaImportLabel,
+                                ),
+                            ) { _, chatId ->
+                                showLibrary = false
+                                mode = AppMode.Storyboard.name
+                                storyboardChatId = chatId
+                                storyboardDest = StoryboardDestination.Manga.name
+                            }
+                        }
+                    },
+                ) { Text("Import") }
+            },
+            dismissButton = {
+                TextButton(onClick = { mangaImportUri = null }) { Text("Cancel") }
             },
         )
     }
@@ -251,20 +407,42 @@ fun AppShell(
                 }
             },
     ) {
-        shellInfo.backgroundPath?.let { path ->
-            AsyncImage(
-                model = File(path),
+        // Ambient art: user-imported background (image, or a muted looping video)
+        // first, then the appearance profile's themed backdrop. The chrome wash
+        // above is thinned so the art shows through.
+        val userBackgroundImage = shellInfo.backgroundPath
+        val userBackgroundVideo = shellInfo.backgroundVideoPath
+        val showProfileArt =
+            userBackgroundImage == null && userBackgroundVideo == null && prefs.profileBackgroundEnabled
+        when {
+            userBackgroundVideo != null -> LoopingVideoBackground(
+                path = userBackgroundVideo,
+                modifier = Modifier.fillMaxSize(),
+            )
+            userBackgroundImage != null -> AsyncImage(
+                model = File(userBackgroundImage),
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
                 alpha = 1f,
             )
+            showProfileArt -> ProfileBackgroundArt(
+                profile = prefs.appearanceProfile,
+                modifier = Modifier.fillMaxSize(),
+            )
         }
-        Column(modifier = Modifier.fillMaxSize().background(bgColor)) {
+        val shellWash =
+            if (showProfileArt || userBackgroundImage != null || userBackgroundVideo != null) {
+                bgColor.copy(alpha = bgColor.alpha * 0.86f)
+            } else {
+                bgColor
+            }
+        Column(modifier = Modifier.fillMaxSize().background(shellWash)) {
             val currentMode = runCatching { AppMode.valueOf(mode) }.getOrDefault(AppMode.Novel)
             val defaultModeOptions = when (currentMode) {
                 AppMode.Novel -> NovelDestination.entries.map { SegmentedOption(it.name, it.label) }
                 AppMode.Roleplay -> RoleplayDestination.entries.map { SegmentedOption(it.name, it.label) }
+                AppMode.Games -> GamesDestination.entries.map { SegmentedOption(it.name, it.label) }
                 AppMode.Chatting -> ChattingDestination.entries.map { SegmentedOption(it.name, it.label) }
                 AppMode.Storyboard -> StoryboardDestination.entries.map { SegmentedOption(it.name, it.label) }
                 AppMode.Notes -> NotesDestination.entries.map { SegmentedOption(it.name, it.label) }
@@ -272,6 +450,7 @@ fun AppShell(
             val savedModeOrder = when (currentMode) {
                 AppMode.Novel -> prefs.navigationOrder.novel
                 AppMode.Roleplay -> prefs.navigationOrder.roleplay
+                AppMode.Games -> prefs.navigationOrder.games
                 AppMode.Chatting -> prefs.navigationOrder.chatting
                 AppMode.Storyboard -> prefs.navigationOrder.storyboard
                 AppMode.Notes -> prefs.navigationOrder.notes
@@ -281,6 +460,7 @@ fun AppShell(
                 listOf(
                     SegmentedOption(AppMode.Novel.name, AppMode.Novel.label),
                     SegmentedOption(AppMode.Roleplay.name, AppMode.Roleplay.label),
+                    SegmentedOption(AppMode.Games.name, AppMode.Games.label),
                     SegmentedOption(AppMode.Chatting.name, AppMode.Chatting.label),
                     SegmentedOption(AppMode.Storyboard.name, AppMode.Storyboard.label),
                     SegmentedOption(AppMode.Notes.name, AppMode.Notes.label),
@@ -290,9 +470,10 @@ fun AppShell(
             val modeId = when (currentMode) {
                 AppMode.Novel -> novelDest
                 AppMode.Roleplay -> rpDest
+                AppMode.Games -> GamesDestination.TextGames.name
                 AppMode.Chatting -> chatDest
                 AppMode.Storyboard -> storyboardDest
-                AppMode.Notes -> NotesDestination.Board.name
+                AppMode.Notes -> NotesDestination.Chat.name
             }
             val chromeTitle = when {
                 showSettings -> "Settings"
@@ -381,6 +562,7 @@ fun AppShell(
                     when (next) {
                         AppMode.Novel.name -> novelDest = NovelDestination.Bookshelf.name
                         AppMode.Roleplay.name -> rpDest = RoleplayDestination.Campaign.name
+                        AppMode.Games.name -> { /* single destination */ }
                         AppMode.Chatting.name -> chatDest = ChattingDestination.Chats.name
                         AppMode.Storyboard.name -> storyboardDest = StoryboardDestination.Window.name
                     }
@@ -400,6 +582,7 @@ fun AppShell(
                             selectedRpChatId = null
                             rpChrome = null
                         }
+                        AppMode.Games -> { /* single destination */ }
                         AppMode.Chatting -> {
                             chatDest = id
                             selectedRpChatId = null
@@ -478,6 +661,28 @@ fun AppShell(
                 )
                 selectedCodexEntryId != null -> Column(Modifier.weight(1f).fillMaxSize()) {
                     val codexPanelExpanded = codexPanelHeightDp > 72f
+                    // Back/exit: without this the codex panel could only be left by
+                    // switching workspaces or going home.
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(inkTokens().panel)
+                            .padding(horizontal = InkSpacing.sm, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        InkTextButton(
+                            label = "‹ Back",
+                            onClick = { selectedCodexEntryId = null },
+                            compact = true,
+                        )
+                        Text(
+                            "Codex",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = inkTokens().secondaryText,
+                            modifier = Modifier.padding(start = InkSpacing.xs),
+                        )
+                    }
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -609,7 +814,7 @@ fun AppShell(
                         workspaceFocus,
                         listOf(
                             novelDest, rpDest, chatDest, storyboardDest,
-                            selectedRpChatId, storyboardChatId,
+                            selectedRpChatId, storyboardChatId, selectedGameSessionId,
                         ),
                     ),
                     animationSpec = tween(durationMillis = 120),
@@ -626,6 +831,7 @@ fun AppShell(
                     val sd = dests[3] ?: StoryboardDestination.Manga.name
                     val chatId = dests[4]
                     val boardId = dests[5]
+                    val gameSessionId = dests[6]
                     Box(modifier = Modifier.fillMaxSize()) {
                         if (tool != null) {
                             when (runCatching { RailTab.valueOf(tool) }.getOrNull()) {
@@ -696,49 +902,40 @@ fun AppShell(
                                 NovelDestination.Chat -> WorkshopChatScreen(threadId = selectedThreadId)
                                 NovelDestination.Review -> ReviewScreen()
                             }
-                            AppMode.Notes.name -> NotesWorkspaceScreen(
-                                viewModel = notesViewModel,
-                                detailOpen = notesDetailOpen,
-                                onDetailOpen = { notesDetailOpen = true },
-                                modifier = Modifier.fillMaxSize(),
-                            )
+                            AppMode.Notes.name -> when (cd) {
+                                NotesDestination.Board.name -> NotesWorkspaceScreen(
+                                    viewModel = notesViewModel,
+                                    detailOpen = notesDetailOpen,
+                                    onDetailOpen = { notesDetailOpen = true },
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                                else -> BrainstormChatScreen()
+                            }
                             AppMode.Chatting.name -> when (chattingDestinationOf(cd)) {
                                 ChattingDestination.Friends -> FriendsScreen(
                                     onOpenChat = {
+                                        // DMs open under Home in the Discord workspace.
+                                        chatServerId = null
                                         selectedRpChatId = it
                                         chatDest = ChattingDestination.Chats.name
                                     },
                                 )
-                                ChattingDestination.Chats -> {
-                                    if (chatId != null) {
-                                        RoleplayChatDetailScreen(
-                                            chatId = chatId,
-                                            onBack = {
-                                                selectedRpChatId = null
-                                                rpChrome = null
-                                            },
-                                            onChromeChange = { rpChrome = it },
-                                            onOpenAiPrompt = { shellViewModel.openPrompt(PromptEntryKind.Ai) },
-                                            onOpenManualPrompt = { shellViewModel.openPrompt(PromptEntryKind.Manual) },
-                                            promptOverlayOpen = promptOverlayOpen,
-                                            // Chatting owns the messenger view only.
-                                            forceDisplayMode = "messenger",
-                                            showModeSwitcher = false,
-                                        )
-                                    } else {
-                                        RoleplayChatsScreen(
-                                            onChatClick = { selectedRpChatId = it },
-                                            showFilters = true,
-                                            onNewChat = { chatDest = ChattingDestination.Friends.name },
-                                        )
-                                    }
-                                }
+                                ChattingDestination.Chats -> DiscordChatScreen(
+                                    selectedServerId = chatServerId,
+                                    selectedRoomId = selectedRpChatId,
+                                    onServerSelect = {
+                                        chatServerId = it
+                                        if (it != null) selectedRpChatId = null
+                                    },
+                                    onRoomSelect = { selectedRpChatId = it },
+                                    onOpenFriends = { chatDest = ChattingDestination.Friends.name },
+                                )
                             }
                             AppMode.Storyboard.name -> {
                                 if (storyboardDestinationOf(sd) == StoryboardDestination.Window) {
                                     WorkShelfScreen(
                                         kind = WorkShelfKind.Storyboard,
-                                        onCreate = { creatingWork = CreateWorkVocabulary.Storyboard },
+                                        onCreate = { storyboardPlusMenu = true },
                                         onOpen = { card ->
                                             card.bookId?.let(shellViewModel::setSelectedBookId)
                                             storyboardChatId = card.chatId
@@ -765,8 +962,30 @@ fun AppShell(
                                 } else {
                                     WorkShelfScreen(
                                         kind = WorkShelfKind.Storyboard,
-                                        onCreate = { creatingWork = CreateWorkVocabulary.Storyboard },
+                                        onCreate = { storyboardPlusMenu = true },
                                         onOpen = { card -> storyboardChatId = card.chatId },
+                                    )
+                                }
+                            }
+                            AppMode.Games.name -> {
+                                if (gameSessionId != null) {
+                                    TextGamesScreen(
+                                        campaignId = gameSessionId,
+                                        onOpenPrompt = { shellViewModel.openPrompt(PromptEntryKind.Ai) },
+                                        onBackToSessions = { selectedGameSessionId = null },
+                                        onBattleFocus = { textGameBattleFocus = it },
+                                    )
+                                } else {
+                                    WorkShelfScreen(
+                                        kind = WorkShelfKind.TextGame,
+                                        onCreate = { creatingWork = CreateWorkVocabulary.TextGame },
+                                        onOpen = { card ->
+                                            card.bookId?.let { bookId ->
+                                                shellViewModel.openCampaign(bookId) { sessionId ->
+                                                    selectedGameSessionId = sessionId
+                                                }
+                                            }
+                                        },
                                     )
                                 }
                             }
@@ -776,6 +995,7 @@ fun AppShell(
                                         AdventurePlayScreen(
                                             chatId = chatId,
                                             onChromeChange = { rpChrome = it },
+                                            onOpenCodexEntry = { selectedCodexEntryId = it },
                                         )
                                     } else {
                                         WorkShelfScreen(
@@ -838,8 +1058,8 @@ fun AppShell(
             AppMode.Novel -> novelDestinationOf(novelDest) == NovelDestination.Write
             AppMode.Roleplay -> roleplayDestinationOf(rpDest) == RoleplayDestination.Chats &&
                 selectedRpChatId != null
-            AppMode.Chatting -> chattingDestinationOf(chatDest) == ChattingDestination.Chats &&
-                selectedRpChatId != null
+            AppMode.Games -> selectedGameSessionId != null
+            AppMode.Chatting -> false
             AppMode.Storyboard -> storyboardDestinationOf(storyboardDest) != StoryboardDestination.Window &&
                 storyboardChatId != null
             AppMode.Notes -> false
@@ -848,13 +1068,14 @@ fun AppShell(
             context = PromptInsertContext(
                 mode = runCatching { AppMode.valueOf(mode) }.getOrDefault(AppMode.Novel),
                 sceneId = selectedSceneId,
-                rpChatId = selectedRpChatId,
+                rpChatId = if (mode == AppMode.Games.name) selectedGameSessionId else selectedRpChatId,
                 noteId = notesState.selectedId,
                 bookId = shellInfo.book?.id.orEmpty(),
                 workshopThreadId = selectedThreadId,
                 novelDest = novelDest,
             ),
             novelDest = novelDest,
+            forceCollapsed = textGameBattleFocus,
             active = activeWritingDestination &&
                 !(mode == AppMode.Roleplay.name && rpChrome?.displayMode == "dungeonMaster") &&
                 chromeTool == null &&

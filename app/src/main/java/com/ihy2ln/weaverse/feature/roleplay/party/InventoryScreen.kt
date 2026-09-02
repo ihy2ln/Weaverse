@@ -62,9 +62,20 @@ import java.io.File
 @Composable
 fun InventoryScreen(
     initialCarrierId: String? = null,
+    /** When set, only this carrier's pack is shown — the Codex opens one entry's gear. */
+    carrierFilterId: String? = null,
+    /** Group headers are noise when the list is already one carrier. */
+    showGroupHeaders: Boolean = true,
+    /** What this ledger calls things — a pack, a place's contents, an object's parts. */
+    vocabulary: InventoryVocabulary = InventoryVocabulary.Carried,
     viewModel: InventoryViewModel = hiltViewModel(),
 ) {
-    val state by viewModel.uiState.collectAsState()
+    val fullState by viewModel.uiState.collectAsState()
+    val state = if (carrierFilterId == null) {
+        fullState
+    } else {
+        fullState.copy(carriers = fullState.carriers.filter { it.characterId == carrierFilterId })
+    }
     val tokens = inkTokens()
     var addingForCharacterId by remember { mutableStateOf<String?>(null) }
     var equippingFor by remember { mutableStateOf<Pair<String, RpEquipSlot>?>(null) }
@@ -159,7 +170,11 @@ fun InventoryScreen(
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                "No one to carry anything yet. Add a character in Roster first.",
+                if (carrierFilterId != null) {
+                    vocabulary.preparingText
+                } else {
+                    "No one to carry anything yet. Add a character in Roster first."
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = tokens.secondaryText,
             )
@@ -169,8 +184,8 @@ fun InventoryScreen(
 
     LazyColumn(state = inventoryListState, modifier = Modifier.fillMaxSize()) {
         state.carriers.groupBy { it.kind }.forEach { (kind, carriers) ->
-            val groupOpen = kind.name !in collapsedGroups
-            item(key = "group-${kind.name}") {
+            val groupOpen = !showGroupHeaders || kind.name !in collapsedGroups
+            if (showGroupHeaders) item(key = "group-${kind.name}") {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -250,7 +265,7 @@ fun InventoryScreen(
                             .background(tokens.hairline),
                     )
                     InkTextButton(
-                        label = "+ Item",
+                        label = vocabulary.addLabel,
                         onClick = { beginAdding(carrier.characterId) },
                     )
                 }
@@ -259,8 +274,13 @@ fun InventoryScreen(
                 item(key = "ledger-${carrier.characterId}") {
                     InventoryLedger(
                         carrier = carrier,
+                        vocabulary = vocabulary,
                         query = inventoryQuery,
-                        filter = InventoryFilter.valueOf(inventoryFilterName),
+                        // A place has no "equipment" filter; fall back when it is not offered.
+                        filter = runCatching { InventoryFilter.valueOf(inventoryFilterName) }
+                            .getOrNull()
+                            ?.takeIf { it in vocabulary.filters }
+                            ?: InventoryFilter.All,
                         onQueryChange = { inventoryQuery = it },
                         onFilterChange = { inventoryFilterName = it.name },
                         onToggleActive = { itemId ->
@@ -275,7 +295,7 @@ fun InventoryScreen(
                         },
                     )
                 }
-                item(key = "equip-${carrier.characterId}") {
+                if (vocabulary.showEquipment) item(key = "equip-${carrier.characterId}") {
                     EquipmentPlate(
                         equipment = carrier.equipment,
                         items = carrier.items,
@@ -298,7 +318,7 @@ fun InventoryScreen(
                     )
                 }
             }
-            item(key = "backpack-${carrier.characterId}") {
+            if (vocabulary.showBackpack) item(key = "backpack-${carrier.characterId}") {
                 BackpackPanel(
                     carrier = carrier,
                     collapsed = carrier.characterId in collapsedBackpacks,
@@ -369,7 +389,7 @@ fun InventoryScreen(
     addingForCharacterId?.let { characterId ->
         AlertDialog(
             onDismissRequest = { addingForCharacterId = null },
-            title = { Text("Add item") },
+            title = { Text(vocabulary.addDialogTitle) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
                     Row(
@@ -429,14 +449,14 @@ fun InventoryScreen(
                             }
                         }
                     }
-                    Text(
+                    if (vocabulary.showEquipment) Text(
                         "ITEM TEMPLATE",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.5.sp,
                         color = tokens.secondaryText,
                     )
-                    InventoryItemTemplate.entries.chunked(2).forEach { row ->
+                    if (vocabulary.showEquipment) InventoryItemTemplate.entries.chunked(2).forEach { row ->
                         Row(horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
                             row.forEach { template ->
                                 Text(
@@ -472,7 +492,7 @@ fun InventoryScreen(
                     OutlinedTextField(
                         value = draftName,
                         onValueChange = { draftName = it },
-                        label = { Text("Item") },
+                        label = { Text(if (vocabulary.showEquipment) "Item" else "Name") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -522,14 +542,14 @@ fun InventoryScreen(
                             .clickable { draftAttuned = !draftAttuned }
                             .padding(vertical = InkSpacing.xs),
                     )
-                    OutlinedTextField(
+                    if (vocabulary.showBackpack) OutlinedTextField(
                         value = draftSlotSize,
                         onValueChange = { draftSlotSize = it.filter(Char::isDigit).take(2) },
                         label = { Text("Backpack slots used per item") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    if (draftTemplate == InventoryItemTemplate.Backpack) {
+                    if (vocabulary.showBackpack && draftTemplate == InventoryItemTemplate.Backpack) {
                         OutlinedTextField(
                             value = draftBackpackCapacity,
                             onValueChange = { draftBackpackCapacity = it.filter(Char::isDigit).take(3) },
@@ -618,6 +638,7 @@ fun InventoryScreen(
 @Composable
 private fun InventoryLedger(
     carrier: CarrierUi,
+    vocabulary: InventoryVocabulary,
     query: String,
     filter: InventoryFilter,
     onQueryChange: (String) -> Unit,
@@ -636,7 +657,7 @@ private fun InventoryLedger(
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    "WEIGHT CARRIED",
+                    vocabulary.weightLabel,
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.4.sp,
@@ -649,7 +670,7 @@ private fun InventoryLedger(
                 )
             }
             Text(
-                "${carrier.items.sumOf { it.quantity.coerceAtLeast(1) }} items",
+                "${carrier.items.sumOf { it.quantity.coerceAtLeast(1) }} ${vocabulary.countNoun}",
                 style = MaterialTheme.typography.labelMedium,
                 color = tokens.secondaryText,
             )
@@ -657,7 +678,7 @@ private fun InventoryLedger(
         OutlinedTextField(
             value = query,
             onValueChange = onQueryChange,
-            label = { Text("Search items, types, rarities, or tags") },
+            label = { Text(vocabulary.searchLabel) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -665,7 +686,7 @@ private fun InventoryLedger(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
         ) {
-            InventoryFilter.entries.forEach { choice ->
+            vocabulary.filters.forEach { choice ->
                 Text(
                     choice.label.uppercase(),
                     style = MaterialTheme.typography.labelSmall,
@@ -690,8 +711,8 @@ private fun InventoryLedger(
             InventoryLedgerHeader()
             if (shown.isEmpty()) {
                 Text(
-                    if (carrier.items.isEmpty()) "No items yet. Use + Item to add equipment or supplies."
-                    else "No inventory matches this search and filter.",
+                    if (carrier.items.isEmpty()) vocabulary.emptyText
+                    else "Nothing matches this search and filter.",
                     style = MaterialTheme.typography.bodySmall,
                     color = tokens.secondaryText,
                     modifier = Modifier.width(760.dp).padding(InkSpacing.md),

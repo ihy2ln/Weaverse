@@ -66,6 +66,7 @@ import kotlinx.coroutines.launch
 enum class WorkShelfKind(val workType: String, val heading: String, val emptyText: String) {
     Novel("novel", "Bookshelf", "No novels yet. Add one to begin writing."),
     Campaign("campaign", "Campaigns", "No campaigns yet. Create one to begin an adventure."),
+    TextGame("text_game", "Text Games", "No text-game sessions yet. Create one to enter Adams Haven."),
     Storyboard("storyboard", "Window", "No storyboards yet. Create one to build your first page."),
 }
 
@@ -95,7 +96,7 @@ class WorkShelfViewModel @Inject constructor(
         mediaRepository.observeAll(),
     ) { books, chats, media ->
         val mediaById = media.associateBy { it.id }
-        val typed = books.filter { it.workType in setOf("novel", "campaign", "storyboard") }
+        val typed = books.filter { it.workType in setOf("novel", "campaign", "text_game", "storyboard") }
             .map { book ->
                 val chat = chats.firstOrNull { it.bookId == book.id }
                 val artId = chat?.backgroundMediaId ?: book.coverMediaId
@@ -195,6 +196,9 @@ fun WorkShelfScreen(
         when (kind) {
             WorkShelfKind.Novel -> card.workType == "novel"
             WorkShelfKind.Campaign -> card.workType == "campaign"
+            // Pre-1.3.58 text-game testers were stored as campaigns. Keep them
+            // visible here while all newly-created sessions use text_game.
+            WorkShelfKind.TextGame -> card.workType in setOf("text_game", "campaign")
             WorkShelfKind.Storyboard -> card.workType == "storyboard"
         }
     }
@@ -212,6 +216,7 @@ fun WorkShelfScreen(
                         WorkShelfKind.Novel -> "Choose a novel or start a new story"
                         WorkShelfKind.Storyboard -> "Your manga and comic library"
                         WorkShelfKind.Campaign -> "Your worlds at a glance"
+                        WorkShelfKind.TextGame -> "Card-driven stories, battles, and haven simulations"
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = tokens.secondaryText,
@@ -222,6 +227,7 @@ fun WorkShelfScreen(
                     WorkShelfKind.Novel -> "+ Novel"
                     WorkShelfKind.Storyboard -> "+ Storyboard"
                     WorkShelfKind.Campaign -> "+ Campaign"
+                    WorkShelfKind.TextGame -> "+ Text Game"
                 },
                 onClick = onCreate,
             )

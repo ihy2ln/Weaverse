@@ -513,7 +513,7 @@ class WriteViewModel @Inject constructor(
             MediaEditAction.Stack -> stackMediaWithAdjacent(index)
             MediaEditAction.Move -> Unit
             // Panel-canvas only (Roleplay/DM storyboard).
-            MediaEditAction.AdjustImage, MediaEditAction.AddTextOverlay -> Unit
+            MediaEditAction.AdjustImage, MediaEditAction.EditImage, MediaEditAction.SeparatePanels, MediaEditAction.SeparatePanelsAuto, MediaEditAction.AddMedia, MediaEditAction.GenerateMedia, MediaEditAction.AddTextOverlay -> Unit
         }
     }
 

@@ -14,6 +14,7 @@ import com.ihy2ln.weaverse.data.db.dao.RoleplayDao
 import com.ihy2ln.weaverse.data.db.dao.SeriesDao
 import com.ihy2ln.weaverse.data.db.dao.SnippetDao
 import com.ihy2ln.weaverse.data.db.dao.WorkshopChatDao
+import com.ihy2ln.weaverse.data.db.dao.TextGameSaveDao
 import com.ihy2ln.weaverse.data.db.entities.ActEntity
 import com.ihy2ln.weaverse.data.db.entities.AiProfileEntity
 import com.ihy2ln.weaverse.data.db.entities.BookEntity
@@ -35,6 +36,7 @@ import com.ihy2ln.weaverse.data.db.entities.SceneEntity
 import com.ihy2ln.weaverse.data.db.entities.SceneRevisionEntity
 import com.ihy2ln.weaverse.data.db.entities.SeriesEntity
 import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
+import com.ihy2ln.weaverse.data.db.entities.TextGameSaveEntity
 
 @Database(
     entities = [
@@ -59,8 +61,9 @@ import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
         PromptFolderEntity::class,
         PromptEntity::class,
         AiProfileEntity::class,
+        TextGameSaveEntity::class,
     ],
-    version = 12,
+    version = 17,
     exportSchema = false,
 )
 @TypeConverters(InkTypeConverters::class)
@@ -74,8 +77,65 @@ abstract class WeaverseDatabase : RoomDatabase() {
     abstract fun roleplayDao(): RoleplayDao
     abstract fun mediaDao(): MediaDao
     abstract fun promptDao(): PromptDao
+    abstract fun textGameSaveDao(): TextGameSaveDao
 
     companion object {
+        /** Adds first-class Pictures organization and machine-searchable scene labels. */
+        val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE media ADD COLUMN displayName TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE media ADD COLUMN category TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE media ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /** Dedicated campaign saves for deterministic Text Games. */
+        val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS text_game_saves (
+                        campaignId TEXT NOT NULL,
+                        gameId TEXT NOT NULL,
+                        schemaVersion INTEGER NOT NULL,
+                        persistentStateJson TEXT NOT NULL,
+                        runStateJson TEXT NOT NULL,
+                        updatedAt INTEGER NOT NULL,
+                        PRIMARY KEY(campaignId, gameId)
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_text_game_saves_campaignId ON text_game_saves(campaignId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_text_game_saves_gameId ON text_game_saves(gameId)")
+            }
+        }
+
+        /** Codex entries gain RPG roster sheets and inventories (Roster/Inventory parity). */
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE codex_entries ADD COLUMN sheetJson TEXT NOT NULL DEFAULT '{}'")
+                db.execSQL("ALTER TABLE codex_entries ADD COLUMN inventoryJson TEXT NOT NULL DEFAULT '[]'")
+            }
+        }
+
+        /** Brainstorm sub-categories: nest chat threads under a parent. */
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE chat_threads ADD COLUMN parentThreadId TEXT",
+                )
+            }
+        }
+
+        /** Discord-style Chatting rooms: classify rp_chats rows by room kind. */
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE rp_chats ADD COLUMN roomKind TEXT NOT NULL DEFAULT ''",
+                )
+            }
+        }
+
         /** Usage columns on chat messages plus hourly scene snapshots. */
         val MIGRATION_11_12 = object : Migration(11, 12) {
             override fun migrate(db: SupportSQLiteDatabase) {

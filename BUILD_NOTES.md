@@ -3,6 +3,425 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.3.48-beta — ! commands write the entry and the prose at once
+
+- Typing `!character`, `!location`, `!object`, `!lore` or `!other` (plus the
+  usual synonyms: `!npc`, `!place`, `!item`, `!weapon`, `!event`, `!note`, …)
+  followed by a brief runs one AI call that fills that kind's codex template,
+  files the entry in the matching category, and drops the prose into whatever
+  is open. `CodexBang` parses it; only a leading known keyword counts, so
+  ordinary prose with an exclamation mark is never hijacked.
+- **One to one by construction.** The model fills the template's *own field
+  names* (pulled from the serializer descriptor, so the prompt can never drift
+  from the sheet), and the prose is then rendered from the saved entry by
+  `CodexEntryText` — the same fields, in sheet order, blank ones skipped. The
+  text the writer receives is byte-for-byte the entry's `plainText`.
+- `!character` also creates the roster character: sheet (class, species,
+  level, HP, AC, ability scores), description, personality, and its starting
+  gear as real inventory items.
+- Wired into the global prompt dock (`GlobalPromptViewModel.submit`, so it
+  works over the manuscript, notes and chats) and the RPG adventure composer
+  (`RoleplayChatViewModel.send`, which posts the entry text into the scene).
+  The prompt bar's meter chip turns into the keyword list while a `!` line is
+  being typed.
+- New `CodexRepository.ensureCategory(name)` creates the target category when
+  a project does not have it yet.
+
+## v1.3.47-beta — the ledger is named for what actually holds it
+
+- A place has no inventory and neither does a sword, so the middle tab is now
+  named per kind by `InventoryVocabulary` (`party/InventoryRules.kt`):
+  **Character → Inventory**, **Location → Contents**, **Object/Item →
+  Components**. Lore and Other still have no ledger tab.
+- The words follow: add button (+ Item / + Part), dialog title, weight caption
+  (WEIGHT CARRIED / WEIGHT STORED / TOTAL WEIGHT), the count noun, the search
+  hint and the empty state.
+- The body-shaped parts are gone for places and objects: no equipment plate
+  (head/torso/weapon slots), no backpack panel or capacity fields, no item
+  template picker, and the Equipment/Backpack filters are dropped — with a
+  fallback so a filter carried over from a character's pack cannot leave a
+  location's contents filtered by something it cannot have.
+- One mapping drives all of it — `CodexEntryKind.ledgerVocabulary()` — so the
+  tab strip, the plate's "Open sheet & contents ›" line, and the "which kinds
+  can hold things" test all read from the same place.
+
+## v1.3.46-beta — a template per codex kind
+
+- The Roster sheet was only ever right for characters. Every codex entry now
+  resolves to a **kind** (`CodexEntryKind`: Character, Location, Object/Item,
+  Lore, Other) from its category name, overridable per entry, and each kind
+  gets its own template drawn with the Roster sheet's furniture — framed
+  picture, stat strip, expandable section cards (`CodexSheetScreen`).
+- **Character** → the real RPG Roster sheet, unchanged.
+- **Location** → Description / Placement / **Census** (population counter,
+  demographics, notable residents, factions) / History & Lore / Points of
+  Interest / Hooks & Secrets.
+- **Object/Item** → Description & Appearance / Item Details (type, rarity,
+  value, weight, attunement) / **Stats & Mechanics** (damage, to-hit, AC
+  bonus, range, charges, save DC, properties, effects — revealed once the item
+  has stats, and counted as statted the moment any mechanical field is filled)
+  / History & Lore / Ownership.
+- **Lore** → an Explanation section built for length (summary, in-depth
+  explanation, further detail) plus Placement, Origins & Timeline,
+  Connections, Beliefs & Secrets.
+- **Other** → free sheet: description, details, background, connections, and
+  fields the writer names themselves.
+- Templates live in `codex_entries.sheetJson` as `CodexSheetData` — no
+  migration; a pre-v1.3.45 `RpgCharacterSheet` in that column has none of the
+  new keys and decodes to an empty sheet. Entries that only had `plainText`
+  (including AI capture-sorted lore) open with that prose already seeded into
+  the kind's body field.
+- Each kind's body field is written back to `plainText` on save, so mention
+  matching and AI context keep reading the same prose the sheet shows.
+- Plates in every codex list now print that kind's chips — CLASS/HP/AC/GEAR,
+  TYPE/SCALE/POP, TYPE/RARITY/VALUE/STATS, TYPE/ERA — with the template name
+  as the type line.
+- Roster characters are only created for kinds that can carry: characters on
+  open, locations and objects when their Inventory tab is first used. Lore and
+  Other never get one, and have no Inventory tab.
+
+## v1.3.45-beta — the Codex *is* the Roster/Inventory
+
+- **Every codex entry is now a roster character sheet.** Opening an entry
+  creates (once) an `RpCharacterEntity` linked by `defaultCodexId`, seeded
+  from the entry's name, text, v1.3.43 `sheetJson` and `inventoryJson`, and
+  its first codex image as the portrait. `CodexRosterLink`
+  (`feature/novel/codex/CodexRosterFormat.kt`) owns the link and the plate
+  decoration for every codex surface.
+- **Entry detail is the RPG UI, not a text form.** Three tabs: **Sheet** is
+  the real `CharacterDetailScreen` (embedded, `showBackRow = false`, keyed
+  per character), **Inventory** is the real `InventoryScreen` filtered to
+  this entry's carrier (`carrierFilterId`, no group headers), and **Codex**
+  keeps only what a sheet has no room for — aliases, "always include in
+  context", and the extra picture/video/audio gallery.
+- Name and entry text now live on the sheet: the sheet's name/description are
+  mirrored back into the codex entry on every change, so mention matching,
+  `@` links and AI context keep working off the same text.
+- The adventure **Lorebook** list and the Codex rail both render the shared
+  `CodexEntryPlate` — portrait, name, category type line, CLASS / HP / AC /
+  GEAR chips, equipped line — so the three lists are one format.
+- Codex-backed characters carry the `Codex` tag, stay `inParty = false` (so
+  they never crowd the Roster team list) and show up in the global RPG
+  Inventory under **Other**.
+
+## v1.3.44-beta — AI capture-sort into Codex / Roster / Inventory
+
+- Press-and-hold an adventure message → **AI sort into Codex / Roster /
+  Inventory…**. A cloud model (`AdventureCapture.plan`) splits the selected
+  text into sections: character-sheet facts, inventory items (with carrier),
+  and codex lore with a suggested category. Rows the model is unsure about
+  are flagged so the review dialog asks the user to re-route them.
+- The review dialog groups candidates by destination section (Character
+  sheet / Inventory / Codex); "Place selected" applies them: characters
+  merge into the roster **with a linked codex entry** (Characters category,
+  `defaultCodexId` set, entry text seeded from notes), items file into the
+  named carrier's inventory (fallbacks: persona → main character → party),
+  and lore becomes a codex entry in the suggested category
+  (`ensureCategory`/`ensureCodexEntry` in AdventureCapture).
+- Existing heuristic capture ("Add to roster"/"inventory") unchanged and
+  also now links rostered characters to codex entries.
+
+## v1.3.43-beta — codex roster/inventory parity
+
+- Codex entries in a **Characters** category now carry the same roster sheet
+  as the RPG Roster (class, species, level, HP with +/−, armor class,
+  proficiency bonus, six ability scores with computed modifiers, attacks &
+  actions), and **every entry** carries an RPG Inventory-style item ledger
+  (quantity, weight, cost, tags, notes, active toggle, add/remove).
+  Persisted in new `codex_entries.sheetJson` / `inventoryJson` columns
+  (MIGRATION_14_15, DB v15), saved through `CodexRepository.updateEntry`,
+  included in undo/redo, and editable in the codex entry detail screen.
+- Verified on emulator: fresh launch + DB v14→15 migration + monkey, no
+  crashes.
+- Codex **list** now draws every entry the way the RPG Roster draws a party
+  member: framed 88dp portrait (roster avatar, else the entry's first codex
+  image, else a monogram), bold name in the entry tint, the category as the
+  small-caps type line, two-line summary, and a CLASS / HP / AC stat strip
+  read off the linked roster sheet (falling back to the entry's own
+  `sheetJson`) plus a carried-item count from the inventory. Category
+  headers use the Roster's letter-spaced small caps with a hairline rule.
+  `CodexViewModel` now emits `CodexEntryUi` (entity + portrait + sheet
+  labels + item count) instead of raw entities.
+- Fixed compile breaks left in the roster-parity WIP: a stray brace in
+  `CodexEntryDetailViewModel.load`, a missing `inkTokens()` in
+  `CodexEntryDetailScreen`, and `AdventureCapture` (Flow vs suspend category
+  lookup, `CodexCategoryEntity.createdAt` → `updatedAt`, missing
+  `Document.toJson` import, undeclared `linkedCodexId`).
+
+## v1.3.42-beta — AI-generated media in the add flow
+
+- Press-and-hold a panel → **Generate picture (AI)**: a dialog to describe
+  the picture and pick a cloud image model. Generation goes through
+  OpenRouter (`modalities: ["image","text"]`, parsing
+  `message.images[].image_url.url` data URLs via the new
+  `OpenRouterRepository.generateImage` + `AiGenerationService.generateImage`).
+  The generated picture is imported into media storage and attached to the
+  active page like any imported media.
+- Empty layout slots offer both **Add picture / video** and **Generate
+  picture (AI)** on long-press.
+- Settings → Models: **Image generation** tab listing every OpenRouter
+  image-output model (`generatesImages` on ModelInfo, tagged in All).
+
+## v1.3.41-beta — + Storyboard import option, empty-slot menu
+
+- Pressing **+ Storyboard** now offers a choice: **Create new** (the
+  existing dialog) or **Import a whole manga / comic / webtoon file** —
+  the file picker (PDF, CBZ/ZIP, image, long strip) opens directly, a
+  pre-filled title is editable, and Import creates the storyboard with
+  every file page as its own full-page panel (streamed on IO).
+- Long-pressing an **empty layout slot** on the comic canvas opens the
+  media menu with **Add picture / video** — imported panels auto-place
+  into free slots, so filling a template starts from any frame.
+- Verified on emulator: launch + monkey, no crashes.
+
+## v1.3.40-beta — generated-panel asset handoff
+
+- Storyboard now has **Import generated panel**. It opens Android's document
+  picker for one or multiple images and copies them through
+  `MediaRepository.importFromUris` into durable app-private media storage.
+- Empty layout frames are selectable. The first import uses the selected empty
+  slot; otherwise imports fill the first free layout slots in picker order.
+  Selecting occupied artwork opens a safe pre-import choice between the next
+  free slot and explicit replacement. Overflow continues on a new page.
+- Added the in-canvas Codex/ImageGen handoff hint and a host utility at
+  `tools/stage-storyboard-assets.ps1`, with versioned, non-destructive staging,
+  optional adb push, and `tools/README-storyboard-assets.md` instructions.
+- Separator feedback now identifies AI versus offline white-gutter detection,
+  reports unreadable/zero/one-panel results, documents the offline detector's
+  near-white gutter limit, and explicitly preserves the source page while
+  writing crops to a new page.
+- Added focused JVM coverage for empty/occupied/full-page placement, clean
+  multiple gutters, single-panel detection, unreadable detection input,
+  natural archive ordering, and original-page/media preservation.
+- Press-and-hold a panel → **Add picture / video** in the media menu
+  (MediaEditAction.AddMedia → requestMediaPick) — imported media is
+  auto-placed on the page.
+- Settings → Models gains an **Image generation** tab listing OpenRouter
+  text-to-image models (`OpenRouterModelDto.generatesImages()` /
+  `ModelInfo.generatesImages`, tagged "Image generation").
+- **MCP & CLI harnesses** (Settings → Sync): the web-hub Ktor host serves a
+  minimal Model Context Protocol endpoint at `/mcp` (JSON-RPC 2.0:
+  initialize / tools/list / tools/call / ping) with read-only library tools
+  — list_works, list_scenes, read_scene, search_codex, read_codex_entry,
+  list_notes, read_note (`core/mcp/McpTools.kt`). Auth is the sync pairing
+  password as a Bearer token. The settings block shows the endpoint URL plus
+  ready-to-copy connect commands for Claude Code, OpenCode, and Codex CLI.
+- Appearance section modernized: profile picker is now a horizontally
+  scrolling card row showing each profile's own palette swatches (light and
+  dark preview) instead of a text pill.
+- Version advanced to 1.3.40-beta (`versionCode 86`). No ComfyUI, cloud image
+  generation, Android API key, networking, or database migration was added.
+
+## v1.3.39-beta — whole manga and page import
+
+- New Storyboard can now take an optional whole comic file: PDF, CBZ/ZIP,
+  a normal page image, or one long webtoon strip. PDF pages, naturally-sorted
+  archive entries, and webtoon slices become ordered storyboard pages.
+- Import is streamed page-by-page on the IO dispatcher instead of retaining a
+  whole volume in memory. Long strips use region decoding, and the initial
+  empty placeholder page is removed when a book is imported at creation.
+- The canvas has an explicit **Add pages** button. Its file picker accepts
+  whole comic files and multiple individual images; imported pages append in
+  order and the last new page opens automatically.
+- Long-pressing the desired panel selects it and opens Picture tools, including
+  AI or offline panel separation. The empty-page hint now teaches this gesture.
+- Version advanced to 1.3.39-beta (`versionCode 85`).
+
+## v1.3.38-beta — Storyboard AI: panels, picture editor, translation
+
+- Comic/manga page import + panel separation: long-press an imported page →
+  Picture tools → Separate panels. AI mode sends a downscaled copy to a
+  Vision model (OpenRouter image attachments) and expects JSON boxes;
+  offline mode splits on white gutters on-device (ImageOps gutter
+  heuristic). Every detected panel is cropped, registered as new media, and
+  placed in reading order on a new page via grid placement.
+- Full-screen picture editor (Picture tools → Edit picture): brush erase
+  (size + fill color), rect erase, undo stack, save-as-new-media with
+  block mediaId re-point (cache-safe).
+- AI text read + translate in the editor: "Read & translate" finds every
+  text region, transcribes it, and translates into a chosen language.
+  Regions are highlighted; tap to erase the original instantly; checklist
+  selects which apply; "Add translations" erases originals and adds
+  speech-bubble overlays with the translation.
+- New MediaEditActions EditImage/SeparatePanels/SeparatePanelsAuto behind
+  showPictureTools; storyboard status line above the page strip.
+- Hard checkpoint: docs/CHECKPOINT-v1.3.38-HARD-CHECKPOINT.md (mirrored at
+  the Weaververse root). Wiki Storyboard page + standalone manual updated.
+- Verified on emulator: launch + monkey, no crashes.
+
+## v1.3.37-beta — full dock cluster on every prompt bar
+
+- Every UnifiedPromptBar now carries the complete dock feature set from the
+  Novel/RPG dock: the **+ / 🎲 / 🎤** composer cluster (attach media, append a
+  d20 roll, dictate), the **✓ hold-menu (↻ retry / » continue)**, and the ⌫
+  hold-undo clear.
+- Chatting, Brainstorm, and the Novel workshop chat gained real media
+  attach: the + imports pictures/videos (MediaRepository) and they ride along
+  with the next message as MediaBlocks, rendered inline in all three panes
+  (media-only messages are allowed). Workshop chat and Brainstorm also
+  gained » continue; the RPG messenger's bar gained 🎲 (forces a tabletop
+  roll, same as Adventure).
+- Dice rolls append `[d20: N]` to the draft on every surface; dictation
+  merges into the current draft via a stale-state-safe accessor.
+- Verified on emulator: launch + monkey run, no crashes.
+
+## v1.3.36-beta — one prompt bar everywhere, sub-categories, picker search
+
+- Unified composer: every generation surface now uses the same prompt window
+  as the RPG adventure and Novel editor — Chatting rooms, Brainstorm, the
+  Novel workshop chat, and the RPG messenger. Word range, AI/manual toggle,
+  model picker (per-surface, settings default underneath), ✓ hold-menu
+  retry/continue, × cancel, context meter, and ⌫ hold-undo everywhere. The
+  bespoke Discord/messenger/brainstorm composers were removed; the messenger
+  keeps media attach via the bar's + button.
+- RPG character selection (campaign creation + Setup dialog): the chip row
+  is now a two-row scrollable section with a "Search characters" field.
+- Brainstorm sub-categories: + Add creates a main category; each main row
+  now has a **+** beside the ⌫ delete that adds a sub-category nested under
+  it (indented, `└` prefix). Deleting a main category removes its subs.
+  `chat_threads.parentThreadId` added (MIGRATION_13_14, DB v14).
+- Brainstorm/Notes mode now has two sub-modes: **Brainstorm** (the AI chat,
+  default) and **Notes** (the notes board), so removing the Extra buttons
+  keeps the board reachable.
+- Extras row trimmed to Codex, Prompts, Pictures — Chats, Snippets and Notes
+  buttons removed per their purpose living in Brainstorm/Notes and Novel's
+  Chat tab. Novel's own side-rail tabs are unchanged.
+- Verified on emulator: fresh launch, DB v13→14 migration, and a 200-event
+  monkey run all pass with no crash.
+
+## v1.3.35-beta — startup crash fix
+
+- Fixed a force close on launch: the new profile theme art used
+  `painterResource` on layer-list gradient drawables, which only supports
+  vector and raster assets — first composition of the shell threw
+  IllegalArgumentException. The art is now drawn with Compose brushes
+  (`ProfileBackgroundArt` in core/ui/theme/Backgrounds.kt, per-profile
+  vertical gradient + radial glows); the unused bg_profile_*.xml drawables
+  were removed.
+- Verified on emulator: app installs, launches, survives a randomized
+  monkey run with no crash.
+
+## v1.3.34-beta — picker fix, theme art, wiki figures
+
+- Fixed the section-color HSV picker snapping to black. Two causes: (1) the
+  picker re-seeded hue/sat/value from `selected` on every persisted echo, so
+  drags snapped mid-gesture — now only genuine external changes (section
+  switch, reset) resync, via an echo guard; (2) picking a hue while the
+  current color was unsaturated or a dark theme fallback kept the color
+  effectively black — a hue pick now jumps saturation/value to full so the
+  selection is visible.
+- Appearance: ambient theme art behind the whole shell, one gradient
+  backdrop per profile (Classic, Fantasy, Arcade, Synthwave, Chill,
+  Tabletop) in res/drawable, shown when no custom background image is set
+  (Settings → Background media toggle). The shell chrome wash thins to ~86%
+  so the art reads through; section opacity still controls depth.
+- Wiki: schematic figure support (`{{figure:...}}` in the markdown subset)
+  drawing wireframe "screenshots" of Chatting, the RPG adventure page,
+  Novel, Brainstorm, and the prompt dock, embedded on their pages.
+
+## v1.3.33-beta — in-app wiki manual
+
+- New full wiki manual in the app: `feature/help/WikiContent.kt` (twelve
+  markdown pages: Home, Getting Started, Navigation and Shelves, Novel and
+  Reader, RPG, Chatting, Brainstorm and Notes, Storyboard, Codex, Prompts and
+  AI, Appearance, Backup Sync and Troubleshooting) and `WikiScreen.kt` — a
+  web-wiki-style reader with a navigation sidebar, page search, breadcrumbs,
+  tables, bullets, **bold**, and [[clickable links]] between pages.
+- Opened from Settings → Help → "Open Wiki manual" as a full-screen overlay
+  with a Close control; the old compact quick guide remains beside it.
+- The quick guide's Help section copy updated to point at the wiki.
+
+## v1.3.32-beta — hard checkpoint and wiki manual
+
+- Hard checkpoint recorded at `docs/CHECKPOINT-v1.3.32-HARD-CHECKPOINT.md`
+  (mirrored at the Weaververse root alongside the v1.3.26/27 checkpoints):
+  full feature state for Chatting/Discord, Brainstorm, campaign options,
+  codex activation/links, the ⌫ hold-undo surfaces, migrations, file map,
+  known gaps, and resume state.
+- Standalone wiki manual for the computer:
+  `S:\AI\Novel\Weaververse\Weaverse-Wiki-Manual.md` (markdown).
+- In-app guide (`HelpContent.kt`) refreshed to match: Chatting rewritten for
+  the Discord workspace, a new Brainstorm section, RPG Setup and codex-link
+  entries, Novel codex-link note, and composer/backspace entries under
+  Prompts & AI.
+
+## v1.3.31-beta — codex back/exit
+
+- The codex panel that opens from mention hyperlinks (Novel write, RPG
+  adventure prose, search results) now has a "‹ Back" header that closes it
+  and returns to the exact spot you left, instead of trapping you until you
+  switched workspaces.
+
+## v1.3.30-beta — campaign options, codex everywhere, Brainstorm
+
+- RPG: a "Setup" button on the adventure page reopens the campaign options
+  sheet (CampaignOptionsDialog) for an existing campaign — add/remove character
+  perspectives, change setting template and details, play-as role, point of
+  view, tense, rules system, and house rules. Applying rewrites the campaign
+  setup note, syncs the roster's inParty flags, persona, the chat title, and
+  the underlying book fields. Setup parses the stored note back into the form
+  (template ids recovered by label, house rules extracted).
+- Codex lore is now active in RPG adventures: lorebook-style activation injects
+  matching entries (name/alias mentioned in recent story or the new action,
+  plus always-include entries) into every DM prompt via ContextBuilder, and
+  codex names/aliases in adventure prose render as tappable underlined links
+  that open the entry (CodexMentionText in AdventurePlayScreen →
+  selectedCodexEntryId). Novel Write already had clickable mentions.
+- Backspace (⌫) clear with press-and-hold undo is now consistent everywhere:
+  the adventure prompt bar (onUndoClear added), the workshop chat composer, and
+  ChatComposerRow (Clear Text capsule replaced with the backspace button).
+  Global prompt overlay and Chatting composer already had it from v1.3.29.
+- Notes mode renamed "Brainstorm/Notes" and is now a NovelCrafter-Chat-style
+  AI conversation (feature/brainstorm): chat thread rail (app-global scope,
+  not book-scoped), user/AI bubbles, streaming, cancel, retry via ✓ hold-menu,
+  W min–max word range, model picker, codex context chips + picker, preview
+  prompt, usage line, context meter, and the backspace clear with hold-undo.
+  Notes themselves remain available through any mode's Notes rail tab.
+
+## v1.3.29-beta — single composer, auto rooms, backspace undo
+
+- Chatting no longer opens the shared prompt dock — two generation surfaces
+  fought over the keyboard and the dock never worked against Discord rooms.
+  PromptSurface (and AppShell) now keep the overlay off in Chatting entirely.
+- The Discord composer absorbed the dock's features: W min–max word fields,
+  /A ↔ \M AI/manual toggle, ✓ with the hold-menu (↻ retry, » continue),
+  × cancel while streaming, and a live "context: used / limit" meter.
+- Retry deletes the latest AI reply and regenerates from the last message;
+  continue nudges the room onward without inserting a new user message.
+- The prompt-bar clear X is now a backspace (⌫): tap deletes the draft,
+  press-and-hold restores it. Applies to the shared InkClearIconButton
+  (Novel/RPG/Storyboard prompt bars included) and the Discord composer.
+- Rooms now auto-generate the moment a novel/campaign is created: createWork
+  seeds via the new ChatRoomSeeder singleton; the Discord workspace also
+  re-checks every server on open so legacy works catch up.
+- Word range feeds the model: max words drive the token budget and the
+  PromptWordLimit trim; the min–max instruction steers reply length.
+
+## v1.3.28-beta — Discord-style Chatting mode
+
+- Chatting → Chats is now a Discord-style workspace: a server rail where every
+  novel and campaign adventure is a "server", a channel sidebar, and a message
+  pane (DiscordChatScreen / DiscordChatViewModel in feature/chatting).
+- First open of a server auto-seeds #general, #lore, and #brainstorm text
+  channels plus one live room per tied character (campaign roster members via
+  the setup note; novel characters via defaultCodexId codex links).
+- Channel rooms chat with an AI narrator scoped to the work's title, genre,
+  POV, tense, and style guide; character rooms chat in-character.
+- @mention support: typing @CharacterName (full or unambiguous first name) in
+  any room brings that character into the AI's reply, voiced from their card.
+- Users can add custom channels and character rooms (+ buttons in the
+  sidebar) and delete any room via long-press (messages go with it).
+- Home (the ⌂ rail slot) lists direct messages with unread badges and
+  previews. Legacy messenger chats with no owning work surface as DMs.
+- Friends (renamed from Contacts) now creates DM-kind chats that open under
+  Home; the top pane has a Friends shortcut.
+- rp_chats gained a roomKind column (MIGRATION_12_13, DB v13): "" legacy,
+  "channel", "character", "dm". Campaign/storyboard chats are untouched and
+  still open through RPG and Storyboard modes.
+- Known gaps: the pane renders text with a media-attachment note (media
+  blocks are not yet displayed inline); room context does not yet pull codex
+  lore entries (book metadata only).
+
 ## v1.3.26-beta — compact template controls and effective preview
 
 - Moved Mode Template to the top of TEMPLATE, immediately after its title bar.

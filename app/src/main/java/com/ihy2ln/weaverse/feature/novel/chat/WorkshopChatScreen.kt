@@ -2,6 +2,12 @@ package com.ihy2ln.weaverse.feature.novel.chat
 
 
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+
+import androidx.activity.result.PickVisualMediaRequest
+
+import androidx.activity.result.contract.ActivityResultContracts
+
 import androidx.compose.foundation.layout.Column
 
 import androidx.compose.foundation.layout.Row
@@ -14,7 +20,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 
 import androidx.compose.foundation.layout.padding
 
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 
 import androidx.compose.foundation.lazy.LazyColumn
 
@@ -56,11 +66,16 @@ import androidx.compose.ui.unit.dp
 
 import androidx.hilt.navigation.compose.hiltViewModel
 
-import com.ihy2ln.weaverse.core.ui.components.ChatComposerRow
+import com.ihy2ln.weaverse.feature.prompt.UnifiedPromptBar
+import com.ihy2ln.weaverse.core.ui.components.mergeSpokenText
+import com.ihy2ln.weaverse.feature.prompt.PromptModelPickerDialog
+import com.ihy2ln.weaverse.feature.prompt.PromptModelSelection
+import com.ihy2ln.weaverse.feature.prompt.PromptWordLimit
 
 import com.ihy2ln.weaverse.core.ui.components.CollapsibleUsageStrip
 
 import com.ihy2ln.weaverse.core.ui.components.InkCard
+import com.ihy2ln.weaverse.core.ui.components.rememberSpeechToText
 
 import com.ihy2ln.weaverse.core.ui.components.InkChip
 
@@ -87,6 +102,41 @@ fun WorkshopChatScreen(
 
     val state by viewModel.uiState.collectAsState()
     var threadsOpen by rememberSaveable { mutableStateOf(true) }
+    var promptCollapsed by rememberSaveable { mutableStateOf(false) }
+    var modelsOpen by rememberSaveable { mutableStateOf(false) }
+    var modelSearch by rememberSaveable { mutableStateOf("") }
+    var minimumWordsText by rememberSaveable { mutableStateOf(state.minimumOutputWords.toString()) }
+    var maximumWordsText by rememberSaveable { mutableStateOf(state.maximumOutputWords.toString()) }
+    LaunchedEffect(state.minimumOutputWords) {
+        if (minimumWordsText.toIntOrNull() != state.minimumOutputWords) {
+            minimumWordsText = state.minimumOutputWords.toString()
+        }
+    }
+    LaunchedEffect(state.maximumOutputWords) {
+        if (maximumWordsText.toIntOrNull() != state.maximumOutputWords) {
+            maximumWordsText = state.maximumOutputWords.toString()
+        }
+    }
+    val minWordsValue = minimumWordsText.toIntOrNull()
+    val maxWordsValue = maximumWordsText.toIntOrNull()
+    val wordRangeValid = minWordsValue != null && maxWordsValue != null &&
+        minWordsValue in PromptWordLimit.Minimum..PromptWordLimit.Maximum &&
+        maxWordsValue in PromptWordLimit.Minimum..PromptWordLimit.Maximum &&
+        minWordsValue <= maxWordsValue
+    val canSend = (state.input.isNotBlank() || state.hasPendingMedia) && !state.isStreaming && wordRangeValid
+    val startDictate = rememberSpeechToText { spoken ->
+        viewModel.onInputChange(mergeSpokenText(viewModel.currentInput(), spoken))
+    }
+    val mediaPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia(),
+    ) { uris ->
+        if (uris.isNotEmpty()) viewModel.attachMedia(uris)
+    }
+    LaunchedEffect(state.mediaPickRequestId) {
+        if (state.mediaPickRequestId > 0L) {
+            mediaPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+        }
+    }
 
     LaunchedEffect(threadId) {
 
@@ -135,7 +185,20 @@ fun WorkshopChatScreen(
 
                     Text(message.role.uppercase(), style = MaterialTheme.typography.labelMedium)
 
-                    Text(message.plainText, style = compactStyle, modifier = Modifier.padding(top = InkSpacing.xxs))
+                    if (message.plainText.isNotBlank()) {
+                        Text(message.plainText, style = compactStyle, modifier = Modifier.padding(top = InkSpacing.xxs))
+                    }
+                    message.mediaPaths.take(4).forEach { path ->
+                        coil3.compose.AsyncImage(
+                            model = java.io.File(path),
+                            contentDescription = "Attached image",
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            modifier = Modifier
+                                .padding(top = InkSpacing.xxs)
+                                .size(width = 180.dp, height = 120.dp)
+                                .clip(RoundedCornerShape(8.dp)),
+                        )
+                    }
                     if (message.usageText.isNotBlank()) {
                         Text(
                             message.usageText,
@@ -244,27 +307,49 @@ fun WorkshopChatScreen(
         }
 
         if (state.showExtraPromptSurfaces) {
-
-            ChatComposerRow(
-
+            // The shared prompt window — same bar as the RPG adventure.
+            UnifiedPromptBar(
                 value = state.input,
-
                 onValueChange = viewModel::onInputChange,
-
-                onSend = viewModel::send,
-
                 placeholder = "Message the workshop…",
-
-                sendLabel = "Send",
-
-                enabled = !state.isStreaming,
-
-                onClear = { viewModel.onInputChange("") },
-
-                modifier = Modifier.padding(top = InkSpacing.sm),
-
+                collapsed = promptCollapsed,
+                onCollapsedChange = { promptCollapsed = it },
+                contextLabel = state.contextMeter?.label.orEmpty(),
+                minimumWords = minimumWordsText,
+                maximumWords = maximumWordsText,
+                onMinimumWordsChange = { value ->
+                    minimumWordsText = value.filter(Char::isDigit).take(4)
+                    minimumWordsText.toIntOrNull()?.let(viewModel::updateMinimumOutputWords)
+                },
+                onMaximumWordsChange = { value ->
+                    maximumWordsText = value.filter(Char::isDigit).take(4)
+                    maximumWordsText.toIntOrNull()?.let(viewModel::updateOutputWords)
+                },
+                wordRangeValid = wordRangeValid,
+                modelLabel = PromptModelSelection.shortLabel(state.modelRef, state.writingModels),
+                onModelClick = { modelsOpen = true },
+                aiMode = true,
+                onToggleMode = {},
+                streaming = state.isStreaming,
+                canSubmit = canSend,
+                canClear = state.input.isNotBlank() && !state.isStreaming,
+                onSubmit = viewModel::send,
+                onCancel = viewModel::cancelGeneration,
+                onClear = viewModel::clearInput,
+                onUndoClear = viewModel::undoClearInput,
+                onRetry = viewModel::retry,
+                onContinue = viewModel::continuePrompt,
+                onMicTap = { if (!state.isStreaming) startDictate() },
+                onRoll = viewModel::rollDice,
+                onAdd = viewModel::requestMediaPick,
+                onSpoken = { spoken ->
+                    viewModel.onInputChange(mergeSpokenText(viewModel.currentInput(), spoken))
+                },
+                compactSingleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = InkSpacing.sm),
             )
-
         }
 
         InkTextButton(
@@ -276,6 +361,25 @@ fun WorkshopChatScreen(
         )
 
         }
+    }
+
+    if (modelsOpen) {
+        PromptModelPickerDialog(
+            models = state.writingModels,
+            search = modelSearch,
+            onSearchChange = { modelSearch = it },
+            selectedRef = state.modelRef,
+            defaultRef = state.defaultModelRef,
+            onSelect = { id ->
+                viewModel.selectModel(id)
+                modelsOpen = false
+            },
+            onUseDefault = {
+                viewModel.useDefaultModel()
+                modelsOpen = false
+            },
+            onDismiss = { modelsOpen = false },
+        )
     }
 
     if (state.showCodexPicker) {

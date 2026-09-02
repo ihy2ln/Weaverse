@@ -136,9 +136,11 @@ class OpenRouterModelCache @Inject constructor(
         dtos.map { dto ->
             val tts = dto.isSpeechOutput()
             val vision = dto.supportsImageInput()
+            val imageGen = dto.generatesImages()
             val tags = buildList {
                 if (tts) add("TTS")
                 if (vision) add("Vision")
+                if (imageGen) add("Image generation")
             }
             ModelInfo(
                 id = dto.id,
@@ -149,6 +151,7 @@ class OpenRouterModelCache @Inject constructor(
                 available = true,
                 isTts = tts,
                 supportsImages = vision,
+                generatesImages = imageGen,
                 tags = tags,
             )
         }

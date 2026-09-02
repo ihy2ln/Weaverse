@@ -8,12 +8,15 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -21,6 +24,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
@@ -41,20 +45,32 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
+import com.ihy2ln.weaverse.core.text.CodexMentionTag
+import com.ihy2ln.weaverse.core.text.CodexMentionTarget
+import com.ihy2ln.weaverse.core.text.findCodexMentions
 import com.ihy2ln.weaverse.core.ui.components.CollapsibleUsageStrip
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
 import com.ihy2ln.weaverse.core.ui.components.mergeSpokenText
 import com.ihy2ln.weaverse.core.ui.components.rememberSpeechToText
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
+import com.ihy2ln.weaverse.feature.novel.codex.AddTextDialog
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import com.ihy2ln.weaverse.feature.prompt.PromptModelPickerDialog
 import com.ihy2ln.weaverse.feature.prompt.PromptModelSelection
@@ -72,6 +88,7 @@ import java.io.File
 fun AdventurePlayScreen(
     chatId: String,
     onChromeChange: (RoleplayChatChrome?) -> Unit = {},
+    onOpenCodexEntry: (String) -> Unit = {},
     viewModel: RoleplayChatViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(chatId) {
@@ -80,11 +97,17 @@ fun AdventurePlayScreen(
     }
     val state by viewModel.uiState.collectAsState()
     val tokens = inkTokens()
+    val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     var captureMenuFor by remember { mutableStateOf<RpMessageUi?>(null) }
     val storyState = rememberLazyListState()
     var promptCollapsed by rememberSaveable { mutableStateOf(false) }
     var modelsOpen by remember { mutableStateOf(false) }
+    var showAddText by remember { mutableStateOf(false) }
+    var sceneArtMenuOpen by remember { mutableStateOf(false) }
+    var showAppPictures by remember { mutableStateOf(false) }
+    // 0 normal, 1 collapsed (thin strip), 2 enlarged.
+    var sceneArtSize by rememberSaveable { mutableStateOf(0) }
     var modelSearch by rememberSaveable { mutableStateOf("") }
     var minimumWordsText by rememberSaveable { mutableStateOf(state.minimumOutputWords.toString()) }
     var maximumWordsText by rememberSaveable { mutableStateOf(state.outputWords.toString()) }
@@ -127,6 +150,9 @@ fun AdventurePlayScreen(
     LaunchedEffect(state.mediaPickRequestId) {
         if (state.mediaPickRequestId > 0L) {
             mediaPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            // Consume the request so returning to this screen never re-launches
+            // the picker on its own.
+            viewModel.clearMediaPickRequest()
         }
     }
     LaunchedEffect(state.messages.size, state.streamingText) {
@@ -150,9 +176,21 @@ fun AdventurePlayScreen(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(0.42f)
-                .heightIn(min = 190.dp, max = 360.dp)
-                .padding(horizontal = InkSpacing.md, vertical = InkSpacing.sm)
+                .then(
+                    when (sceneArtSize) {
+                        1 -> Modifier.height(48.dp)
+                        2 -> Modifier.weight(0.62f)
+                        else -> Modifier.weight(0.42f)
+                    },
+                )
+                .then(
+                    if (sceneArtSize == 1) {
+                        Modifier
+                    } else {
+                        Modifier.heightIn(min = 190.dp, max = 360.dp)
+                    },
+                )
+                .padding(horizontal = InkSpacing.md, vertical = if (sceneArtSize == 1) 2.dp else InkSpacing.sm)
                 .clip(RoundedCornerShape(inkRadiusMd()))
                 .background(
                     Brush.verticalGradient(
@@ -161,10 +199,13 @@ fun AdventurePlayScreen(
                             tokens.panel,
                         ),
                     ),
-                )
-                .clickable(onClickLabel = "Choose scene art") { viewModel.requestMediaPick() },
+                ),
+            // The whole panel is intentionally NOT clickable: an accidental tap
+            // (e.g. back-navigation focus) used to auto-open the gallery. The
+            // collapsed "Scene art" chip below is the only trigger.
             contentAlignment = Alignment.Center,
         ) {
+            if (sceneArtSize != 1) {
             if (sceneArt != null) {
                 AsyncImage(
                     model = File(sceneArt.path),
@@ -182,7 +223,7 @@ fun AdventurePlayScreen(
                         .padding(InkSpacing.md),
                 ) {
                     Text(
-                        "Current scene · tap to change art",
+                        "Current scene",
                         style = MaterialTheme.typography.labelMedium,
                         color = Color.White,
                     )
@@ -190,11 +231,64 @@ fun AdventurePlayScreen(
             } else {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("◈", style = MaterialTheme.typography.displaySmall, color = tokens.activePill)
-                    Text("Add scene art", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(
-                        "A single illustration anchors the current adventure scene.",
+                        "No scene art yet",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        "Use the Scene art chip to add one.",
                         style = MaterialTheme.typography.bodySmall,
                         color = tokens.secondaryText,
+                    )
+                }
+            }
+            }
+            // Collapsed trigger — the only way to open a picture source. The menu
+            // offers the app Pictures library, the device, and panel sizing.
+            Box(modifier = Modifier.align(Alignment.TopEnd)) {
+                Text(
+                    if (sceneArtSize == 1) "▤ Scene art ▸" else "▤ Scene art ▾",
+                    modifier = Modifier
+                        .padding(6.dp)
+                        .clip(RoundedCornerShape(inkRadiusSm()))
+                        .background(Color.Black.copy(alpha = 0.55f))
+                        .clickable(onClickLabel = "Choose scene art") { sceneArtMenuOpen = true }
+                        .padding(horizontal = InkSpacing.sm, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color.White,
+                )
+                DropdownMenu(
+                    expanded = sceneArtMenuOpen,
+                    onDismissRequest = { sceneArtMenuOpen = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("App Pictures…") },
+                        onClick = {
+                            sceneArtMenuOpen = false
+                            showAppPictures = true
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Device gallery…") },
+                        onClick = {
+                            sceneArtMenuOpen = false
+                            viewModel.requestMediaPick()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(if (sceneArtSize == 1) "Expand" else "Collapse") },
+                        onClick = {
+                            sceneArtSize = if (sceneArtSize == 1) 0 else 1
+                            sceneArtMenuOpen = false
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(if (sceneArtSize == 2) "Shrink" else "Enlarge") },
+                        onClick = {
+                            sceneArtSize = if (sceneArtSize == 2) 0 else 2
+                            sceneArtMenuOpen = false
+                        },
                     )
                 }
             }
@@ -202,7 +296,13 @@ fun AdventurePlayScreen(
 
         Column(
             modifier = Modifier
-                .weight(0.58f)
+                .weight(
+                    when (sceneArtSize) {
+                        1 -> 1f
+                        2 -> 0.38f
+                        else -> 0.58f
+                    },
+                )
                 .fillMaxWidth()
                 .padding(horizontal = InkSpacing.lg),
         ) {
@@ -223,26 +323,33 @@ fun AdventurePlayScreen(
                         color = tokens.secondaryText,
                     )
                 }
-                if (!startupPending) Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (state.canGoToPreviousScene) {
-                        InkTextButton(
-                            label = "‹ Previous",
-                            onClick = viewModel::previousScene,
-                            compact = true,
-                        )
-                    }
-                    if (state.canUndoSceneAdvance) {
-                        InkTextButton(
-                            label = "Stay here",
-                            onClick = viewModel::undoLastSceneAdvance,
-                            compact = true,
-                        )
-                    }
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     InkTextButton(
-                        label = if (state.viewingCurrentScene) "Next scene ›" else "Next ›",
-                        onClick = viewModel::advanceScene,
+                        label = "Setup",
+                        onClick = viewModel::beginCampaignSetup,
                         compact = true,
                     )
+                    if (!startupPending) {
+                        if (state.canGoToPreviousScene) {
+                            InkTextButton(
+                                label = "‹ Previous",
+                                onClick = viewModel::previousScene,
+                                compact = true,
+                            )
+                        }
+                        if (state.canUndoSceneAdvance) {
+                            InkTextButton(
+                                label = "Stay here",
+                                onClick = viewModel::undoLastSceneAdvance,
+                                compact = true,
+                            )
+                        }
+                        InkTextButton(
+                            label = if (state.viewingCurrentScene) "Next scene ›" else "Next ›",
+                            onClick = viewModel::advanceScene,
+                            compact = true,
+                        )
+                    }
                 }
             }
             LazyColumn(
@@ -286,6 +393,10 @@ fun AdventurePlayScreen(
                             CaptureMenu(
                                 expanded = menuExpanded,
                                 onClose = { captureMenuFor = null },
+                                onAiSort = {
+                                    captureMenuFor = null
+                                    viewModel.captureFromText(message.text, "ai")
+                                },
                                 onRoster = {
                                     captureMenuFor = null
                                     viewModel.captureFromText(message.text, "roster")
@@ -329,21 +440,27 @@ fun AdventurePlayScreen(
                                             .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
                                     )
                                 }
-                                Text(
-                                    message.text,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = tokens.primaryText,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .combinedClickable(
-                                            onClick = {},
-                                            onLongClick = { captureMenuFor = message },
-                                        ),
-                                )
+                                // SelectionContainer enables native copy of any
+                                // span the user selects, not just whole messages.
+                                SelectionContainer {
+                                    CodexMentionText(
+                                        text = message.text,
+                                        targets = state.codexTargets,
+                                        baseColor = tokens.primaryText,
+                                        linkColor = MaterialTheme.colorScheme.primary,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        onTap = onOpenCodexEntry,
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                }
                             }
                             CaptureMenu(
                                 expanded = menuExpanded,
                                 onClose = { captureMenuFor = null },
+                                onAiSort = {
+                                    captureMenuFor = null
+                                    viewModel.captureFromText(message.text, "ai")
+                                },
                                 onRoster = {
                                     captureMenuFor = null
                                     viewModel.captureFromText(message.text, "roster")
@@ -362,11 +479,13 @@ fun AdventurePlayScreen(
                 }
                 if (state.streamingText.isNotBlank()) {
                     item("streaming") {
-                        Text(
-                            state.streamingText,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = tokens.primaryText,
-                        )
+                        SelectionContainer {
+                            Text(
+                                state.streamingText,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = tokens.primaryText,
+                            )
+                        }
                     }
                 }
             }
@@ -389,6 +508,17 @@ fun AdventurePlayScreen(
             )
         }
         CollapsibleUsageStrip(state.lastUsage, Modifier.padding(horizontal = InkSpacing.lg))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = InkSpacing.lg),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            InkTextButton(
+                label = "＋ Add text to…",
+                onClick = { showAddText = true },
+            )
+        }
         UnifiedPromptBar(
             value = state.input,
             onValueChange = viewModel::onInputChange,
@@ -436,7 +566,8 @@ fun AdventurePlayScreen(
             canClear = state.input.isNotBlank(),
             onSubmit = viewModel::send,
             onCancel = viewModel::cancelGeneration,
-            onClear = { viewModel.onInputChange("") },
+            onClear = viewModel::clearInput,
+            onUndoClear = viewModel::undoClearInput,
             onRetry = viewModel::regenerateLatestReply,
             onContinue = viewModel::continueAdventure,
             onMicTap = { if (!state.isStreaming) startDictate() },
@@ -448,6 +579,7 @@ fun AdventurePlayScreen(
                 viewModel.onInputChange(mergeSpokenText(state.input, spoken))
             },
             compactSingleLine = true,
+            showCommandPopup = true,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
@@ -476,19 +608,64 @@ fun AdventurePlayScreen(
             onDismiss = { modelsOpen = false },
         )
     }
+    if (showAppPictures) {
+        com.ihy2ln.weaverse.feature.media.MediaLibraryPickerDialog(
+            title = "Choose scene art",
+            onSelect = { image ->
+                showAppPictures = false
+                viewModel.attachExistingMedia(image.id)
+            },
+            onDismiss = { showAppPictures = false },
+        )
+    }
+    if (showAddText) {
+        AddTextDialog(
+            initialText = clipboard.getText()?.text.orEmpty(),
+            onDismiss = { showAddText = false },
+            onStatus = { message ->
+                android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
+            },
+        )
+    }
     state.captureDialog?.let { dialog ->
         AlertDialog(
             onDismissRequest = viewModel::dismissCapture,
-            title = { Text(if (dialog.kind == "roster") "Add to roster" else "Add to inventory") },
+            title = {
+                Text(
+                    when (dialog.kind) {
+                        "roster" -> "Add to roster"
+                        "ai" -> "AI sorted into sections"
+                        else -> "Add to inventory"
+                    },
+                )
+            },
             text = {
                 Column {
                     Text(
-                        "Found in the scene — uncheck anything to skip:",
+                        if (dialog.kind == "ai") {
+                            "The AI split the text into sections — uncheck anything to skip, then place."
+                        } else {
+                            "Found in the scene — uncheck anything to skip:"
+                        },
                         style = MaterialTheme.typography.labelMedium,
                         color = tokens.secondaryText,
                         modifier = Modifier.padding(bottom = InkSpacing.xs),
                     )
                     dialog.candidates.forEach { candidate ->
+                        if (dialog.kind == "ai") {
+                            val section = when {
+                                candidate.name.startsWith("[C]") -> "Character sheet"
+                                candidate.name.startsWith("[I]") -> "Inventory"
+                                else -> "Codex"
+                            }
+                            Text(
+                                section,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = tokens.secondaryText,
+                                modifier = Modifier.padding(top = InkSpacing.xs),
+                            )
+                        }
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -501,7 +678,7 @@ fun AdventurePlayScreen(
                             )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    candidate.name,
+                                    candidate.name.removePrefix("[C] ").removePrefix("[I] ").removePrefix("[L] "),
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Bold,
                                 )
@@ -518,11 +695,23 @@ fun AdventurePlayScreen(
                 }
             },
             confirmButton = {
-                InkTextButton(label = "Add selected", onClick = viewModel::confirmCapture)
+                InkTextButton(label = "Place selected", onClick = viewModel::confirmCapture)
             },
             dismissButton = {
                 InkTextButton(label = "Cancel", onClick = viewModel::dismissCapture)
             },
+        )
+    }
+    state.campaignSetupInitial?.let { initial ->
+        CampaignOptionsDialog(
+            initial = initial,
+            characterOptions = state.campaignCharacterOptions,
+            onDismiss = viewModel::dismissCampaignOptions,
+            onApply = viewModel::applyCampaignSetup,
+            onRestart = viewModel::restartAdventure,
+            customSettings = state.customSettingTemplates,
+            onAddSetting = viewModel::addSettingTemplate,
+            onRemoveSetting = viewModel::removeSettingTemplate,
         )
     }
     }
@@ -534,9 +723,14 @@ private fun CaptureMenu(
     onClose: () -> Unit,
     onRoster: () -> Unit,
     onInventory: () -> Unit,
+    onAiSort: () -> Unit,
     onCopy: () -> Unit,
 ) {
     DropdownMenu(expanded = expanded, onDismissRequest = onClose) {
+        DropdownMenuItem(
+            text = { Text("AI sort into Codex / Roster / Inventory…") },
+            onClick = onAiSort,
+        )
         DropdownMenuItem(text = { Text("Add to roster") }, onClick = onRoster)
         DropdownMenuItem(text = { Text("Add to inventory") }, onClick = onInventory)
         DropdownMenuItem(text = { Text("Copy") }, onClick = onCopy)
@@ -588,4 +782,55 @@ private fun AdventureRollCard(roll: AdventureRoll, modifier: Modifier = Modifier
             color = tokens.secondaryText,
         )
     }
+}
+
+/** Story prose with codex entry names/aliases as tappable links. */
+@Composable
+private fun CodexMentionText(
+    text: String,
+    targets: List<CodexMentionTarget>,
+    baseColor: Color,
+    linkColor: Color,
+    style: androidx.compose.ui.text.TextStyle,
+    onTap: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (targets.isEmpty()) {
+        Text(text, style = style, color = baseColor, modifier = modifier)
+        return
+    }
+    val mentions = remember(text, targets) { findCodexMentions(text, targets) }
+    val annotated = remember(text, mentions, linkColor) {
+        buildAnnotatedString {
+            append(text)
+            mentions.forEach { mention ->
+                addStyle(
+                    SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline),
+                    mention.start,
+                    mention.end,
+                )
+                addStringAnnotation(CodexMentionTag, mention.entryId, mention.start, mention.end)
+            }
+        }
+    }
+    var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+    Text(
+        annotated,
+        style = style,
+        color = baseColor,
+        onTextLayout = { layoutResult = it },
+        modifier = modifier.pointerInput(annotated) {
+            awaitEachGesture {
+                val down = awaitFirstDown(pass = PointerEventPass.Initial)
+                val layout = layoutResult ?: return@awaitEachGesture
+                val offset = layout.getOffsetForPosition(down.position)
+                val annotation = annotated.getStringAnnotations(CodexMentionTag, offset, offset)
+                    .firstOrNull()
+                if (annotation != null) {
+                    down.consume()
+                    onTap(annotation.item)
+                }
+            }
+        },
+    )
 }

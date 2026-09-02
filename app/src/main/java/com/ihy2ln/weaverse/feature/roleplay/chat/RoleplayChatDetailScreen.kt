@@ -14,6 +14,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -51,6 +52,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -82,6 +84,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.ihy2ln.weaverse.core.text.MediaGrid
 import com.ihy2ln.weaverse.core.text.PanelTemplates
 import com.ihy2ln.weaverse.core.text.PanelTemplate
+import com.ihy2ln.weaverse.core.text.StoryboardGridItem
+import com.ihy2ln.weaverse.core.text.isStoryboardSlotOccupied
 import com.ihy2ln.weaverse.data.db.entities.RpPageMeta
 import com.ihy2ln.weaverse.core.ui.components.CollapsibleUsageStrip
 import com.ihy2ln.weaverse.core.ui.components.EditTextAction
@@ -98,6 +102,10 @@ import com.ihy2ln.weaverse.feature.roleplay.friends.CharacterAvatar
 import com.ihy2ln.weaverse.core.ui.components.VoiceToTextField
 import com.ihy2ln.weaverse.core.ui.components.ZoomableMedia
 import com.ihy2ln.weaverse.core.ui.components.mergeSpokenText
+import com.ihy2ln.weaverse.feature.prompt.UnifiedPromptBar
+import com.ihy2ln.weaverse.feature.prompt.PromptModelPickerDialog
+import com.ihy2ln.weaverse.feature.prompt.PromptModelSelection
+import com.ihy2ln.weaverse.feature.prompt.PromptWordLimit
 import com.ihy2ln.weaverse.core.ui.components.rememberSpeechToText
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
@@ -142,8 +150,31 @@ fun RoleplayChatDetailScreen(
     val startDictateEdit = rememberSpeechToText { spoken ->
         editDraft = mergeSpokenText(editDraft, spoken)
     }
+    var promptCollapsed by rememberSaveable { mutableStateOf(false) }
+    var modelsOpen by remember { mutableStateOf(false) }
+    var modelSearch by rememberSaveable { mutableStateOf("") }
+    var minimumWordsText by rememberSaveable { mutableStateOf(state.minimumOutputWords.toString()) }
+    var maximumWordsText by rememberSaveable { mutableStateOf(state.outputWords.toString()) }
+    LaunchedEffect(state.minimumOutputWords) {
+        if (minimumWordsText.toIntOrNull() != state.minimumOutputWords) {
+            minimumWordsText = state.minimumOutputWords.toString()
+        }
+    }
+    LaunchedEffect(state.outputWords) {
+        if (maximumWordsText.toIntOrNull() != state.outputWords) {
+            maximumWordsText = state.outputWords.toString()
+        }
+    }
+    val minWords = minimumWordsText.toIntOrNull()
+    val maxWords = maximumWordsText.toIntOrNull()
+    val wordRangeValid = minWords != null && maxWords != null &&
+        minWords in PromptWordLimit.Minimum..PromptWordLimit.Maximum &&
+        maxWords in PromptWordLimit.Minimum..PromptWordLimit.Maximum && minWords <= maxWords
     val listState = rememberLazyListState()
     val mediaFocus = remember { FocusRequester() }
+    var selectedEmptySlotIndex by rememberSaveable(chatId) { mutableStateOf<Int?>(null) }
+    var showGeneratedImportChoice by remember { mutableStateOf(false) }
+    var generatedReplaceTargetKey by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(state.title, state.displayMode, showModeSwitcher) {
         onChromeChange(
@@ -171,15 +202,40 @@ fun RoleplayChatDetailScreen(
         if (uris.isNotEmpty()) viewModel.attachMedia(uris)
     }
 
+    // "Add pages" — each picked image becomes a whole storyboard page.
+    val pagesPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris ->
+        if (uris.isNotEmpty()) viewModel.importPages(uris)
+    }
+
+    val generatedPanelPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            viewModel.importGeneratedPanels(
+                uris = uris,
+                selectedSlotIndex = selectedEmptySlotIndex,
+                replaceTargetKey = generatedReplaceTargetKey,
+            )
+            selectedEmptySlotIndex = null
+        }
+        generatedReplaceTargetKey = null
+    }
+
     LaunchedEffect(state.mediaPickRequestId) {
         if (state.mediaPickRequestId > 0L) {
             mediaPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+            // Consume the request so returning to this screen never re-launches
+            // the picker on its own.
+            viewModel.clearMediaPickRequest()
         }
     }
 
     LaunchedEffect(state.audioPickRequestId) {
         if (state.audioPickRequestId > 0L) {
             audioPicker.launch(arrayOf("audio/*", "audio/mpeg", "audio/wav", "audio/x-wav"))
+            viewModel.clearAudioPickRequest()
         }
     }
 
@@ -191,7 +247,13 @@ fun RoleplayChatDetailScreen(
     }
 
     LaunchedEffect(state.selectedMediaKey) {
-        if (state.selectedMediaKey != null) runCatching { mediaFocus.requestFocus() }
+        if (state.selectedMediaKey != null) {
+            selectedEmptySlotIndex = null
+            runCatching { mediaFocus.requestFocus() }
+        }
+    }
+    LaunchedEffect(state.activePageId, state.activeTemplateId) {
+        selectedEmptySlotIndex = null
     }
 
     val compactStyle = MaterialTheme.typography.bodySmall.copy(
@@ -251,6 +313,61 @@ fun RoleplayChatDetailScreen(
         }
     }
 
+    state.imageEditor?.let { editor ->
+        PanelImageEditor(
+            editor = editor,
+            onSave = viewModel::saveEditedPanel,
+            onClose = viewModel::closeImageEditor,
+            onFindText = viewModel::editorFindText,
+            onSetLanguage = viewModel::editorSetLanguage,
+            onApplyRegions = viewModel::applyTranslatedRegions,
+        )
+        return
+    }
+
+    if (state.showImageGen) {
+        ImageGenDialog(
+            state = state,
+            onPrompt = viewModel::onImageGenPrompt,
+            onModel = viewModel::selectImageGenModel,
+            onGenerate = viewModel::generateImageMedia,
+            onDismiss = viewModel::closeImageGen,
+        )
+    }
+
+
+    if (showGeneratedImportChoice) {
+        AlertDialog(
+            onDismissRequest = { showGeneratedImportChoice = false },
+            title = { Text("Selected panel already has artwork") },
+            text = {
+                Text(
+                    "Choose where the first generated image should go. Replacement changes only the selected panel; all additional images use the next free slots.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        generatedReplaceTargetKey = state.selectedMediaKey
+                        selectedEmptySlotIndex = null
+                        showGeneratedImportChoice = false
+                        generatedPanelPicker.launch(arrayOf("image/*"))
+                    },
+                ) { Text("Replace selected") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        generatedReplaceTargetKey = null
+                        selectedEmptySlotIndex = null
+                        showGeneratedImportChoice = false
+                        generatedPanelPicker.launch(arrayOf("image/*"))
+                    },
+                ) { Text("Use next free slot") }
+            },
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -275,15 +392,54 @@ fun RoleplayChatDetailScreen(
         // Title + Messenger|DM|Roleplay live in AppShell WorkspaceChrome (collapsible).
         when (state.displayMode) {
             "roleplay" -> Column(modifier = Modifier.weight(1f)) {
+                if (state.storyboardStatus.isNotBlank()) {
+                    Text(
+                        state.storyboardStatus,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = InkSpacing.md, vertical = 2.dp),
+                    )
+                }
+                Text(
+                    "Codex/ImageGen → export PNG/JPG → select an empty layout slot → Import generated panel → adjust it.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.secondaryText,
+                    modifier = Modifier.padding(horizontal = InkSpacing.md, vertical = 2.dp),
+                )
                 PageStrip(
                     pages = state.pages,
                     activePageId = state.activePageId,
-                    onSelect = viewModel::switchPage,
+                    onSelect = { pageId ->
+                        selectedEmptySlotIndex = null
+                        viewModel.switchPage(pageId)
+                    },
                     onAddPage = viewModel::addPage,
                     onRenamePage = viewModel::renamePage,
                     onDeletePage = viewModel::deletePage,
-                    onApplyTemplate = viewModel::applyPanelTemplate,
+                    onApplyTemplate = { templateId ->
+                        selectedEmptySlotIndex = null
+                        viewModel.applyPanelTemplate(templateId)
+                    },
                     rightToLeft = rightToLeft,
+                    onImportPages = {
+                        pagesPicker.launch(
+                            arrayOf(
+                                "application/pdf",
+                                "application/zip",
+                                "application/x-cbz",
+                                "application/vnd.comicbook+zip",
+                                "image/*",
+                            ),
+                        )
+                    },
+                    onImportGeneratedPanel = {
+                        if (state.selectedMediaKey != null) {
+                            showGeneratedImportChoice = true
+                        } else {
+                            generatedReplaceTargetKey = null
+                            generatedPanelPicker.launch(arrayOf("image/*"))
+                        }
+                    },
                 )
                 ScrollGutterBackdrop(
                     modifier = Modifier
@@ -297,9 +453,17 @@ fun RoleplayChatDetailScreen(
                         compactStyle = compactStyle,
                         gridSize = MediaGrid.SIZE,
                         templateId = state.activeTemplateId,
+                        selectedEmptySlotIndex = selectedEmptySlotIndex,
                         textEmphasis = false,
-                        emptyHint = "An empty page.\n\nAdd Media, then tap a panel to move or resize it.\nPress / for AI · \\ to write it yourself.",
-                        onSelect = { msgId, blockId -> viewModel.selectMedia(msgId, blockId) },
+                        emptyHint = "An empty page.\n\nUse Add pages for a PDF, CBZ, webtoon, or page image. Long-press a panel for picture tools.\nPress / for AI · \\ to write it yourself.",
+                        onSelect = { msgId, blockId ->
+                            selectedEmptySlotIndex = null
+                            viewModel.selectMedia(msgId, blockId)
+                        },
+                        onEmptySlotSelect = { slotIndex ->
+                            viewModel.selectMedia(null, null)
+                            selectedEmptySlotIndex = slotIndex
+                        },
                         onRemove = viewModel::removeMedia,
                         onSnap = viewModel::setMediaGridCell,
                         onResizeSpan = viewModel::setMediaGridSpan,
@@ -311,7 +475,16 @@ fun RoleplayChatDetailScreen(
                         onOverlayMove = viewModel::moveTextOverlay,
                         onOverlayResize = viewModel::resizeTextOverlay,
                         onOverlayTap = viewModel::openOverlayEditor,
-                        onClearSelection = { viewModel.selectMedia(null, null) },
+                        onClearSelection = {
+                            selectedEmptySlotIndex = null
+                            viewModel.selectMedia(null, null)
+                        },
+                        onAddMedia = {
+                            mediaPicker.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
+                            )
+                        },
+                        onGenerateMedia = viewModel::openImageGen,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -487,11 +660,13 @@ fun RoleplayChatDetailScreen(
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.SemiBold,
                                 )
-                                Text(
-                                    state.streamingText,
-                                    style = compactStyle,
-                                    modifier = Modifier.padding(top = 2.dp),
-                                )
+                                SelectionContainer {
+                                    Text(
+                                        state.streamingText,
+                                        style = compactStyle,
+                                        modifier = Modifier.padding(top = 2.dp),
+                                    )
+                                }
                             }
                         }
                     }
@@ -521,22 +696,74 @@ fun RoleplayChatDetailScreen(
             )
         }
 
-        // The composer already carries attach / mic / send / AI-manual, so the old
-        // extra button row would only make the dock taller.
-        MessageComposer(
+        // The shared prompt window — same bar as the RPG adventure and Novel
+        // editor. Media attach stays on the mic-hold menu via the + button.
+        UnifiedPromptBar(
             value = state.input,
             onValueChange = viewModel::onInputChange,
             placeholder = "Message ${state.title.ifBlank { "chat" }}",
-            entryMode = state.entryMode,
-            isStreaming = state.isStreaming,
-            onSend = viewModel::send,
-            onCancel = viewModel::cancelGeneration,
-            onPickMedia = viewModel::requestMediaPick,
-            onPickAudio = viewModel::requestAudioPick,
-            onDictate = startDictateNew,
-            onToggleEntryMode = {
-                viewModel.setEntryMode(if (state.entryMode == "ai") "nai" else "ai")
+            collapsed = promptCollapsed,
+            onCollapsedChange = { promptCollapsed = it },
+            contextLabel = state.contextMeter?.label.orEmpty(),
+            minimumWords = minimumWordsText,
+            maximumWords = maximumWordsText,
+            onMinimumWordsChange = { value ->
+                minimumWordsText = value.filter(Char::isDigit).take(4)
+                minimumWordsText.toIntOrNull()?.let(viewModel::updateMinimumOutputWords)
             },
+            onMaximumWordsChange = { value ->
+                maximumWordsText = value.filter(Char::isDigit).take(4)
+                maximumWordsText.toIntOrNull()?.let(viewModel::updateOutputWords)
+            },
+            wordRangeValid = wordRangeValid,
+            modelLabel = PromptModelSelection.shortLabel(
+                PromptModelSelection.effectiveModelRef(state.selectedModelRef, state.defaultModelRef),
+                state.writingModels,
+            ),
+            onModelClick = { modelsOpen = true },
+            aiMode = state.entryMode != "nai",
+            onToggleMode = {
+                viewModel.setEntryMode(if (state.entryMode == "nai") "ai" else "nai")
+            },
+            streaming = state.isStreaming,
+            canSubmit = state.input.isNotBlank() && wordRangeValid,
+            canClear = state.input.isNotBlank(),
+            onSubmit = viewModel::send,
+            onCancel = viewModel::cancelGeneration,
+            onClear = viewModel::clearInput,
+            onUndoClear = viewModel::undoClearInput,
+            onRetry = viewModel::regenerateLatestReply,
+            onContinue = viewModel::continueAdventure,
+            onMicTap = { if (!state.isStreaming) startDictateNew() },
+            onAdd = viewModel::requestMediaPick,
+            onRoll = viewModel::rollAction,
+            onSpoken = { spoken ->
+                viewModel.onInputChange(mergeSpokenText(state.input, spoken))
+            },
+            compactSingleLine = true,
+            showCommandPopup = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
+        )
+    }
+
+    if (modelsOpen) {
+        PromptModelPickerDialog(
+            models = state.writingModels,
+            search = modelSearch,
+            onSearchChange = { modelSearch = it },
+            selectedRef = state.selectedModelRef,
+            defaultRef = state.defaultModelRef,
+            onSelect = { id ->
+                viewModel.selectModel(id)
+                modelsOpen = false
+            },
+            onUseDefault = {
+                viewModel.useDefaultModel()
+                modelsOpen = false
+            },
+            onDismiss = { modelsOpen = false },
         )
     }
 }
@@ -692,6 +919,10 @@ private fun PageStrip(
     onDeletePage: (String) -> Unit,
     onApplyTemplate: (String) -> Unit,
     rightToLeft: Boolean = false,
+    /** "Add pages" — import pictures or a whole PDF/CBZ/webtoon file. */
+    onImportPages: (() -> Unit)? = null,
+    /** Durable picker import for externally-generated panel artwork. */
+    onImportGeneratedPanel: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val tokens = inkTokens()
@@ -770,6 +1001,30 @@ private fun PageStrip(
                 .clickable { onAddPage() }
                 .padding(horizontal = InkSpacing.md, vertical = 4.dp),
         )
+        if (onImportPages != null) {
+            Text(
+                text = "Add pages",
+                style = MaterialTheme.typography.labelMedium,
+                color = tokens.secondaryText,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(inkRadiusSm()))
+                    .border(1.dp, tokens.hairline, RoundedCornerShape(inkRadiusSm()))
+                    .clickable { onImportPages() }
+                    .padding(horizontal = InkSpacing.sm, vertical = 4.dp),
+            )
+        }
+        if (onImportGeneratedPanel != null) {
+            Text(
+                text = "Import generated panel",
+                style = MaterialTheme.typography.labelMedium,
+                color = tokens.secondaryText,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(inkRadiusSm()))
+                    .border(1.dp, tokens.hairline, RoundedCornerShape(inkRadiusSm()))
+                    .clickable { onImportGeneratedPanel() }
+                    .padding(horizontal = InkSpacing.sm, vertical = 4.dp),
+            )
+        }
         Box {
             Text(
                 text = "Layout ▾",
@@ -874,6 +1129,7 @@ private fun PanelTemplatePreview(template: PanelTemplate) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MangaSnapGrid(
     panels: List<RpMediaRef>,
@@ -882,9 +1138,11 @@ private fun MangaSnapGrid(
     compactStyle: androidx.compose.ui.text.TextStyle,
     gridSize: Int = MediaGrid.SIZE,
     templateId: String = "",
+    selectedEmptySlotIndex: Int? = null,
     textEmphasis: Boolean = false,
     emptyHint: String,
     onSelect: (String, String) -> Unit,
+    onEmptySlotSelect: (Int) -> Unit = {},
     onRemove: (String, String) -> Unit,
     onSnap: (String, String, Int, Int) -> Unit,
     onResizeSpan: (String, String, Int, Int) -> Unit,
@@ -897,10 +1155,15 @@ private fun MangaSnapGrid(
     onOverlayResize: (String, String, String, Float) -> Unit,
     onOverlayTap: (String, String, String) -> Unit,
     onClearSelection: () -> Unit,
+    /** Long-press on an empty slot: add a picture/video to the page. */
+    onAddMedia: (() -> Unit)? = null,
+    /** Long-press on an empty slot: generate a picture with a cloud AI model. */
+    onGenerateMedia: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val tokens = inkTokens()
     val scroll = rememberScrollState()
+    var emptySlotMenuAt by remember { mutableStateOf<Int?>(null) }
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -926,7 +1189,17 @@ private fun MangaSnapGrid(
             // The chosen layout's slots, drawn as empty frames so the page reads as
             // a comic page before any media is dropped in.
             val template = PanelTemplates.byId(templateId)?.takeIf { gridSize == MediaGrid.SIZE }
+            val gridPanels = panels.map { panel ->
+                StoryboardGridItem(
+                    panel.gridCol,
+                    panel.gridRow,
+                    panel.gridColSpan,
+                    panel.gridRowSpan,
+                )
+            }
             template?.slots?.forEachIndexed { index, slot ->
+                val occupied = isStoryboardSlotOccupied(slot, gridPanels, gridSize)
+                val selectedSlot = !occupied && selectedEmptySlotIndex == index
                 // Always construct the complete template underneath the artwork.
                 // Existing media fills these frames; missing media leaves a numbered
                 // panel behind, so selecting a six-panel layout visibly creates six.
@@ -938,21 +1211,68 @@ private fun MangaSnapGrid(
                         .padding(2.dp)
                         .rotate(slot.rotationDeg)
                         .background(
-                            MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                            if (selectedSlot) {
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                            } else {
+                                MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
+                            },
                             RoundedCornerShape(inkRadiusSm()),
                         )
                         .border(
-                            1.5.dp,
-                            MaterialTheme.colorScheme.outline.copy(alpha = 0.72f),
+                            if (selectedSlot) 2.5.dp else 1.5.dp,
+                            if (selectedSlot) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.outline.copy(alpha = 0.72f)
+                            },
                             RoundedCornerShape(inkRadiusSm()),
+                        )
+                        .then(
+                            if (!occupied) {
+                                if (onAddMedia != null) {
+                                    Modifier.combinedClickable(
+                                        onClick = { onEmptySlotSelect(index) },
+                                        onLongClick = { emptySlotMenuAt = index },
+                                    )
+                                } else {
+                                    Modifier.clickable { onEmptySlotSelect(index) }
+                                }
+                            } else {
+                                Modifier
+                            },
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         "Panel ${index + 1}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = tokens.secondaryText,
+                        color = if (selectedSlot) MaterialTheme.colorScheme.primary else tokens.secondaryText,
                     )
+                    if (emptySlotMenuAt == index && (onAddMedia != null || onGenerateMedia != null)) {
+                        DropdownMenu(
+                            expanded = true,
+                            onDismissRequest = { emptySlotMenuAt = null },
+                        ) {
+                            if (onAddMedia != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Add picture / video") },
+                                    onClick = {
+                                        emptySlotMenuAt = null
+                                        onAddMedia()
+                                    },
+                                )
+                            }
+                            if (onGenerateMedia != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Generate picture (AI)") },
+                                    onClick = {
+                                        emptySlotMenuAt = null
+                                        onGenerateMedia()
+                                    },
+                                )
+                            }
+                        }
+                    }
                 }
             }
             // Snap grid stays active for move/resize/stack, but lines are hidden.
@@ -1377,6 +1697,7 @@ private fun MangaSnapPanel(
                 showMove = false,
                 showAdjustImage = !panel.isTextTile && !panel.isAudio,
                 showTextOverlay = !panel.isTextTile && !panel.isAudio,
+                showPictureTools = !panel.isTextTile && !panel.isAudio,
             ),
             onAction = { action ->
                 when (action) {
@@ -1529,11 +1850,14 @@ private fun MessengerRow(
                 }
             }
             if (message.text.isNotBlank()) {
-                Text(
-                    message.text,
-                    style = compactStyle,
-                    modifier = Modifier.padding(top = if (grouped) 0.dp else 2.dp),
-                )
+                // Selectable so any span can be copied, not just whole messages.
+                SelectionContainer {
+                    Text(
+                        message.text,
+                        style = compactStyle,
+                        modifier = Modifier.padding(top = if (grouped) 0.dp else 2.dp),
+                    )
+                }
             }
             if (message.usageText.isNotBlank()) {
                 Text(

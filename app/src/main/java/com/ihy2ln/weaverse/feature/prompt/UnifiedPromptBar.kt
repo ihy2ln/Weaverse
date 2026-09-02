@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,13 +18,17 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,6 +45,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.ihy2ln.weaverse.core.ui.components.ComposerMenuButton
 import com.ihy2ln.weaverse.core.ui.components.InkCheckIconButton
 import com.ihy2ln.weaverse.core.ui.components.InkClearIconButton
@@ -50,6 +56,8 @@ import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
+import com.ihy2ln.weaverse.feature.novel.codex.matchingBangCommands
+import com.ihy2ln.weaverse.feature.roleplay.chat.RpgTurnCommands
 
 /**
  * One compact prompt control shared by writing, chat, storyboard, and Adventure.
@@ -80,6 +88,8 @@ fun UnifiedPromptBar(
     onSubmit: () -> Unit,
     onCancel: () -> Unit,
     onClear: () -> Unit,
+    /** ⌫ press-and-hold undo of the last deletion. Null disables hold. */
+    onUndoClear: (() -> Unit)? = null,
     onSpoken: (String) -> Unit,
     /** Long-press menu actions: ↻ retry/resubmit and » continue. Null hides them. */
     onRetry: (() -> Unit)? = null,
@@ -100,10 +110,18 @@ fun UnifiedPromptBar(
     addSelected: Boolean = false,
     compactSingleLine: Boolean = false,
     onExtraAction: (() -> Unit)? = null,
+    /** Show the command preview popup while a command/hotkey is being typed. */
+    showCommandPopup: Boolean = false,
+    /** Battle focus: collapse to just the header line, whatever the user chose. */
+    forceCollapsed: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val tokens = inkTokens()
+    val isCollapsed = collapsed || forceCollapsed
     val shape = RoundedCornerShape(inkRadiusMd())
+    // Composer sizing from the PROMPT long-press menu: 0 Standard, 1 Tall, 2 Full.
+    var sizeIndex by rememberSaveable { mutableStateOf(0) }
+    val sizeNames = listOf("Standard", "Tall", "Full")
     // Hoisted TextFieldValue keeps the caret where the user left it, even when the
     // parent recomposes or focus moves away to the document and comes back.
     var fieldValue by remember { mutableStateOf(TextFieldValue(value)) }
@@ -117,21 +135,59 @@ fun UnifiedPromptBar(
             .clip(shape)
             .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.97f))
             .border(1.dp, InkAccentBlue, shape)
-            .padding(horizontal = if (collapsed) 4.dp else InkSpacing.xs, vertical = 2.dp),
+            .padding(horizontal = if (isCollapsed) 4.dp else InkSpacing.xs, vertical = 2.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                "PROMPT ${if (collapsed) "▴" else "▾"}",
-                modifier = Modifier.clickable { onCollapsedChange(!collapsed) }.padding(2.dp),
-                style = MaterialTheme.typography.labelSmall,
-                fontSize = 8.sp,
-                fontWeight = FontWeight.Bold,
-                color = InkAccentBlue,
-                maxLines = 1,
-            )
+            // Press-and-hold "PROMPT" for the layout menu: collapse, expand, resize.
+            Box {
+                var promptMenuOpen by remember { mutableStateOf(false) }
+                Text(
+                    "PROMPT ${if (isCollapsed) "▴" else "▾"}",
+                    modifier = Modifier
+                        .combinedClickable(
+                            onClick = { onCollapsedChange(!collapsed) },
+                            onLongClick = { promptMenuOpen = true },
+                            onLongClickLabel = "Prompt layout options",
+                        )
+                        .padding(2.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = InkAccentBlue,
+                    maxLines = 1,
+                )
+                DropdownMenu(
+                    expanded = promptMenuOpen,
+                    onDismissRequest = { promptMenuOpen = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Collapse") },
+                        onClick = {
+                            onCollapsedChange(true)
+                            promptMenuOpen = false
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Expand") },
+                        onClick = {
+                            onCollapsedChange(false)
+                            promptMenuOpen = false
+                        },
+                    )
+                    val nextSize = (sizeIndex + 1) % sizeNames.size
+                    DropdownMenuItem(
+                        text = { Text("Resize · ${sizeNames[nextSize]}") },
+                        onClick = {
+                            sizeIndex = nextSize
+                            onCollapsedChange(false)
+                            promptMenuOpen = false
+                        },
+                    )
+                }
+            }
             // Model lives next to the prompt label to keep the entry row short.
             Text(
                 "· $modelLabel",
@@ -161,7 +217,63 @@ fun UnifiedPromptBar(
                 )
             }
         }
-        if (collapsed) return@Column
+        if (isCollapsed) return@Column
+
+        if (showCommandPopup) {
+            val bangVm: BangCommandsViewModel = hiltViewModel()
+            val bangCommands by bangVm.commands.collectAsState()
+            val starCommands by bangVm.starCommands.collectAsState()
+            val trimmed = value.trimStart()
+            val bangMatches = if (trimmed.startsWith("!")) {
+                matchingBangCommands(trimmed, bangCommands)
+            } else {
+                emptyList()
+            }
+            val starMatches = if (trimmed.startsWith("*")) {
+                RpgTurnCommands.matches(trimmed, starCommands)
+            } else {
+                emptyList()
+            }
+            when {
+                bangMatches.isNotEmpty() -> CommandPreviewPopup(
+                    rows = bangMatches.map { CommandPreviewRow(it.title, it.description) },
+                    onSelect = { row ->
+                        val leading = value.removeSuffix(trimmed)
+                        val rest = trimmed.drop(1).dropWhile { it.isLetter() }
+                        onValueChange("${leading}${row.trigger}$rest")
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 2.dp),
+                )
+                starMatches.isNotEmpty() -> CommandPreviewPopup(
+                    rows = starMatches.map { CommandPreviewRow("*${it.keyword}", it.description) },
+                    onSelect = { row ->
+                        val leading = value.removeSuffix(trimmed)
+                        val rest = trimmed.drop(1).dropWhile { it.isLetter() }
+                        onValueChange("${leading}${row.trigger}$rest")
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 2.dp),
+                )
+                trimmed == "/" || trimmed == "\\" -> CommandPreviewPopup(
+                    rows = listOf(
+                        CommandPreviewRow("/", "AI generate — hand the text to the AI"),
+                        CommandPreviewRow("\\", "Manual entry — save it without the AI"),
+                        CommandPreviewRow("!…", "Codex quick-add — !character, !location, !object, !lore, !other"),
+                    ),
+                    onSelect = { row ->
+                        if (row.trigger != "!…") {
+                            onValueChange(value.removeSuffix(trimmed) + row.trigger)
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 2.dp),
+                )
+            }
+        }
 
         if (compactSingleLine) {
             Row(
@@ -194,7 +306,17 @@ fun UnifiedPromptBar(
                         enabled = !streaming,
                         textStyle = MaterialTheme.typography.labelMedium.copy(color = tokens.primaryText),
                         cursorBrush = SolidColor(tokens.primaryText),
-                        singleLine = true,
+                        singleLine = sizeIndex == 0,
+                        minLines = when (sizeIndex) {
+                            1 -> 3
+                            2 -> 6
+                            else -> 1
+                        },
+                        maxLines = when (sizeIndex) {
+                            1 -> 6
+                            2 -> 14
+                            else -> 1
+                        },
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -265,7 +387,7 @@ fun UnifiedPromptBar(
                     )
                 }
                 if (showClear) {
-                    InkClearIconButton(onClick = onClear, enabled = canClear, modifier = Modifier.size(23.dp))
+                    InkClearIconButton(onClick = onClear, enabled = canClear, modifier = Modifier.size(23.dp), onUndo = onUndoClear)
                 }
                 if (onMicTap != null) {
                     ComposerMenuButton(
@@ -329,8 +451,16 @@ fun UnifiedPromptBar(
                     enabled = !streaming,
                     textStyle = MaterialTheme.typography.bodyMedium.copy(color = tokens.primaryText),
                     cursorBrush = SolidColor(tokens.primaryText),
-                    minLines = 1,
-                    maxLines = 3,
+                    minLines = when (sizeIndex) {
+                        1 -> 3
+                        2 -> 6
+                        else -> 1
+                    },
+                    maxLines = when (sizeIndex) {
+                        1 -> 8
+                        2 -> 16
+                        else -> 3
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -365,6 +495,7 @@ fun UnifiedPromptBar(
                     onClick = onClear,
                     enabled = canClear,
                     modifier = Modifier.size(26.dp),
+                    onUndo = onUndoClear,
                 )
             }
             VoiceInputButton(

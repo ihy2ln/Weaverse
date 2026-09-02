@@ -68,3 +68,74 @@ fun backpackUsedSlots(items: List<RpItem>, equipment: Map<String, String>): Int 
     backpackContents(items, equipment).sumOf { item ->
         item.quantity.coerceAtLeast(1) * item.slotSize.coerceAtLeast(1)
     }
+
+/**
+ * What the item ledger calls things. A person carries an inventory; a place
+ * stores contents; an object is made of parts. The table underneath is the
+ * same — only the words, and the body-shaped bits (equipment slots, a
+ * backpack), change.
+ */
+data class InventoryVocabulary(
+    val tabLabel: String,
+    val addLabel: String,
+    val addDialogTitle: String,
+    val weightLabel: String,
+    val countNoun: String,
+    val searchLabel: String,
+    val emptyText: String,
+    val preparingText: String,
+    /** Head/torso/weapon slots only make sense on a body. */
+    val showEquipment: Boolean,
+    /** So does an equipped backpack and its capacity. */
+    val showBackpack: Boolean,
+    val filters: List<InventoryFilter>,
+) {
+    companion object {
+        /** A character's own pack — the original inventory, unchanged. */
+        val Carried = InventoryVocabulary(
+            tabLabel = "Inventory",
+            addLabel = "+ Item",
+            addDialogTitle = "Add item",
+            weightLabel = "WEIGHT CARRIED",
+            countNoun = "items",
+            searchLabel = "Search items, types, rarities, or tags",
+            emptyText = "No items yet. Use + Item to add equipment or supplies.",
+            preparingText = "Preparing this pack…",
+            showEquipment = true,
+            showBackpack = true,
+            filters = InventoryFilter.entries,
+        )
+
+        /** What a place holds: stock, supplies, and whatever is found there. */
+        val Stored = InventoryVocabulary(
+            tabLabel = "Contents",
+            addLabel = "+ Item",
+            addDialogTitle = "Add to contents",
+            weightLabel = "WEIGHT STORED",
+            countNoun = "items",
+            searchLabel = "Search contents, types, or tags",
+            emptyText = "Nothing stored here yet. Use + Item for stock, supplies " +
+                "or anything kept in this place.",
+            preparingText = "Preparing this place's contents…",
+            showEquipment = false,
+            showBackpack = false,
+            filters = listOf(InventoryFilter.All, InventoryFilter.Attunement),
+        )
+
+        /** What an object is made of, or holds: pieces, materials, contents. */
+        val PartsOf = InventoryVocabulary(
+            tabLabel = "Components",
+            addLabel = "+ Part",
+            addDialogTitle = "Add component",
+            weightLabel = "TOTAL WEIGHT",
+            countNoun = "parts",
+            searchLabel = "Search parts, materials, or tags",
+            emptyText = "No components yet. Use + Part for the pieces, materials " +
+                "or contents of this object.",
+            preparingText = "Preparing this object's components…",
+            showEquipment = false,
+            showBackpack = false,
+            filters = listOf(InventoryFilter.All, InventoryFilter.Attunement),
+        )
+    }
+}

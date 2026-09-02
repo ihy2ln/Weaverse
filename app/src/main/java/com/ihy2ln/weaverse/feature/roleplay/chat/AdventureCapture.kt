@@ -1,6 +1,7 @@
 package com.ihy2ln.weaverse.feature.roleplay.chat
 
 import com.ihy2ln.weaverse.ai.AiGenerationService
+import com.ihy2ln.weaverse.core.text.toJson
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
 import com.ihy2ln.weaverse.data.db.entities.RpCharacterEntity
 import com.ihy2ln.weaverse.data.db.entities.RpItem
@@ -52,10 +53,20 @@ class AdventureCapture @Inject constructor(
         val carrier: String = "",
     )
 
+    /** Free text that belongs in a codex entry rather than a sheet or pack. */
+    @Serializable
+    data class ExtractedLore(
+        val title: String = "",
+        val category: String = "Lore",
+        val text: String = "",
+        val uncertain: Boolean = false,
+    )
+
     @Serializable
     data class Extraction(
         val characters: List<ExtractedCharacter> = emptyList(),
         val items: List<ExtractedItem> = emptyList(),
+        val lore: List<ExtractedLore> = emptyList(),
     )
 
     /** Extract + apply in one step; never throws into the chat flow. */
@@ -78,7 +89,8 @@ class AdventureCapture @Inject constructor(
             append("{\"characters\":[{\"name\":\"\",\"inParty\":false,\"characterClass\":\"\",")
             append("\"species\":\"\",\"level\":0,\"currentHp\":0,\"maxHp\":0,\"armorClass\":0,")
             append("\"appearance\":\"\",\"notes\":\"\"}],")
-            append("\"items\":[{\"name\":\"\",\"quantity\":1,\"notes\":\"\",\"carrier\":\"\"}]}\n")
+            append("\"items\":[{\"name\":\"\",\"quantity\":1,\"notes\":\"\",\"carrier\":\"\"}],")
+            append("\"lore\":[]}\n")
             append("Omit fields you do not know. Use empty lists when nothing applies. ")
             append("Mark party members (the player's team) with inParty=true. For items, ")
             append("set carrier to the character who carries it, or \"party\" if shared.\n\n")
@@ -92,6 +104,56 @@ class AdventureCapture @Inject constructor(
         return parse(result.text)
     }
 
+    /**
+     * Full AI routing for the "AI sort into Codex" capture: splits selected
+     * text into character-sheet facts, inventory items, and codex lore (with
+     * a suggested category). Rows the model is unsure about are flagged with
+     * [ExtractedLore.uncertain] so the review dialog can ask the user.
+     */
+    suspend fun plan(text: String): CapturePlan? {
+        if (!aiGeneration.hasApiKey()) return null
+        val source = text.trim().take(6000)
+        if (source.isBlank()) return null
+        val instruction = buildString {
+            append("You are the campaign bookkeeper for a writing app. Split the selected text below ")
+            append("into the right destination sections. Reply with ONLY a JSON object, no prose:\n")
+            append("{\"characters\":[{\"name\":\"\",\"inParty\":false,\"characterClass\":\"\",")
+            append("\"species\":\"\",\"level\":0,\"currentHp\":0,\"maxHp\":0,\"armorClass\":0,")
+            append("\"appearance\":\"\",\"notes\":\"\"}],")
+            append("\"items\":[{\"name\":\"\",\"quantity\":1,\"notes\":\"\",\"carrier\":\"\"}],")
+            append("\"lore\":[{\"title\":\"\",\"category\":\"Lore\",\"text\":\"\",\"uncertain\":false}]}\n")
+            append("Rules:\n")
+            append("- characters: facts that belong on a character sheet (class, species, level, ")
+            append("hp, armor class, appearance, backstory). Only include fields the text states.\n")
+            append("- items: physical objects with a count (weapons, gear, treasure, supplies).\n")
+            append("- lore: everything else worth keeping — worldbuilding, history, locations, ")
+            append("rumors. Set category to Characters, Locations, Objects, Lore, Factions, or ")
+            append("Events. Set uncertain=true when you cannot tell if the text is lore, a ")
+            append("character fact, or an item.\n")
+            append("Omit empty sections.\n\n")
+            append("Selected text:\n<text>\n$source\n</text>")
+        }
+        val result = aiGeneration.complete(
+            userMessage = instruction,
+            maxTokens = 1200,
+            temperature = 0.2,
+        )
+        val parsed = parse(result.text) ?: return null
+        val hasContent = parsed.characters.isNotEmpty() || parsed.items.isNotEmpty() ||
+            parsed.lore.any { it.text.isNotBlank() || it.title.isNotBlank() }
+        return if (hasContent) CapturePlan(
+            characters = parsed.characters,
+            items = parsed.items,
+            lore = parsed.lore,
+        ) else null
+    }
+
+    data class CapturePlan(
+        val characters: List<ExtractedCharacter>,
+        val items: List<ExtractedItem>,
+        val lore: List<ExtractedLore>,
+    )
+
     /** Models wrap JSON in prose or code fences; take the outermost braces. */
     fun parse(raw: String): Extraction? {
         val start = raw.indexOf('{')
@@ -103,12 +165,97 @@ class AdventureCapture @Inject constructor(
     }
 
     suspend fun apply(extraction: Extraction, chatId: String) {
-        applyCharacters(extraction.characters)
+        applyCharacters(extraction.characters, chatId)
         applyItems(extraction.items, chatId)
     }
 
+    /**
+     * Applies an AI-routed plan: characters merge into the roster (with a
+     * linked codex entry in the Characters category), items file into the
+     * right carrier's inventory, and lore blobs become codex entries in the
+     * suggested category. Returns a human-readable placement summary.
+     */
+    suspend fun applyPlan(plan: CapturePlan, chatId: String): String {
+        val appliedCharacters = applyCharacters(plan.characters, chatId)
+        val appliedItems = applyItems(plan.items, chatId)
+        val appliedLore = applyLore(plan.lore, chatId)
+        return listOf(appliedCharacters.joinToString(", "), appliedItems, appliedLore)
+            .filter { it.isNotBlank() }
+            .joinToString(" · ")
+    }
+
+    /** Writes lore blobs as codex entries in the suggested category. */
+    private suspend fun applyLore(lore: List<ExtractedLore>, chatId: String): String {
+        val applied = mutableListOf<String>()
+        lore.filter { it.text.isNotBlank() || it.title.isNotBlank() }.forEach { blob ->
+            val chat = db.roleplayDao().getChat(chatId)
+            val scopeId = chat?.bookId ?: "global"
+            val categoryName = blob.category.ifBlank { "Lore" }
+            val category = ensureCategory(categoryName, scopeId)
+            val entry = ensureCodexEntry(category, scopeId, blob.title.ifBlank { categoryName })
+            db.codexDao().upsertEntry(
+                entry.copy(
+                    plainText = listOf(entry.plainText, blob.text.trim())
+                        .filter { it.isNotBlank() }
+                        .joinToString("\n\n"),
+                    updatedAt = System.currentTimeMillis(),
+                ),
+            )
+            applied += "\"${entry.name}\" → Codex · $categoryName"
+        }
+        return applied.joinToString(", ")
+    }
+
+    /** Finds a codex category by name in the scope, creating it when missing. */
+    private suspend fun ensureCategory(name: String, scopeId: String): com.ihy2ln.weaverse.data.db.entities.CodexCategoryEntity {
+        val existing = db.codexDao().getAllCategories().firstOrNull {
+            it.name.equals(name, ignoreCase = true) &&
+                (it.scopeId == scopeId || it.scopeId == com.ihy2ln.weaverse.data.repo.CodexScopes.ID)
+        }
+        if (existing != null) return existing
+        val now = System.currentTimeMillis()
+        val entity = com.ihy2ln.weaverse.data.db.entities.CodexCategoryEntity(
+            id = "rpg-cat-${UUID.randomUUID()}",
+            scopeType = "book",
+            scopeId = scopeId,
+            name = name,
+            colorHex = if (name.equals("Characters", ignoreCase = true)) "#3F7A5A" else "#6B5B95",
+            sortOrder = 100,
+            updatedAt = now,
+        )
+        db.codexDao().upsertCategory(entity)
+        return entity
+    }
+
+    /** Finds a codex entry by name in the category, creating it when missing. */
+    private suspend fun ensureCodexEntry(
+        category: com.ihy2ln.weaverse.data.db.entities.CodexCategoryEntity,
+        scopeId: String,
+        name: String,
+    ): com.ihy2ln.weaverse.data.db.entities.CodexEntryEntity {
+        val existing = db.codexDao().getAllEntries().firstOrNull {
+            it.categoryId == category.id && it.name.equals(name, ignoreCase = true)
+        }
+        if (existing != null) return existing
+        val now = System.currentTimeMillis()
+        val entity = com.ihy2ln.weaverse.data.db.entities.CodexEntryEntity(
+            id = "rpg-codex-${UUID.randomUUID()}",
+            categoryId = category.id,
+            scopeType = "book",
+            scopeId = scopeId,
+            name = name,
+            docJson = com.ihy2ln.weaverse.core.text.Document.fromPlainText("").toJson(),
+            plainText = "",
+            isAiGenerated = true,
+            createdAt = now,
+            updatedAt = now,
+        )
+        db.codexDao().upsertEntry(entity)
+        return entity
+    }
+
     /** Merges extracted characters into the roster; returns the names processed. */
-    suspend fun applyCharacters(chars: List<ExtractedCharacter>): List<String> {
+    suspend fun applyCharacters(chars: List<ExtractedCharacter>, chatId: String? = null): List<String> {
         val dao = db.roleplayDao()
         val applied = mutableListOf<String>()
         chars.filter { it.name.isNotBlank() }.forEach { extracted ->
@@ -141,11 +288,12 @@ class AdventureCapture @Inject constructor(
             } else {
                 val sheet = decodeRpgSheet(existing.extensionsJson)
                 val merged = sheet.copy(
+                    characterClass = sheet.characterClass.ifBlank { extracted.characterClass },
                     species = sheet.species.ifBlank { extracted.species },
-                    level = if (extracted.level > 0 && sheet.level <= 1) extracted.level else sheet.level,
-                    currentHp = if (extracted.currentHp > 0 && sheet.currentHp <= 10) extracted.currentHp else sheet.currentHp,
-                    maxHp = if (extracted.maxHp > 0 && sheet.maxHp <= 10) extracted.maxHp else sheet.maxHp,
-                    armorClass = if (extracted.armorClass > 0 && sheet.armorClass <= 10) extracted.armorClass else sheet.armorClass,
+                    level = if (extracted.level > sheet.level) extracted.level else sheet.level,
+                    currentHp = if (extracted.currentHp > 0 && extracted.currentHp > sheet.currentHp) extracted.currentHp else sheet.currentHp,
+                    maxHp = if (extracted.maxHp > sheet.maxHp) extracted.maxHp else sheet.maxHp,
+                    armorClass = if (extracted.armorClass > sheet.armorClass) extracted.armorClass else sheet.armorClass,
                     appearance = sheet.appearance.ifBlank { extracted.appearance },
                 )
                 dao.upsertCharacter(
@@ -155,6 +303,24 @@ class AdventureCapture @Inject constructor(
                         extensionsJson = encodeRpgSheet(existing.extensionsJson, merged),
                     ),
                 )
+            }
+            // Codex parity: every rostered character gets a linked entry in the
+            // work's Characters category (defaultCodexId → entry).
+            if (chatId != null) {
+                val bookId = db.roleplayDao().getChat(chatId)?.bookId ?: "global"
+                val category = ensureCategory("Characters", bookId)
+                val entry = ensureCodexEntry(category, bookId, name)
+                if (extracted.notes.isNotBlank()) {
+                    val current = db.codexDao().getAllEntries().find { it.id == entry.id }
+                    if (current != null && current.plainText.isBlank()) {
+                        db.codexDao().upsertEntry(
+                            current.copy(plainText = extracted.notes, updatedAt = System.currentTimeMillis()),
+                        )
+                    }
+                }
+                dao.getCharacters().firstOrNull { it.name.equals(name, ignoreCase = true) }?.let { character ->
+                    dao.upsertCharacter(character.copy(defaultCodexId = entry.id))
+                }
             }
             applied += name
         }

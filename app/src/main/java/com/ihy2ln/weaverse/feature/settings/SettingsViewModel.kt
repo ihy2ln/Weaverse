@@ -35,7 +35,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-enum class ModelListTab { Writing, TextToSpeech, All }
+enum class ModelListTab { Writing, ImageGeneration, TextToSpeech, All }
 
 data class SettingsUiState(
     val prefs: UserPreferences = UserPreferences(),
@@ -51,6 +51,7 @@ data class SettingsUiState(
     val models: List<ModelInfo> = emptyList(),
     val writingModels: List<ModelInfo> = emptyList(),
     val ttsModels: List<ModelInfo> = emptyList(),
+    val imageModels: List<ModelInfo> = emptyList(),
     val modelSearch: String = "",
     val modelTab: ModelListTab = ModelListTab.Writing,
     val modelsCachedAt: Long = 0L,
@@ -101,18 +102,14 @@ class SettingsViewModel @Inject constructor(
                     ?.let { mediaRepository.getById(it) }
                 val label = when {
                     media == null -> "None"
-                    media.type == "video" -> "Video (stored; playback deferred)"
+                    media.type == "video" -> "Video · loops muted behind the shell"
                     else -> "Image · ${media.mimeType}"
                 }
                 _uiState.update {
                     it.copy(
                         prefs = prefs,
                         backgroundLabel = label,
-                        backgroundNote = if (media?.type == "video") {
-                            "Video backgrounds are saved but shell applies images only for now."
-                        } else {
-                            ""
-                        },
+                        backgroundNote = "",
                     )
                 }
                 if (lastScannedTopicMediaRoot != prefs.topicMediaLibraryRoot) {
@@ -130,6 +127,7 @@ class SettingsViewModel @Inject constructor(
                         models = modelCache.toModelInfo(models),
                         writingModels = modelCache.writingModels(models),
                         ttsModels = modelCache.ttsModels(models),
+            imageModels = modelCache.toModelInfo(models).filter { it.generatesImages },
                         modelsCachedAt = cachedAt,
                     )
                 }
@@ -450,6 +448,40 @@ class SettingsViewModel @Inject constructor(
 
     fun clearBackground() {
         viewModelScope.launch { settings.setBackgroundMediaId("") }
+    }
+
+    /** Adds a custom `!keyword` command that files entries under [kindName]. */
+    fun addBangCommand(keyword: String, kindName: String) {
+        viewModelScope.launch { settings.addBangCommand(keyword, kindName) }
+    }
+
+    /** Removes a composer command row (built-ins are hidden, customs deleted). */
+    fun removeBangCommand(keyword: String, isBuiltIn: Boolean) {
+        viewModelScope.launch { settings.removeBangCommand(keyword, isBuiltIn) }
+    }
+
+    /** Restores all built-in composer commands and clears custom ones. */
+    fun resetBangCommands() {
+        viewModelScope.launch { settings.resetBangCommands() }
+    }
+
+    /** Adds a custom `*keyword` RPG turn command. */
+    fun addStarCommand(keyword: String, description: String, requiresRoll: Boolean) {
+        viewModelScope.launch { settings.addStarCommand(keyword, description, requiresRoll) }
+    }
+
+    /** Removes a `*` RPG turn command row (built-ins are hidden, customs deleted). */
+    fun removeStarCommand(keyword: String, isBuiltIn: Boolean) {
+        viewModelScope.launch { settings.removeStarCommand(keyword, isBuiltIn) }
+    }
+
+    /** Restores all built-in `*` commands and clears custom ones. */
+    fun resetStarCommands() {
+        viewModelScope.launch { settings.resetStarCommands() }
+    }
+
+    fun setProfileBackgroundEnabled(enabled: Boolean) {
+        viewModelScope.launch { settings.setProfileBackgroundEnabled(enabled) }
     }
 
     fun exportBackup() {

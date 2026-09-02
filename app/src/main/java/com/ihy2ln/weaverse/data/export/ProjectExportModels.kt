@@ -169,6 +169,7 @@ data class ChatThreadDto(
     val promptId: String? = null,
     val modelRef: String = "",
     val sceneId: String? = null,
+    val parentThreadId: String? = null,
     val createdAt: Long = 0,
     val updatedAt: Long = 0,
 )

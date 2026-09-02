@@ -362,6 +362,173 @@ class CodexRepository @Inject constructor(
         }
     }
 
+    /** Finds a category by name in the shared codex, creating it when missing. */
+    suspend fun ensureCategory(name: String): CodexCategoryEntity {
+        val existing = db.codexDao().getAllCategories()
+            .firstOrNull { it.name.equals(name, ignoreCase = true) }
+        if (existing != null) return existing
+        val entity = CodexCategoryEntity(
+            id = "cat-${UUID.randomUUID()}",
+            scopeType = CodexScopes.TYPE,
+            scopeId = CodexScopes.ID,
+            name = name,
+            colorHex = if (name.equals("Characters", ignoreCase = true)) "#3F7A5A" else "#6B5B95",
+            sortOrder = 100,
+            updatedAt = System.currentTimeMillis(),
+        )
+        db.codexDao().upsertCategory(entity)
+        return entity
+    }
+
+    /** Creates a user-defined category in the shared codex; name collisions return the existing one. */
+    suspend fun createCategory(name: String, colorHex: String): CodexCategoryEntity {
+        val trimmed = name.trim()
+        val categories = db.codexDao().getAllCategories()
+        categories.firstOrNull { it.name.equals(trimmed, ignoreCase = true) }?.let { return it }
+        val entity = CodexCategoryEntity(
+            id = "cat-${UUID.randomUUID()}",
+            scopeType = CodexScopes.TYPE,
+            scopeId = CodexScopes.ID,
+            name = trimmed,
+            colorHex = colorHex,
+            sortOrder = (categories.maxOfOrNull { it.sortOrder } ?: 0) + 1,
+            updatedAt = System.currentTimeMillis(),
+        )
+        db.codexDao().upsertCategory(entity)
+        return entity
+    }
+
+    /** One bundled game-world entry for the "Worlds" codex section. */
+    private data class WorldSeed(val title: String, val text: String)
+
+    private val worldSeeds = listOf(
+        WorldSeed(
+            "Genshin Impact · Teyvat",
+            "Teyvat is a world of seven nations, each ruled by an Archon and shaped by an ideal: " +
+                "Mondstadt (Freedom, the Anemo Archon Barbatos), Liyue (Contracts, the Geo Archon Morax/Rex Lapis), " +
+                "Inazuma (Eternity, the Electro Archon Beelzebul/Raiden Shogun), Sumeru (Wisdom, the Dendro " +
+                "Archon Lesser Lord Kusanali), Fontaine (Justice, the Hydro Archon Focalors), Natlan (War, the " +
+                "Pyro Archon Murata), and Snezhnaya (the Cryo Tsaritsa). Mortals blessed by the gods receive " +
+                "Visions — crystal foci that let them channel one of seven elements: Anemo, Geo, Electro, " +
+                "Dendro, Hydro, Pyro, Cryo. Elements react on contact (Vaporize, Melt, Overloaded, Superconduct, " +
+                "Swirl, Crystallize, Bloom), shaping both combat and daily craft. Key powers: the Fatui of " +
+                "Snezhnaya and their Eleven Harbingers seek the Archons' Gnoses; the Abyss Order breeds monsters " +
+                "in the ruins beneath; Celestia, the floating island, watches (and punishes) forbidden knowledge; " +
+                "Khaenri'ah, a godless nation destroyed five hundred years ago, haunts the world's history. " +
+                "Culture: guilds (Adventurers' Guild), festivals, knights (Knights of Favonius, Millelith, " +
+                "Tenryou Commission), cuisine as a point of pride, and ley lines that record memory. Tones: " +
+                "bright adventure hiding old grief; travel, festivals, ancient ruins, and companionship.",
+        ),
+        WorldSeed(
+            "Wuthering Waves · Solaris-3",
+            "Solaris-3 is a world recovering from the Lament, a catastrophe that scattered destructive " +
+                "frequencies across the land and erased whole civilizations. Human enclaves — most notably " +
+                "the city of Jinzhou with its Midnight Rangers — survive behind Resonance Beacons that repel " +
+                "Tacet Discords: beasts of condensed negative frequency born from the Lament's echoes. " +
+                "Resonators are rare people whose bodies attune to frequencies, granting elemental-flavored " +
+                "powers (Aero, Electro, Glacio, Fusion, Havoc, Spectro) and the ability to absorb defeated " +
+                "Tacet Discords as Echoes — wearable shapes that grant their forms and skills. Factions: " +
+                "the Fractsidus, who weaponize the Lament and encourage its spread; the ruling Tianhu of " +
+                "Jinzhou; wandering pioneers charting the No Man's Land; Sentinels — ancient guardian constructs " +
+                "left by lost civilizations. Ruins (Sonance Caskets, reverberating tanks) hold pre-Lament " +
+                "technology and memory recordings. Tones: kinetic, agile action; sound and vibration motifs; " +
+                "mystery archaeology; hope rebuilt from catastrophe.",
+        ),
+        WorldSeed(
+            "Brown Dust 2",
+            "Brown Dust 2 unfolds on a mercenary-torn dark-fantasy continent where sellsword companies, " +
+                "not knightly orders, decide the fate of nations. The great wars left bands of veterans — " +
+                "companies like the Steel Rainbow — famous, feared, and often broke. Powers: the Veltrin " +
+                "imperial remnants, ambitious duchies, the Church's inquisitors, merchant guilds that hire " +
+                "whole armies, and villages that pay in crops and favors. Ancient evils stir beneath the " +
+                "politics: demons bound by old contracts, witch covens, cursed relics, and forgotten labyrinths. " +
+                "Adventures read as episodes: a caravan run through bandit country, a haunted mining town, an " +
+                "arena conspiracy, a plague with a human source. The tone is mature but warm — loyal companions, " +
+                "flirtatious banter, hard bargains, morally gray contracts, and small victories that matter. " +
+                "Combat favors tactical squads: each specialist (front-line tanks, ranged snipers, healers, " +
+                "magical damage-dealers) covers another's weakness; positioning and skill order win fights " +
+                "that raw strength cannot.",
+        ),
+        WorldSeed(
+            "World of Warcraft · Azeroth",
+            "Azeroth is a high-adventure world split between two great factions: the Alliance (Stormwind " +
+                "humans, Ironforge dwarves, Gnomeregan gnomes, night elves of Darnassus, draenei, worgen, " +
+                "and more) and the Horde (Orgrimmar orcs, Thunder Bluff tauren, Undercity Forsaken, Sen'jin " +
+                "trolls, blood elves of Silvermoon, goblins). Magic is real and dangerous: arcane draws on " +
+                "the Twisting Nether and the ley lines; divine light empowers paladins and priests; shamanism " +
+                "speaks with the elements; druids walk the Emerald Dream; warlocks bargain with demons; death " +
+                "knights and demon hunters carry their own curses. Iconic threats: the undead Scourge and the " +
+                "Lich King, the Burning Legion's demons, the Old Gods (C'Thun, Yogg-Saron, N'Zoth) whose " +
+                "whispers corrupt from beneath the earth, and the dragon Aspects. Set-pieces: dungeons and " +
+                "raids as expedition sites, battlegrounds between factions, traveling by gryphon, wyvern, boat, " +
+                "and mount. Culture: taverns and quest boards, professions (blacksmithing, alchemy, " +
+                "enchanting, cooking), honor and glory, and a fragile peace that war could shatter at any time.",
+        ),
+        WorldSeed(
+            "Final Fantasy XIV · Hydaelyn",
+            "Hydaelyn is a world of aether — the energy of all souls — and of shards: reflections of the " +
+                "source world, sundered in an ancient calamity. The players' stage is Eorzea on the source: " +
+                "the forest city-state of Gridania, the sea port Limsa Lominsa, the desert sultanate Ul'dah, " +
+                "the theocracy of Ishgard, the far eastern lands of Doma and Kugane, and the Garlean Empire " +
+                "ruthlessly conquering from the north with magitek. Adventurers join guilds, take jobs — " +
+                "paladin, warrior, white mage, black mage, dragoon, monk, summoner, scholar, ninja, samurai, " +
+                "red mage, sage, reaper, and more — each a discipline with its own soul crystal. Great threats: " +
+                "primals, gods summoned from belief and aether (Ifrit, Garuda, Titan, Ramuh, Leviathan, " +
+                "Bahamut, Zodiark, Hydaelyn) whose tempering enslaves worshippers; the Ascians, masked " +
+                "immortals scheming to rejoin and rule the shards; the Final Days that once ended worlds. " +
+                "The Warrior of Light bears the Echo — the ability to survive primal tempering and witness " +
+                "the past. Themes: found fellowship (the Scions of the Seventh Dawn), duty and sacrifice, " +
+                "crystals as memory, hope rebuilt after calamity. Structure: grand emotional story arcs " +
+                "punctuated by small-party trials, dungeons, and raids.",
+        ),
+    )
+
+    /**
+     * Creates the "Worlds" codex section and seeds the bundled game-world
+     * entries once — reference lore the AI can pull whenever a campaign touches
+     * one of these settings. Users add more worlds with the category's "+".
+     */
+    suspend fun ensureWorldsCategory() {
+        val categories = db.codexDao().getAllCategories()
+        var category = categories.firstOrNull { it.name.equals("Worlds", ignoreCase = true) }
+        if (category == null) {
+            category = CodexCategoryEntity(
+                id = "cat-worlds",
+                scopeType = CodexScopes.TYPE,
+                scopeId = CodexScopes.ID,
+                name = "Worlds",
+                colorHex = "#2F7BBF",
+                sortOrder = (categories.maxOfOrNull { it.sortOrder } ?: 0) + 1,
+                updatedAt = System.currentTimeMillis(),
+            )
+            db.codexDao().upsertCategory(category)
+        }
+        val existing = db.codexDao().getAllEntries()
+            .filter { it.categoryId == category.id }
+            .map { it.name.lowercase() }
+            .toSet()
+        worldSeeds.forEach { seed ->
+            if (seed.title.lowercase() in existing) return@forEach
+            val now = System.currentTimeMillis()
+            db.codexDao().upsertEntry(
+                CodexEntryEntity(
+                    id = "entry-world-" + seed.title.lowercase()
+                        .replace(Regex("[^a-z0-9]+"), "-")
+                        .trim('-'),
+                    categoryId = category.id,
+                    scopeType = CodexScopes.TYPE,
+                    scopeId = CodexScopes.ID,
+                    name = seed.title,
+                    docJson = Document.fromPlainText(seed.text).toJson(),
+                    plainText = seed.text,
+                    trackMentions = true,
+                    createdAt = now,
+                    updatedAt = now,
+                ),
+            )
+        }
+    }
+
     suspend fun getEntry(id: String): CodexEntryEntity? = db.codexDao().observeEntry(id).first()
 
     suspend fun saveEntry(entity: CodexEntryEntity) = db.codexDao().upsertEntry(entity)
@@ -403,6 +570,8 @@ class CodexRepository @Inject constructor(
         caseSensitiveMatching: Boolean? = null,
         imageMediaId: String? = null,
         clearImageMediaId: Boolean = false,
+        sheetJson: String? = null,
+        inventoryJson: String? = null,
     ) {
         val current = db.codexDao().observeEntry(id).first() ?: return
         val doc = Document.fromPlainText(plainText)
@@ -420,6 +589,8 @@ class CodexRepository @Inject constructor(
                     imageMediaId != null -> imageMediaId
                     else -> current.imageMediaId
                 },
+                sheetJson = sheetJson ?: current.sheetJson,
+                inventoryJson = inventoryJson ?: current.inventoryJson,
                 updatedAt = System.currentTimeMillis(),
             ),
         )

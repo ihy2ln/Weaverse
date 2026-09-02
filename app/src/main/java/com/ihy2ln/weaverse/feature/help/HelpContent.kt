@@ -49,13 +49,23 @@ object HelpContent {
             summary = "Plan · Write · Chat · Review",
             entries = listOf(
                 HelpEntry("Plan", "The outline: Book, Chapter, Scene, Scene beat."),
-                HelpEntry("Write", "The scene editor, with media blocks and codex highlighting."),
+                HelpEntry(
+                    "Write",
+                    "The scene editor, with media blocks and codex highlighting. " +
+                        "Codex entry names render as underlined links — tap one to open " +
+                        "the entry, then Back to return to your exact spot.",
+                ),
                 HelpEntry(
                     "Read",
                     "A distraction-free reader with saved position, contents, bookmarks, " +
                         "Paper/Sepia/Night themes, typography controls, and read-aloud.",
                 ),
-                HelpEntry("Chat", "A workshop conversation about the book."),
+                HelpEntry(
+                    "Chat",
+                    "A workshop conversation about the book. Codex entries can be pinned " +
+                        "into the context with + Codex, or they join automatically when " +
+                        "you mention them.",
+                ),
                 HelpEntry("Review", "A read-through pass."),
             ),
         ),
@@ -77,6 +87,21 @@ object HelpContent {
                     "You control scene framing, the world, NPCs, and rulings. The AI plays the " +
                         "selected character party and responds to your DM prompts with its " +
                         "decisions, actions, dialogue, and rules-aware reactions.",
+                ),
+                HelpEntry(
+                    "Setup — campaign options",
+                    "The Setup button on the adventure page reopens the campaign options " +
+                        "sheet at any time: add or remove character perspectives (You, Roster, " +
+                        "or Characters Codex), switch Dungeon Master/Character play, change the " +
+                        "setting template and details, point of view, tense, rules system, and " +
+                        "house rules. Saving rewrites the campaign setup the AI plays by.",
+                ),
+                HelpEntry(
+                    "Codex links and lore in play",
+                    "Codex names and aliases appear as underlined links inside the adventure " +
+                        "story — tap one to open the entry, then ‹ Back. The AI also reads the " +
+                        "codex: entries you mention (or that are always-on) are pulled into the " +
+                        "game master's prompt automatically.",
                 ),
                 HelpEntry(
                     "Adventure is the play session",
@@ -127,23 +152,72 @@ object HelpContent {
         HelpSection(
             id = "chatting",
             title = "Chatting",
-            summary = "Chats · Contacts",
+            summary = "A Discord-style workspace for your works",
             entries = listOf(
                 HelpEntry(
-                    "Contacts",
-                    "Everyone you can talk to, from the character codex. Tapping someone " +
-                        "opens their chat, creating it on first contact.",
+                    "Servers are your works",
+                    "The left rail lists every novel and campaign as a server icon; the " +
+                        "house button is Home, where direct messages live. Opening a server " +
+                        "for the first time auto-creates #general, #lore, and #brainstorm " +
+                        "channels, plus one live room per tied character.",
                 ),
                 HelpEntry(
-                    "Chats",
-                    "Search, All / Unread / Groups filters, and unread badges. Badges are " +
-                        "real — a chat remembers when you last opened it.",
+                    "Channels and character rooms",
+                    "Text channels chat with an AI narrator that knows the work's title, " +
+                        "genre, point of view, tense, and style guide. Character rooms talk " +
+                        "to that character in person. The + buttons add custom channels or " +
+                        "character rooms; long-press a room to delete it.",
+                ),
+                HelpEntry(
+                    "@mentions",
+                    "Type @CharacterName in any room (full name or unambiguous first name) " +
+                        "and that character joins the AI's reply, voiced from their card.",
+                ),
+                HelpEntry(
+                    "Direct messages",
+                    "Friends (the sub-mode tab) lists everyone you can talk to; tapping a " +
+                        "friend opens their DM under Home. The composer there has the full " +
+                        "word range, AI/manual toggle, retry, cancel, and context meter.",
                 ),
                 HelpEntry(
                     "New people",
                     "Meet someone writes a new character. One arrives each day when you " +
                         "have an OpenRouter key; offline it is skipped and retried later. " +
                         "Turn it off in Settings.",
+                ),
+            ),
+        ),
+        HelpSection(
+            id = "brainstorm",
+            title = "Brainstorm/Notes",
+            summary = "Chat with the AI to brainstorm and research",
+            entries = listOf(
+                HelpEntry(
+                    "What it is",
+                    "A NovelCrafter-style AI chat for ideas and information — not talking " +
+                        "to bots. Ask about plots, worldbuilding, research, names, structure. " +
+                        "The old notes board still lives in every mode's Notes rail tab.",
+                ),
+                HelpEntry(
+                    "Threads",
+                    "Chats are app-wide and shared across every book and mode. + Add starts " +
+                        "a new thread; the backspace beside a thread deletes it after a " +
+                        "confirmation.",
+                ),
+                HelpEntry(
+                    "! commands",
+                    "Type !character, !location, !object, !lore or !other followed by a " +
+                        "brief — for example \"!location a drowned port city on the Marrow\". " +
+                        "The AI writes the entry, files it in the Codex (characters also get " +
+                        "a roster sheet and their starting gear), and drops the same words " +
+                        "into what you are writing. The prose and the entry are one and the " +
+                        "same text, so they never drift apart.",
+                ),
+                HelpEntry(
+                    "Codex context",
+                    "+ Codex pins entries into the conversation; entries you mention are " +
+                        "pulled in automatically, and the chips show what the AI will see. " +
+                        "Preview shows the exact prompt before it is sent.",
                 ),
             ),
         ),
@@ -210,6 +284,19 @@ object HelpContent {
                     "Prompts",
                     "Slash opens the AI prompt, backslash opens manual entry, from " +
                         "anywhere. The PROMPT dock collapses to one line with its arrow.",
+                ),
+                HelpEntry(
+                    "The composer controls",
+                    "W sets the minimum and maximum word count the AI targets. /A is AI " +
+                        "generation, \\M files your text without calling a model. Tap ✓ to " +
+                        "send; hold ✓ for retry and continue; while streaming, × cancels. " +
+                        "The context meter shows roughly how full the model's window is.",
+                ),
+                HelpEntry(
+                    "Backspace clear with hold-to-undo",
+                    "The backspace (⌫) button deletes your draft in one tap. Press and " +
+                        "hold it to restore the text you just deleted. It works in the prompt " +
+                        "dock, the adventure bar, and the Chatting and Brainstorm composers.",
                 ),
                 HelpEntry(
                     "Models and keys",

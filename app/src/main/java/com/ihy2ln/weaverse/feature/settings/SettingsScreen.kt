@@ -4,16 +4,24 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import com.ihy2ln.weaverse.core.ui.util.AlwaysScrollEndPadding
 import com.ihy2ln.weaverse.core.ui.util.adaptiveContentPadding
@@ -39,6 +47,8 @@ import android.net.Uri
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -48,12 +58,11 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.ihy2ln.weaverse.ai.ModelInfo
 import com.ihy2ln.weaverse.data.settings.ExtraPromptSurface
 import com.ihy2ln.weaverse.feature.help.HelpScreen
+import com.ihy2ln.weaverse.feature.help.WikiScreen
 import com.ihy2ln.weaverse.core.ui.components.ExpandableSection
-import com.ihy2ln.weaverse.core.ui.components.AppearanceSection
 import com.ihy2ln.weaverse.core.ui.components.InkCard
 import com.ihy2ln.weaverse.core.ui.components.InkConfirmButton
 import com.ihy2ln.weaverse.core.ui.components.InkFilledButton
-import com.ihy2ln.weaverse.core.ui.components.InkHsvColorWheel
 import com.ihy2ln.weaverse.core.ui.components.InkOutlinedButton
 import com.ihy2ln.weaverse.core.ui.components.InkSegmentedPill
 import com.ihy2ln.weaverse.core.ui.components.SegmentedOption
@@ -62,8 +71,11 @@ import com.ihy2ln.weaverse.core.ui.theme.AppearanceProfile
 import com.ihy2ln.weaverse.core.ui.theme.isDark
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
-import com.ihy2ln.weaverse.core.ui.theme.toHexString
-import com.ihy2ln.weaverse.core.ui.util.parseHexColor
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
+import com.ihy2ln.weaverse.feature.novel.codex.CodexBang
+import com.ihy2ln.weaverse.feature.novel.codex.CodexEntryKind
+import com.ihy2ln.weaverse.feature.novel.codex.effectiveBangCommands
+import com.ihy2ln.weaverse.feature.roleplay.chat.RpgTurnCommands
 
 
 
@@ -89,8 +101,14 @@ fun SettingsScreen(
     var syncExpanded by rememberSaveable { mutableStateOf(true) }
     var peerHost by rememberSaveable { mutableStateOf("") }
     var peerPin by rememberSaveable { mutableStateOf("") }
-    var selectedSection by rememberSaveable { mutableStateOf(AppearanceSection.Chrome.name) }
+    var commandsExpanded by rememberSaveable { mutableStateOf(false) }
+    var newCommandDraft by rememberSaveable { mutableStateOf("") }
+    var newCommandKind by rememberSaveable { mutableStateOf(CodexEntryKind.Other.name) }
+    var newStarDraft by rememberSaveable { mutableStateOf("") }
+    var newStarDescription by rememberSaveable { mutableStateOf("") }
+    var newStarRoll by rememberSaveable { mutableStateOf(false) }
     var showHelp by rememberSaveable { mutableStateOf(false) }
+    var showWiki by rememberSaveable { mutableStateOf(false) }
 
     val backgroundPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
@@ -110,9 +128,11 @@ fun SettingsScreen(
 
     val contentPad = adaptiveContentPadding()
 
+    androidx.compose.foundation.layout.Box(modifier = modifier.fillMaxSize()) {
+
     Column(
 
-        modifier = modifier
+        modifier = Modifier
 
             .fillMaxSize()
 
@@ -144,26 +164,65 @@ fun SettingsScreen(
 
             )
 
-            InkSegmentedPill(
-
-                options = AppearanceProfile.entries.map { SegmentedOption(it.name, it.label) },
-
-                selectedId = state.prefs.appearanceProfile.name,
-
-                onSelect = { viewModel.setAppearanceProfile(AppearanceProfile.valueOf(it)) },
-
-                modifier = Modifier.padding(vertical = InkSpacing.sm),
-
-            )
-
+            // Profile picker as visual cards: each shows its own palette.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = InkSpacing.sm)
+                    .height(96.dp)
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
+            ) {
+                AppearanceProfile.entries.forEach { profileEntry ->
+                    val selected = profileEntry == state.prefs.appearanceProfile
+                    val swatches = profileEntry.tokens(AppThemeMode.Light)
+                    val darkSwatches = profileEntry.tokens(AppThemeMode.Dark)
+                    Column(
+                        modifier = Modifier
+                            .width(112.dp)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(swatches.background)
+                            .border(
+                                width = if (selected) 2.dp else 1.dp,
+                                color = if (selected) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    swatches.hairline
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                            )
+                            .clickable {
+                                viewModel.setAppearanceProfile(profileEntry)
+                            }
+                            .padding(InkSpacing.sm),
+                        verticalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Box(Modifier.size(14.dp).background(swatches.activePill, RoundedCornerShape(4.dp)))
+                            Box(Modifier.size(14.dp).background(swatches.panel, RoundedCornerShape(4.dp)))
+                            Box(Modifier.size(14.dp).background(darkSwatches.background, RoundedCornerShape(4.dp)))
+                        }
+                        Text(
+                            profileEntry.label,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = swatches.primaryText,
+                            maxLines = 1,
+                        )
+                        Text(
+                            if (selected) "Active" else profileEntry.blurb,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = swatches.secondaryText,
+                            maxLines = 2,
+                        )
+                    }
+                }
+            }
             Text(
-
                 state.prefs.appearanceProfile.blurb,
-
                 style = MaterialTheme.typography.bodySmall,
-
                 color = inkTokens().secondaryText,
-
             )
 
             val profile = state.prefs.appearanceProfile
@@ -255,87 +314,26 @@ fun SettingsScreen(
                 valueRange = 5f..100f,
             )
 
-            Text("Section colors", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = InkSpacing.md))
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(vertical = InkSpacing.sm),
-            ) {
-                InkSegmentedPill(
-                    options = AppearanceSection.entries.map { SegmentedOption(it.name, it.label) },
-                    selectedId = selectedSection,
-                    onSelect = { selectedSection = it },
-                )
-            }
-
-            val section = AppearanceSection.valueOf(selectedSection)
-
-            val sectionKey = section.storageKey
-
-            val appearance = when (section) {
-
-                AppearanceSection.Chrome -> state.prefs.appearance.chrome
-
-                AppearanceSection.Rail -> state.prefs.appearance.rail
-
-                AppearanceSection.Content -> state.prefs.appearance.content
-
-                AppearanceSection.Page -> state.prefs.appearance.page
-
-                AppearanceSection.ChatBubble -> state.prefs.appearance.chatBubble
-
-            }
-
-            val fallback = when (section) {
-
-                AppearanceSection.Chrome -> inkTokens().background
-
-                AppearanceSection.Rail -> inkTokens().panel
-
-                AppearanceSection.Content -> inkTokens().background
-
-                AppearanceSection.Page -> inkTokens().page
-
-                AppearanceSection.ChatBubble -> inkTokens().hover
-
-            }
-
-            val currentColor = parseHexColor(appearance.colorHex, fallback)
-
-                .copy(alpha = appearance.opacityPercent / 100f)
-
-            InkHsvColorWheel(
-                selected = currentColor,
-                onSelect = { color ->
-                    viewModel.setSectionAppearance(sectionKey, color.toHexString(), (color.alpha * 100).toInt())
-                },
-                opacityPercent = appearance.opacityPercent,
-                onOpacityChange = { pct ->
-                    viewModel.setSectionAppearance(sectionKey, appearance.colorHex.ifBlank { currentColor.toHexString() }, pct)
-                },
-            )
-            InkOutlinedButton(
-                label = "Reset section colors",
-                onClick = viewModel::resetAppearanceColors,
-                modifier = Modifier.padding(top = InkSpacing.sm),
-            )
-
             Text(
                 "Help",
                 style = MaterialTheme.typography.labelLarge,
                 modifier = Modifier.padding(top = InkSpacing.md),
             )
             Text(
-                "The full guide to every mode, searchable.",
+                "The wiki manual covers every workspace, and the quick guide " +
+                    "answers the basics.",
                 style = MaterialTheme.typography.bodySmall,
                 color = inkTokens().secondaryText,
             )
             Row(modifier = Modifier.padding(top = InkSpacing.sm)) {
                 InkOutlinedButton(
-                    label = if (showHelp) "Hide guide" else "Open guide",
+                    label = "Open Wiki manual",
+                    onClick = { showWiki = true },
+                )
+                InkOutlinedButton(
+                    label = if (showHelp) "Hide quick guide" else "Quick guide",
                     onClick = { showHelp = !showHelp },
+                    modifier = Modifier.padding(start = InkSpacing.sm),
                 )
             }
             if (showHelp) {
@@ -378,7 +376,7 @@ fun SettingsScreen(
                 modifier = Modifier.padding(top = InkSpacing.md),
             )
             Text(
-                "Shell wallpaper (image applied; video stored)",
+                "Shell wallpaper — images, or videos that loop muted behind the app",
                 style = MaterialTheme.typography.bodySmall,
                 color = inkTokens().secondaryText,
             )
@@ -395,6 +393,11 @@ fun SettingsScreen(
                     modifier = Modifier.padding(top = InkSpacing.xs),
                 )
             }
+            PromptSurfaceToggle(
+                label = "Theme art behind the app (matches the appearance profile)",
+                checked = state.prefs.profileBackgroundEnabled,
+                onCheckedChange = viewModel::setProfileBackgroundEnabled,
+            )
             Row(modifier = Modifier.padding(top = InkSpacing.sm)) {
                 InkFilledButton(
                     label = "Add media",
@@ -407,6 +410,208 @@ fun SettingsScreen(
                 InkOutlinedButton(
                     label = "Clear",
                     onClick = viewModel::clearBackground,
+                    modifier = Modifier.padding(start = InkSpacing.sm),
+                )
+            }
+        }
+
+        ExpandableSection(
+            title = "Composer commands",
+            subtitle = "Add, remove, and review the ! quick-add commands in every prompt box",
+            expanded = commandsExpanded,
+            onToggle = { commandsExpanded = !commandsExpanded },
+            modifier = Modifier.padding(top = InkSpacing.md),
+        ) {
+            val commands = effectiveBangCommands(
+                custom = state.prefs.customBangCommands,
+                removed = state.prefs.removedBangKeywords,
+            )
+            val builtInKeywords = CodexBang.defaultCommands.map { it.keyword }.toSet()
+            Text(
+                "Type ! plus a keyword in any prompt box to write the prose and file a codex entry in one line. " +
+                    "Removing a built-in hides it (and its aliases); custom keywords accept letters only.",
+                style = MaterialTheme.typography.bodySmall,
+                color = inkTokens().secondaryText,
+            )
+            commands.forEach { cmd ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = InkSpacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            cmd.title + if (cmd.aliases.isNotEmpty()) "  (/${cmd.aliases.joinToString(" /")})" else "",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            cmd.description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = inkTokens().secondaryText,
+                        )
+                    }
+                    Text(
+                        "Remove",
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(inkRadiusSm()))
+                            .clickable { viewModel.removeBangCommand(cmd.keyword, cmd.keyword in builtInKeywords) }
+                            .padding(horizontal = 6.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+            Text(
+                "Add a command",
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(top = InkSpacing.md),
+            )
+            OutlinedTextField(
+                value = newCommandDraft,
+                onValueChange = { newCommandDraft = it.filter(Char::isLetter).take(24) },
+                label = { Text("New keyword (no !)") },
+                supportingText = { Text("Example: magic → !magic writes and files a lore entry") },
+                modifier = Modifier.fillMaxWidth().padding(top = InkSpacing.xs),
+                singleLine = true,
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(top = InkSpacing.sm),
+            ) {
+                CodexEntryKind.entries.forEach { kind ->
+                    InkSegmentedPill(
+                        options = listOf(SegmentedOption(kind.name, kind.label)),
+                        selectedId = if (newCommandKind == kind.name) kind.name else "",
+                        onSelect = { newCommandKind = kind.name },
+                    )
+                    if (kind != CodexEntryKind.entries.last()) {
+                        Spacer(Modifier.width(InkSpacing.sm))
+                    }
+                }
+            }
+            val draft = newCommandDraft.trim().lowercase()
+            val taken = effectiveBangCommands(
+                custom = state.prefs.customBangCommands,
+                removed = emptySet(),
+            ).any { it.keyword == draft } ||
+                CodexBang.defaultCommands.any { spec -> spec.keyword == draft || draft in spec.aliases }
+            Row(modifier = Modifier.padding(top = InkSpacing.sm)) {
+                InkFilledButton(
+                    label = if (taken) "Keyword taken" else "Add command",
+                    onClick = {
+                        viewModel.addBangCommand(draft, newCommandKind)
+                        newCommandDraft = ""
+                    },
+                    enabled = draft.isNotBlank() && !taken,
+                )
+                InkOutlinedButton(
+                    label = "Restore defaults",
+                    onClick = {
+                        viewModel.resetBangCommands()
+                        newCommandDraft = ""
+                    },
+                    modifier = Modifier.padding(start = InkSpacing.sm),
+                )
+            }
+
+            Text(
+                "RPG turn commands (*)",
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(top = InkSpacing.lg),
+            )
+            Text(
+                "Type * plus a keyword in the RPG composer for player turns. Roll commands ask the DM " +
+                    "for a dice roll before narrating; the rest are tagged narration turns.",
+                style = MaterialTheme.typography.bodySmall,
+                color = inkTokens().secondaryText,
+            )
+            val starCommands = RpgTurnCommands.effectiveCommands(
+                custom = state.prefs.customStarCommands,
+                removed = state.prefs.removedStarKeywords,
+            )
+            val builtInStarKeywords = RpgTurnCommands.all.map { it.keyword }.toSet()
+            starCommands.forEach { cmd ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = InkSpacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "*${cmd.keyword}" + if (cmd.requiresRoll) "  · roll" else "",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            cmd.description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = inkTokens().secondaryText,
+                        )
+                    }
+                    Text(
+                        "Remove",
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(inkRadiusSm()))
+                            .clickable { viewModel.removeStarCommand(cmd.keyword, cmd.keyword in builtInStarKeywords) }
+                            .padding(horizontal = 6.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+            Text(
+                "Add a turn command",
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(top = InkSpacing.md),
+            )
+            OutlinedTextField(
+                value = newStarDraft,
+                onValueChange = { newStarDraft = it.filter(Char::isLetter).take(24) },
+                label = { Text("New keyword (no *)") },
+                supportingText = { Text("Example: stealth → *stealth — a sneaky player turn") },
+                modifier = Modifier.fillMaxWidth().padding(top = InkSpacing.xs),
+                singleLine = true,
+            )
+            OutlinedTextField(
+                value = newStarDescription,
+                onValueChange = { newStarDescription = it.take(120) },
+                label = { Text("Description") },
+                modifier = Modifier.fillMaxWidth().padding(top = InkSpacing.xs),
+                singleLine = true,
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = InkSpacing.xs),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(checked = newStarRoll, onCheckedChange = { newStarRoll = it })
+                Text("Requires a dice roll", style = MaterialTheme.typography.bodyMedium)
+            }
+            val starDraft = newStarDraft.trim().lowercase()
+            val starTaken = RpgTurnCommands.all.any { it.keyword == starDraft } ||
+                state.prefs.customStarCommands.any { it.substringBefore('|') == starDraft }
+            Row(modifier = Modifier.padding(top = InkSpacing.sm)) {
+                InkFilledButton(
+                    label = if (starTaken) "Keyword taken" else "Add turn command",
+                    onClick = {
+                        viewModel.addStarCommand(starDraft, newStarDescription, newStarRoll)
+                        newStarDraft = ""
+                        newStarDescription = ""
+                        newStarRoll = false
+                    },
+                    enabled = starDraft.isNotBlank() && !starTaken,
+                )
+                InkOutlinedButton(
+                    label = "Restore defaults",
+                    onClick = viewModel::resetStarCommands,
                     modifier = Modifier.padding(start = InkSpacing.sm),
                 )
             }
@@ -653,6 +858,8 @@ fun SettingsScreen(
 
                     SegmentedOption(ModelListTab.Writing.name, "Writing"),
 
+                    SegmentedOption(ModelListTab.ImageGeneration.name, "Image generation"),
+
                     SegmentedOption(ModelListTab.TextToSpeech.name, "Text to speech"),
 
                     SegmentedOption(ModelListTab.All.name, "All"),
@@ -682,6 +889,8 @@ fun SettingsScreen(
             val list = when (state.modelTab) {
 
                 ModelListTab.Writing -> state.writingModels
+
+                ModelListTab.ImageGeneration -> state.imageModels
 
                 ModelListTab.TextToSpeech -> state.ttsModels
 
@@ -966,6 +1175,66 @@ fun SettingsScreen(
                     }
                 }
             }
+
+            // ------------------------------------------------ MCP / CLI harnesses
+            Text(
+                "MCP & CLI harnesses",
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(top = InkSpacing.lg),
+            )
+            Text(
+                "Let Claude Code, OpenCode, Codex CLI or any MCP client read your library. " +
+                    "Turn on the web hub above, then add the endpoint below to your harness. " +
+                    "Auth uses the same password as pairing (Bearer token).",
+                style = MaterialTheme.typography.bodySmall,
+                color = inkTokens().secondaryText,
+            )
+            val clipboardMcp = LocalClipboardManager.current
+            val mcpEndpoint = "http://${state.sync.lanAddress.ifBlank { "<device-ip>" }}:${state.sync.port}/mcp"
+            Text(
+                "Endpoint: $mcpEndpoint",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(top = InkSpacing.xs),
+            )
+            listOf(
+                "Claude Code" to "claude mcp add --transport http weaverse $mcpEndpoint",
+                "OpenCode" to "opencode mcp add weaverse --url $mcpEndpoint",
+                "ChatGPT / Codex CLI" to "codex mcp add weaverse --url $mcpEndpoint",
+                "CursorAI" to "Cursor Settings → MCP → New MCP Server · name: weaverse · url: $mcpEndpoint",
+            ).forEach { (harness, command) ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = InkSpacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        harness,
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.width(120.dp),
+                    )
+                    Text(
+                        command,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = inkTokens().secondaryText,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    InkOutlinedButton(
+                        label = "Copy",
+                        onClick = { clipboardMcp.setText(AnnotatedString(command)) },
+                        modifier = Modifier.padding(start = InkSpacing.xs),
+                    )
+                }
+            }
+            Text(
+                "Tools exposed: list_works, list_scenes, read_scene, search_codex, " +
+                    "read_codex_entry, list_notes, read_note.",
+                style = MaterialTheme.typography.labelSmall,
+                color = inkTokens().secondaryText,
+            )
         }
 
         ExpandableSection(
@@ -1064,6 +1333,15 @@ fun SettingsScreen(
         }
 
         Spacer(modifier = Modifier.height(AlwaysScrollEndPadding))
+
+    }
+
+    if (showWiki) {
+        WikiScreen(
+            onClose = { showWiki = false },
+            modifier = Modifier.matchParentSize(),
+        )
+    }
 
     }
 

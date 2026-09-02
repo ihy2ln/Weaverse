@@ -66,6 +66,8 @@ data class RpgCharacterSheet(
     val appearance: String = "",
     val backstoryAndPersonality: String = "",
     val alignment: String = "",
+    /** Physical details: hair, eyes, height, weight, three sizes, skin tone, etc. */
+    val bodyDescription: String = "",
 )
 
 fun abilityModifier(score: Int): Int = Math.floorDiv(score - 10, 2)

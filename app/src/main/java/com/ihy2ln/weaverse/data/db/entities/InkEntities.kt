@@ -131,10 +131,14 @@ data class CodexEntryEntity(
     val isAiGenerated: Boolean = false,
     /** Whether name/alias mentions of this entry are auto-highlighted as links and auto-detected for AI context. */
     val trackMentions: Boolean = true,
-    /** When true, mention matching requires exact case instead of case-insensitive. */
+    /** Whether name/alias mentions of this entry are auto-highlighted as links and auto-detected for AI context. */
     val caseSensitiveMatching: Boolean = false,
     val createdAt: Long,
     val updatedAt: Long,
+    /** RPG roster sheet (RpgCharacterSheet JSON) for Characters-style entries. */
+    val sheetJson: String = "{}",
+    /** RPG inventory (JSON-encoded List<RpItem>) so any codex entry can carry gear. */
+    val inventoryJson: String = "[]",
 )
 
 @Entity(tableName = "codex_entries_lore")
@@ -179,6 +183,8 @@ data class ChatThreadEntity(
     val promptId: String? = null,
     val modelRef: String = "",
     val sceneId: String? = null,
+    /** Brainstorm sub-categories: non-null nests this thread under a parent. */
+    val parentThreadId: String? = null,
     val createdAt: Long,
     val updatedAt: Long,
 )
@@ -317,6 +323,12 @@ data class RpChatEntity(
     val lastReadAt: Long = 0L,
     /** Manuscript that owns this campaign/storyboard chat, when applicable. */
     val bookId: String? = null,
+    /**
+     * Chatting-mode Discord room kind: "" = legacy messenger chat (reads as a DM),
+     * "channel" = work text channel, "character" = per-character room inside a
+     * work's server, "dm" = direct message conversation.
+     */
+    val roomKind: String = "",
 )
 
 /** One storyboard page within a roleplay chat's DM/Roleplay canvas. */
@@ -370,6 +382,12 @@ data class MediaEntity(
     val durationMs: Long? = null,
     val thumbnailPath: String? = null,
     val checksum: String = "",
+    /** Human-readable Pictures-library title. */
+    val displayName: String = "",
+    /** User-facing organizational category, for example Adams Haven / Scene / Farm. */
+    val category: String = "",
+    /** Comma-separated machine-searchable labels used by scene selection and AI context. */
+    val tags: String = "",
     val createdAt: Long,
 )
 

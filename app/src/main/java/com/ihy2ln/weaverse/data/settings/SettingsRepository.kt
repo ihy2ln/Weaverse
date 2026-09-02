@@ -66,6 +66,7 @@ data class NavigationOrderPreferences(
     val workspaces: String = "",
     val novel: String = "",
     val roleplay: String = "",
+    val games: String = "",
     val chatting: String = "",
     val storyboard: String = "",
     val notes: String = "",
@@ -92,6 +93,8 @@ data class UserPreferences(
     val colorCodingEnabled: Boolean = true,
     val selectedBookId: String = "book-adams-haven-1",
     val backgroundMediaId: String = "",
+    /** Draw the appearance profile's ambient background art behind the shell. */
+    val profileBackgroundEnabled: Boolean = true,
     /** Media id of the RPG town backdrop; blank draws the built-in fallback. */
     val townBackgroundMediaId: String = "",
     val roleplayPresetId: String = "preset-balanced",
@@ -133,6 +136,16 @@ data class UserPreferences(
     val topicMediaLibraryRoot: String = "",
     /** When enabled, AI replies may attach an image/video from a matching topic subfolder. */
     val topicMediaAutoAttach: Boolean = false,
+    /** User-added `!` quick-add keywords: keyword -> CodexEntryKind name. */
+    val customBangCommands: Map<String, String> = emptyMap(),
+    /** Built-in `!` keywords hidden by the user from Settings → Composer commands. */
+    val removedBangKeywords: Set<String> = emptySet(),
+    /** User-added `*` RPG turn commands: "keyword|description|requiresRoll(1/0)". */
+    val customStarCommands: Set<String> = emptySet(),
+    /** Built-in `*` keywords hidden by the user from Settings → Composer commands. */
+    val removedStarKeywords: Set<String> = emptySet(),
+    /** User-defined campaign setting templates: "id|label|directive". */
+    val customSettingTemplates: Set<String> = emptySet(),
 )
 
 data class ReaderSavedState(
@@ -161,6 +174,7 @@ class SettingsRepository @Inject constructor(
             colorCodingEnabled = prefs[KEY_COLOR_CODING] ?: true,
             selectedBookId = prefs[KEY_SELECTED_BOOK] ?: "book-adams-haven-1",
             backgroundMediaId = prefs[KEY_BACKGROUND_MEDIA] ?: "",
+            profileBackgroundEnabled = prefs[KEY_PROFILE_BACKGROUND] ?: true,
             townBackgroundMediaId = prefs[KEY_TOWN_BACKGROUND_MEDIA] ?: "",
             roleplayPresetId = prefs[KEY_RP_PRESET] ?: "preset-balanced",
             layout = LayoutPreferences(
@@ -202,6 +216,7 @@ class SettingsRepository @Inject constructor(
                 workspaces = prefs[KEY_NAV_WORKSPACES].orEmpty(),
                 novel = prefs[KEY_NAV_NOVEL].orEmpty(),
                 roleplay = prefs[KEY_NAV_ROLEPLAY].orEmpty(),
+                games = prefs[KEY_NAV_GAMES].orEmpty(),
                 chatting = prefs[KEY_NAV_CHATTING].orEmpty(),
                 storyboard = prefs[KEY_NAV_STORYBOARD].orEmpty(),
                 notes = prefs[KEY_NAV_NOTES].orEmpty(),
@@ -217,6 +232,27 @@ class SettingsRepository @Inject constructor(
                 ?: setOf(PromptAddOns.DefaultGenre),
             topicMediaLibraryRoot = prefs[KEY_TOPIC_MEDIA_LIBRARY_ROOT].orEmpty(),
             topicMediaAutoAttach = prefs[KEY_TOPIC_MEDIA_AUTO_ATTACH] ?: false,
+            customBangCommands = prefs[KEY_CUSTOM_BANGS].orEmpty()
+                .mapNotNull { entry ->
+                    val keyword = entry.substringBefore(':').lowercase()
+                    val kindName = entry.substringAfter(':', "")
+                    if (keyword.isBlank() || kindName.isBlank()) null else keyword to kindName
+                }
+                .toMap(),
+            removedBangKeywords = prefs[KEY_REMOVED_BANGS].orEmpty()
+                .map { it.lowercase() }
+                .filter { it.isNotBlank() }
+                .toSet(),
+            customStarCommands = prefs[KEY_CUSTOM_STARS].orEmpty()
+                .filter { it.substringBefore('|').isNotBlank() }
+                .toSet(),
+            removedStarKeywords = prefs[KEY_REMOVED_STARS].orEmpty()
+                .map { it.lowercase() }
+                .filter { it.isNotBlank() }
+                .toSet(),
+            customSettingTemplates = prefs[KEY_CUSTOM_SETTING_TEMPLATES].orEmpty()
+                .filter { it.substringBefore('|').isNotBlank() }
+                .toSet(),
         )
     }
 
@@ -341,6 +377,10 @@ class SettingsRepository @Inject constructor(
         context.dataStore.edit { it[KEY_BACKGROUND_MEDIA] = mediaId }
     }
 
+    suspend fun setProfileBackgroundEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[KEY_PROFILE_BACKGROUND] = enabled }
+    }
+
     suspend fun setRoleplayPresetId(presetId: String) {
         context.dataStore.edit { it[KEY_RP_PRESET] = presetId }
     }
@@ -460,6 +500,7 @@ class SettingsRepository @Inject constructor(
         val key = when (mode) {
             "Novel" -> KEY_NAV_NOVEL
             "Roleplay" -> KEY_NAV_ROLEPLAY
+            "Games" -> KEY_NAV_GAMES
             "Chatting" -> KEY_NAV_CHATTING
             "Storyboard" -> KEY_NAV_STORYBOARD
             else -> KEY_NAV_NOTES
@@ -481,6 +522,93 @@ class SettingsRepository @Inject constructor(
     fun apiKey(providerId: String): String? = secureKeys.get(providerId)
 
     fun setApiKey(providerId: String, key: String) = secureKeys.set(providerId, key)
+
+    /** Adds (or replaces) a custom `!keyword` that files entries under the given kind. */
+    suspend fun addBangCommand(keyword: String, kindName: String) {
+        val key = keyword.trim().lowercase()
+        if (!key.matches(Regex("[a-z]+"))) return
+        context.dataStore.edit { prefs ->
+            val kept = prefs[KEY_CUSTOM_BANGS].orEmpty()
+                .filter { it.substringBefore(':') != key }
+            prefs[KEY_CUSTOM_BANGS] = (kept + "$key:$kindName").toSet()
+        }
+    }
+
+    /** Removes a command row: custom keywords are deleted, built-ins are hidden. */
+    suspend fun removeBangCommand(keyword: String, isBuiltIn: Boolean) {
+        val key = keyword.lowercase()
+        context.dataStore.edit { prefs ->
+            prefs[KEY_CUSTOM_BANGS] = prefs[KEY_CUSTOM_BANGS].orEmpty()
+                .filterNot { it.substringBefore(':') == key }
+                .toSet()
+            if (isBuiltIn) {
+                prefs[KEY_REMOVED_BANGS] = (prefs[KEY_REMOVED_BANGS].orEmpty() + key).toSet()
+            }
+        }
+    }
+
+    /** Restores every built-in command and drops all custom ones. */
+    suspend fun resetBangCommands() {
+        context.dataStore.edit { prefs ->
+            prefs.remove(KEY_CUSTOM_BANGS)
+            prefs.remove(KEY_REMOVED_BANGS)
+        }
+    }
+
+    /** Adds (or replaces) a custom `*keyword` RPG turn command. */
+    suspend fun addStarCommand(keyword: String, description: String, requiresRoll: Boolean) {
+        val key = keyword.trim().lowercase()
+        if (!key.matches(Regex("[a-z]+"))) return
+        val entry = "$key|${description.trim().take(120)}|${if (requiresRoll) "1" else "0"}"
+        context.dataStore.edit { prefs ->
+            prefs[KEY_CUSTOM_STARS] = prefs[KEY_CUSTOM_STARS].orEmpty()
+                .filterNot { it.substringBefore('|') == key }
+                .toSet() + entry
+        }
+    }
+
+    /** Removes a `*` command row: custom entries are deleted, built-ins are hidden. */
+    suspend fun removeStarCommand(keyword: String, isBuiltIn: Boolean) {
+        val key = keyword.lowercase()
+        context.dataStore.edit { prefs ->
+            prefs[KEY_CUSTOM_STARS] = prefs[KEY_CUSTOM_STARS].orEmpty()
+                .filterNot { it.substringBefore('|') == key }
+                .toSet()
+            if (isBuiltIn) {
+                prefs[KEY_REMOVED_STARS] = (prefs[KEY_REMOVED_STARS].orEmpty() + key).toSet()
+            }
+        }
+    }
+
+    /** Restores every built-in `*` command and drops custom ones. */
+    suspend fun resetStarCommands() {
+        context.dataStore.edit { prefs ->
+            prefs.remove(KEY_CUSTOM_STARS)
+            prefs.remove(KEY_REMOVED_STARS)
+        }
+    }
+
+    /** Adds (or replaces) a user-defined campaign setting template. */
+    suspend fun addSettingTemplate(label: String, directive: String) {
+        val trimmedLabel = label.trim()
+        if (trimmedLabel.isBlank()) return
+        val id = "custom-" + trimmedLabel.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
+        val entry = "$id|${trimmedLabel.take(60)}|${directive.trim().take(2000)}"
+        context.dataStore.edit { prefs ->
+            prefs[KEY_CUSTOM_SETTING_TEMPLATES] = prefs[KEY_CUSTOM_SETTING_TEMPLATES].orEmpty()
+                .filterNot { it.substringBefore('|') == id }
+                .toSet() + entry
+        }
+    }
+
+    /** Removes a user-defined campaign setting template by id. */
+    suspend fun removeSettingTemplate(id: String) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_CUSTOM_SETTING_TEMPLATES] = prefs[KEY_CUSTOM_SETTING_TEMPLATES].orEmpty()
+                .filterNot { it.substringBefore('|') == id }
+                .toSet()
+        }
+    }
 
     private fun extraFlag(prefs: Preferences, key: androidx.datastore.preferences.core.Preferences.Key<Boolean>): Boolean =
         prefs[key] ?: (prefs[KEY_SHOW_EXTRA_PROMPT_SURFACES] ?: false)
@@ -508,6 +636,7 @@ class SettingsRepository @Inject constructor(
         private val KEY_COLOR_CODING = booleanPreferencesKey("color_coding")
         private val KEY_SELECTED_BOOK = stringPreferencesKey("selected_book_id")
         private val KEY_BACKGROUND_MEDIA = stringPreferencesKey("background_media_id")
+        private val KEY_PROFILE_BACKGROUND = booleanPreferencesKey("profile_background_enabled")
         private val KEY_TOWN_BACKGROUND_MEDIA = stringPreferencesKey("town_background_media_id")
         private val KEY_RP_PRESET = stringPreferencesKey("roleplay_preset_id")
         private val KEY_RAIL_WIDTH = floatPreferencesKey("rail_width_dp")
@@ -538,6 +667,7 @@ class SettingsRepository @Inject constructor(
         private val KEY_NAV_WORKSPACES = stringPreferencesKey("nav_order_workspaces")
         private val KEY_NAV_NOVEL = stringPreferencesKey("nav_order_novel")
         private val KEY_NAV_ROLEPLAY = stringPreferencesKey("nav_order_roleplay")
+        private val KEY_NAV_GAMES = stringPreferencesKey("nav_order_games")
         private val KEY_NAV_CHATTING = stringPreferencesKey("nav_order_chatting")
         private val KEY_NAV_STORYBOARD = stringPreferencesKey("nav_order_storyboard")
         private val KEY_NAV_NOTES = stringPreferencesKey("nav_order_notes")
@@ -551,6 +681,11 @@ class SettingsRepository @Inject constructor(
         private val KEY_TOPIC_MEDIA_AUTO_ATTACH = booleanPreferencesKey("topic_media_auto_attach")
         /** Read-only compatibility with v1.3.24's single free-text genre field. */
         private val KEY_GENRE_LABEL = stringPreferencesKey("prompt_genre_label")
+        private val KEY_CUSTOM_BANGS = stringSetPreferencesKey("bang_commands_custom")
+        private val KEY_REMOVED_BANGS = stringSetPreferencesKey("bang_commands_removed")
+        private val KEY_CUSTOM_STARS = stringSetPreferencesKey("star_commands_custom")
+        private val KEY_REMOVED_STARS = stringSetPreferencesKey("star_commands_removed")
+        private val KEY_CUSTOM_SETTING_TEMPLATES = stringSetPreferencesKey("campaign_setting_templates_custom")
 
         const val InkSpacingRailMin = 48f
         const val InkSpacingRailMax = 420f

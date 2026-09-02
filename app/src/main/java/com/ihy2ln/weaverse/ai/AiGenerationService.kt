@@ -119,6 +119,30 @@ class AiGenerationService @Inject constructor(
     suspend fun synthesizeSpeech(text: String, modelId: String, outputFile: File): File =
         openRouterRepository.synthesizeSpeech(text, modelId, outputFile)
 
+    /**
+     * Cloud image generation through an OpenRouter image-output model
+     * (Nano Banana, Flux, GPT-Image…). Returns picture bytes + mime type.
+     */
+    suspend fun generateImage(
+        prompt: String,
+        modelRef: String?,
+    ): Pair<ByteArray, String> {
+        val model = resolveModelRef(modelRef)
+        if (!model.startsWith("openrouter/")) {
+            throw AIError.HttpFailure(
+                statusCode = 400,
+                message = "Image generation needs an OpenRouter image model (see Settings → Models → Image generation).",
+            )
+        }
+        if (!hasApiKey(model)) {
+            throw AIError.NoApiKey()
+        }
+        return openRouterRepository.generateImage(
+            modelId = model.removePrefix("openrouter/"),
+            prompt = prompt,
+        )
+    }
+
     fun hasApiKey(modelRef: String? = null): Boolean {
         val ref = modelRef.orEmpty()
         return when {

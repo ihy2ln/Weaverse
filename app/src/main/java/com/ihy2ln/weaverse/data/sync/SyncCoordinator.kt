@@ -77,6 +77,10 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -106,6 +110,7 @@ class SyncCoordinator @Inject constructor(
     private val settings: SettingsRepository,
     private val novelcrafterImporter: NovelcrafterImporter,
     private val backupManager: BackupManager,
+    private val mcpTools: com.ihy2ln.weaverse.core.mcp.McpTools,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val json = Json {
@@ -277,6 +282,49 @@ class SyncCoordinator @Inject constructor(
                     return@get
                 }
                 call.respond(librarySummary())
+            }
+            // MCP (Model Context Protocol) endpoint for CLI harnesses such as
+            // Claude Code / OpenCode / Codex CLI. Auth: the sync password as a
+            // Bearer token (same secret the web hub pairs with).
+            post("/mcp") {
+                val pin = pairPin
+                val bearer = call.request.headers["Authorization"]
+                    ?.removePrefix("Bearer ")?.trim().orEmpty()
+                val altPin = call.request.headers["X-MCP-Pin"].orEmpty()
+                if (pin.isBlank() || (bearer != pin && altPin != pin)) {
+                    call.respond(
+                        buildJsonObject {
+                            put("jsonrpc", "2.0")
+                            put("id", kotlinx.serialization.json.JsonNull)
+                            putJsonObject("error") {
+                                put("code", -32001)
+                                put("message", "Unauthorized — use the sync password as a Bearer token.")
+                            }
+                        },
+                    )
+                    return@post
+                }
+                val rpcRequest = runCatching { call.receive<kotlinx.serialization.json.JsonObject>() }.getOrNull()
+                if (rpcRequest == null) {
+                    call.respond(
+                        buildJsonObject {
+                            put("jsonrpc", "2.0")
+                            put("id", kotlinx.serialization.json.JsonNull)
+                            putJsonObject("error") { put("code", -32700); put("message", "Invalid JSON") }
+                        },
+                    )
+                    return@post
+                }
+                val response = mcpTools.handle(rpcRequest)
+                call.respond(response.response)
+            }
+            get("/mcp") {
+                call.respondText(
+                    "Weaverse MCP server. POST JSON-RPC 2.0 here; tools: list_works, list_scenes, " +
+                        "read_scene, search_codex, read_codex_entry, list_notes, read_note. " +
+                        "Auth: Authorization: Bearer <sync password>.",
+                    ContentType.Text.Plain,
+                )
             }
             get("/api/notes/{id}") {
                 if (!authorized(call.request.headers["X-Weaverse-Token"])) {

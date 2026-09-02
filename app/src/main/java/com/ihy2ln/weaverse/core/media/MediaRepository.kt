@@ -26,6 +26,22 @@ class MediaRepository @Inject constructor(
 
     suspend fun getById(id: String): MediaEntity? = db.mediaDao().getById(id)
 
+    /**
+     * Re-categorizes media without moving its physical file, so every existing media ID and
+     * document reference remains valid. Scene categories also refresh their scene:* tags.
+     */
+    suspend fun moveToCategory(id: String, category: String): MediaEntity? = withContext(Dispatchers.IO) {
+        val current = db.mediaDao().getById(id) ?: return@withContext null
+        if (current.type !in setOf("image", "video")) return@withContext null
+        val cleanCategory = sanitizeMediaCategory(category)
+        val updated = current.copy(
+            category = cleanCategory,
+            tags = tagsAfterCategoryMove(current.tags, cleanCategory),
+        )
+        db.mediaDao().upsert(updated)
+        updated
+    }
+
     suspend fun importFromUri(uri: Uri): MediaEntity = withContext(Dispatchers.IO) {
         ensureMediaDir()
         // Best-effort persistable grant (OpenDocument); Photo Picker often denies this.
@@ -136,6 +152,58 @@ class MediaRepository @Inject constructor(
             byteSize = file.length(),
             thumbnailPath = relativePath,
             createdAt = System.currentTimeMillis(),
+        )
+        db.mediaDao().upsert(entity)
+        entity
+    }
+
+    /**
+     * Makes an APK-bundled image a first-class Pictures-library item.
+     *
+     * Files keep their collection/category hierarchy in app storage and stable IDs make
+     * installation upgrades idempotent. Existing non-empty files are never recopied.
+     */
+    suspend fun registerBundledImage(
+        assetPath: String,
+        id: String,
+        relativePath: String,
+        width: Int = 0,
+        height: Int = 0,
+        displayName: String = "",
+        category: String = "",
+        tags: String = "",
+    ): MediaEntity = withContext(Dispatchers.IO) {
+        val file = File(context.filesDir, relativePath)
+        file.parentFile?.mkdirs()
+        if (!file.isFile || file.length() == 0L) {
+            context.assets.open(assetPath).use { input ->
+                file.outputStream().use { output -> input.copyTo(output) }
+            }
+        }
+        require(file.length() > 0L) { "Bundled image could not be installed: $assetPath" }
+        val existing = db.mediaDao().getById(id)
+        // Once a bundled item has metadata, treat it as user-managed. This keeps a
+        // Pictures-library category move from being undone the next time Text Games opens.
+        val hasManagedMetadata = existing != null &&
+            (existing.category.isNotBlank() || existing.tags.isNotBlank())
+        val effectiveCategory = if (hasManagedMetadata) existing!!.category else category
+        val effectiveTags = tagsAfterCategoryMove(
+            listOfNotNull(existing?.tags, tags).filter(String::isNotBlank).joinToString(","),
+            effectiveCategory,
+        )
+        val entity = MediaEntity(
+            id = id,
+            type = "image",
+            relativePath = relativePath,
+            mimeType = "image/png",
+            byteSize = file.length(),
+            width = width,
+            height = height,
+            thumbnailPath = relativePath,
+            displayName = displayName,
+            category = effectiveCategory,
+            tags = effectiveTags,
+            createdAt = existing?.createdAt ?: System.currentTimeMillis(),
         )
         db.mediaDao().upsert(entity)
         entity
