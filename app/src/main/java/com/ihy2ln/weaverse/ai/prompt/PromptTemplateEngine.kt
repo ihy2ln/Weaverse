@@ -14,10 +14,12 @@ object PromptTemplateEngine {
 
     fun render(template: String, ctx: PromptRenderContext, includeDepth: Int = 0): String {
         var text = stripComments(template)
+        text = PromptAddOns.resolveBlocks(text)
         text = resolveIncludes(text, ctx, includeDepth)
         text = resolveConditionals(text, ctx)
         text = resolveFunctionCalls(text, ctx)
         text = resolveTokens(text, ctx)
+        text = text.replace("{genre}", PromptAddOns.genreLabel)
         return text.trim()
     }
 

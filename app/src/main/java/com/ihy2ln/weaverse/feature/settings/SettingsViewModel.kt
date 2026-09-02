@@ -1,15 +1,21 @@
 package com.ihy2ln.weaverse.feature.settings
 
+import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ihy2ln.weaverse.ai.AIError
 import com.ihy2ln.weaverse.ai.ModelInfo
+import com.ihy2ln.weaverse.ai.OtherProviderSeeds
 import com.ihy2ln.weaverse.ai.openrouter.OpenRouterKeyData
 import com.ihy2ln.weaverse.ai.openrouter.OpenRouterModelCache
 import com.ihy2ln.weaverse.ai.openrouter.OpenRouterRepository
+import com.ihy2ln.weaverse.core.crash.CrashLogStore
 import com.ihy2ln.weaverse.core.media.MediaRepository
+import com.ihy2ln.weaverse.core.media.TopicMediaLibrary
 import com.ihy2ln.weaverse.core.ui.theme.AppThemeMode
+import com.ihy2ln.weaverse.core.ui.theme.AppearanceProfile
+import com.ihy2ln.weaverse.data.backup.AutoBackupScheduler
 import com.ihy2ln.weaverse.data.backup.BackupManager
 import com.ihy2ln.weaverse.data.settings.ExtraPromptSurface
 import com.ihy2ln.weaverse.data.settings.SecureKeyStore
@@ -18,6 +24,7 @@ import com.ihy2ln.weaverse.data.settings.UserPreferences
 import com.ihy2ln.weaverse.data.sync.SyncCoordinator
 import com.ihy2ln.weaverse.data.sync.SyncUiSnapshot
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -28,7 +35,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-enum class ModelListTab { Writing, TextToSpeech, All }
+enum class ModelListTab { Writing, ImageGeneration, TextToSpeech, All }
 
 data class SettingsUiState(
     val prefs: UserPreferences = UserPreferences(),
@@ -44,6 +51,7 @@ data class SettingsUiState(
     val models: List<ModelInfo> = emptyList(),
     val writingModels: List<ModelInfo> = emptyList(),
     val ttsModels: List<ModelInfo> = emptyList(),
+    val imageModels: List<ModelInfo> = emptyList(),
     val modelSearch: String = "",
     val modelTab: ModelListTab = ModelListTab.Writing,
     val modelsCachedAt: Long = 0L,
@@ -51,17 +59,23 @@ data class SettingsUiState(
     val backgroundLabel: String = "None",
     val backgroundNote: String = "",
     val sync: SyncUiSnapshot = SyncUiSnapshot(),
+    val otherProviderModels: List<ModelInfo> = emptyList(),
+    val crashLogText: String = "",
+    val topicMediaStatus: String = "No media library selected",
 )
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
+    @ApplicationContext private val appContext: Context,
     private val settings: SettingsRepository,
     private val openRouterRepository: OpenRouterRepository,
     private val modelCache: OpenRouterModelCache,
     private val backupManager: BackupManager,
     private val mediaRepository: MediaRepository,
+    private val topicMediaLibrary: TopicMediaLibrary,
     private val syncCoordinator: SyncCoordinator,
 ) : ViewModel() {
+    private var lastScannedTopicMediaRoot: String? = null
     val preferences: StateFlow<UserPreferences> = settings.preferences
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UserPreferences())
 
@@ -75,6 +89,11 @@ class SettingsViewModel @Inject constructor(
                 anthropicKey = settings.apiKey(SecureKeyStore.ANTHROPIC).orEmpty(),
                 openAiKey = settings.apiKey(SecureKeyStore.OPENAI).orEmpty(),
                 geminiKey = settings.apiKey(SecureKeyStore.GEMINI).orEmpty(),
+                otherProviderModels = OtherProviderSeeds.seeded(
+                    openai = !settings.apiKey(SecureKeyStore.OPENAI).isNullOrBlank(),
+                    anthropic = !settings.apiKey(SecureKeyStore.ANTHROPIC).isNullOrBlank(),
+                    gemini = !settings.apiKey(SecureKeyStore.GEMINI).isNullOrBlank(),
+                ),
             )
         }
         viewModelScope.launch {
@@ -83,19 +102,19 @@ class SettingsViewModel @Inject constructor(
                     ?.let { mediaRepository.getById(it) }
                 val label = when {
                     media == null -> "None"
-                    media.type == "video" -> "Video (stored; playback deferred)"
+                    media.type == "video" -> "Video · loops muted behind the shell"
                     else -> "Image · ${media.mimeType}"
                 }
                 _uiState.update {
                     it.copy(
                         prefs = prefs,
                         backgroundLabel = label,
-                        backgroundNote = if (media?.type == "video") {
-                            "Video backgrounds are saved but shell applies images only for now."
-                        } else {
-                            ""
-                        },
+                        backgroundNote = "",
                     )
+                }
+                if (lastScannedTopicMediaRoot != prefs.topicMediaLibraryRoot) {
+                    lastScannedTopicMediaRoot = prefs.topicMediaLibraryRoot
+                    refreshTopicMedia(prefs.topicMediaLibraryRoot)
                 }
             }
         }
@@ -108,6 +127,7 @@ class SettingsViewModel @Inject constructor(
                         models = modelCache.toModelInfo(models),
                         writingModels = modelCache.writingModels(models),
                         ttsModels = modelCache.ttsModels(models),
+            imageModels = modelCache.toModelInfo(models).filter { it.generatesImages },
                         modelsCachedAt = cachedAt,
                     )
                 }
@@ -151,6 +171,36 @@ class SettingsViewModel @Inject constructor(
         syncCoordinator.setAutoSync(enabled)
     }
 
+    fun setSyncTls(enabled: Boolean) {
+        syncCoordinator.setTlsEnabled(enabled)
+    }
+
+    fun keepSyncMine(id: Long) {
+        val entry = _uiState.value.sync.conflicts.find { it.id == id } ?: return
+        syncCoordinator.keepMine(entry)
+    }
+
+    fun keepSyncTheirs(id: Long) {
+        val entry = _uiState.value.sync.conflicts.find { it.id == id } ?: return
+        syncCoordinator.keepTheirs(entry)
+    }
+
+    fun setAutoBackup(enabled: Boolean) {
+        viewModelScope.launch {
+            settings.setAutoBackupEnabled(enabled)
+            if (enabled) {
+                runCatching { backupManager.maybeAutoBackup() }
+                AutoBackupScheduler.ensure(appContext)
+            } else {
+                AutoBackupScheduler.cancel(appContext)
+            }
+        }
+    }
+
+    fun setDailyCharactersEnabled(enabled: Boolean) {
+        viewModelScope.launch { settings.setDailyCharactersEnabled(enabled) }
+    }
+
     fun pushSyncToPeer() {
         viewModelScope.launch { syncCoordinator.pushToPeer() }
     }
@@ -174,7 +224,15 @@ class SettingsViewModel @Inject constructor(
         settings.setApiKey(SecureKeyStore.OPENAI, state.openAiKey)
         settings.setApiKey(SecureKeyStore.GEMINI, state.geminiKey)
         _uiState.update {
-            it.copy(keyStatus = "Other provider keys saved locally (not validated).", keyStatusIsError = false)
+            it.copy(
+                keyStatus = "Other provider keys saved locally.",
+                keyStatusIsError = false,
+                otherProviderModels = OtherProviderSeeds.seeded(
+                    openai = state.openAiKey.isNotBlank(),
+                    anthropic = state.anthropicKey.isNotBlank(),
+                    gemini = state.geminiKey.isNotBlank(),
+                ),
+            )
         }
     }
 
@@ -291,15 +349,26 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun selectDefaultModel(modelId: String, available: Boolean) {
+    fun selectDefaultModel(modelId: String, available: Boolean, providerPrefix: String = "openrouter") {
         if (!available) return
+        val ref = when {
+            modelId.startsWith("openrouter/") ||
+                modelId.startsWith("openai/") ||
+                modelId.startsWith("anthropic/") ||
+                modelId.startsWith("gemini/") -> modelId
+            else -> "$providerPrefix/$modelId"
+        }
         viewModelScope.launch {
-            settings.setDefaultModel("openrouter/$modelId")
+            settings.setDefaultModel(ref)
         }
     }
 
     fun setTheme(mode: AppThemeMode) {
         viewModelScope.launch { settings.setThemeMode(mode) }
+    }
+
+    fun setAppearanceProfile(profile: AppearanceProfile) {
+        viewModelScope.launch { settings.setAppearanceProfile(profile) }
     }
 
     fun setFontSize(sp: Int) {
@@ -330,6 +399,46 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { settings.setExtraPromptSurface(surface, enabled) }
     }
 
+    fun chooseTopicMediaFolder(uri: Uri) {
+        runCatching {
+            appContext.contentResolver.takePersistableUriPermission(
+                uri,
+                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+        }
+        setTopicMediaLibraryRoot(uri.toString())
+    }
+
+    fun setTopicMediaLibraryRoot(root: String) {
+        viewModelScope.launch {
+            settings.setTopicMediaLibraryRoot(root)
+            refreshTopicMedia(root)
+        }
+    }
+
+    fun setTopicMediaAutoAttach(enabled: Boolean) {
+        viewModelScope.launch { settings.setTopicMediaAutoAttach(enabled) }
+    }
+
+    fun refreshTopicMedia(root: String = _uiState.value.prefs.topicMediaLibraryRoot) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(topicMediaStatus = if (root.isBlank()) "No media library selected" else "Scanning…") }
+            runCatching { topicMediaLibrary.snapshot(root) }
+                .onSuccess { snapshot ->
+                    val message = when {
+                        root.isBlank() -> "No media library selected"
+                        snapshot.topics.isEmpty() -> "No topic folders found or this device cannot read the path"
+                        else -> "${snapshot.topics.size} topics: ${snapshot.topics.take(8).joinToString(", ")}" +
+                            if (snapshot.topics.size > 8) "…" else ""
+                    }
+                    _uiState.update { it.copy(topicMediaStatus = message) }
+                }
+                .onFailure { error ->
+                    _uiState.update { it.copy(topicMediaStatus = "Could not read library: ${error.message}") }
+                }
+        }
+    }
+
     fun importBackground(uri: Uri) {
         viewModelScope.launch {
             val media = mediaRepository.importFromUri(uri)
@@ -339,6 +448,40 @@ class SettingsViewModel @Inject constructor(
 
     fun clearBackground() {
         viewModelScope.launch { settings.setBackgroundMediaId("") }
+    }
+
+    /** Adds a custom `!keyword` command that files entries under [kindName]. */
+    fun addBangCommand(keyword: String, kindName: String) {
+        viewModelScope.launch { settings.addBangCommand(keyword, kindName) }
+    }
+
+    /** Removes a composer command row (built-ins are hidden, customs deleted). */
+    fun removeBangCommand(keyword: String, isBuiltIn: Boolean) {
+        viewModelScope.launch { settings.removeBangCommand(keyword, isBuiltIn) }
+    }
+
+    /** Restores all built-in composer commands and clears custom ones. */
+    fun resetBangCommands() {
+        viewModelScope.launch { settings.resetBangCommands() }
+    }
+
+    /** Adds a custom `*keyword` RPG turn command. */
+    fun addStarCommand(keyword: String, description: String, requiresRoll: Boolean) {
+        viewModelScope.launch { settings.addStarCommand(keyword, description, requiresRoll) }
+    }
+
+    /** Removes a `*` RPG turn command row (built-ins are hidden, customs deleted). */
+    fun removeStarCommand(keyword: String, isBuiltIn: Boolean) {
+        viewModelScope.launch { settings.removeStarCommand(keyword, isBuiltIn) }
+    }
+
+    /** Restores all built-in `*` commands and clears custom ones. */
+    fun resetStarCommands() {
+        viewModelScope.launch { settings.resetStarCommands() }
+    }
+
+    fun setProfileBackgroundEnabled(enabled: Boolean) {
+        viewModelScope.launch { settings.setProfileBackgroundEnabled(enabled) }
     }
 
     fun exportBackup() {
@@ -356,6 +499,12 @@ class SettingsViewModel @Inject constructor(
                 .onFailure { err -> _uiState.update { it.copy(exportStatus = "Restore failed: ${err.message}") } }
         }
     }
+
+    fun loadCrashLog() {
+        _uiState.update { it.copy(crashLogText = CrashLogStore.latestText(appContext)) }
+    }
+
+    fun copyCrashLog(): String = CrashLogStore.latestText(appContext)
 
     private fun formatKeyInfo(data: OpenRouterKeyData): String {
         val parts = mutableListOf<String>()

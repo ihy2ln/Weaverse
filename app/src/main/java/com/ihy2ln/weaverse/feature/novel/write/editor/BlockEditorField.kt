@@ -75,10 +75,12 @@ fun BlockEditorField(
         )
     }
     var layoutResult by remember(paragraph.id) { mutableStateOf<TextLayoutResult?>(null) }
+    /** Targets already reflected in [value]; avoids rebuilding the field on every keystroke. */
+    var appliedTargets by remember(paragraph.id) { mutableStateOf(codexMentionTargets) }
 
     // Sync external paragraph updates (undo/AI accept) without clobbering caret during typing
     LaunchedEffect(paragraph.id, plain, paragraph.spans, codexMentionTargets) {
-        if (value.text != plain || codexMentionTargets.isNotEmpty()) {
+        if (value.text != plain || appliedTargets != codexMentionTargets) {
             val sel = value.selection
             val capped = TextRange(
                 sel.start.coerceIn(0, plain.length),
@@ -92,6 +94,7 @@ fun BlockEditorField(
                 ),
                 selection = capped,
             )
+            appliedTargets = codexMentionTargets
         }
     }
 
@@ -133,6 +136,10 @@ fun BlockEditorField(
                 if (annotation != null) {
                     down.consume()
                     onMentionClick(annotation.item)
+                } else {
+                    // Plain tap: publish the tapped caret so the prompt dock's
+                    // ⌖ insert target follows the user's chosen paragraph spot.
+                    onSelectionChange(TextRange(offset))
                 }
             }
         },

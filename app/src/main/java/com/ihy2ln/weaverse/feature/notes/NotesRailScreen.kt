@@ -26,6 +26,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.ihy2ln.weaverse.core.ui.components.InkConfirmButton
 import com.ihy2ln.weaverse.core.ui.components.InkDeleteButton
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import com.ihy2ln.weaverse.core.ui.util.alwaysScrollEndSpacer
@@ -38,6 +40,8 @@ import com.ihy2ln.weaverse.core.ui.util.alwaysScrollEndSpacer
 fun NotesRailScreen(
     viewModel: NotesViewModel = hiltViewModel(),
     modifier: Modifier = Modifier,
+    compact: Boolean = false,
+    onNoteOpened: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsState()
     val tokens = inkTokens()
@@ -58,16 +62,19 @@ fun NotesRailScreen(
                 overflow = TextOverflow.Ellipsis,
             )
             InkConfirmButton(
-                onClick = viewModel::createNote,
+                onClick = {
+                    viewModel.createNote()
+                    onNoteOpened()
+                },
                 label = "New",
                 contentDescription = "New note",
             )
         }
         Text(
-            "Personal notes — not tied to a book. Speak, type, attach media.",
+            "Shared · ${state.notes.size} notes · every book & mode",
             style = MaterialTheme.typography.bodySmall,
             color = tokens.secondaryText,
-            modifier = Modifier.padding(bottom = InkSpacing.sm),
+            modifier = Modifier.padding(bottom = if (compact) InkSpacing.xs else InkSpacing.sm),
         )
         LazyColumn(
             verticalArrangement = Arrangement.spacedBy(InkSpacing.xs),
@@ -80,7 +87,7 @@ fun NotesRailScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(InkSpacing.radiusSm))
+                        .clip(RoundedCornerShape(inkRadiusSm()))
                         .background(
                             if (selected) {
                                 MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
@@ -91,10 +98,13 @@ fun NotesRailScreen(
                         .border(
                             width = if (selected) 1.5.dp else 0.dp,
                             color = MaterialTheme.colorScheme.primary,
-                            shape = RoundedCornerShape(InkSpacing.radiusSm),
+                            shape = RoundedCornerShape(inkRadiusSm()),
                         )
-                        .clickable { viewModel.selectNote(note.id) }
-                        .padding(InkSpacing.sm),
+                        .clickable {
+                            viewModel.selectNote(note.id)
+                            onNoteOpened()
+                        }
+                        .padding(if (compact) InkSpacing.xs else InkSpacing.sm),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(

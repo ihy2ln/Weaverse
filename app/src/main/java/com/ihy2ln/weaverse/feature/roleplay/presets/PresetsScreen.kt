@@ -19,15 +19,63 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.InkHairline
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 
-data class RpPreset(val id: String, val name: String, val description: String, val temperature: Float)
+/**
+ * Difficulty rather than a raw sampler setting: [directive] is injected into the
+ * system prompt so the world actually pushes back the chosen amount, and
+ * [temperature] follows it (harsher settings stay more disciplined).
+ */
+data class RpPreset(
+    val id: String,
+    val name: String,
+    val description: String,
+    val temperature: Float,
+    val directive: String,
+    val targetDc: Int,
+)
 
 val defaultPresets = listOf(
-    RpPreset("preset-balanced", "Balanced", "General roleplay — temp 0.8", 0.8f),
-    RpPreset("preset-creative", "Creative", "More varied replies — temp 1.0", 1.0f),
-    RpPreset("preset-precise", "Precise", "Stays on-script — temp 0.5", 0.5f),
+    RpPreset(
+        id = "preset-slice",
+        name = "Easy",
+        description = "Favorable events and forgiving checks. Most reasonable plans work.",
+        temperature = 0.95f,
+        directive = "Keep the stakes gentle. Conflicts resolve kindly, injuries are minor, " +
+            "and the story favours the party. Use mostly easy DCs near 8; reserve harder checks for clearly dangerous feats.",
+        targetDc = 8,
+    ),
+    RpPreset(
+        id = "preset-balanced",
+        name = "Medium",
+        description = "A fair tabletop baseline with meaningful but recoverable setbacks.",
+        temperature = 0.8f,
+        directive = "Let outcomes follow effort. Reasonable plans tend to work, mistakes cost " +
+            "something but are recoverable, and danger is real without being punishing. Use standard DCs near 12.",
+        targetDc = 12,
+    ),
+    RpPreset(
+        id = "preset-hard",
+        name = "Hard",
+        description = "The world pushes back. Plans need thought and mistakes hurt.",
+        temperature = 0.7f,
+        directive = "Make the world push back. Careless choices fail, resources run short, " +
+            "and opponents act intelligently. Success must be earned.",
+        targetDc = 16,
+    ),
+    RpPreset(
+        id = "preset-ruthless",
+        name = "Very Hard",
+        description = "Hostile events, demanding checks, and lasting consequences.",
+        temperature = 0.6f,
+        directive = "Be unforgiving. Enemies exploit every weakness, luck does not rescue bad " +
+            "decisions, and lasting loss — including death — is on the table. Never soften an " +
+            "outcome to spare the player. Use demanding DCs near 20 while still honoring clever automatic solutions.",
+        targetDc = 20,
+    ),
 )
 
 @Composable
@@ -36,7 +84,7 @@ fun PresetsScreen(viewModel: PresetsViewModel = hiltViewModel()) {
     Column(modifier = Modifier.fillMaxSize().padding(InkSpacing.lg)) {
         Text("Presets", style = MaterialTheme.typography.titleLarge)
         Text(
-            "Sampler settings for roleplay chats — tap to select",
+            "Adventure difficulty for events and active dice checks — tap to select",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = InkSpacing.md),
         )
@@ -53,8 +101,8 @@ fun PresetsScreen(viewModel: PresetsViewModel = hiltViewModel()) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = InkSpacing.sm)
-                        .clip(RoundedCornerShape(InkSpacing.radiusMd))
-                        .border(if (selected) 2.dp else 1.dp, border, RoundedCornerShape(InkSpacing.radiusMd))
+                        .clip(RoundedCornerShape(inkRadiusMd()))
+                        .border(if (selected) 2.dp else 1.dp, border, RoundedCornerShape(inkRadiusMd()))
                         .background(hue)
                         .clickable { viewModel.selectPreset(preset.id) }
                         .padding(InkSpacing.lg),

@@ -7,6 +7,7 @@ enum class ExportFormat(val label: String, val extension: String) {
     Html("HTML", "html"),
     Json("JSON", "json"),
     Markdown("Markdown (.md)", "md"),
+    Epub("EPUB (.epub)", "epub"),
     PlainText("Plain text (.txt)", "txt"),
     ProjectZip("Project ZIP", "zip"),
 }
@@ -76,6 +77,7 @@ data class BookDto(
     val coverMediaId: String? = null,
     val createdAt: Long = 0,
     val updatedAt: Long = 0,
+    val workType: String = "novel",
 )
 
 @Serializable
@@ -167,6 +169,7 @@ data class ChatThreadDto(
     val promptId: String? = null,
     val modelRef: String = "",
     val sceneId: String? = null,
+    val parentThreadId: String? = null,
     val createdAt: Long = 0,
     val updatedAt: Long = 0,
 )
@@ -181,6 +184,9 @@ data class ChatMessageDto(
     val tokenCount: Int = 0,
     val wordCount: Int = 0,
     val createdAt: Long = 0,
+    val promptTokens: Int = 0,
+    val completionTokens: Int = 0,
+    val costUsd: Double = 0.0,
 )
 
 @Serializable
@@ -255,6 +261,10 @@ data class RpChatDto(
     val oocColorHex: String? = null,
     val createdAt: Long = 0,
     val updatedAt: Long = 0,
+    /** JSON-encoded storyboard page list; empty for exports predating pages. */
+    val pagesJson: String = "[]",
+    val lastReadAt: Long = 0,
+    val bookId: String? = null,
 )
 
 @Serializable
@@ -272,4 +282,7 @@ data class RpMessageDto(
     val createdAt: Long = 0,
     /** messenger | dungeonMaster | roleplay; missing on older bundles → messenger. */
     val displayMode: String = "messenger",
+    val promptTokens: Int = 0,
+    val completionTokens: Int = 0,
+    val costUsd: Double = 0.0,
 )

@@ -1,9 +1,14 @@
 package com.ihy2ln.weaverse.feature.roleplay.characters
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ihy2ln.weaverse.core.roleplay.CharacterCardExporter
+import com.ihy2ln.weaverse.core.media.MediaRepository
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
 import com.ihy2ln.weaverse.data.db.entities.RpCharacterEntity
+import com.ihy2ln.weaverse.data.db.entities.decodeEquipment
+import com.ihy2ln.weaverse.data.db.entities.decodeItems
 import com.ihy2ln.weaverse.feature.shell.WorkspaceHistory
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,6 +31,11 @@ data class CharacterDetailUiState(
     val postHistoryInstructions: String = "",
     val tags: String = "",
     val colorHex: String = "",
+    val avatarMediaId: String? = null,
+    val portraitPath: String = "",
+    val sheet: RpgCharacterSheet = RpgCharacterSheet(),
+    val inventory: List<String> = emptyList(),
+    val equipment: List<String> = emptyList(),
     val saved: Boolean = false,
     val statusMessage: String = "",
 )
@@ -34,6 +44,8 @@ data class CharacterDetailUiState(
 class CharacterDetailViewModel @Inject constructor(
     private val db: WeaverseDatabase,
     private val workspaceHistory: WorkspaceHistory,
+    private val cardExporter: CharacterCardExporter,
+    private val mediaRepository: MediaRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(CharacterDetailUiState())
     val uiState: StateFlow<CharacterDetailUiState> = _uiState.asStateFlow()
@@ -61,6 +73,13 @@ class CharacterDetailViewModel @Inject constructor(
                         postHistoryInstructions = entity.postHistoryInstructions,
                         tags = tagsFromJson(entity.tagsJson),
                         colorHex = entity.colorHex.orEmpty(),
+                        avatarMediaId = entity.avatarMediaId,
+                        portraitPath = portraitPath(entity.avatarMediaId),
+                        sheet = decodeRpgSheet(entity.extensionsJson),
+                        inventory = decodeItems(entity.inventoryJson).map { item ->
+                            if (item.quantity > 1) "${item.name} ×${item.quantity}" else item.name
+                        },
+                        equipment = decodeEquipment(entity.equipmentJson).values.filter { it.isNotBlank() },
                     )
                 }
             }
@@ -78,6 +97,43 @@ class CharacterDetailViewModel @Inject constructor(
     fun onPostHistory(value: String) = _uiState.update { it.copy(postHistoryInstructions = value, saved = false) }
     fun onTags(value: String) = _uiState.update { it.copy(tags = value, saved = false) }
     fun onColorHex(value: String) = _uiState.update { it.copy(colorHex = value, saved = false) }
+    fun setPortrait(uri: Uri) {
+        viewModelScope.launch {
+            runCatching { mediaRepository.importFromUri(uri) }
+                .onSuccess { media ->
+                    _uiState.update {
+                        it.copy(
+                            avatarMediaId = media.id,
+                            portraitPath = mediaRepository.resolveFile(media).absolutePath,
+                            saved = false,
+                            statusMessage = "Portrait ready — save the sheet to keep it",
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update { it.copy(statusMessage = "Portrait failed: ${error.message}") }
+                }
+        }
+    }
+    fun removePortrait() = _uiState.update {
+        it.copy(avatarMediaId = null, portraitPath = "", saved = false, statusMessage = "Portrait removed")
+    }
+    fun onSheet(value: RpgCharacterSheet) = _uiState.update { it.copy(sheet = value, saved = false) }
+    fun adjustHp(delta: Int) = _uiState.update {
+        it.copy(sheet = it.sheet.withCurrentHp(it.sheet.currentHp + delta), saved = false)
+    }
+    fun adjustAbility(name: String, delta: Int) = _uiState.update { state ->
+        val sheet = state.sheet
+        val updated = when (name) {
+            "Strength" -> sheet.copy(strength = (sheet.strength + delta).coerceIn(1, 30))
+            "Dexterity" -> sheet.copy(dexterity = (sheet.dexterity + delta).coerceIn(1, 30))
+            "Constitution" -> sheet.copy(constitution = (sheet.constitution + delta).coerceIn(1, 30))
+            "Intelligence" -> sheet.copy(intelligence = (sheet.intelligence + delta).coerceIn(1, 30))
+            "Wisdom" -> sheet.copy(wisdom = (sheet.wisdom + delta).coerceIn(1, 30))
+            else -> sheet.copy(charisma = (sheet.charisma + delta).coerceIn(1, 30))
+        }
+        state.copy(sheet = updated, saved = false)
+    }
 
     fun save() {
         val state = _uiState.value
@@ -96,6 +152,8 @@ class CharacterDetailViewModel @Inject constructor(
                 postHistoryInstructions = state.postHistoryInstructions,
                 tagsJson = tagsToJson(state.tags),
                 colorHex = state.colorHex.takeIf { it.isNotBlank() },
+                avatarMediaId = state.avatarMediaId,
+                extensionsJson = encodeRpgSheet(existing.extensionsJson, state.sheet),
             )
             db.roleplayDao().upsertCharacter(updated)
             if (existing != updated) {
@@ -106,6 +164,26 @@ class CharacterDetailViewModel @Inject constructor(
             }
             base = updated
             _uiState.update { it.copy(saved = true, statusMessage = "Saved") }
+        }
+    }
+
+    fun exportPngCard() {
+        val id = _uiState.value.id
+        if (id.isBlank()) return
+        viewModelScope.launch {
+            runCatching { cardExporter.exportPng(id) }
+                .onSuccess { file -> _uiState.update { it.copy(statusMessage = "PNG card: ${file.absolutePath}") } }
+                .onFailure { err -> _uiState.update { it.copy(statusMessage = "Export failed: ${err.message}") } }
+        }
+    }
+
+    fun exportJsonCard() {
+        val id = _uiState.value.id
+        if (id.isBlank()) return
+        viewModelScope.launch {
+            runCatching { cardExporter.exportJson(id) }
+                .onSuccess { file -> _uiState.update { it.copy(statusMessage = "JSON card: ${file.absolutePath}") } }
+                .onFailure { err -> _uiState.update { it.copy(statusMessage = "Export failed: ${err.message}") } }
         }
     }
 
@@ -126,6 +204,13 @@ class CharacterDetailViewModel @Inject constructor(
                 postHistoryInstructions = entity.postHistoryInstructions,
                 tags = tagsFromJson(entity.tagsJson),
                 colorHex = entity.colorHex.orEmpty(),
+                avatarMediaId = entity.avatarMediaId,
+                portraitPath = portraitPath(entity.avatarMediaId),
+                sheet = decodeRpgSheet(entity.extensionsJson),
+                inventory = decodeItems(entity.inventoryJson).map { item ->
+                    if (item.quantity > 1) "${item.name} ×${item.quantity}" else item.name
+                },
+                equipment = decodeEquipment(entity.equipmentJson).values.filter { it.isNotBlank() },
                 saved = true,
                 statusMessage = "Restored",
             )
@@ -143,6 +228,11 @@ class CharacterDetailViewModel @Inject constructor(
             .filter { it.isNotBlank() }
             .joinToString(", ")
     }
+
+    private suspend fun portraitPath(mediaId: String?): String = mediaId
+        ?.let { mediaRepository.getById(it) }
+        ?.let { mediaRepository.resolveFile(it).absolutePath }
+        .orEmpty()
 
     private fun tagsToJson(tags: String): String {
         val parts = tags.split(",")

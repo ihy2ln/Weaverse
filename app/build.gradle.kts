@@ -16,9 +16,9 @@ android {
     defaultConfig {
         applicationId = "com.ihy2ln.weaverse"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 40
-        versionName = "0.5.17"
+        targetSdk = 34
+        versionCode = 112
+        versionName = "1.3.70-beta"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -56,8 +56,11 @@ android {
             }
         }
         debug {
-            applicationIdSuffix = ".debug"
+            applicationIdSuffix = ".textgame"
             versionNameSuffix = "-debug"
+            // Keep locally installable test builds visually distinct from the
+            // production app so testers cannot accidentally reopen an older release.
+            resValue("string", "app_name", "Weaverse Test 1.3.67")
         }
     }
 
@@ -87,6 +90,14 @@ android {
             it.useJUnitPlatform()
         }
     }
+
+    // AGP 8.7.3 + Kotlin 2.0 crashes androidx.lifecycle's NullSafeMutableLiveData
+    // detector (KaCallableMemberCall class vs interface). That aborts assembleRelease
+    // on GitHub Actions; skip release-lint until AGP/lifecycle are upgraded together.
+    lint {
+        checkReleaseBuilds = false
+        disable += "NullSafeMutableLiveData"
+    }
 }
 
 dependencies {
@@ -97,6 +108,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.navigation.compose)
 
     implementation(platform(libs.androidx.compose.bom))
@@ -104,11 +116,12 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
-    implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.compose.material:material-icons-extended:1.7.6")
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
+    implementation(libs.androidx.work.runtime)
 
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)

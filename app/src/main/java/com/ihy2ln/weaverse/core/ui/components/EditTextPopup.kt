@@ -152,7 +152,7 @@ fun TextColorPickerDialog(
         title = { Text("Text color") },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                InkHsvColorWheel(
+                InkSwatchColorPicker(
                     selected = color,
                     onSelect = { color = it },
                     modifier = Modifier.fillMaxWidth(),

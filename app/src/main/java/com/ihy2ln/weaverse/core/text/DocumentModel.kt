@@ -12,6 +12,27 @@ enum class DividerStyle { SceneBreak, HorizontalRule }
 enum class MediaKind { Image, Video, Audio }
 
 @Serializable
+enum class TextOverlayStyle { Plain, SpeechBubble }
+
+@Serializable
+data class TextOverlay(
+    val id: String,
+    val text: String,
+    val style: TextOverlayStyle = TextOverlayStyle.Plain,
+    /** Center position within the panel, percent of panel width/height (0-100). */
+    val xPercent: Float = 50f,
+    val yPercent: Float = 50f,
+    val widthPercent: Float = 60f,
+    val fontSizeSp: Float = 16f,
+    val colorHex: String = "#FFFFFF",
+    val backgroundHex: String? = "#000000",
+    val backgroundAlpha: Float = 0.55f,
+    val rotationDeg: Float = 0f,
+    /** Direction the speech-bubble tail points, degrees; unused for Plain. */
+    val tailAngleDeg: Float = 270f,
+)
+
+@Serializable
 enum class Mark {
     Bold, Italic, Underline, Strikethrough, Code, Superscript, Subscript,
 }
@@ -76,14 +97,23 @@ data class MediaBlock(
     val autoplay: Boolean = false,
     val loop: Boolean = false,
     val muted: Boolean = true,
-    /** 6×6 snap cell (0–5). -1 = auto / unset. */
+    /** Snap cell, 0-based. -1 = auto / unset. */
     val gridCol: Int = -1,
     val gridRow: Int = -1,
-    /** How many grid cells wide/tall (1–6). */
+    /** How many grid cells wide/tall. */
     val gridColSpan: Int = 1,
     val gridRowSpan: Int = 1,
     /** When true, show a compact bar instead of full media. */
     val collapsed: Boolean = false,
+    /** Storyboard page this panel belongs to. null = the chat's default/first page. */
+    val pageId: String? = null,
+    /** Pan/zoom of the media within its panel frame (independent of panel size). */
+    val mediaScale: Float = 1f,
+    val mediaOffsetXPercent: Float = 0f,
+    val mediaOffsetYPercent: Float = 0f,
+    val overlays: List<TextOverlay> = emptyList(),
+    /** Tilts the whole panel frame — comic pages use slanted gutters for pace. */
+    val panelRotationDeg: Float = 0f,
 ) : Block
 
 @Serializable
@@ -106,12 +136,21 @@ data class MediaStackBlock(
     override val id: String,
     val mediaIds: List<String>,
     val currentIndex: Int = 0,
-    /** 6×6 snap cell (0–5). -1 = auto / unset. */
+    /** Snap cell, 0-based. -1 = auto / unset. */
     val gridCol: Int = -1,
     val gridRow: Int = -1,
     val gridColSpan: Int = 1,
     val gridRowSpan: Int = 1,
     val collapsed: Boolean = false,
+    /** Storyboard page this panel belongs to. null = the chat's default/first page. */
+    val pageId: String? = null,
+    /** Pan/zoom of the media within its panel frame (independent of panel size). */
+    val mediaScale: Float = 1f,
+    val mediaOffsetXPercent: Float = 0f,
+    val mediaOffsetYPercent: Float = 0f,
+    val overlays: List<TextOverlay> = emptyList(),
+    /** Tilts the whole panel frame — comic pages use slanted gutters for pace. */
+    val panelRotationDeg: Float = 0f,
 ) : Block
 
 @Serializable

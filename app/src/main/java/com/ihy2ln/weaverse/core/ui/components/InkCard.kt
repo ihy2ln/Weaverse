@@ -10,6 +10,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 
@@ -22,8 +24,8 @@ fun InkCard(
     val tokens = inkTokens()
     Column(
         modifier = modifier
-            .background(background, RoundedCornerShape(InkSpacing.radiusMd))
-            .border(1.dp, tokens.hairline, RoundedCornerShape(InkSpacing.radiusMd))
+            .background(background, RoundedCornerShape(inkRadiusMd()))
+            .border(1.dp, tokens.hairline, RoundedCornerShape(inkRadiusMd()))
             .padding(InkSpacing.lg),
         content = content,
     )

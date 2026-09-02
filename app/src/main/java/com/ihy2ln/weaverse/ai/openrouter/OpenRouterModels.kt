@@ -62,6 +62,26 @@ data class OpenRouterChatRequest(
     val temperature: Double? = null,
     @SerialName("top_p") val topP: Double? = null,
     val stream: Boolean = false,
+    val reasoning: OpenRouterReasoning? = null,
+    /** Ask image-output models to actually return a picture. */
+    val modalities: List<String>? = null,
+)
+
+@Serializable
+data class OpenRouterImage(
+    val type: String = "image_url",
+    @SerialName("image_url") val imageUrl: OpenRouterImageUrl? = null,
+)
+
+@Serializable
+data class OpenRouterImageUrl(
+    val url: String = "",
+)
+
+@Serializable
+data class OpenRouterReasoning(
+    val effort: String = "minimal",
+    val exclude: Boolean = true,
 )
 
 @Serializable
@@ -69,6 +89,8 @@ data class OpenRouterChatMessage(
     val role: String = "",
     /** Plain string or multimodal content array (JsonArray of parts). */
     val content: JsonElement = kotlinx.serialization.json.JsonPrimitive(""),
+    /** Image-output models return generated pictures here as data URLs. */
+    val images: List<OpenRouterImage> = emptyList(),
 )
 
 @Serializable
@@ -117,6 +139,18 @@ fun OpenRouterModelDto.supportsImageInput(): Boolean {
     if (architecture?.inputModalities?.any { it.equals("image", ignoreCase = true) } == true) return true
     val modality = architecture?.modality.orEmpty().lowercase()
     return modality.contains("image")
+}
+
+/** True when the model generates images (text-to-image, e.g. Nano Banana, Flux). */
+fun OpenRouterModelDto.generatesImages(): Boolean {
+    val outputs = architecture?.outputModalities.orEmpty()
+    if (outputs.any { it.equals("image", ignoreCase = true) }) return true
+    val id = id.lowercase()
+    val modality = architecture?.modality.orEmpty().lowercase()
+    // "text->image" style modality strings.
+    if (modality.contains("->image") || modality.endsWith("-> image")) return true
+    val imageOnlyIds = listOf("flux", "dall-e", "dalle", "stable-diffusion", "sdxl", "imagen", "seedream", "recraft", "ideogram", "gpt-image")
+    return imageOnlyIds.any { id.contains(it) } && !modality.contains("text->text")
 }
 
 fun OpenRouterModelDto.isSpeechOutput(): Boolean {

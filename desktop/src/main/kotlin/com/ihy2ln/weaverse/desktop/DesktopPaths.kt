@@ -34,6 +34,8 @@ object DesktopPaths {
     fun mediaDir(dataDir: File): File = File(dataDir, "media").also { it.mkdirs() }
     fun latestSyncZip(dataDir: File): File = File(dataDir, "latest-sync.zip")
     fun configFile(dataDir: File): File = File(dataDir, "sync-config.json")
+    fun tlsFile(dataDir: File): File = File(dataDir, "tls.p12")
+    fun backupsDir(dataDir: File): File = File(dataDir, "backups").also { it.mkdirs() }
     /** Drop Novelcrafter ZIPs here (sibling of data/): Weaverse/import */
     fun importDir(dataDir: File): File = File(dataDir.parentFile ?: dataDir, "import").also { it.mkdirs() }
 }

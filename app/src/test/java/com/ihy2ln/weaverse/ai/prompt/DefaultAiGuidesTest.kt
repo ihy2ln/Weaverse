@@ -24,11 +24,42 @@ class DefaultAiGuidesTest {
         assertTrue(prompts.any { it.id == "prompt-summarize" && it.instructionsJson.contains("summarizer") })
         assertTrue(prompts.any { it.id == "prompt-replace" && it.name == "Scene Text Replacer" })
         assertTrue(prompts.any { it.id == "prompt-workshop-chat" && it.instructionsJson.contains("{book.title}") })
-        // Prompt Components (AdditionalContext/AdditionalInstructions) are deliberately seeded empty —
-        // they're the user's own customization stubs, not guiding prose.
+        assertTrue(prompts.any { it.id == "prompt-custom-wish-fulfilment" && it.folderId == "folder-custom" })
+        // Prompt Components (AdditionalContext/AdditionalInstructions, Chat/*) ship with adult male
+        // wish fulfilment defaults the user can edit later.
         prompts.filter { it.type != PromptComponentType }.forEach { prompt ->
             assertTrue(prompt.instructionsJson.length > 80, "${prompt.name} should have prose")
             assertTrue(prompt.description.isNotBlank())
+        }
+    }
+
+    @Test
+    fun seedPrompts_carryWishFulfilmentCanonInEveryTemplate() {
+        val canon = listOf("WAHB", "WAH", "WAHO", "AFM", "Gender Ratio", "GKOM", "Celestium")
+        DefaultAiGuides.seedPrompts(0L).forEach { prompt ->
+            canon.forEach { term ->
+                assertTrue(prompt.instructionsJson.contains(term), "${prompt.name} should include $term")
+            }
+            assertTrue(
+                prompt.instructionsJson.contains("wish fulfilment", ignoreCase = true) ||
+                    prompt.instructionsJson.contains("wish-fulfilment", ignoreCase = true),
+                "${prompt.name} should carry the adult male wish fulfilment frame",
+            )
+        }
+    }
+
+    @Test
+    fun adamsHavenMw_isSeededAsAnAdultOnlySceneTemplateWithRequestedCanon() {
+        val prompt = DefaultAiGuides.seedPrompts(0L).single { it.id == "prompt-adams-haven-mw" }
+        val instructions = prompt.instructionsJson
+
+        assertTrue(prompt.name == "Adams Haven MW")
+        assertTrue(prompt.folderId == "folder-novel")
+        assertTrue(prompt.type == "scene_beat")
+        assertTrue(instructions.contains("adult-themed ecchi mangaka"))
+        assertTrue(instructions.contains("18 or older"))
+        listOf("WAHB", "WAH", "WAHO", "AFM", "Gender Ratio", "GKOM", "Celestium").forEach { term ->
+            assertTrue(instructions.contains(term), "Adams Haven MW should include $term")
         }
     }
 

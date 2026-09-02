@@ -44,6 +44,8 @@ import com.ihy2ln.weaverse.core.ui.components.MediaEditPopup
 import com.ihy2ln.weaverse.core.ui.components.MediaEditPopupConfig
 import com.ihy2ln.weaverse.core.ui.components.VoiceToTextField
 import com.ihy2ln.weaverse.core.ui.components.ZoomableMedia
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import com.ihy2ln.weaverse.core.ui.util.ScrollGutterBackdrop
@@ -177,8 +179,8 @@ private fun NoteMediaBox(
         modifier = Modifier
             .fillMaxWidth(fraction)
             .padding(top = InkSpacing.md)
-            .clip(RoundedCornerShape(InkSpacing.radiusSm))
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(InkSpacing.radiusSm))
+            .clip(RoundedCornerShape(inkRadiusSm()))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(inkRadiusSm()))
             .combinedClickable(
                 onClick = {
                     if (media.collapsed) onMediaEdit(MediaEditAction.Uncollapse)

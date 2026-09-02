@@ -15,7 +15,9 @@ data class ModelInfo(
     val isTts: Boolean = false,
     /** True when model accepts image inputs (vision). */
     val supportsImages: Boolean = false,
-    /** Display tags e.g. TTS, Vision. */
+    /** True for text-to-image models (Nano Banana, Flux, GPT-Image…). */
+    val generatesImages: Boolean = false,
+    /** Display tags e.g. TTS, Vision, Image generation. */
     val tags: List<String> = emptyList(),
 )
 
@@ -44,6 +46,7 @@ sealed class AIChunk {
         val totalTokens: Int = promptTokens + completionTokens,
         val cost: Double? = null,
     ) : AIChunk()
+    data class RetryWait(val secondsLeft: Int) : AIChunk()
     data object Done : AIChunk()
 }
 
@@ -60,7 +63,7 @@ sealed class AIError : Exception() {
     abstract override val message: String
 
     class NoApiKey : AIError() {
-        override val message: String = "Configure OpenRouter API key in Settings → AI Connections"
+        override val message: String = "Configure an API key in Settings → AI Connections"
     }
 
     class NoProvider(override val message: String = "No AI provider configured for this model") : AIError()

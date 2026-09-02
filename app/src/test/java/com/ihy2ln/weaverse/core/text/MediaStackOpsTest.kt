@@ -74,10 +74,21 @@ class MediaStackOpsTest {
 
     @Test
     fun mediaGrid_snapAndNextFree() {
+        // Expressed against MediaGrid.SIZE so tuning the canvas resolution does not
+        // require rewriting the expectations.
         assertEquals(0, MediaGrid.snapFraction(0f))
-        assertEquals(5, MediaGrid.snapFraction(0.99f))
-        assertEquals(3, MediaGrid.snapFraction(0.5f))
+        assertEquals(MediaGrid.SIZE - 1, MediaGrid.snapFraction(0.99f))
+        assertEquals(MediaGrid.SIZE / 2, MediaGrid.snapFraction(0.5f))
+        // Never escapes the grid, however far out of range the pointer fraction is.
+        assertEquals(MediaGrid.SIZE - 1, MediaGrid.snapFraction(5f))
+        assertEquals(0, MediaGrid.snapFraction(-1f))
         val free = MediaGrid.nextFreeCell(setOf(0 to 0, 1 to 0))
         assertEquals(2 to 0, free)
+    }
+
+    @Test
+    fun mediaGrid_dmCanvasIsCoarserThanTheMangaCanvas() {
+        assertTrue(MediaGrid.DM_SIZE < MediaGrid.SIZE)
+        assertEquals(MediaGrid.DM_SIZE - 1, MediaGrid.snapFraction(0.99f, MediaGrid.DM_SIZE))
     }
 }

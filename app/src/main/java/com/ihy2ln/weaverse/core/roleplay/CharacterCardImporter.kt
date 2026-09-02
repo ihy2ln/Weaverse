@@ -2,20 +2,15 @@ package com.ihy2ln.weaverse.core.roleplay
 
 import android.content.Context
 import android.net.Uri
+import com.ihy2ln.weaverse.core.media.MediaRepository
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
 import com.ihy2ln.weaverse.data.db.entities.RpCharacterEntity
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import java.util.Base64
-import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.util.UUID
 
 data class ParsedCharacterCard(
     val name: String,
@@ -35,89 +30,75 @@ data class ParsedCharacterCard(
 class CharacterCardImporter @Inject constructor(
     @ApplicationContext private val context: Context,
     private val db: WeaverseDatabase,
+    private val mediaRepository: MediaRepository,
 ) {
-    private val json = Json { ignoreUnknownKeys = true }
-
     suspend fun importFromUri(uri: Uri): String = withContext(Dispatchers.IO) {
         val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
             ?: error("Could not read file")
-        val parsed = when {
-            bytes.size >= 8 && bytes[0] == 0x89.toByte() && bytes[1] == 0x50.toByte() -> parsePng(bytes)
-            else -> parseJson(String(bytes, Charsets.UTF_8))
+        importBytes(bytes)
+    }
+
+    suspend fun importBytes(bytes: ByteArray): String {
+        val spec = if (CharacterCardPng.looksLikePng(bytes)) {
+            CharacterCardPng.parseCardJson(CharacterCardPng.extractCardJson(bytes))
+        } else {
+            CharacterCardPng.parseCardJson(String(bytes, Charsets.UTF_8))
         }
         val id = "char-${UUID.randomUUID()}"
         val now = System.currentTimeMillis()
+        val avatarId = if (CharacterCardPng.looksLikePng(bytes)) {
+            mediaRepository.importFromBytes(bytes, fileName = "$id.png", mimeType = "image/png").id
+        } else {
+            null
+        }
         db.roleplayDao().upsertCharacter(
             RpCharacterEntity(
                 id = id,
-                name = parsed.name,
-                description = parsed.description,
-                personality = parsed.personality,
-                scenario = parsed.scenario,
-                firstMes = parsed.firstMes,
-                mesExample = parsed.mesExample,
-                creatorNotes = parsed.creatorNotes,
-                systemPrompt = parsed.systemPrompt,
-                postHistoryInstructions = parsed.postHistoryInstructions,
-                alternateGreetingsJson = "[]",
-                tagsJson = parsed.tagsJson,
-                characterVersion = parsed.characterVersion,
+                name = spec.name,
+                avatarMediaId = avatarId,
+                description = spec.description,
+                personality = spec.personality,
+                scenario = spec.scenario,
+                firstMes = spec.firstMes,
+                mesExample = spec.mesExample,
+                creatorNotes = spec.creatorNotes,
+                systemPrompt = spec.systemPrompt,
+                postHistoryInstructions = spec.postHistoryInstructions,
+                alternateGreetingsJson = spec.alternateGreetings.joinToString(
+                    prefix = "[",
+                    postfix = "]",
+                ) { "\"${it.replace("\"", "")}\"" }.ifBlank { "[]" },
+                tagsJson = spec.tags.joinToString(prefix = "[", postfix = "]") {
+                    "\"${it.replace("\"", "")}\""
+                }.ifBlank { "[]" },
+                characterVersion = spec.characterVersion,
+                extensionsJson = spec.extensionsJson.ifBlank { "{}" },
                 createdAt = now,
             ),
         )
-        id
+        return id
     }
 
     fun parsePng(bytes: ByteArray): ParsedCharacterCard {
-        var offset = 8
-        while (offset + 12 <= bytes.size) {
-            val length = readInt(bytes, offset)
-            val type = String(bytes, offset + 4, 4)
-            val dataStart = offset + 8
-            val dataEnd = dataStart + length
-            if (type == "tEXt" && dataEnd <= bytes.size) {
-                val chunkData = bytes.copyOfRange(dataStart, dataEnd)
-                val nullIdx = chunkData.indexOf(0)
-                if (nullIdx > 0) {
-                    val keyword = String(chunkData, 0, nullIdx)
-                    val text = String(chunkData, nullIdx + 1, chunkData.size - nullIdx - 1)
-                    if (keyword == "chara" || keyword == "ccv3") {
-                        val decoded = String(Base64.getDecoder().decode(text.trim()))
-                        return parseJson(decoded)
-                    }
-                }
-            }
-            offset = dataEnd + 4
-        }
-        error("No chara tEXt chunk found in PNG")
+        val spec = CharacterCardPng.parseCardJson(CharacterCardPng.extractCardJson(bytes))
+        return spec.toParsed()
     }
 
-    fun parseJson(raw: String): ParsedCharacterCard {
-        val root = json.parseToJsonElement(raw).jsonObject
-        val data = root["data"]?.jsonObject ?: root
-        fun field(key: String, alt: String = key): String =
-            data[key]?.jsonPrimitive?.contentOrNull
-                ?: root[key]?.jsonPrimitive?.contentOrNull
-                ?: ""
-        val tags = data["tags"]?.toString() ?: "[]"
-        return ParsedCharacterCard(
-            name = field("name").ifBlank { "Imported Character" },
-            description = field("description"),
-            personality = field("personality"),
-            scenario = field("scenario"),
-            firstMes = field("first_mes", "firstMes"),
-            mesExample = field("mes_example", "mesExample"),
-            systemPrompt = field("system_prompt", "systemPrompt"),
-            creatorNotes = field("creator_notes", "creatorNotes"),
-            postHistoryInstructions = field("post_history_instructions", "postHistoryInstructions"),
-            tagsJson = tags,
-            characterVersion = field("character_version", "characterVersion").ifBlank { "2.0" },
-        )
-    }
+    fun parseJson(raw: String): ParsedCharacterCard =
+        CharacterCardPng.parseCardJson(raw).toParsed()
 
-    private fun readInt(bytes: ByteArray, offset: Int): Int =
-        ((bytes[offset].toInt() and 0xFF) shl 24) or
-            ((bytes[offset + 1].toInt() and 0xFF) shl 16) or
-            ((bytes[offset + 2].toInt() and 0xFF) shl 8) or
-            (bytes[offset + 3].toInt() and 0xFF)
+    private fun CharacterCardSpec.toParsed() = ParsedCharacterCard(
+        name = name,
+        description = description,
+        personality = personality,
+        scenario = scenario,
+        firstMes = firstMes,
+        mesExample = mesExample,
+        systemPrompt = systemPrompt,
+        creatorNotes = creatorNotes,
+        postHistoryInstructions = postHistoryInstructions,
+        tagsJson = tags.joinToString(prefix = "[", postfix = "]") { "\"${it.replace("\"", "")}\"" }
+            .ifBlank { "[]" },
+        characterVersion = characterVersion,
+    )
 }

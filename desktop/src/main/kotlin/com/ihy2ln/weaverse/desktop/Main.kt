@@ -18,14 +18,15 @@ fun main(args: Array<String>) {
     server.start()
 
     val lan = SyncHttpServer.localLanAddresses().joinToString(", ").ifBlank { "this-pc-ip" }
-    println(
-        """
+        val scheme = if (config.tls) "https" else "http"
+        println(
+            """
         |Weaverse Desktop v${config.appVersion}
         |Data dir : ${dataDir.absolutePath}
         |
         |Open the web version (sync hub):
-        |  http://127.0.0.1:${config.port}/
-        |  http://$lan:${config.port}/
+        |  $scheme://127.0.0.1:${config.port}/
+        |  $scheme://$lan:${config.port}/
         |
         |The single sync password is shown on that web page.
         |Import a Novelcrafter ZIP (novel.md or novel.docx) via Import on the hub, or drop it in:
@@ -34,15 +35,15 @@ fun main(args: Array<String>) {
         |
         |Keep this window open. Press Ctrl+C to stop.
         """.trimMargin(),
-    )
+        )
 
-    if (config.openBrowser && !noBrowser) {
-        runCatching {
-            if (Desktop.isDesktopSupported()) {
-                Desktop.getDesktop().browse(URI("http://127.0.0.1:${config.port}/"))
+        if (config.openBrowser && !noBrowser) {
+            runCatching {
+                if (Desktop.isDesktopSupported()) {
+                    Desktop.getDesktop().browse(URI("$scheme://127.0.0.1:${config.port}/"))
+                }
             }
         }
-    }
 
     Runtime.getRuntime().addShutdownHook(
         Thread {

@@ -3,7 +3,14 @@ package com.ihy2ln.weaverse
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -39,7 +46,7 @@ class MainActivity : ComponentActivity() {
             val prefs by settingsRepository.preferences.collectAsState(
                 initial = com.ihy2ln.weaverse.data.settings.UserPreferences(),
             )
-            WeaverseTheme(themeMode = prefs.themeMode) {
+            WeaverseTheme(themeMode = prefs.themeMode, profile = prefs.appearanceProfile) {
                 val tokens = inkTokens()
                 val themed = resolveSectionColor(prefs.appearance.chrome, tokens.panel)
                 val barColor = if (themed.alpha < 0.4f) tokens.panel else themed.copy(alpha = 1f)
@@ -65,6 +72,24 @@ class MainActivity : ComponentActivity() {
                             .navigationBarsPadding(),
                     ) {
                         AppShell()
+                    }
+
+                    // Back used to quit outright, which is easy to trigger by accident
+                    // with the edge-swipe gesture mid-scene. Confirm first.
+                    var confirmExit by rememberSaveable { mutableStateOf(false) }
+                    BackHandler(enabled = !confirmExit) { confirmExit = true }
+                    if (confirmExit) {
+                        AlertDialog(
+                            onDismissRequest = { confirmExit = false },
+                            title = { Text("Close Weaverse?") },
+                            text = { Text("Your work is saved as you go.") },
+                            confirmButton = {
+                                TextButton(onClick = { finish() }) { Text("Close") }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { confirmExit = false }) { Text("Stay") }
+                            },
+                        )
                     }
                 }
             }

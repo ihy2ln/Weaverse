@@ -185,6 +185,14 @@ fun ExportImportScreen(
                     modifier = Modifier.padding(bottom = InkSpacing.sm),
                 )
             }
+            if (state.format == ExportFormat.Epub) {
+                Text(
+                    "EPUB is a readable book for any reader app (prose + titles). Prefer JSON or Project ZIP for a full Weaverse round-trip.",
+                    color = tokens.secondaryText,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(bottom = InkSpacing.sm),
+                )
+            }
 
             Text("General options", style = MaterialTheme.typography.labelLarge)
             OptionCheck("Export Summaries", state.options.exportSummaries) {
@@ -270,6 +278,7 @@ fun ExportImportScreen(
         Text(
             "• Weaverse JSON / project ZIP — upserts matching IDs\n" +
                 "• Novelcrafter full ZIP — always creates a new book (codex, chats, snippets, manuscript)\n" +
+                "• SillyTavern ZIP / PNG card / JSONL chats — characters, world books, personas, chats\n" +
                 "• Word (.docx), HTML, Markdown — new book from manuscript\n" +
                 "• Notes JSON — restores the shared notes board\n" +
                 "• Legacy .doc — not supported (use .docx)",

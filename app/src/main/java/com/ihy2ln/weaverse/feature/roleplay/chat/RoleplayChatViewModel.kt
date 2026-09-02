@@ -7,20 +7,45 @@ import androidx.lifecycle.viewModelScope
 import com.ihy2ln.weaverse.ai.AIChunk
 import com.ihy2ln.weaverse.ai.AIError
 import com.ihy2ln.weaverse.ai.AiGenerationService
-import com.ihy2ln.weaverse.ai.context.AssembledPrompt
-import com.ihy2ln.weaverse.ai.prompt.RoleplayPromptBuilder
+import com.ihy2ln.weaverse.ai.context.ContextMeter
+import com.ihy2ln.weaverse.ai.openrouter.OpenRouterModelCache
 import com.ihy2ln.weaverse.core.media.MediaClipboard
 import com.ihy2ln.weaverse.core.media.MediaClipboardPayload
+import com.ihy2ln.weaverse.core.media.MangaFileImporter
 import com.ihy2ln.weaverse.core.media.MediaRepository
+import com.ihy2ln.weaverse.core.media.ImageOps
+import com.ihy2ln.weaverse.core.media.NormalizedPanelBox
+import com.ihy2ln.weaverse.core.media.OfflinePanelDetectionKind
+import com.ihy2ln.weaverse.core.text.TextOverlayStyle
+import com.ihy2ln.weaverse.core.media.TopicMediaLibrary
+import com.ihy2ln.weaverse.core.media.TopicMediaSnapshot
+import com.ihy2ln.weaverse.core.media.parseTopicMediaReply
+import com.ihy2ln.weaverse.core.media.topicMediaRequestsFor
+import com.ihy2ln.weaverse.core.media.topicMediaVisibleText
+import com.ihy2ln.weaverse.core.roleplay.avatarColorHexFor
 import com.ihy2ln.weaverse.core.ui.components.MediaEditAction
+import com.ihy2ln.weaverse.core.ui.components.CampaignPerspectiveTemplates
+import com.ihy2ln.weaverse.core.ui.components.CampaignRulesetTemplates
+import com.ihy2ln.weaverse.core.ui.components.CampaignSettingTemplate
+import com.ihy2ln.weaverse.core.ui.components.CampaignSettingTemplates
+import com.ihy2ln.weaverse.core.ui.components.NewWorkDetails
+import com.ihy2ln.weaverse.core.ui.components.WorkCharacterOption
+import com.ihy2ln.weaverse.ai.context.ContextBuilder
+import com.ihy2ln.weaverse.ai.context.ContextBuildRequest
 import com.ihy2ln.weaverse.core.text.Block
+import com.ihy2ln.weaverse.core.text.CodexMentionTarget
 import com.ihy2ln.weaverse.core.text.Document
 import com.ihy2ln.weaverse.core.text.MediaBlock
 import com.ihy2ln.weaverse.core.text.MediaKind
 import com.ihy2ln.weaverse.core.text.MediaStackBlock
 import com.ihy2ln.weaverse.core.text.Paragraph
 import com.ihy2ln.weaverse.core.text.Span
+import com.ihy2ln.weaverse.core.text.TextOverlay
 import com.ihy2ln.weaverse.core.text.MediaGrid
+import com.ihy2ln.weaverse.core.text.PanelTemplates
+import com.ihy2ln.weaverse.core.text.StoryboardGridItem
+import com.ihy2ln.weaverse.core.text.buildPanelSeparationOutput
+import com.ihy2ln.weaverse.core.text.decodeAliases
 import com.ihy2ln.weaverse.core.text.documentFromJson
 import com.ihy2ln.weaverse.core.text.plainText
 import com.ihy2ln.weaverse.core.text.stackMediaOnto
@@ -30,6 +55,8 @@ import com.ihy2ln.weaverse.core.text.gridColOrUnset
 import com.ihy2ln.weaverse.core.text.gridColSpanOrOne
 import com.ihy2ln.weaverse.core.text.gridRowOrUnset
 import com.ihy2ln.weaverse.core.text.gridRowSpanOrOne
+import com.ihy2ln.weaverse.core.text.planStoryboardAssetPlacements
+import kotlin.math.roundToInt
 import com.ihy2ln.weaverse.core.text.withGridCell
 import com.ihy2ln.weaverse.core.text.withGridPlacement
 import com.ihy2ln.weaverse.core.ui.theme.InkAccentBlue
@@ -38,18 +65,35 @@ import com.ihy2ln.weaverse.core.ui.util.parseHexColor
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
 import com.ihy2ln.weaverse.data.db.entities.RpCharacterEntity
 import com.ihy2ln.weaverse.data.db.entities.RpChatEntity
+import com.ihy2ln.weaverse.data.db.entities.MediaEntity
 import com.ihy2ln.weaverse.data.db.entities.RpMessageEntity
+import com.ihy2ln.weaverse.data.db.entities.CodexCategoryEntity
+import com.ihy2ln.weaverse.data.db.entities.CodexEntryEntity
+import com.ihy2ln.weaverse.data.db.entities.RpPageMeta
 import com.ihy2ln.weaverse.data.db.entities.RpPersonaEntity
+import com.ihy2ln.weaverse.data.db.entities.decodePages
+import com.ihy2ln.weaverse.data.db.entities.encodePages
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
 import com.ihy2ln.weaverse.feature.roleplay.presets.defaultPresets
+import com.ihy2ln.weaverse.feature.roleplay.characters.abilityModifier
+import com.ihy2ln.weaverse.feature.roleplay.characters.decodeRpgSheet
+import com.ihy2ln.weaverse.feature.roleplay.characters.encodeRpgSheet
+import com.ihy2ln.weaverse.feature.roleplay.characters.RpgCharacterSheet
+import com.ihy2ln.weaverse.ai.prompt.PromptRenderContext
+import com.ihy2ln.weaverse.ai.prompt.PromptRenderer
+import com.ihy2ln.weaverse.feature.prompt.PromptModelSelection
+import com.ihy2ln.weaverse.feature.prompt.PromptWordLimit
 import com.ihy2ln.weaverse.feature.shell.WorkspaceHistory
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -60,72 +104,18 @@ import javax.inject.Inject
 
 /** Sentinel mediaId for DM text-only tiles placed on the 3×3 grid. */
 const val DM_TEXT_TILE_MEDIA_ID = "__dm_text__"
-
-data class RpMediaRef(
-    val messageId: String,
-    val blockId: String,
-    val path: String,
-    val caption: String,
-    val speaker: String,
-    val role: String,
-    /** When size > 1, this panel is a stacked presentation. */
-    val stackedPaths: List<String> = emptyList(),
-    /** Snap cell; -1 until placed. */
-    val gridCol: Int = -1,
-    val gridRow: Int = -1,
-    val gridColSpan: Int = 1,
-    val gridRowSpan: Int = 1,
-    val collapsed: Boolean = false,
-    val isAudio: Boolean = false,
-    val mediaId: String = "",
-    val mediaKind: com.ihy2ln.weaverse.core.text.MediaKind =
-        com.ihy2ln.weaverse.core.text.MediaKind.Image,
-    /** DM prose tile (no picture). */
-    val isTextTile: Boolean = false,
+private const val ADVENTURE_SCENE_ROLE = "scene"
+private val ExplicitSceneAdvance = Regex(
+    "\\b(next scene|advance (?:the )?scene|move (?:on|forward)|leave this scene|go to the next)\\b",
+    RegexOption.IGNORE_CASE,
 )
-
-data class RpMessageUi(
-    val id: String,
-    val swipeGroupId: String,
-    val swipeIndex: Int,
-    val swipeCount: Int,
-    val speaker: String,
-    val text: String,
-    val role: String,
-    val mediaPaths: List<String> = emptyList(),
-    val mediaBlockIds: List<String> = emptyList(),
-    val mediaIsAudio: List<Boolean> = emptyList(),
-    val mediaStackPaths: Map<String, List<String>> = emptyMap(),
-    val mediaCollapsed: Map<String, Boolean> = emptyMap(),
+private val ExplicitStayInScene = Regex(
+    "\\b(stay (?:here|in (?:this|the) scene)|do not (?:advance|move on)|don't (?:advance|move on)|remain here|go back (?:a scene|to the previous scene))\\b",
+    RegexOption.IGNORE_CASE,
 )
-
-data class RoleplayChatUiState(
-    val chatId: String = "",
-    val title: String = "",
-    val input: String = "",
-    val messages: List<RpMessageUi> = emptyList(),
-    val mediaPanels: List<RpMediaRef> = emptyList(),
-    /** messenger | dungeonMaster | roleplay */
-    val displayMode: String = "messenger",
-    val streamingText: String = "",
-    val isStreaming: Boolean = false,
-    val errorMessage: String = "",
-    val lastUsage: String = "",
-    val userBubbleColor: Color = InkAccentBlue,
-    val characterBubbleColor: Color = Color(0xFF4A90D9),
-    val mediaPickRequestId: Long = 0L,
-    val audioPickRequestId: Long = 0L,
-    val composerMinLines: Int = 1,
-    val ttsStatus: String = "",
-    /** Compact Generate strip visible (Write-style). */
-    val generationVisible: Boolean = true,
-    /** ai = OpenRouter generate; nai = non-AI manual entry (brainstorm). */
-    val entryMode: String = "ai",
-    val outputWords: Int = 400,
-    val selectedMediaKey: String? = null,
-    val canPasteMedia: Boolean = false,
-    val presetId: String = "preset-balanced",
-    val showExtraPromptSurfaces: Boolean = false,
+private val AiSceneAdvanceMarker = Regex(
+    "\\[\\[ADVANCE_SCENE(?::\\s*([^]]+))?]]",
+    RegexOption.IGNORE_CASE,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -133,31 +123,141 @@ data class RoleplayChatUiState(
 class RoleplayChatViewModel @Inject constructor(
     private val db: WeaverseDatabase,
     private val aiGeneration: AiGenerationService,
+    private val mangaFileImporter: MangaFileImporter,
     private val mediaRepository: MediaRepository,
+    private val topicMediaLibrary: TopicMediaLibrary,
     private val settings: SettingsRepository,
     private val tts: com.ihy2ln.weaverse.core.tts.TtsService,
     private val mediaClipboard: MediaClipboard,
     private val workspaceHistory: WorkspaceHistory,
+    private val generation: RoleplayGeneration,
+    private val modelCache: OpenRouterModelCache,
+    private val adventureCapture: AdventureCapture,
+    private val promptRepository: com.ihy2ln.weaverse.data.repo.PromptRepository,
+    private val codexQuickAdd: com.ihy2ln.weaverse.feature.novel.codex.CodexQuickAdd,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(RoleplayChatUiState())
     val uiState: StateFlow<RoleplayChatUiState> = _uiState.asStateFlow()
     private var bindJob: Job? = null
+    private var generateJob: Job? = null
+    private var composerStatusJob: Job? = null
+    /** Live instructions from the Prompt Collection's RPG → Adventure Scene Beat prompt. */
+    private val rpgSceneBeatDirective = MutableStateFlow("")
+
+    /** Lorebook-style codex activation for adventure prompts. */
+    private val contextBuilder = ContextBuilder()
     private var rawMessages: List<RpMessageEntity> = emptyList()
     private var boundChat: RpChatEntity? = null
+    private var customBangCommands: Map<String, String> = emptyMap()
+    private var removedBangKeywords: Set<String> = emptySet()
+    private var starCommands: List<RpgTurnCommand> = RpgTurnCommands.all
+    private var customSettingTemplates: List<CampaignSettingTemplate> = emptyList()
+
+    /** Built-in campaign setting templates plus the user's own, in menu order. */
+    private fun effectiveSettingTemplates(): List<CampaignSettingTemplate> =
+        CampaignSettingTemplates + customSettingTemplates
     private var boundCharacter: RpCharacterEntity? = null
     private var boundPersona: RpPersonaEntity? = null
+    private var contextLimit = ContextMeter.DEFAULT_LIMIT
+    /** Null follows the newest scene; a number browses saved scene history. */
+    private var viewedSceneNumber: Int? = null
 
     fun bindChat(chatId: String) {
         if (_uiState.value.chatId == chatId && bindJob?.isActive == true) return
+        viewedSceneNumber = null
         _uiState.update { it.copy(chatId = chatId) }
         bindJob?.cancel()
         bindJob = viewModelScope.launch {
             launch {
+                // Codex entries indexed for clickable mention links in adventure prose.
+                db.codexDao().observeAllEntries().collect { entries ->
+                    val targets = entries.filter { !it.disabled && it.trackMentions && it.name.length >= 2 }
+                        .map { entry ->
+                            CodexMentionTarget(
+                                entryId = entry.id,
+                                name = entry.name,
+                                aliases = runCatching { decodeAliases(entry.aliasesJson) }.getOrDefault(emptyList()),
+                                caseSensitive = entry.caseSensitiveMatching,
+                            )
+                        }
+                    _uiState.update { it.copy(codexTargets = targets) }
+                }
+            }
+            launch {
+                // The same persona/roster/codex-character options the campaign creation menu offers.
+                combine(
+                    db.roleplayDao().observePersonas(),
+                    db.roleplayDao().observeCharacters(),
+                    db.codexDao().observeAllCategories(),
+                    db.codexDao().observeAllEntries(),
+                ) { personas, roster, categories, entries ->
+                    val playerNames = personas.map { it.name.trim().lowercase() }.toSet()
+                    val characterCategoryIds = categories
+                        .filter { it.name.equals("Characters", ignoreCase = true) }
+                        .map { it.id }
+                        .toSet()
+                    buildList {
+                        personas.forEach { add(WorkCharacterOption("persona:${it.id}", it.name, "You")) }
+                        roster.filterNot {
+                            it.defaultCodexId?.startsWith("persona:") == true ||
+                                it.name.trim().lowercase() in playerNames
+                        }.forEach { add(WorkCharacterOption("roster:${it.id}", it.name, "Roster")) }
+                        entries.filter { it.categoryId in characterCategoryIds }.forEach {
+                            add(WorkCharacterOption("codex:${it.id}", it.name, "Codex"))
+                        }
+                    }.distinctBy { it.name.trim().lowercase() to it.source }
+                }.collect { options ->
+                    _uiState.update { it.copy(campaignCharacterOptions = options) }
+                }
+            }
+            launch {
+                // The RPG → Adventure Scene Beat prompt steers every DM generation live.
+                promptRepository.observeByType("rpg_scene_beat").collect { prompts ->
+                    val prompt = prompts.firstOrNull { it.isDefault } ?: prompts.firstOrNull()
+                    val text = prompt?.let {
+                        PromptRenderer.render(it, PromptRenderContext()).systemText
+                            .ifBlank { it.description }
+                    }.orEmpty()
+                    rpgSceneBeatDirective.value = text
+                }
+            }
+            launch {
+                combine(settings.preferences, modelCache.models) { prefs, dtos ->
+                    prefs.defaultModelRef to modelCache.toModelInfo(dtos)
+                }.collect { (defaultModelRef, models) ->
+                    _uiState.update {
+                        it.copy(defaultModelRef = defaultModelRef, writingModels = models)
+                    }
+                    contextLimit = ContextMeter.limitFor(
+                        PromptModelSelection.effectiveModelRef(
+                            _uiState.value.selectedModelRef,
+                            defaultModelRef,
+                        ),
+                        models,
+                    )
+                    refreshContextMeter()
+                }
+            }
+            launch {
                 settings.preferences.collect { prefs ->
+                    customBangCommands = prefs.customBangCommands
+                    removedBangKeywords = prefs.removedBangKeywords
+                    starCommands = RpgTurnCommands.effectiveCommands(
+                        prefs.customStarCommands,
+                        prefs.removedStarKeywords,
+                    )
+                    customSettingTemplates = prefs.customSettingTemplates.mapNotNull { raw ->
+                        val parts = raw.split('|')
+                        if (parts.size < 3) {
+                            return@mapNotNull null
+                        }
+                        CampaignSettingTemplate(parts[0], parts[1], parts[2])
+                    }
                     _uiState.update {
                         it.copy(
                             presetId = prefs.roleplayPresetId,
                             showExtraPromptSurfaces = prefs.extraPromptSurfaces.roleplayButtons,
+                            customSettingTemplates = customSettingTemplates,
                         )
                     }
                 }
@@ -166,27 +266,45 @@ class RoleplayChatViewModel @Inject constructor(
                 db.roleplayDao().observeChats().collect { chats ->
                     chats.find { it.id == chatId }?.let { chat ->
                         boundChat = chat
-                        val character = chat.characterId?.let { id ->
+                        val selectedRosterId = Regex("Main character IDs:\\s*([^\\n]+)", RegexOption.IGNORE_CASE)
+                            .find(chat.authorsNote)?.groupValues?.getOrNull(1)
+                            ?.split(',')?.map { it.trim() }
+                            ?.firstOrNull { it.startsWith("roster:") }
+                            ?.substringAfter("roster:")
+                        val character = (chat.characterId ?: selectedRosterId)?.let { id ->
                             db.roleplayDao().getCharacter(id)
                         }
                         boundCharacter = character
                         boundPersona = chat.personaId.takeIf { it.isNotBlank() }?.let { id ->
                             db.roleplayDao().getPersona(id)
                         }
-                        val charColor = parseHexColor(
-                            character?.colorHex,
-                            Color(0xFF4A90D9),
-                        )
                         val preset = chat.presetId?.takeIf { it.isNotBlank() }
                             ?: _uiState.value.presetId
+                        var pages = decodePages(chat.pagesJson)
+                        if (pages.isEmpty()) {
+                            pages = listOf(RpPageMeta(id = "page-1", order = 0))
+                            val backfilled = chat.copy(pagesJson = encodePages(pages))
+                            boundChat = backfilled
+                            db.roleplayDao().upsertChat(backfilled)
+                        }
+                        val activePage = _uiState.value.activePageId
+                            .takeIf { id -> pages.any { it.id == id } }
+                            ?: pages.first().id
+                        val activeTemplate = pages.firstOrNull { it.id == activePage }?.templateId
+                            ?: "classic-6"
                         _uiState.update {
                             it.copy(
                                 title = chat.title,
                                 displayMode = chat.displayMode.ifBlank { "messenger" },
-                                characterBubbleColor = charColor,
                                 presetId = preset,
+                                pages = pages,
+                                activePageId = activePage,
+                                activeTemplateId = activeTemplate,
+                                userIsDungeonMaster = userIsDungeonMaster(chat.authorsNote),
                             )
                         }
+                        migrateLegacyAdventureOpeningIfNeeded(chat)
+                        publishMessages()
                     }
                 }
             }
@@ -215,8 +333,30 @@ class RoleplayChatViewModel @Inject constructor(
     }
 
     private suspend fun publishMessages() {
-        val active = rawMessages.filter { it.isActiveSwipe }
+        val allActive = rawMessages.filter { it.isActiveSwipe }
+        val startupPhase = allActive.asSequence()
+            .sortedByDescending { it.createdAt }
+            .map { adventureStartupPhase(documentFromJson(it.contentJson).plainText()) }
+            .firstOrNull { it != AdventureStartupPhase.None }
+            ?: AdventureStartupPhase.None
+        val sceneMarkers = allActive
+            .filter { it.role == ADVENTURE_SCENE_ROLE }
+            .sortedBy { it.createdAt }
+        val totalScenes = sceneMarkers.size + 1
+        val targetScene = (viewedSceneNumber ?: totalScenes).coerceIn(1, totalScenes)
+        if (viewedSceneNumber != null) viewedSceneNumber = targetScene
+        val startsAfter = sceneMarkers.getOrNull(targetScene - 2)?.createdAt
+        val endsAt = sceneMarkers.getOrNull(targetScene - 1)?.createdAt
+        val active = allActive.filter { message ->
+            message.role != ADVENTURE_SCENE_ROLE &&
+                (startsAfter == null || message.createdAt > startsAfter) &&
+                (endsAt == null || message.createdAt < endsAt)
+        }
         val panels = mutableListOf<RpMediaRef>()
+        val statePages = _uiState.value.pages
+        val defaultPageId = statePages.firstOrNull()?.id ?: "page-1"
+        val activePageId = _uiState.value.activePageId.ifBlank { defaultPageId }
+        fun onActivePage(pageId: String?): Boolean = (pageId ?: defaultPageId) == activePageId
         val ui = active.map { m ->
             val groupCount = rawMessages.count { it.swipeGroupId == m.swipeGroupId && it.role == m.role }
             val doc = documentFromJson(m.contentJson)
@@ -225,28 +365,48 @@ class RoleplayChatViewModel @Inject constructor(
             val isAudioFlags = mutableListOf<Boolean>()
             val stackPaths = mutableMapOf<String, List<String>>()
             val collapsedMap = mutableMapOf<String, Boolean>()
-            val caption = doc.plainText()
-            val speaker = if (m.role == "user") "You" else "Character"
+            val storedCaption = doc.plainText()
+            val isAdventureSetup = adventureStartupPhase(storedCaption) != AdventureStartupPhase.None
+            val rollResult = adventureRollFrom(storedCaption)
+            val actionResult = rollResult?.outcome?.takeIf { it.isNotBlank() }
+                ?: adventureOutcomeFrom(storedCaption)
+            val caption = adventureStartupProseFrom(adventureProseFrom(storedCaption))
+            val isUser = m.role == "user"
+            // Real names read like a messenger; fall back only when nothing is bound.
+            val speaker = if (isUser) {
+                boundPersona?.name?.takeIf { it.isNotBlank() } ?: "You"
+            } else {
+                boundCharacter?.name?.takeIf { it.isNotBlank() }
+                    ?: boundChat?.title?.takeIf { it.isNotBlank() }
+                    ?: "Character"
+            }
+            val avatarColorHex = if (isUser) {
+                avatarColorHexFor(speaker, null)
+            } else {
+                avatarColorHexFor(speaker, boundCharacter?.colorHex)
+            }
             doc.blocks.forEach { block ->
                 when (block) {
                     is MediaBlock -> {
                         if (block.mediaId == DM_TEXT_TILE_MEDIA_ID) {
-                            panels += RpMediaRef(
-                                messageId = m.id,
-                                blockId = block.id,
-                                path = "",
-                                caption = caption,
-                                speaker = speaker,
-                                role = m.role,
-                                gridCol = block.gridCol,
-                                gridRow = block.gridRow,
-                                gridColSpan = block.gridColSpan,
-                                gridRowSpan = block.gridRowSpan,
-                                collapsed = block.collapsed,
-                                mediaId = block.mediaId,
-                                mediaKind = MediaKind.Image,
-                                isTextTile = true,
-                            )
+                            if (onActivePage(block.pageId)) {
+                                panels += RpMediaRef(
+                                    messageId = m.id,
+                                    blockId = block.id,
+                                    path = "",
+                                    caption = caption,
+                                    speaker = speaker,
+                                    role = m.role,
+                                    gridCol = block.gridCol,
+                                    gridRow = block.gridRow,
+                                    gridColSpan = block.gridColSpan,
+                                    gridRowSpan = block.gridRowSpan,
+                                    collapsed = block.collapsed,
+                                    mediaId = block.mediaId,
+                                    mediaKind = MediaKind.Image,
+                                    isTextTile = true,
+                                )
+                            }
                             return@forEach
                         }
                         val entity = mediaRepository.getById(block.mediaId)
@@ -257,22 +417,29 @@ class RoleplayChatViewModel @Inject constructor(
                             blockIds += block.id
                             isAudioFlags += audio
                             collapsedMap[block.id] = block.collapsed
-                            panels += RpMediaRef(
-                                messageId = m.id,
-                                blockId = block.id,
-                                path = path,
-                                caption = caption,
-                                speaker = speaker,
-                                role = m.role,
-                                gridCol = block.gridCol,
-                                gridRow = block.gridRow,
-                                gridColSpan = block.gridColSpan,
-                                gridRowSpan = block.gridRowSpan,
-                                collapsed = block.collapsed,
-                                isAudio = audio,
-                                mediaId = block.mediaId,
-                                mediaKind = block.kind,
-                            )
+                            if (onActivePage(block.pageId)) {
+                                panels += RpMediaRef(
+                                    messageId = m.id,
+                                    blockId = block.id,
+                                    path = path,
+                                    caption = caption,
+                                    speaker = speaker,
+                                    role = m.role,
+                                    gridCol = block.gridCol,
+                                    gridRow = block.gridRow,
+                                    gridColSpan = block.gridColSpan,
+                                    gridRowSpan = block.gridRowSpan,
+                                    collapsed = block.collapsed,
+                                    isAudio = audio,
+                                    mediaId = block.mediaId,
+                                    mediaKind = block.kind,
+                                    mediaScale = block.mediaScale,
+                                    mediaOffsetXPercent = block.mediaOffsetXPercent,
+                                    mediaOffsetYPercent = block.mediaOffsetYPercent,
+                                    overlays = block.overlays,
+                                    panelRotationDeg = block.panelRotationDeg,
+                                )
+                            }
                         }
                     }
                     is MediaStackBlock -> {
@@ -286,23 +453,30 @@ class RoleplayChatViewModel @Inject constructor(
                             isAudioFlags += false
                             stackPaths[block.id] = resolved
                             collapsedMap[block.id] = block.collapsed
-                            panels += RpMediaRef(
-                                messageId = m.id,
-                                blockId = block.id,
-                                path = resolved[idx],
-                                caption = caption,
-                                speaker = speaker,
-                                role = m.role,
-                                stackedPaths = resolved,
-                                gridCol = block.gridCol,
-                                gridRow = block.gridRow,
-                                gridColSpan = block.gridColSpan,
-                                gridRowSpan = block.gridRowSpan,
-                                collapsed = block.collapsed,
-                                isAudio = false,
-                                mediaId = block.mediaIds.getOrNull(idx).orEmpty(),
-                                mediaKind = MediaKind.Image,
-                            )
+                            if (onActivePage(block.pageId)) {
+                                panels += RpMediaRef(
+                                    messageId = m.id,
+                                    blockId = block.id,
+                                    path = resolved[idx],
+                                    caption = caption,
+                                    speaker = speaker,
+                                    role = m.role,
+                                    stackedPaths = resolved,
+                                    gridCol = block.gridCol,
+                                    gridRow = block.gridRow,
+                                    gridColSpan = block.gridColSpan,
+                                    gridRowSpan = block.gridRowSpan,
+                                    collapsed = block.collapsed,
+                                    isAudio = false,
+                                    mediaId = block.mediaIds.getOrNull(idx).orEmpty(),
+                                    mediaKind = MediaKind.Image,
+                                    mediaScale = block.mediaScale,
+                                    mediaOffsetXPercent = block.mediaOffsetXPercent,
+                                    mediaOffsetYPercent = block.mediaOffsetYPercent,
+                                    overlays = block.overlays,
+                                    panelRotationDeg = block.panelRotationDeg,
+                                )
+                            }
                         }
                     }
                     else -> Unit
@@ -316,15 +490,35 @@ class RoleplayChatViewModel @Inject constructor(
                 speaker = speaker,
                 text = caption,
                 role = m.role,
+                createdAt = m.createdAt,
+                avatarColorHex = avatarColorHex,
                 mediaPaths = paths,
                 mediaBlockIds = blockIds,
                 mediaIsAudio = isAudioFlags,
                 mediaStackPaths = stackPaths,
                 mediaCollapsed = collapsedMap,
+                usageText = if (m.role != "user" && (m.promptTokens > 0 || m.completionTokens > 0 || m.costUsd > 0.0)) {
+                    UsageFormat.formatUsage(m.promptTokens, m.completionTokens, null, m.costUsd.takeIf { it > 0.0 })
+                } else {
+                    ""
+                },
+                actionResult = actionResult,
+                rollResult = rollResult,
+                isAdventureSetup = isAdventureSetup,
             )
         }
         _uiState.update {
-            it.copy(messages = ui, mediaPanels = panels, canPasteMedia = mediaClipboard.hasPayload)
+            it.copy(
+                messages = ui,
+                mediaPanels = panels,
+                canPasteMedia = mediaClipboard.hasPayload,
+                adventureStartupPhase = startupPhase,
+                sceneNumber = targetScene,
+                totalScenes = totalScenes,
+                canGoToPreviousScene = targetScene > 1,
+                viewingCurrentScene = targetScene == totalScenes,
+                canUndoSceneAdvance = targetScene == totalScenes && sceneMarkers.isNotEmpty(),
+            )
         }
     }
 
@@ -343,6 +537,13 @@ class RoleplayChatViewModel @Inject constructor(
             MediaEditAction.Uncollapse -> setMediaCollapsed(messageId, blockId, false)
             MediaEditAction.Stack -> stackMedia(messageId, blockId)
             MediaEditAction.Move -> Unit // manga grid handles Move in UI
+            MediaEditAction.AdjustImage -> Unit // manga grid handles Adjust image in UI
+            MediaEditAction.AddTextOverlay -> addTextOverlay(messageId, blockId)
+            MediaEditAction.EditImage -> openImageEditor(messageId, blockId)
+            MediaEditAction.SeparatePanels -> separatePanels(messageId, blockId, useAi = true)
+            MediaEditAction.SeparatePanelsAuto -> separatePanels(messageId, blockId, useAi = false)
+            MediaEditAction.AddMedia -> requestMediaPick()
+            MediaEditAction.GenerateMedia -> openImageGen()
         }
     }
 
@@ -375,12 +576,14 @@ class RoleplayChatViewModel @Inject constructor(
         viewModelScope.launch {
             val current = rawMessages.find { it.id == messageId } ?: return@launch
             val doc = documentFromJson(current.contentJson)
+            val pageId = _uiState.value.activePageId
             val block = if (payload.stackedMediaIds.size > 1) {
                 MediaStackBlock(
                     id = "msb-${UUID.randomUUID()}",
                     mediaIds = payload.stackedMediaIds,
                     gridColSpan = payload.gridColSpan,
                     gridRowSpan = payload.gridRowSpan,
+                    pageId = pageId,
                 )
             } else {
                 MediaBlock(
@@ -390,6 +593,7 @@ class RoleplayChatViewModel @Inject constructor(
                     widthPercent = payload.widthPercent,
                     gridColSpan = payload.gridColSpan,
                     gridRowSpan = payload.gridRowSpan,
+                    pageId = pageId,
                 )
             }
             persistMessageBlocks(current, doc.blocks + block)
@@ -429,10 +633,51 @@ class RoleplayChatViewModel @Inject constructor(
         }
     }
 
-    fun onInputChange(value: String) = _uiState.update { it.copy(input = value, errorMessage = "") }
+    fun onInputChange(value: String) {
+        _uiState.update { it.copy(input = value, errorMessage = "") }
+        refreshContextMeter()
+    }
+
+    private var lastClearedInput: String = ""
+
+    /** ⌫ tap: delete the draft entry (stashed so hold can undo it). */
+    fun clearInput() {
+        lastClearedInput = _uiState.value.input
+        onInputChange("")
+    }
+
+    /** ⌫ press-and-hold: restore the last deleted draft. */
+    fun undoClearInput() {
+        if (lastClearedInput.isBlank()) return
+        val restored = lastClearedInput
+        lastClearedInput = ""
+        onInputChange(restored)
+    }
 
     fun updateOutputWords(words: Int) {
         _uiState.update { it.copy(outputWords = words.coerceIn(50, 4000)) }
+        refreshContextMeter()
+    }
+
+    fun updateMinimumOutputWords(words: Int) {
+        _uiState.update { it.copy(minimumOutputWords = words.coerceIn(50, 4000)) }
+        refreshContextMeter()
+    }
+
+    fun selectModel(modelId: String) {
+        val ref = PromptModelSelection.modelRef(modelId)
+        _uiState.update { it.copy(selectedModelRef = ref) }
+        contextLimit = ContextMeter.limitFor(ref, _uiState.value.writingModels)
+        refreshContextMeter()
+    }
+
+    fun useDefaultModel() {
+        _uiState.update { it.copy(selectedModelRef = "") }
+        contextLimit = ContextMeter.limitFor(
+            _uiState.value.defaultModelRef,
+            _uiState.value.writingModels,
+        )
+        refreshContextMeter()
     }
 
     fun setGenerationVisible(visible: Boolean) {
@@ -649,11 +894,33 @@ class RoleplayChatViewModel @Inject constructor(
                 gridSize,
             )
         }
+        // Prefer the page layout's empty slots, so dropped media lands in a panel
+        // rather than a bare 1x1 cell somewhere in the corner.
+        // Templates are authored against MediaGrid.SIZE, so they only apply to the
+        // full-resolution storyboard canvas — never the coarser DM board.
+        val slots = if (gridSize == MediaGrid.SIZE) {
+            PanelTemplates.byId(_uiState.value.activeTemplateId)?.slots.orEmpty()
+        } else {
+            emptyList()
+        }
         val updates = mutableListOf<Triple<String, String, Pair<Int, Int>>>()
         panels.forEach { panel ->
             if (!MediaGrid.isPlaced(panel.gridCol, panel.gridRow, gridSize)) {
-                val cell = MediaGrid.nextFreeCell(occupied, gridSize)
-                occupied += MediaGrid.cellsCovered(cell.first, cell.second, 1, 1, gridSize)
+                val freeSlot = slots.firstOrNull { slot ->
+                    MediaGrid.cellsCovered(
+                        slot.col, slot.row, slot.colSpan, slot.rowSpan, gridSize,
+                    ).none { it in occupied }
+                }
+                val cell = if (freeSlot != null) {
+                    occupied += MediaGrid.cellsCovered(
+                        freeSlot.col, freeSlot.row, freeSlot.colSpan, freeSlot.rowSpan, gridSize,
+                    )
+                    freeSlot.col to freeSlot.row
+                } else {
+                    val next = MediaGrid.nextFreeCell(occupied, gridSize)
+                    occupied += MediaGrid.cellsCovered(next.first, next.second, 1, 1, gridSize)
+                    next
+                }
                 updates += Triple(panel.messageId, panel.blockId, cell)
             }
         }
@@ -664,7 +931,14 @@ class RoleplayChatViewModel @Inject constructor(
                 (it is MediaBlock && it.id == blockId) || (it is MediaStackBlock && it.id == blockId)
             }
             if (index < 0) return@forEach
-            blocks[index] = blocks[index].withGridCell(cell.first, cell.second, gridSize)
+            val slot = slots.firstOrNull { it.col == cell.first && it.row == cell.second }
+            blocks[index] = if (slot != null) {
+                blocks[index].withGridPlacement(
+                    slot.col, slot.row, slot.colSpan, slot.rowSpan, gridSize,
+                )
+            } else {
+                blocks[index].withGridCell(cell.first, cell.second, gridSize)
+            }
             db.roleplayDao().upsertMessage(
                 current.copy(contentJson = Document(blocks = blocks).toJson()),
             )
@@ -723,6 +997,232 @@ class RoleplayChatViewModel @Inject constructor(
         }
     }
 
+    // --- Storyboard pages ---------------------------------------------------
+
+    fun switchPage(pageId: String) {
+        if (_uiState.value.activePageId == pageId) return
+        val template = _uiState.value.pages.firstOrNull { it.id == pageId }?.templateId
+            ?: "classic-6"
+        _uiState.update {
+            it.copy(activePageId = pageId, activeTemplateId = template, selectedMediaKey = null)
+        }
+        viewModelScope.launch { publishMessages() }
+    }
+
+    fun addPage() {
+        val chat = boundChat ?: return
+        viewModelScope.launch {
+            val pages = _uiState.value.pages
+            val next = RpPageMeta(
+                id = "page-${UUID.randomUUID()}",
+                order = (pages.maxOfOrNull { it.order } ?: -1) + 1,
+                title = "Page ${pages.size + 1}",
+            )
+            val updated = chat.copy(pagesJson = encodePages(pages + next))
+            db.roleplayDao().upsertChat(updated)
+            boundChat = updated
+            _uiState.update {
+                it.copy(
+                    pages = pages + next,
+                    activePageId = next.id,
+                    activeTemplateId = next.templateId,
+                    selectedMediaKey = null,
+                )
+            }
+            publishMessages()
+        }
+    }
+
+    fun renamePage(pageId: String, title: String) {
+        val chat = boundChat ?: return
+        viewModelScope.launch {
+            val pages = _uiState.value.pages.map {
+                if (it.id == pageId) it.copy(title = title.ifBlank { null }) else it
+            }
+            val updated = chat.copy(pagesJson = encodePages(pages))
+            db.roleplayDao().upsertChat(updated)
+            boundChat = updated
+            _uiState.update { it.copy(pages = pages) }
+        }
+    }
+
+    /** Deleting a page leaves its media orphaned under the default page (never data loss). */
+    fun deletePage(pageId: String) {
+        val chat = boundChat ?: return
+        val pages = _uiState.value.pages
+        if (pages.size <= 1) return
+        viewModelScope.launch {
+            val remaining = pages.filterNot { it.id == pageId }
+            val updated = chat.copy(pagesJson = encodePages(remaining))
+            db.roleplayDao().upsertChat(updated)
+            boundChat = updated
+            val nextActive = if (_uiState.value.activePageId == pageId) {
+                remaining.first().id
+            } else {
+                _uiState.value.activePageId
+            }
+            _uiState.update {
+                it.copy(pages = remaining, activePageId = nextActive, selectedMediaKey = null)
+            }
+            publishMessages()
+        }
+    }
+
+    /**
+     * Snap this page's panels into a comic layout. Panels are filled in their
+     * existing order, and any beyond the template's slot count keep their current
+     * placement — applying a template never drops artwork off the page.
+     */
+    fun applyPanelTemplate(templateId: String) {
+        val template = PanelTemplates.byId(templateId) ?: return
+        val gridSize = activeGridSize()
+        val pagePanels = _uiState.value.mediaPanels
+        viewModelScope.launch {
+            // Record the layout first so its frames show even on an empty page.
+            val chat = boundChat
+            val activeId = _uiState.value.activePageId
+            if (chat != null && activeId.isNotBlank()) {
+                val pages = _uiState.value.pages.map {
+                    if (it.id == activeId) it.copy(templateId = templateId) else it
+                }
+                val updated = chat.copy(pagesJson = encodePages(pages))
+                db.roleplayDao().upsertChat(updated)
+                boundChat = updated
+                _uiState.update { it.copy(pages = pages, activeTemplateId = templateId) }
+            }
+            pagePanels.forEachIndexed { index, panel ->
+                val slot = template.slots.getOrNull(index) ?: return@forEachIndexed
+                val current = rawMessages.find { it.id == panel.messageId } ?: return@forEachIndexed
+                val blocks = documentFromJson(current.contentJson).blocks.toMutableList()
+                val at = blocks.indexOfFirst { it.id == panel.blockId }
+                if (at < 0) return@forEachIndexed
+                val placed = blocks[at].withGridPlacement(
+                    slot.col,
+                    slot.row,
+                    slot.colSpan,
+                    slot.rowSpan,
+                    gridSize,
+                )
+                blocks[at] = when (placed) {
+                    is MediaBlock -> placed.copy(panelRotationDeg = slot.rotationDeg)
+                    is MediaStackBlock -> placed.copy(panelRotationDeg = slot.rotationDeg)
+                    else -> placed
+                }
+                persistMessageBlocks(current, blocks)
+            }
+            _uiState.update { it.copy(errorMessage = "", selectedMediaKey = null) }
+        }
+    }
+
+    // --- Media transform (pan/zoom within a panel) --------------------------
+
+    fun setMediaTransform(
+        messageId: String,
+        blockId: String,
+        scale: Float,
+        offsetXPercent: Float,
+        offsetYPercent: Float,
+    ) {
+        viewModelScope.launch {
+            val current = rawMessages.find { it.id == messageId } ?: return@launch
+            val blocks = documentFromJson(current.contentJson).blocks.toMutableList()
+            val index = blocks.indexOfFirst { it.id == blockId }
+            if (index < 0) return@launch
+            blocks[index] = when (val block = blocks[index]) {
+                is MediaBlock -> block.copy(
+                    mediaScale = scale,
+                    mediaOffsetXPercent = offsetXPercent,
+                    mediaOffsetYPercent = offsetYPercent,
+                )
+                is MediaStackBlock -> block.copy(
+                    mediaScale = scale,
+                    mediaOffsetXPercent = offsetXPercent,
+                    mediaOffsetYPercent = offsetYPercent,
+                )
+                else -> return@launch
+            }
+            persistMessageBlocks(current, blocks)
+        }
+    }
+
+    // --- Text overlays --------------------------------------------------------
+
+    fun addTextOverlay(messageId: String, blockId: String) {
+        viewModelScope.launch {
+            val current = rawMessages.find { it.id == messageId } ?: return@launch
+            val blocks = documentFromJson(current.contentJson).blocks.toMutableList()
+            val index = blocks.indexOfFirst { it.id == blockId }
+            if (index < 0) return@launch
+            val overlay = TextOverlay(id = "ov-${UUID.randomUUID()}", text = "Text")
+            blocks[index] = when (val block = blocks[index]) {
+                is MediaBlock -> block.copy(overlays = block.overlays + overlay)
+                is MediaStackBlock -> block.copy(overlays = block.overlays + overlay)
+                else -> return@launch
+            }
+            persistMessageBlocks(current, blocks)
+            _uiState.update {
+                it.copy(editingOverlay = Triple(messageId, blockId, overlay.id))
+            }
+        }
+    }
+
+    fun openOverlayEditor(messageId: String, blockId: String, overlayId: String) {
+        _uiState.update { it.copy(editingOverlay = Triple(messageId, blockId, overlayId)) }
+    }
+
+    fun closeOverlayEditor() {
+        _uiState.update { it.copy(editingOverlay = null) }
+    }
+
+    fun moveTextOverlay(messageId: String, blockId: String, overlayId: String, xPercent: Float, yPercent: Float) {
+        updateTextOverlay(messageId, blockId, overlayId) { it.copy(xPercent = xPercent, yPercent = yPercent) }
+    }
+
+    fun resizeTextOverlay(messageId: String, blockId: String, overlayId: String, widthPercent: Float) {
+        updateTextOverlay(messageId, blockId, overlayId) { it.copy(widthPercent = widthPercent) }
+    }
+
+    fun saveTextOverlay(messageId: String, blockId: String, overlay: TextOverlay) {
+        updateTextOverlay(messageId, blockId, overlay.id) { overlay }
+    }
+
+    fun deleteTextOverlay(messageId: String, blockId: String, overlayId: String) {
+        viewModelScope.launch {
+            val current = rawMessages.find { it.id == messageId } ?: return@launch
+            val blocks = documentFromJson(current.contentJson).blocks.toMutableList()
+            val index = blocks.indexOfFirst { it.id == blockId }
+            if (index < 0) return@launch
+            blocks[index] = when (val block = blocks[index]) {
+                is MediaBlock -> block.copy(overlays = block.overlays.filterNot { it.id == overlayId })
+                is MediaStackBlock -> block.copy(overlays = block.overlays.filterNot { it.id == overlayId })
+                else -> return@launch
+            }
+            persistMessageBlocks(current, blocks)
+        }
+    }
+
+    private fun updateTextOverlay(
+        messageId: String,
+        blockId: String,
+        overlayId: String,
+        transform: (TextOverlay) -> TextOverlay,
+    ) {
+        viewModelScope.launch {
+            val current = rawMessages.find { it.id == messageId } ?: return@launch
+            val blocks = documentFromJson(current.contentJson).blocks.toMutableList()
+            val index = blocks.indexOfFirst { it.id == blockId }
+            if (index < 0) return@launch
+            fun applyTo(overlays: List<TextOverlay>) =
+                overlays.map { if (it.id == overlayId) transform(it) else it }
+            blocks[index] = when (val block = blocks[index]) {
+                is MediaBlock -> block.copy(overlays = applyTo(block.overlays))
+                is MediaStackBlock -> block.copy(overlays = applyTo(block.overlays))
+                else -> return@launch
+            }
+            persistMessageBlocks(current, blocks)
+        }
+    }
+
     fun speakText(text: String) {
         val trimmed = text.trim()
         if (trimmed.isBlank()) return
@@ -745,8 +1245,112 @@ class RoleplayChatViewModel @Inject constructor(
         _uiState.update { it.copy(audioPickRequestId = it.audioPickRequestId + 1) }
     }
 
+    fun clearAudioPickRequest() {
+        _uiState.update { it.copy(audioPickRequestId = 0L) }
+    }
+
+    /** ☁️ AI: generate a picture with a cloud image model and attach it. */
+    fun openImageGen() {
+        viewModelScope.launch {
+            val infos = modelCache.toModelInfo(modelCache.models.first())
+                .filter { it.generatesImages && it.available }
+            _uiState.update {
+                it.copy(
+                    showImageGen = true,
+                    imageGenModels = infos,
+                    imageGenModelRef = it.imageGenModelRef.ifBlank {
+                        infos.firstOrNull()?.id?.let { id -> PromptModelSelection.modelRef(id) }.orEmpty()
+                    },
+                    imageGenStatus = "",
+                )
+            }
+        }
+    }
+
+    fun closeImageGen() {
+        generateJob?.cancel()
+        _uiState.update { it.copy(showImageGen = false, imageGenBusy = false) }
+    }
+
+    fun onImageGenPrompt(value: String) {
+        _uiState.update { it.copy(imageGenPrompt = value, imageGenStatus = "") }
+    }
+
+    fun selectImageGenModel(modelId: String) {
+        _uiState.update { it.copy(imageGenModelRef = PromptModelSelection.modelRef(modelId)) }
+    }
+
+    fun generateImageMedia() {
+        val state = _uiState.value
+        if (state.imageGenBusy) return
+        val prompt = state.imageGenPrompt.trim()
+        if (prompt.isBlank()) {
+            _uiState.update { it.copy(imageGenStatus = "Describe the picture first.") }
+            return
+        }
+        generateJob?.cancel()
+        generateJob = viewModelScope.launch {
+            _uiState.update { it.copy(imageGenBusy = true, imageGenStatus = "Generating with the cloud model…") }
+            runCatching {
+                val modelRef = state.imageGenModelRef.ifBlank { null }
+                if (!aiGeneration.hasApiKey(modelRef)) {
+                    throw AIError.NoApiKey()
+                }
+                val (bytes, mime) = aiGeneration.generateImage(prompt, modelRef)
+                val media = mediaRepository.importFromBytes(
+                    bytes = bytes,
+                    fileName = "gen-${System.currentTimeMillis()}.${if (mime == "image/png") "png" else "jpg"}",
+                    mimeType = mime,
+                )
+                val doc = Document(
+                    blocks = listOf(
+                        MediaBlock(
+                            id = UUID.randomUUID().toString(),
+                            mediaId = media.id,
+                            kind = MediaRepository.kindForType(media.type),
+                            pageId = _uiState.value.activePageId,
+                        ),
+                    ),
+                )
+                val now = System.currentTimeMillis()
+                db.roleplayDao().upsertMessage(
+                    RpMessageEntity(
+                        id = "rpm-$now",
+                        chatId = state.chatId,
+                        swipeGroupId = "sw-$now",
+                        swipeIndex = 0,
+                        isActiveSwipe = true,
+                        role = "user",
+                        contentJson = doc.toJson(),
+                        createdAt = now,
+                        displayMode = currentDisplayMode(),
+                    ),
+                )
+            }.onSuccess {
+                _uiState.update {
+                    it.copy(
+                        showImageGen = false,
+                        imageGenBusy = false,
+                        imageGenPrompt = "",
+                        storyboardStatus = "AI picture added to the page.",
+                    )
+                }
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(
+                        imageGenBusy = false,
+                        imageGenStatus = err.message?.takeIf { m -> m.isNotBlank() }
+                            ?: "Generation failed — check the model and key.",
+                    )
+                }
+            }
+        }
+    }
+
     fun clearMediaPickRequest() {
-        // no-op keep id; picker cancel does not need state clear
+        // Consumed as soon as the picker launches, so re-entering the screen
+        // never auto-opens the gallery.
+        _uiState.update { it.copy(mediaPickRequestId = 0L) }
     }
 
     fun attachMedia(uris: List<Uri>) {
@@ -762,12 +1366,14 @@ class RoleplayChatViewModel @Inject constructor(
                             listOf(Span(caption)),
                         ),
                     )
+                    val pageId = _uiState.value.activePageId
                     mediaList.forEach { media ->
                         add(
                             MediaBlock(
                                 id = UUID.randomUUID().toString(),
                                 mediaId = media.id,
                                 kind = MediaRepository.kindForType(media.type),
+                                pageId = pageId,
                             ),
                         )
                     }
@@ -795,12 +1401,404 @@ class RoleplayChatViewModel @Inject constructor(
         _uiState.update { it.copy(composerMinLines = (it.composerMinLines + 1).coerceAtMost(8)) }
     }
 
+    /**
+     * Sets scene art from an image already in the app's Pictures library —
+     * no device picker, no re-import.
+     */
+    fun attachExistingMedia(mediaId: String) {
+        if (mediaId.isBlank()) return
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val caption = _uiState.value.input.ifBlank { "[media]" }
+            val doc = Document(
+                blocks = listOf(
+                    Paragraph("p-$now", listOf(Span(caption))),
+                    MediaBlock(
+                        id = UUID.randomUUID().toString(),
+                        mediaId = mediaId,
+                        kind = MediaRepository.kindForType("image"),
+                        pageId = _uiState.value.activePageId,
+                    ),
+                ),
+            )
+            val entity = RpMessageEntity(
+                id = "rpm-$now",
+                chatId = _uiState.value.chatId,
+                swipeGroupId = "sw-$now",
+                swipeIndex = 0,
+                isActiveSwipe = true,
+                role = "user",
+                contentJson = doc.toJson(),
+                createdAt = now,
+                displayMode = currentDisplayMode(),
+            )
+            insertStoredMessage(entity)
+            _uiState.update { it.copy(input = "") }
+        }
+    }
+
     fun send() {
-        if (_uiState.value.entryMode == "nai") addManualEntry() else generate()
+        // "!character a scarred caravan guard" writes the entry, files it in the
+        // roster, and posts the same words into the adventure.
+        com.ihy2ln.weaverse.feature.novel.codex.CodexBang.parse(
+            _uiState.value.input,
+            customBangCommands,
+            removedBangKeywords,
+        )?.let { command ->
+            runCodexBang(command)
+            return
+        }
+        // "*action swing at the warden" — tabletop player-turn commands.
+        RpgTurnCommands.parse(_uiState.value.input, starCommands)?.let { turn ->
+            runRpgTurn(turn)
+            return
+        }
+        val startupPending = _uiState.value.adventureStartupPhase in setOf(
+            AdventureStartupPhase.Character,
+            AdventureStartupPhase.Choose,
+            AdventureStartupPhase.Questions,
+        )
+        if (_uiState.value.entryMode == "nai" && !startupPending) addManualEntry() else generate()
+    }
+
+    /**
+     * Runs a `*` player-turn command: tag the prompt, and resolve a roll for
+     * the commands that need one (action / check / attack / cast).
+     */
+    private fun runRpgTurn(turn: RpgTurnCommands.ParsedTurn) {
+        val state = _uiState.value
+        if (state.isStreaming) return
+        val body = turn.text.ifBlank { turn.command.keyword.replaceFirstChar { it.uppercase() } }
+        val tagged = turn.command.promptTag?.let { "$it $body" } ?: body
+        _uiState.update { it.copy(input = tagged, errorMessage = "") }
+        if (turn.command.requiresRoll) {
+            generate(forceAdventureRoll = true)
+        } else {
+            generate()
+        }
+    }
+
+    /**
+     * Generates a codex entry from a `!kind …` line and posts the prose it
+     * rendered into the scene — the same words the entry stores.
+     */
+    private fun runCodexBang(command: com.ihy2ln.weaverse.feature.novel.codex.CodexBangCommand) {
+        val chatId = _uiState.value.chatId
+        if (chatId.isBlank() || _uiState.value.isStreaming) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(input = "", isStreaming = true, errorMessage = "") }
+            val recent = runCatching {
+                db.roleplayDao().getMessages(chatId).takeLast(6).joinToString(separator = System.lineSeparator()) {
+                    documentFromJson(it.contentJson).plainText()
+                }
+            }.getOrDefault("")
+            runCatching { codexQuickAdd.run(command, sceneContext = recent) }
+                .onSuccess { result ->
+                    val now = System.currentTimeMillis()
+                    val entity = RpMessageEntity(
+                        id = "rpm-$now",
+                        chatId = chatId,
+                        swipeGroupId = "sw-$now",
+                        swipeIndex = 0,
+                        isActiveSwipe = true,
+                        role = "char",
+                        contentJson = Document.fromPlainText(result.text).toJson(),
+                        createdAt = now,
+                        displayMode = _uiState.value.displayMode,
+                    )
+                    db.roleplayDao().upsertMessage(entity)
+                    workspaceHistory.record(
+                        undo = { db.roleplayDao().deleteMessage(entity.id) },
+                        redo = { db.roleplayDao().upsertMessage(entity) },
+                    )
+                    _uiState.update { it.copy(isStreaming = false, composerStatus = result.status) }
+                }
+                .onFailure { err ->
+                    _uiState.update {
+                        it.copy(
+                            isStreaming = false,
+                            errorMessage = err.message ?: "Could not write that entry",
+                        )
+                    }
+                }
+        }
+    }
+
+    /** Explicit tabletop override: submit the typed action and require a resolved check. */
+    fun rollAction() {
+        val state = _uiState.value
+        if (state.input.isBlank() || state.isStreaming) return
+        generate(forceAdventureRoll = true)
+    }
+
+    /** ✓ hold-menu ↻: reroll the latest AI reply without retyping anything. */
+    fun regenerateLatestReply() {
+        if (_uiState.value.isStreaming) return
+        val latest = rawMessages.lastOrNull { it.role == "char" && it.isActiveSwipe } ?: return
+        regenerate(latest.id)
+    }
+
+    /** ✓ hold-menu »: keep the adventure going from where it left off. */
+    fun continueAdventure() {
+        if (_uiState.value.isStreaming) return
+        onInputChange("Continue the scene.")
+        generate()
+    }
+
+    /** ✓ hold-menu 👤: read the recent scene, then confirm what joins the roster. */
+    fun addRosterCharacter() {
+        startCapture("roster")
+    }
+
+    /** ✓ hold-menu 🛍: read the recent scene, then confirm what files into inventories. */
+    fun addInventoryItem() {
+        startCapture("inventory")
+    }
+
+    /** Long-press on a message: scan that highlighted text instead of the whole scene. */
+    fun captureFromText(text: String, kind: String) {
+        viewModelScope.launch { openCapture(kind, text) }
+    }
+
+    private fun startCapture(kind: String) {
+        viewModelScope.launch {
+            openCapture(kind, recentSceneText())
+        }
+    }
+
+    private suspend fun openCapture(kind: String, source: String) {
+        val chatId = _uiState.value.chatId.ifBlank { boundChat?.id.orEmpty() }
+        if (source.isBlank()) {
+            setComposerStatus("Nothing to read yet — play a scene first.")
+            return
+        }
+        if (kind == "ai") {
+            openAiCapture(source, chatId)
+            return
+        }
+        val extraction = runCatching { adventureCapture.extract(source) }.getOrNull()
+        if (kind == "roster") {
+            val chars = extraction?.characters.orEmpty().filter { it.name.isNotBlank() }
+            if (chars.isEmpty()) {
+                adventureCapture.addBlankCharacter()
+                setComposerStatus("No characters detected — added a blank roster character to edit.")
+                return
+            }
+            _uiState.update {
+                it.copy(
+                    captureDialog = CaptureDialogState(
+                        kind = kind,
+                        sourceText = source,
+                        extraction = extraction!!,
+                        candidates = chars.map { char ->
+                            CaptureCandidate(
+                                name = char.name,
+                                summary = listOf(
+                                    char.characterClass,
+                                    char.species,
+                                    if (char.level > 0) "Lv ${char.level}" else "",
+                                    if (char.maxHp > 0) "HP ${char.currentHp}/${char.maxHp}" else "",
+                                    if (char.inParty) "party" else "",
+                                ).filter { it.isNotBlank() }.joinToString(" · ")
+                                    .ifBlank { char.notes },
+                            )
+                        },
+                    ),
+                )
+            }
+        } else {
+            val items = extraction?.items.orEmpty().filter { it.name.isNotBlank() }
+            if (items.isEmpty()) {
+                val carrier = adventureCapture.addBlankItem(chatId)
+                setComposerStatus(
+                    if (carrier == null) {
+                        "No inventory carrier found — add or mark a character first."
+                    } else {
+                        "No items detected — added a blank item to $carrier's inventory."
+                    },
+                )
+                return
+            }
+            _uiState.update {
+                it.copy(
+                    captureDialog = CaptureDialogState(
+                        kind = kind,
+                        sourceText = source,
+                        extraction = extraction!!,
+                        candidates = items.map { item ->
+                            CaptureCandidate(
+                                name = item.name,
+                                summary = listOf(
+                                    "×${item.quantity.coerceAtLeast(1)}",
+                                    item.carrier.ifBlank { "party" },
+                                    item.notes,
+                                ).filter { it.isNotBlank() }.joinToString(" · "),
+                            )
+                        },
+                    ),
+                )
+            }
+        }
+    }
+
+    /**
+     * AI-sorted capture: asks the model to split the selected text into
+     * character-sheet facts, inventory items, and codex lore, then shows a
+     * review dialog where the user confirms or re-routes each section.
+     */
+    private suspend fun openAiCapture(source: String, chatId: String) {
+        setComposerStatus("AI is sorting the text…")
+        val plan = runCatching { adventureCapture.plan(source) }.getOrNull()
+        if (plan == null) {
+            setComposerStatus(
+                "The AI could not sort that text. Add an OpenRouter key, or use " +
+                    "Add to roster / Add to inventory directly.",
+            )
+            return
+        }
+        val candidates = buildList {
+            plan.characters.filter { it.name.isNotBlank() }.forEach { char ->
+                add(
+                    CaptureCandidate(
+                        name = "[C] ${char.name}",
+                        summary = listOf(
+                            char.characterClass,
+                            char.species,
+                            if (char.level > 0) "Lv ${char.level}" else "",
+                            if (char.maxHp > 0) "HP ${char.currentHp}/${char.maxHp}" else "",
+                            if (char.inParty) "party" else "",
+                        ).filter { it.isNotBlank() }.joinToString(" · ")
+                            .ifBlank { char.notes },
+                    ),
+                )
+            }
+            plan.items.filter { it.name.isNotBlank() }.forEach { item ->
+                add(
+                    CaptureCandidate(
+                        name = "[I] ${item.name}",
+                        summary = listOf(
+                            "×${item.quantity.coerceAtLeast(1)}",
+                            item.carrier.ifBlank { "party" },
+                            item.notes,
+                        ).filter { it.isNotBlank() }.joinToString(" · "),
+                    ),
+                )
+            }
+            plan.lore.filter { it.text.isNotBlank() || it.title.isNotBlank() }.forEach { blob ->
+                add(
+                    CaptureCandidate(
+                        name = "[L] ${blob.title.ifBlank { blob.category.ifBlank { "Lore" } }}",
+                        summary = blob.text.take(120),
+                    ),
+                )
+            }
+        }
+        if (candidates.isEmpty()) {
+            setComposerStatus("Nothing worth sorting was found in that text.")
+            return
+        }
+        _uiState.update {
+            it.copy(
+                captureDialog = CaptureDialogState(
+                    kind = "ai",
+                    sourceText = source,
+                    extraction = AdventureCapture.Extraction(
+                        characters = plan.characters,
+                        items = plan.items,
+                        lore = plan.lore,
+                    ),
+                    candidates = candidates,
+                ),
+            )
+        }
+    }
+
+    fun toggleCaptureCandidate(name: String) {
+        _uiState.update { state ->
+            val dialog = state.captureDialog ?: return@update state
+            state.copy(
+                captureDialog = dialog.copy(
+                    candidates = dialog.candidates.map {
+                        if (it.name == name) it.copy(selected = !it.selected) else it
+                    },
+                ),
+            )
+        }
+    }
+
+    /** Applies only the checked candidates. */
+    fun confirmCapture() {
+        val dialog = _uiState.value.captureDialog ?: return
+        val chatId = _uiState.value.chatId.ifBlank { boundChat?.id.orEmpty() }
+        viewModelScope.launch {
+            val selected = dialog.candidates.filter { it.selected }.map { it.name }.toSet()
+            val message = when (dialog.kind) {
+                "roster" -> {
+                    val chosen = dialog.extraction.characters.filter { "[C] ${it.name}" in selected || it.name in selected }
+                    if (chosen.isEmpty()) {
+                        "Nothing selected."
+                    } else {
+                        "Added to roster: ${adventureCapture.applyCharacters(chosen, chatId).joinToString()}"
+                    }
+                }
+                "ai" -> {
+                    val chosenChars = dialog.extraction.characters.filter { "[C] ${it.name}" in selected }
+                    val chosenItems = dialog.extraction.items.filter { "[I] ${it.name}" in selected }
+                    val chosenLore = dialog.extraction.lore.filter {
+                        "[L] ${it.title.ifBlank { it.category.ifBlank { "Lore" } }}" in selected
+                    }
+                    if (chosenChars.isEmpty() && chosenItems.isEmpty() && chosenLore.isEmpty()) {
+                        "Nothing selected."
+                    } else {
+                        adventureCapture.applyPlan(
+                            AdventureCapture.CapturePlan(
+                                characters = chosenChars,
+                                items = chosenItems,
+                                lore = chosenLore,
+                            ),
+                            chatId,
+                        ).ifBlank { "Nothing was placed." }
+                    }
+                }
+                else -> {
+                    val chosen = dialog.extraction.items.filter { it.name in selected }
+                    if (chosen.isEmpty()) {
+                        "Nothing selected."
+                    } else {
+                        "Items filed: ${adventureCapture.applyItems(chosen, chatId)}"
+                    }
+                }
+            }
+            _uiState.update { it.copy(captureDialog = null, composerStatus = message) }
+            startComposerStatusTimer()
+        }
+    }
+
+    fun dismissCapture() {
+        _uiState.update { it.copy(captureDialog = null) }
+    }
+
+    private fun setComposerStatus(message: String) {
+        _uiState.update { it.copy(composerStatus = message) }
+        startComposerStatusTimer()
+    }
+
+    private fun recentSceneText(): String = rawMessages
+        .filter { it.isActiveSwipe && it.role != ADVENTURE_SCENE_ROLE }
+        .takeLast(6)
+        .joinToString("\n") { documentFromJson(it.contentJson).plainText() }
+
+    private fun startComposerStatusTimer() {
+        composerStatusJob?.cancel()
+        composerStatusJob = viewModelScope.launch {
+            delay(5000)
+            _uiState.update { it.copy(composerStatus = "") }
+        }
     }
 
     /** Non-AI (NAI): insert the typed text as a user message without calling a model. */
     fun addManualEntry() {
+        viewedSceneNumber = null
         insertUserText(_uiState.value.input)
     }
 
@@ -810,6 +1808,13 @@ class RoleplayChatViewModel @Inject constructor(
         if (text.isBlank() || state.chatId.isBlank() || state.isStreaming) return
         viewModelScope.launch {
             val now = System.currentTimeMillis()
+            if (currentDisplayMode() == "dungeonMaster" && ExplicitStayInScene.containsMatchIn(text)) {
+                removeLatestSceneMarker()
+            }
+            if (currentDisplayMode() == "dungeonMaster" && ExplicitSceneAdvance.containsMatchIn(text)) {
+                upsertCurrentSceneLore(reason = "The player explicitly advanced the scene.")
+                insertSceneMarker(state.chatId, "The player explicitly advanced the scene.", now - 1)
+            }
             val entity = RpMessageEntity(
                 id = "rpm-$now",
                 chatId = state.chatId,
@@ -826,28 +1831,89 @@ class RoleplayChatViewModel @Inject constructor(
         }
     }
 
-    fun generate() {
+    fun generate(forceAdventureRoll: Boolean = false) {
         val state = _uiState.value
         if (state.input.isBlank() || state.chatId.isBlank() || state.isStreaming) return
-        if (state.entryMode == "nai") {
+        val startupPending = state.adventureStartupPhase in setOf(
+            AdventureStartupPhase.Character,
+            AdventureStartupPhase.Choose,
+            AdventureStartupPhase.Questions,
+        )
+        if (state.entryMode == "nai" && !startupPending && !forceAdventureRoll) {
             addManualEntry()
             return
         }
-        viewModelScope.launch {
-            if (!aiGeneration.hasApiKey()) {
+        generateJob?.cancel()
+        viewedSceneNumber = null
+        generateJob = viewModelScope.launch {
+            val activeModelRef = PromptModelSelection.effectiveModelRef(
+                state.selectedModelRef,
+                state.defaultModelRef,
+            )
+            if (!aiGeneration.hasApiKey(activeModelRef)) {
                 _uiState.update { it.copy(errorMessage = AIError.NoApiKey().message.orEmpty()) }
                 return@launch
             }
             val now = System.currentTimeMillis()
             val groupId = "sw-$now"
             val userText = state.input
-            val maxTokens = (state.outputWords * 1.5).toInt().coerceIn(64, 8192)
-            val temperature = defaultPresets
-                .find { it.id == state.presetId }
-                ?.temperature
-                ?.toDouble()
-                ?: 0.8
             val mode = currentDisplayMode()
+            val topicMedia = currentTopicMediaSnapshot()
+            val startupPhase = currentAdventureStartupPhase()
+            val startupActive = mode == "dungeonMaster" &&
+                startupPhase in setOf(
+                    AdventureStartupPhase.Character,
+                    AdventureStartupPhase.Choose,
+                    AdventureStartupPhase.Questions,
+                )
+            val startupDirective = if (startupActive) {
+                adventureStartupDirective(startupPhase, userText)
+            } else {
+                ""
+            }
+            val nextStartupPhase = if (startupActive) {
+                nextAdventureStartupPhase(startupPhase, userText)
+            } else {
+                AdventureStartupPhase.None
+            }
+            val playerAdvancedScene = mode == "dungeonMaster" && ExplicitSceneAdvance.containsMatchIn(userText)
+            val playerStayedInScene = mode == "dungeonMaster" && ExplicitStayInScene.containsMatchIn(userText)
+            val difficulty = defaultPresets.find { it.id == state.presetId }
+            val checkDecision = if (startupActive) {
+                AdventureCheckDecision(false, "Adventure setup")
+            } else if (mode == "dungeonMaster" && forceAdventureRoll) {
+                AdventureCheckDecision(true, "Player-forced action roll")
+            } else {
+                decideAdventureCheck(userText, state.userIsDungeonMaster)
+            }
+            val backgroundRoll = checkDecision.takeIf { it.requiresRoll }?.let { decision ->
+                simulateAdventureRoll(
+                    campaignRules = boundChat?.authorsNote.orEmpty(),
+                    modifier = adventureSheetModifier(decision),
+                    checkLabel = decision.checkLabel,
+                    targetDc = difficulty?.targetDc ?: 12,
+                )
+            }
+            if (mode == "dungeonMaster" && backgroundRoll != null) {
+                _uiState.update {
+                    it.copy(
+                        input = "",
+                        isStreaming = true,
+                        streamingText = "",
+                        errorMessage = "",
+                        activeRoll = backgroundRoll,
+                        rollAnimationId = System.nanoTime(),
+                    )
+                }
+                // Let the player see the physical roll before the DM begins narrating its consequence.
+                delay(850)
+            } else if (backgroundRoll == null) {
+                _uiState.update { it.copy(activeRoll = null) }
+            }
+            // Reasoning-capable models and private RPG markers share the completion budget.
+            // Reserve headroom, then enforce the user's visible word cap before storage.
+            val maxTokens = (state.outputWords * 1.7 + 192).toInt().coerceIn(192, 8192)
+            val temperature = difficulty?.temperature?.toDouble() ?: 0.8
             val userMessage = RpMessageEntity(
                 id = "rpm-$now",
                 chatId = state.chatId,
@@ -855,10 +1921,22 @@ class RoleplayChatViewModel @Inject constructor(
                 swipeIndex = 0,
                 isActiveSwipe = true,
                 role = "user",
-                contentJson = Document.fromPlainText(userText).toJson(),
+                contentJson = Document.fromPlainText(
+                    if (startupActive) {
+                        withAdventureStartupMarker(userText, startupPhase)
+                    } else {
+                        userText
+                    },
+                ).toJson(),
                 createdAt = now,
                 displayMode = mode,
             )
+            if (playerStayedInScene) {
+                removeLatestSceneMarker()
+            } else if (playerAdvancedScene) {
+                upsertCurrentSceneLore(reason = "The player explicitly advanced the scene.")
+                insertSceneMarker(state.chatId, "The player explicitly advanced the scene.", now - 1)
+            }
             db.roleplayDao().upsertMessage(userMessage)
             boundChat?.let { chat ->
                 if (chat.presetId != state.presetId) {
@@ -872,41 +1950,92 @@ class RoleplayChatViewModel @Inject constructor(
             }
             // History is already mode-filtered via observeMessages(chatId, displayMode).
             val history = rawMessages
-                .filter { it.isActiveSwipe && it.displayMode == mode }
+                .filter { it.isActiveSwipe && it.displayMode == mode && it.role != ADVENTURE_SCENE_ROLE }
                 .map { msg ->
                     val role = if (msg.role == "user") "user" else "assistant"
                     role to documentFromJson(msg.contentJson).plainText()
                 }
+            // Lorebook-style codex activation: entries whose names/aliases appear in
+            // the recent story or the new action are injected into the prompt.
+            val codexBlock = runCatching {
+                val entries = db.codexDao().getAllEntries()
+                val scan = history.takeLast(6).joinToString("\n") { it.second }
+                contextBuilder.build(
+                    entries,
+                    ContextBuildRequest(
+                        scanText = scan + "\n" + userText,
+                        userMessage = userText,
+                        maxContextTokens = 6000,
+                        reserveResponseTokens = maxTokens,
+                    ),
+                ).codexBlock
+            }.getOrDefault("")
             val builder = StringBuilder()
             var usageText = ""
+            var promptTokens = 0
+            var completionTokens = 0
+            var costUsd = 0.0
             runCatching {
                 aiGeneration.stream(
                     userMessage = userText,
-                    assembled = AssembledPrompt(
-                        systemBlocks = RoleplayPromptBuilder.systemBlocks(
-                            character = boundCharacter,
-                            persona = boundPersona,
-                            outputWords = state.outputWords,
-                        ),
-                        messages = history,
-                        usedEntries = emptyList(),
-                        tokenBreakdown = emptyList(),
+                    assembled = generation.assemble(
+                        character = boundCharacter,
+                        persona = boundPersona,
+                        history = history,
+                        outputWords = state.outputWords,
+                        difficultyDirective = difficulty?.directive,
+                        extraSystem = sessionSystemBlocks(mode) +
+                            listOfNotNull(codexBlock.takeIf { it.isNotBlank() }) +
+                            listOfNotNull(topicMedia.promptDirective()) +
+                            PromptWordLimit.instruction(state.minimumOutputWords, state.outputWords) +
+                            listOfNotNull(startupDirective.takeIf { it.isNotBlank() }) +
+                            if (mode == "dungeonMaster") {
+                            listOf(
+                                backgroundRoll?.asHiddenDmInstruction(
+                                    difficultyName = difficulty?.name ?: "Medium",
+                                    targetDc = difficulty?.targetDc ?: 12,
+                                )
+                                    ?: noAdventureRollInstruction(),
+                            )
+                        } else {
+                            emptyList()
+                        },
                     ),
+                    modelRef = activeModelRef,
                     maxTokens = maxTokens,
                     temperature = temperature,
                 ).collect { chunk ->
                     when (chunk) {
                         is AIChunk.Delta -> {
                             builder.append(chunk.text)
-                            _uiState.update { it.copy(streamingText = builder.toString()) }
+                            _uiState.update {
+                                it.copy(
+                                    streamingText = adventureStartupProseFrom(adventureWorldProseFrom(
+                                        adventureProseFrom(
+                                            AiSceneAdvanceMarker.replace(
+                                                topicMediaVisibleText(builder.toString()),
+                                                "",
+                                            ).trimStart(),
+                                        ),
+                                    )),
+                                )
+                            }
                         }
                         is AIChunk.Usage -> {
+                            promptTokens = chunk.promptTokens
+                            completionTokens = chunk.completionTokens
+                            costUsd = chunk.cost ?: 0.0
                             usageText = UsageFormat.formatUsage(
                                 promptTokens = chunk.promptTokens,
                                 completionTokens = chunk.completionTokens,
                                 totalTokens = chunk.totalTokens,
                                 cost = chunk.cost,
                             )
+                        }
+                        is AIChunk.RetryWait -> {
+                            _uiState.update {
+                                it.copy(errorMessage = "Rate limited — retry in ${chunk.secondsLeft}s")
+                            }
                         }
                         AIChunk.Done -> Unit
                     }
@@ -921,6 +2050,59 @@ class RoleplayChatViewModel @Inject constructor(
                 }
                 return@launch
             }
+            val rawReply = builder.toString()
+            val topicMediaReply = parseTopicMediaReply(rawReply)
+            val worldUpdates = adventureWorldUpdatesFrom(topicMediaReply.visibleText)
+            val visibleReply = adventureStartupProseFrom(
+                adventureProseFrom(AiSceneAdvanceMarker.replace(worldUpdates.prose, "").trim()),
+            )
+            if (visibleReply.isBlank()) {
+                db.roleplayDao().deleteMessage(userMessage.id)
+                _uiState.update {
+                    it.copy(
+                        input = userText,
+                        isStreaming = false,
+                        streamingText = "",
+                        errorMessage = "The selected model returned no visible DM response. Your action was restored; tap ✓ to retry or choose another model.",
+                    )
+                }
+                return@launch
+            }
+            persistAdventureWorldUpdates(worldUpdates)
+            // Auto-bookkeeping: pull character/item facts into roster + inventory.
+            if (mode == "dungeonMaster") {
+                val captureChatId = state.chatId
+                viewModelScope.launch { adventureCapture.captureAndApply(rawReply, captureChatId) }
+            }
+            val aiAdvanceMatch = AiSceneAdvanceMarker.find(worldUpdates.prose)
+            val aiAdvancedScene = mode == "dungeonMaster" && aiAdvanceMatch != null &&
+                !playerAdvancedScene && !ExplicitStayInScene.containsMatchIn(userText)
+            if (aiAdvancedScene) {
+                upsertCurrentSceneLore(
+                    reason = aiAdvanceMatch?.groupValues?.getOrNull(1).orEmpty(),
+                )
+                insertSceneMarker(
+                    state.chatId,
+                    aiAdvanceMatch?.groupValues?.getOrNull(1)?.ifBlank { "The game master advanced the scene." }
+                        ?: "The game master advanced the scene.",
+                    now + 1,
+                )
+            }
+            val cleanedReply = PromptWordLimit.trim(
+                AiSceneAdvanceMarker.replace(worldUpdates.prose, "").trim(),
+                state.outputWords,
+            )
+            val replyWithRoll = backgroundRoll?.let { withAdventureRollMarker(cleanedReply, it) }
+                ?: cleanedReply
+            val storedReply = if (startupActive) {
+                withAdventureStartupMarker(replyWithRoll, nextStartupPhase)
+            } else {
+                replyWithRoll
+            }
+            val mediaRequests = topicMediaRequestsFor(
+                topicMediaReply.copy(visibleText = visibleReply),
+                topicMedia.topics,
+            )
             val reply = RpMessageEntity(
                 id = "rpm-${now + 1}",
                 chatId = state.chatId,
@@ -928,11 +2110,20 @@ class RoleplayChatViewModel @Inject constructor(
                 swipeIndex = 0,
                 isActiveSwipe = true,
                 role = "char",
-                contentJson = Document.fromPlainText(builder.toString()).toJson(),
-                createdAt = now + 1,
+                contentJson = documentWithTopicMedia(storedReply, topicMedia, mediaRequests).toJson(),
+                createdAt = now + if (aiAdvancedScene) 2 else 1,
                 displayMode = mode,
+                promptTokens = promptTokens,
+                completionTokens = completionTokens,
+                costUsd = costUsd,
             )
             db.roleplayDao().upsertMessage(reply)
+            if (mode == "dungeonMaster") {
+                upsertCurrentSceneLore(
+                    summaryOverride = worldUpdates.sceneSynopsis,
+                    extraMessages = listOf(userMessage, reply),
+                )
+            }
             val added = listOf(userMessage, reply)
             workspaceHistory.record(
                 undo = { added.forEach { db.roleplayDao().deleteMessage(it.id) } },
@@ -942,6 +2133,12 @@ class RoleplayChatViewModel @Inject constructor(
                 it.copy(isStreaming = false, streamingText = "", lastUsage = usageText)
             }
         }
+    }
+
+    fun cancelGeneration() {
+        generateJob?.cancel()
+        generateJob = null
+        _uiState.update { it.copy(isStreaming = false, streamingText = "", errorMessage = "Cancelled") }
     }
 
     fun swipe(messageId: String, direction: Int) {
@@ -965,20 +2162,26 @@ class RoleplayChatViewModel @Inject constructor(
     fun regenerate(messageId: String) {
         viewModelScope.launch {
             val current = rawMessages.find { it.id == messageId && it.role == "char" } ?: return@launch
-            if (!aiGeneration.hasApiKey()) {
+            val state = _uiState.value
+            val activeModelRef = PromptModelSelection.effectiveModelRef(
+                state.selectedModelRef,
+                state.defaultModelRef,
+            )
+            if (!aiGeneration.hasApiKey(activeModelRef)) {
                 _uiState.update { it.copy(errorMessage = AIError.NoApiKey().message.orEmpty()) }
                 return@launch
             }
             val siblings = rawMessages.filter { it.swipeGroupId == current.swipeGroupId && it.role == "char" }
-            val words = _uiState.value.outputWords
-            val temperature = defaultPresets
-                .find { it.id == _uiState.value.presetId }
-                ?.temperature
-                ?.toDouble()
-                ?: 0.8
+            val words = state.outputWords
+            val difficulty = defaultPresets.find { it.id == _uiState.value.presetId }
+            val temperature = difficulty?.temperature?.toDouble() ?: 0.8
+            val topicMedia = currentTopicMediaSnapshot()
             _uiState.update { it.copy(isStreaming = true, errorMessage = "") }
             val history = rawMessages
-                .filter { it.isActiveSwipe && it.displayMode == current.displayMode && it.id != messageId }
+                .filter {
+                    it.isActiveSwipe && it.displayMode == current.displayMode &&
+                        it.id != messageId && it.role != ADVENTURE_SCENE_ROLE
+                }
                 .map { msg ->
                     val role = if (msg.role == "user") "user" else "assistant"
                     role to documentFromJson(msg.contentJson).plainText()
@@ -986,21 +2189,28 @@ class RoleplayChatViewModel @Inject constructor(
             runCatching {
                 aiGeneration.complete(
                     userMessage = "Continue the roleplay from here. Write the character's next beat.",
-                    assembled = AssembledPrompt(
-                        systemBlocks = RoleplayPromptBuilder.systemBlocks(
-                            character = boundCharacter,
-                            persona = boundPersona,
-                            outputWords = words,
-                        ),
-                        messages = history,
-                        usedEntries = emptyList(),
-                        tokenBreakdown = emptyList(),
+                    assembled = generation.assemble(
+                        character = boundCharacter,
+                        persona = boundPersona,
+                        history = history,
+                        outputWords = words,
+                        difficultyDirective = difficulty?.directive,
+                        extraSystem = sessionSystemBlocks(current.displayMode) +
+                            listOfNotNull(topicMedia.promptDirective()) +
+                            PromptWordLimit.instruction(state.minimumOutputWords, words),
                     ),
-                    maxTokens = (words * 1.5).toInt().coerceIn(64, 8192),
+                    modelRef = activeModelRef,
+                    maxTokens = (words * 1.7 + 192).toInt().coerceIn(192, 8192),
                     temperature = temperature,
                 )
             }.onSuccess { reply ->
                 val now = System.currentTimeMillis()
+                val topicMediaReply = parseTopicMediaReply(reply.text)
+                val trimmedReply = PromptWordLimit.trim(topicMediaReply.visibleText, words)
+                val mediaRequests = topicMediaRequestsFor(
+                    topicMediaReply.copy(visibleText = trimmedReply),
+                    topicMedia.topics,
+                )
                 val deactivated = siblings.map { it.copy(isActiveSwipe = false) }
                 val generated = RpMessageEntity(
                     id = "rpm-$now",
@@ -1009,12 +2219,18 @@ class RoleplayChatViewModel @Inject constructor(
                     swipeIndex = siblings.size,
                     isActiveSwipe = true,
                     role = "char",
-                    contentJson = Document.fromPlainText(reply.text).toJson(),
+                    contentJson = documentWithTopicMedia(trimmedReply, topicMedia, mediaRequests).toJson(),
                     createdAt = now,
                     displayMode = current.displayMode.ifBlank { currentDisplayMode() },
                 )
                 deactivated.forEach { db.roleplayDao().upsertMessage(it) }
                 db.roleplayDao().upsertMessage(generated)
+                if (current.displayMode.ifBlank { currentDisplayMode() } == "dungeonMaster") {
+                    val captureChatId = current.chatId
+                    viewModelScope.launch {
+                        adventureCapture.captureAndApply(reply.text, captureChatId)
+                    }
+                }
                 workspaceHistory.record(
                     undo = {
                         db.roleplayDao().deleteMessage(generated.id)
@@ -1047,6 +2263,1111 @@ class RoleplayChatViewModel @Inject constructor(
         is AIError.HttpFailure -> "HTTP ${err.statusCode}: ${err.message}"
         is AIError -> err.message.orEmpty()
         else -> err.message ?: err.toString()
+    }
+
+    private fun refreshContextMeter() {
+        val state = _uiState.value
+        val mode = currentDisplayMode()
+        val history = rawMessages
+            .filter { it.isActiveSwipe && it.displayMode == mode && it.role != ADVENTURE_SCENE_ROLE }
+            .map { msg ->
+                val role = if (msg.role == "user") "user" else "assistant"
+                role to documentFromJson(msg.contentJson).plainText()
+            }
+        val difficulty = defaultPresets.find { it.id == state.presetId }
+        val assembled = generation.assemble(
+            character = boundCharacter,
+            persona = boundPersona,
+            history = history,
+            outputWords = state.outputWords,
+            difficultyDirective = difficulty?.directive,
+            extraSystem = sessionSystemBlocks(mode) +
+                PromptWordLimit.instruction(state.minimumOutputWords, state.outputWords),
+        )
+        val reading = generation.meter(assembled, state.input, contextLimit)
+        _uiState.update { it.copy(contextMeter = reading) }
+    }
+
+    private fun adventureSheetModifier(decision: AdventureCheckDecision): Int {
+        val character = boundCharacter ?: return 0
+        val sheet = decodeRpgSheet(character.extensionsJson)
+        val score = when (decision.ability) {
+            AdventureAbility.Strength -> sheet.strength
+            AdventureAbility.Dexterity -> sheet.dexterity
+            AdventureAbility.Constitution -> sheet.constitution
+            AdventureAbility.Intelligence -> sheet.intelligence
+            AdventureAbility.Wisdom -> sheet.wisdom
+            AdventureAbility.Charisma -> sheet.charisma
+            null -> 10
+        }
+        return abilityModifier(score) + if (decision.addProficiency) sheet.proficiencyBonus else 0
+    }
+
+    private fun currentAdventureStartupPhase(): AdventureStartupPhase = rawMessages
+        .asSequence()
+        .filter { it.isActiveSwipe && it.displayMode == "dungeonMaster" }
+        .sortedByDescending { it.createdAt }
+        .map { adventureStartupPhase(documentFromJson(it.contentJson).plainText()) }
+        .firstOrNull { it != AdventureStartupPhase.None }
+        ?: AdventureStartupPhase.None
+
+    private suspend fun migrateLegacyAdventureOpeningIfNeeded(chat: RpChatEntity) {
+        if (chat.displayMode != "dungeonMaster") return
+        val messages = db.roleplayDao().getMessagesForMode(chat.id, "dungeonMaster")
+            .filter { it.isActiveSwipe && it.role != ADVENTURE_SCENE_ROLE }
+        if (messages.size != 1) return
+        val opening = messages.single()
+        val text = documentFromJson(opening.contentJson).plainText()
+        if (!isLegacyPassiveAdventureOpening(text)) return
+        db.roleplayDao().upsertMessage(
+            opening.copy(
+                contentJson = Document.fromPlainText(
+                    adventureStartupPrompt(
+                        userIsDungeonMaster = userIsDungeonMaster(chat.authorsNote),
+                        needsCharacter = chat.authorsNote.contains(
+                            "Main character IDs: none",
+                            ignoreCase = true,
+                        ),
+                    ),
+                ).toJson(),
+            ),
+        )
+    }
+
+    /** Player-owned scene controls always override the AI game master's pacing. */
+    fun advanceScene(reason: String = "The player moved the adventure to the next scene.") {
+        val state = _uiState.value
+        if (state.chatId.isBlank() || currentDisplayMode() != "dungeonMaster") return
+        viewModelScope.launch {
+            if (!state.viewingCurrentScene) {
+                viewedSceneNumber = (state.sceneNumber + 1).coerceAtMost(state.totalScenes)
+                publishMessages()
+            } else {
+                viewedSceneNumber = null
+                upsertCurrentSceneLore(reason = reason)
+                insertSceneMarker(state.chatId, reason, System.currentTimeMillis())
+            }
+        }
+    }
+
+    fun previousScene() {
+        val state = _uiState.value
+        if (state.sceneNumber <= 1 || currentDisplayMode() != "dungeonMaster") return
+        viewModelScope.launch {
+            viewedSceneNumber = state.sceneNumber - 1
+            publishMessages()
+        }
+    }
+
+    fun undoLastSceneAdvance() {
+        viewedSceneNumber = null
+        viewModelScope.launch { removeLatestSceneMarker() }
+    }
+
+    private suspend fun removeLatestSceneMarker() {
+        val marker = rawMessages
+            .filter { it.role == ADVENTURE_SCENE_ROLE && it.isActiveSwipe }
+            .maxByOrNull { it.createdAt }
+            ?: return
+        db.roleplayDao().deleteMessage(marker.id)
+        workspaceHistory.record(
+            undo = { db.roleplayDao().upsertMessage(marker) },
+            redo = { db.roleplayDao().deleteMessage(marker.id) },
+        )
+    }
+
+    private suspend fun insertSceneMarker(chatId: String, reason: String, createdAt: Long): RpMessageEntity {
+        val marker = RpMessageEntity(
+            id = "rpscene-${UUID.randomUUID()}",
+            chatId = chatId,
+            swipeGroupId = "rpscene-${UUID.randomUUID()}",
+            swipeIndex = 0,
+            isActiveSwipe = true,
+            role = ADVENTURE_SCENE_ROLE,
+            contentJson = Document.fromPlainText(reason.ifBlank { "The scene changed." }).toJson(),
+            createdAt = createdAt,
+            displayMode = "dungeonMaster",
+        )
+        db.roleplayDao().upsertMessage(marker)
+        workspaceHistory.record(
+            undo = { db.roleplayDao().deleteMessage(marker.id) },
+            redo = { db.roleplayDao().upsertMessage(marker) },
+        )
+        return marker
+    }
+
+    private suspend fun persistAdventureWorldUpdates(updates: AdventureWorldUpdates) {
+        val chat = boundChat ?: return
+        val scopeId = chat.bookId ?: return
+        val now = System.currentTimeMillis()
+        updates.characters.forEach { update ->
+            val existing = db.roleplayDao().getCharacters()
+                .firstOrNull { it.name.equals(update.name, ignoreCase = true) }
+            val categoryName = when (update.role.lowercase()) {
+                "team", "party", "player" -> "Team"
+                "enemy", "enemies", "hostile" -> "Enemies"
+                "npc", "npcs" -> "NPCs"
+                else -> "Other"
+            }
+            val codexEntry = upsertAdventureCodexEntry(
+                scopeId = scopeId,
+                category = "Characters",
+                name = update.name,
+                summary = buildString {
+                    if (update.description.isNotBlank()) appendLine(update.description)
+                    append("${update.species.ifBlank { "Unknown species" }} · ${update.characterClass} level ${update.level}")
+                    if (update.portraitBrief.isNotBlank()) append("\nPortrait brief: ${update.portraitBrief}")
+                },
+                now = now,
+            )
+            val generatedSheet = RpgCharacterSheet(
+                species = update.species,
+                characterClass = update.characterClass,
+                level = update.level,
+                background = update.background,
+                strength = update.strength,
+                dexterity = update.dexterity,
+                constitution = update.constitution,
+                intelligence = update.intelligence,
+                wisdom = update.wisdom,
+                charisma = update.charisma,
+            )
+            val sheet = existing?.let { decodeRpgSheet(it.extensionsJson) } ?: generatedSheet
+            val character = (existing ?: RpCharacterEntity(
+                id = "rpc-${UUID.randomUUID()}",
+                name = update.name,
+                createdAt = now,
+            )).copy(
+                name = update.name,
+                description = existing?.description?.takeIf { it.isNotBlank() } ?: update.description,
+                creatorNotes = listOfNotNull(
+                    existing?.creatorNotes?.takeIf { it.isNotBlank() },
+                    update.portraitBrief.takeIf { it.isNotBlank() }?.let { "Portrait brief: $it" },
+                ).distinct().joinToString("\n"),
+                tagsJson = "[\"$categoryName\"]",
+                extensionsJson = encodeRpgSheet(existing?.extensionsJson ?: "{}", sheet),
+                defaultCodexId = codexEntry.id,
+                colorHex = existing?.colorHex ?: avatarColorHexFor(update.name, null),
+                inParty = categoryName == "Team" || existing?.inParty == true,
+            )
+            db.roleplayDao().upsertCharacter(character)
+            if (character.inParty && boundCharacter == null) {
+                boundCharacter = character
+                val revisedNote = chat.authorsNote
+                    .replace("Main character(s): None selected — guided character creation required", "Main character(s): ${character.name}")
+                    .replace("Main character IDs: none", "Main character IDs: roster:${character.id}")
+                val revisedChat = chat.copy(authorsNote = revisedNote, updatedAt = now)
+                db.roleplayDao().upsertChat(revisedChat)
+                boundChat = revisedChat
+            }
+        }
+        updates.lore.forEach { update ->
+            upsertAdventureCodexEntry(scopeId, update.category, update.name, update.summary, now)
+        }
+    }
+
+    private suspend fun upsertAdventureCodexEntry(
+        scopeId: String,
+        category: String,
+        name: String,
+        summary: String,
+        now: Long,
+    ): CodexEntryEntity {
+        val categories = db.codexDao().getCategories(scopeId)
+        val categoryEntity = categories.firstOrNull { it.name.equals(category, ignoreCase = true) }
+            ?: CodexCategoryEntity(
+                id = "rpg-cat-${UUID.randomUUID()}",
+                scopeType = "book",
+                scopeId = scopeId,
+                name = category,
+                colorHex = if (category.equals("Characters", true)) "#3F7A5A" else "#6B5B95",
+                sortOrder = categories.size,
+            ).also { db.codexDao().upsertCategory(it) }
+        val existing = db.codexDao().getEntries(scopeId)
+            .firstOrNull { it.categoryId == categoryEntity.id && it.name.equals(name, ignoreCase = true) }
+        val text = summary.trim().ifBlank { name }
+        val entry = existing?.copy(
+            docJson = Document.fromPlainText(text).toJson(),
+            plainText = text,
+            isAiGenerated = true,
+            updatedAt = now,
+        ) ?: CodexEntryEntity(
+            id = "rpg-codex-${UUID.randomUUID()}",
+            categoryId = categoryEntity.id,
+            scopeType = "book",
+            scopeId = scopeId,
+            name = name,
+            docJson = Document.fromPlainText(text).toJson(),
+            plainText = text,
+            isAiGenerated = true,
+            createdAt = now,
+            updatedAt = now,
+        )
+        db.codexDao().upsertEntry(entry)
+        return entry
+    }
+
+    /** Keeps an adventure-journal synopsis current after every resolved DM turn and scene change. */
+    private suspend fun upsertCurrentSceneLore(
+        reason: String = "",
+        summaryOverride: String = "",
+        extraMessages: List<RpMessageEntity> = emptyList(),
+    ) {
+        val chat = boundChat ?: return
+        val scopeId = chat.bookId ?: return
+        val startup = currentAdventureStartupPhase()
+        if (startup !in setOf(AdventureStartupPhase.None, AdventureStartupPhase.Complete)) return
+        val lastMarkerAt = rawMessages
+            .filter { it.role == ADVENTURE_SCENE_ROLE && it.isActiveSwipe }
+            .maxOfOrNull { it.createdAt } ?: Long.MIN_VALUE
+        val sceneMessages = (rawMessages + extraMessages)
+            .distinctBy { it.id }
+            .filter {
+                it.isActiveSwipe && it.displayMode == "dungeonMaster" &&
+                    it.role != ADVENTURE_SCENE_ROLE && it.createdAt > lastMarkerAt
+            }
+        val synopsis = summaryOverride.trim().ifBlank { sceneMessages
+            .filter { it.role == "char" }
+            .joinToString(" ") { message ->
+                adventureStartupProseFrom(adventureWorldProseFrom(adventureProseFrom(
+                    documentFromJson(message.contentJson).plainText(),
+                )))
+            }
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .take(1_200)
+            .ifBlank { reason.trim().ifBlank { "The scene is in progress." } } }
+        upsertAdventureCodexEntry(
+            scopeId = scopeId,
+            category = "Adventure Journal",
+            name = "Scene ${_uiState.value.sceneNumber} · ${chat.title}",
+            summary = synopsis,
+            now = System.currentTimeMillis(),
+        )
+    }
+
+    // ------------------------------------------------- campaign options sheet
+
+    /** Opens the campaign options dialog, pre-filled from the stored setup note. */
+    fun beginCampaignSetup() {
+        val chat = boundChat ?: return
+        val note = chat.authorsNote
+        fun line(label: String): String =
+            Regex("(?im)^" + Regex.escape(label) + ":\\s*(.*)$").find(note)
+                ?.groupValues?.getOrNull(1)?.trim().orEmpty()
+
+        val settingFull = line("Setting")
+        val settingTemplate = effectiveSettingTemplates().firstOrNull {
+            settingFull.equals(it.label, ignoreCase = true) ||
+                settingFull.startsWith(it.label + " —", ignoreCase = true)
+        }
+        val settingDetails = settingTemplate?.let { template ->
+            settingFull.removePrefix(template.label).trim().removePrefix("—").trim()
+        } ?: settingFull
+        val idsLine = line("Main character IDs")
+        val idList = if (idsLine.equals("none", ignoreCase = true)) {
+            emptyList()
+        } else {
+            idsLine.split(',').map { it.trim() }.filter { it.contains(':') }
+        }
+        val options = _uiState.value.campaignCharacterOptions
+        val selectedIds = options.filter { option -> idList.any { it.equals(option.id, ignoreCase = true) } }
+            .map { it.id }.toSet()
+        val povLabel = line("Narrative point of view")
+        val povId = CampaignPerspectiveTemplates.firstOrNull { it.label.equals(povLabel, ignoreCase = true) }
+            ?.id ?: "third-multiple"
+        val rulesLabel = line("Rules system")
+        val rulesId = CampaignRulesetTemplates.firstOrNull { it.label.equals(rulesLabel, ignoreCase = true) }
+            ?.id ?: "dnd-5e"
+        val campaignRoleId = if (line("Player role").contains("Dungeon Master", ignoreCase = true)) "dm" else "player"
+        val houseRules = Regex("(?im)^House rules:\\s*([\\s\\S]*?)(?=\\n\\n|\\z)").find(note)
+            ?.groupValues?.getOrNull(1)?.trim().orEmpty()
+        _uiState.update {
+            it.copy(
+                showCampaignOptions = true,
+                campaignSetupInitial = NewWorkDetails(
+                    title = chat.title,
+                    genre = settingDetails,
+                    tense = line("Narrative tense").ifBlank { "Past tense" },
+                    styleGuide = houseRules,
+                    mainCharacters = options.filter { option -> option.id in selectedIds },
+                    rulesetId = rulesId,
+                    settingId = settingTemplate?.id ?: "high-fantasy",
+                    narrativePov = povLabel,
+                    campaignRoleId = campaignRoleId,
+                ),
+            )
+        }
+    }
+
+    fun dismissCampaignOptions() {
+        _uiState.update { it.copy(showCampaignOptions = false, campaignSetupInitial = null) }
+    }
+
+    /** Setup dialog: save a user-defined setting template. */
+    fun addSettingTemplate(label: String, directive: String) {
+        viewModelScope.launch { settings.addSettingTemplate(label, directive) }
+    }
+
+    /** Setup dialog: delete a user-defined setting template. */
+    fun removeSettingTemplate(id: String) {
+        viewModelScope.launch { settings.removeSettingTemplate(id) }
+    }
+
+    /**
+     * Setup-screen "Restart": wipes every message in this adventure and re-seeds
+     * the guided setup opening, so the campaign starts over from phase one with
+     * the same campaign rules.
+     */
+    fun restartAdventure() {
+        val chat = boundChat ?: return
+        viewModelScope.launch {
+            db.roleplayDao().deleteMessagesForChat(chat.id)
+            viewedSceneNumber = null
+            generateJob?.cancel()
+            val now = System.currentTimeMillis()
+            val opening = RpMessageEntity(
+                id = "rpm-$now",
+                chatId = chat.id,
+                swipeGroupId = "sw-$now",
+                swipeIndex = 0,
+                isActiveSwipe = true,
+                role = "char",
+                contentJson = Document.fromPlainText(
+                    adventureStartupPrompt(
+                        userIsDungeonMaster = userIsDungeonMaster(chat.authorsNote),
+                        needsCharacter = true,
+                    ),
+                ).toJson(),
+                createdAt = now,
+                displayMode = "dungeonMaster",
+            )
+            db.roleplayDao().upsertMessage(opening)
+            _uiState.update {
+                it.copy(
+                    showCampaignOptions = false,
+                    campaignSetupInitial = null,
+                    isStreaming = false,
+                    streamingText = "",
+                    activeRoll = null,
+                    input = "",
+                )
+            }
+        }
+    }
+
+    /** Rewrites the campaign setup note, roster flags, persona, and the work's own fields. */
+    fun applyCampaignSetup(details: NewWorkDetails) {
+        val chat = boundChat ?: return
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val effective = details.mainCharacters.map { option ->
+                if (!option.id.startsWith("persona:")) {
+                    option
+                } else {
+                    ensurePlayerSheet(option.id.substringAfter(':'), now) ?: option
+                }
+            }
+            effective.filter { it.id.startsWith("roster:") }.forEach { option ->
+                db.roleplayDao().getCharacter(option.id.substringAfter(':'))?.let { character ->
+                    if (!character.inParty) db.roleplayDao().upsertCharacter(character.copy(inParty = true))
+                }
+            }
+            val personaId = details.mainCharacters.firstOrNull { it.id.startsWith("persona:") }
+                ?.id?.substringAfter(':')
+                ?: chat.personaId.ifBlank { "persona-default" }
+            val mainCharacters = effective.joinToString(", ") { it.name }
+                .ifBlank { "None selected — guided character creation required" }
+            val userIsDungeonMaster = details.campaignRoleId == "dm"
+            val ruleset = CampaignRulesetTemplates.firstOrNull { it.id == details.rulesetId }
+                ?: CampaignRulesetTemplates.first()
+            val guidance = listOf(
+                "Setting guidance: " +
+                    (effectiveSettingTemplates().firstOrNull { it.id == details.settingId }?.directive ?: ""),
+                "Rules guidance: ${ruleset.directive}",
+                "Perspective guidance: " +
+                    (CampaignPerspectiveTemplates.firstOrNull { it.label == details.narrativePov }?.directive
+                        ?: CampaignPerspectiveTemplates.first().directive),
+                if (userIsDungeonMaster) {
+                    "User role guidance: The user is the Dungeon Master and has authority over the world, scenes, NPCs, and rulings. The AI controls the selected player-character party and must respond with their decisions, actions, and dialogue without overriding the user's world narration."
+                } else {
+                    "User role guidance: The user controls the selected player character(s). The AI is the Dungeon Master and controls the world, NPCs, opposition, and consequences without choosing the player's actions."
+                },
+                details.styleGuide.trim().takeIf { it.isNotBlank() }?.let { "House rules: $it" }.orEmpty(),
+            ).filter { it.isNotBlank() }.joinToString("\n\n")
+            val setup = buildString {
+                appendLine("Campaign: ${details.title}")
+                appendLine("Setting: ${details.genre.ifBlank { "Open fantasy setting" }}")
+                appendLine("Main character(s): $mainCharacters")
+                appendLine(
+                    "Main character IDs: " + effective.joinToString(", ") { it.id }.ifBlank { "none" },
+                )
+                appendLine("Narrative tense: ${details.tense.ifBlank { "Past tense" }}")
+                appendLine("Narrative point of view: ${details.narrativePov.ifBlank { "Third-person multiple" }}")
+                appendLine("Player role: ${if (userIsDungeonMaster) "Dungeon Master" else "Adventurer"}")
+                appendLine("Rules system: ${ruleset.label}")
+                if (guidance.isNotBlank()) append(guidance)
+            }.trim()
+            val updated = chat.copy(
+                title = details.title,
+                personaId = personaId,
+                authorsNote = setup,
+                updatedAt = now,
+            )
+            db.roleplayDao().upsertChat(updated)
+            boundChat = updated
+            chat.bookId?.let { bookId ->
+                db.bookDao().getById(bookId)?.let { book ->
+                    db.bookDao().upsert(
+                        book.copy(
+                            title = details.title,
+                            genre = details.genre,
+                            tense = details.tense,
+                            styleGuide = details.styleGuide,
+                            updatedAt = now,
+                        ),
+                    )
+                }
+            }
+            _uiState.update {
+                it.copy(
+                    title = details.title,
+                    userIsDungeonMaster = userIsDungeonMaster,
+                    showCampaignOptions = false,
+                    campaignSetupInitial = null,
+                    composerStatus = "Campaign setup updated.",
+                )
+            }
+            startComposerStatusTimer()
+        }
+    }
+
+    /** Mirrors AppShellViewModel's persona→sheet migration when editing the party. */
+    private suspend fun ensurePlayerSheet(personaId: String, now: Long): WorkCharacterOption? {
+        val persona = db.roleplayDao().getPersona(personaId) ?: return null
+        val sheetId = "rpc-player-$personaId"
+        val sheet = db.roleplayDao().getCharacter(sheetId) ?: RpCharacterEntity(
+            id = sheetId,
+            name = persona.name,
+            avatarMediaId = persona.avatarMediaId,
+            description = persona.description,
+            tagsJson = "[\"Player\"]",
+            extensionsJson = encodeRpgSheet("{}", RpgCharacterSheet()),
+            defaultCodexId = "persona:$personaId",
+            inParty = true,
+            createdAt = now,
+        )
+        db.roleplayDao().upsertCharacter(sheet.copy(inParty = true))
+        return WorkCharacterOption("roster:$sheetId", persona.name, "Player roster")
+    }
+
+    // --------------------------------------------------- picture editor
+
+    /** Opens the full-screen picture editor for a panel (erase text, translate). */
+    fun openImageEditor(messageId: String, blockId: String) {
+        val panel = _uiState.value.mediaPanels.find {
+            it.messageId == messageId && it.blockId == blockId
+        } ?: return
+        if (panel.isAudio) return
+        _uiState.update {
+            it.copy(
+                imageEditor = PanelEditorUi(
+                    messageId = messageId,
+                    blockId = blockId,
+                    mediaId = panel.mediaId,
+                    path = panel.path,
+                ),
+            )
+        }
+    }
+
+    fun closeImageEditor() {
+        _uiState.update { it.copy(imageEditor = null) }
+    }
+
+    fun editorSetStatus(status: String) {
+        _uiState.update { ed -> ed.imageEditor?.let { ed.copy(imageEditor = it.copy(status = status)) } ?: ed }
+    }
+
+    fun editorSetBusy(busy: Boolean) {
+        _uiState.update { ed -> ed.imageEditor?.let { ed.copy(imageEditor = it.copy(busy = busy)) } ?: ed }
+    }
+
+    fun editorSetLanguage(language: String) {
+        _uiState.update { ed -> ed.imageEditor?.let { ed.copy(imageEditor = it.copy(targetLanguage = language)) } ?: ed }
+    }
+
+    /** Vision model choice: first available Vision-capable model, else the default if it supports images. */
+    private suspend fun visionModelRef(): String? {
+        val infos = modelCache.toModelInfo(modelCache.models.first())
+        infos.firstOrNull { it.supportsImages && it.available }?.let {
+            return PromptModelSelection.modelRef(it.id)
+        }
+        val fallback = _uiState.value.defaultModelRef
+        return fallback.takeIf { it.isNotBlank() && aiGeneration.modelSupportsImages(fallback) }
+    }
+
+    /** 🎤 AI: read every text region on the open picture, with a translation. */
+    fun editorFindText() {
+        val editor = _uiState.value.imageEditor ?: return
+        viewModelScope.launch {
+            editorSetBusy(true)
+            editorSetStatus("Reading text with the AI…")
+            val modelRef = visionModelRef()
+            if (modelRef == null) {
+                editorSetBusy(false)
+                editorSetStatus("No Vision-capable model available — pick one in Settings → Writing.")
+                return@launch
+            }
+            val regions = PanelAi.readText(aiGeneration, modelRef, editor.path, editor.targetLanguage)
+            editorSetBusy(false)
+            if (regions == null) {
+                editorSetStatus("The AI could not read this picture — try another Vision model.")
+            } else {
+                _uiState.update { ed ->
+                    ed.imageEditor?.let {
+                        ed.copy(imageEditor = it.copy(regions = regions, status = "Found ${regions.size} text region(s)."))
+                    } ?: ed
+                }
+            }
+        }
+    }
+
+    /**
+     * Applies translated regions: adds one speech-bubble overlay per region
+     * positioned at the box center. (Erasing the original text happens on
+     * the editor bitmap.)
+     */
+    fun applyTranslatedRegions(regions: List<PanelTextRegion>) {
+        val editor = _uiState.value.imageEditor ?: return
+        viewModelScope.launch {
+            val current = rawMessages.find { it.id == editor.messageId } ?: return@launch
+            val blocks = documentFromJson(current.contentJson).blocks.toMutableList()
+            val index = blocks.indexOfFirst { it.id == editor.blockId }
+            val base = blocks.getOrNull(index) as? MediaBlock ?: return@launch
+            val overlays = regions.map { region ->
+                TextOverlay(
+                    id = "ov-${UUID.randomUUID()}",
+                    text = region.translation.ifBlank { region.original },
+                    style = TextOverlayStyle.SpeechBubble,
+                    xPercent = ((region.x + region.w / 2f) * 100f).coerceIn(5f, 95f),
+                    yPercent = ((region.y + region.h / 2f) * 100f).coerceIn(5f, 95f),
+                    widthPercent = (region.w * 130f).coerceIn(24f, 96f),
+                    fontSizeSp = (region.h * baseFontSize(base)).coerceIn(9f, 26f),
+                    colorHex = "#111111",
+                    backgroundHex = "#FFFFFF",
+                    backgroundAlpha = 0.92f,
+                )
+            }
+            blocks[index] = base.copy(overlays = base.overlays + overlays)
+            persistMessageBlocks(current, blocks)
+        }
+    }
+
+    private fun baseFontSize(block: MediaBlock): Float = when (block.gridRowSpan) {
+        1 -> 16f
+        2 -> 24f
+        else -> 34f
+    }
+
+    /** Saves the edited bitmap as new media and re-points the panel at it. */
+    fun saveEditedPanel(bitmap: android.graphics.Bitmap) {
+        val editor = _uiState.value.imageEditor ?: return
+        viewModelScope.launch {
+            val bytes = ImageOps.toPngBytes(bitmap)
+            val entity = mediaRepository.importFromBytes(
+                bytes = bytes,
+                fileName = "${java.util.UUID.randomUUID()}.png",
+                mimeType = "image/png",
+            )
+            val current = rawMessages.find { it.id == editor.messageId }
+            if (current != null) {
+                val blocks = documentFromJson(current.contentJson).blocks.map { block ->
+                    if (block.id == editor.blockId && block is MediaBlock) {
+                        block.copy(mediaId = entity.id)
+                    } else {
+                        block
+                    }
+                }
+                persistMessageBlocks(current, blocks)
+            }
+            _uiState.update { it.copy(imageEditor = null, storyboardStatus = "Picture saved.") }
+        }
+    }
+
+    // --------------------------------------------- AI panel separation
+
+    /**
+     * Separates an imported comic page into individual panel pictures.
+     * useAi = true asks a Vision model for the boxes and falls back to the
+     * gutter heuristic; useAi = false is offline and free.
+     */
+    fun separatePanels(messageId: String, blockId: String, useAi: Boolean) {
+        val panel = _uiState.value.mediaPanels.find {
+            it.messageId == messageId && it.blockId == blockId
+        } ?: return
+        viewModelScope.launch {
+            val detectorName = if (useAi) "AI panel detection" else "Offline white-gutter detection"
+            _uiState.update { it.copy(storyboardStatus = "$detectorName is reading the source page…") }
+            val originalMessage = rawMessages.find { it.id == messageId }
+            val originalBlock = originalMessage
+                ?.let { documentFromJson(it.contentJson).blocks }
+                ?.find { block ->
+                    (block is MediaBlock && block.id == blockId) ||
+                        (block is MediaStackBlock && block.id == blockId)
+                }
+            if (originalBlock == null) {
+                _uiState.update {
+                    it.copy(storyboardStatus = "$detectorName failed: the original panel record is missing. No pages changed.")
+                }
+                return@launch
+            }
+            val source = ImageOps.loadBitmap(panel.path) ?: run {
+                _uiState.update {
+                    it.copy(storyboardStatus = "$detectorName failed: the source image could not be read. No pages changed.")
+                }
+                return@launch
+            }
+
+            var boxes = emptyList<NormalizedPanelBox>()
+            var resultLabel = ""
+            var aiFallbackNote = ""
+            if (useAi) {
+                val modelRef = visionModelRef()
+                if (modelRef == null) {
+                    aiFallbackNote = "AI detection was unavailable because no Vision-capable model is configured. "
+                } else {
+                    val aiResult = PanelAi.detectPanelsDetailed(aiGeneration, modelRef, panel.path)
+                    when {
+                        aiResult.error != null -> {
+                            aiFallbackNote = "AI detection failed: ${aiResult.error} "
+                        }
+                        aiResult.boxes.size > 1 -> {
+                            boxes = aiResult.boxes.map { rect ->
+                                NormalizedPanelBox(rect.left, rect.top, rect.right, rect.bottom)
+                            }
+                            resultLabel = "AI detection found ${boxes.size} panels."
+                        }
+                        else -> {
+                            aiFallbackNote = "AI detection found ${aiResult.boxes.size} panel(s). "
+                        }
+                    }
+                }
+            }
+
+            if (boxes.size <= 1) {
+                _uiState.update {
+                    it.copy(
+                        storyboardStatus = aiFallbackNote +
+                            "Running offline white-gutter detection (near-white, page-spanning gutters only)…",
+                    )
+                }
+                val offline = ImageOps.detectPanelsByGuttersDetailed(source)
+                when (offline.kind) {
+                    OfflinePanelDetectionKind.Multiple -> {
+                        boxes = offline.boxes
+                        resultLabel = offline.message
+                    }
+                    OfflinePanelDetectionKind.Single -> {
+                        source.recycle()
+                        _uiState.update {
+                            it.copy(
+                                storyboardStatus = aiFallbackNote + offline.message +
+                                    " The original page remains unchanged. Try AI for dark or irregular gutters.",
+                            )
+                        }
+                        return@launch
+                    }
+                    OfflinePanelDetectionKind.Failed -> {
+                        source.recycle()
+                        _uiState.update {
+                            it.copy(
+                                storyboardStatus = aiFallbackNote + offline.message +
+                                    " The original page remains unchanged.",
+                            )
+                        }
+                        return@launch
+                    }
+                }
+            }
+
+            val newPageId = "page-${java.util.UUID.randomUUID()}"
+            val gridSize = activeGridSize()
+            val cropBoxes = boxes.sortedWith(
+                compareBy<NormalizedPanelBox> { it.top }.thenBy { it.left },
+            ).map { box ->
+                val inset = 0.006f
+                NormalizedPanelBox(
+                    (box.left + inset).coerceAtMost(1f),
+                    (box.top + inset).coerceAtMost(1f),
+                    (box.right - inset).coerceAtLeast(0f),
+                    (box.bottom - inset).coerceAtLeast(0f),
+                )
+            }
+            val croppedMediaIds = runCatching {
+                cropBoxes.map { cropBox ->
+                    val cropped = ImageOps.crop(source, cropBox.toRectF())
+                    try {
+                        mediaRepository.importFromBytes(
+                            bytes = ImageOps.toJpegBytes(cropped),
+                            fileName = "${java.util.UUID.randomUUID()}.jpg",
+                            mimeType = "image/jpeg",
+                        ).id
+                    } finally {
+                        if (cropped !== source) cropped.recycle()
+                    }
+                }
+            }.getOrElse { error ->
+                source.recycle()
+                _uiState.update {
+                    it.copy(
+                        storyboardStatus = "$resultLabel Cropping failed: " +
+                            (error.message ?: "unknown image error") +
+                            " The original page remains unchanged.",
+                    )
+                }
+                return@launch
+            }
+            source.recycle()
+            val separation = buildPanelSeparationOutput(
+                originalBlock = originalBlock,
+                croppedMediaIds = croppedMediaIds,
+                boxes = cropBoxes,
+                newPageId = newPageId,
+                gridSize = gridSize,
+            )
+
+            // Only the new blocks are persisted; the source message/page is untouched.
+            val chat = boundChat ?: return@launch
+            val pages = decodePages(chat.pagesJson).toMutableList()
+            pages.add(RpPageMeta(id = newPageId, order = (pages.maxOfOrNull { it.order } ?: -1) + 1, title = "Panels ×${boxes.size}"))
+            val updated = chat.copy(pagesJson = encodePages(pages), updatedAt = System.currentTimeMillis())
+            db.roleplayDao().upsertChat(updated)
+            boundChat = updated
+            val now = System.currentTimeMillis()
+            db.roleplayDao().upsertMessage(
+                RpMessageEntity(
+                    id = "rpm-$now",
+                    chatId = chat.id,
+                    swipeGroupId = "sw-$now",
+                    swipeIndex = 0,
+                    isActiveSwipe = true,
+                    role = "user",
+                    contentJson = Document(blocks = separation.newBlocks).toJson(),
+                    createdAt = now,
+                    displayMode = "roleplay",
+                ),
+            )
+            _uiState.update {
+                it.copy(
+                    pages = pages,
+                    activePageId = newPageId,
+                    storyboardStatus = "$resultLabel Created a new separated-panel page; the original page remains unchanged.",
+                )
+            }
+        }
+    }
+
+    /**
+     * Imports externally-generated images into durable media storage, then
+     * places them in the selected empty layout slot or the next free slot.
+     * [replaceTargetKey] is supplied only after the user explicitly confirms
+     * replacement of an occupied panel.
+     */
+    fun importGeneratedPanels(
+        uris: List<Uri>,
+        selectedSlotIndex: Int?,
+        replaceTargetKey: String? = null,
+    ) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(storyboardStatus = "Importing generated panel artwork…") }
+            val imported = runCatching { mediaRepository.importFromUris(uris) }
+                .getOrElse { error ->
+                    _uiState.update {
+                        it.copy(
+                            storyboardStatus = "Generated-panel import failed: " +
+                                (error.message ?: "the selected image could not be copied"),
+                        )
+                    }
+                    return@launch
+                }
+            if (imported.isEmpty()) {
+                _uiState.update { it.copy(storyboardStatus = "No generated panel images were selected.") }
+                return@launch
+            }
+
+            var nextMediaIndex = 0
+            val replaced = replaceTargetKey?.let { key ->
+                replaceSelectedPanelMedia(key, imported.first().id)
+            } == true
+            if (replaced) nextMediaIndex = 1
+
+            val state = _uiState.value
+            val activePageId = state.activePageId
+            val gridSize = MediaGrid.SIZE
+            val templateId = state.activeTemplateId
+            val slots = PanelTemplates.byId(templateId)?.slots.orEmpty()
+            val blocks = mutableListOf<Block>()
+            val pages = decodePages(boundChat?.pagesJson.orEmpty()).toMutableList()
+            var targetPageId = activePageId
+            var targetPanels = state.mediaPanels.map { panel ->
+                StoryboardGridItem(
+                    col = panel.gridCol,
+                    row = panel.gridRow,
+                    colSpan = panel.gridColSpan,
+                    rowSpan = panel.gridRowSpan,
+                )
+            }
+            var preferredSlot = selectedSlotIndex
+            var overflowPages = 0
+
+            while (nextMediaIndex < imported.size) {
+                val remaining = imported.size - nextMediaIndex
+                val plan = planStoryboardAssetPlacements(
+                    importCount = remaining,
+                    panels = targetPanels,
+                    slots = slots,
+                    selectedSlotIndex = preferredSlot,
+                    gridSize = gridSize,
+                )
+                plan.placements.forEach { placement ->
+                    val media = imported[nextMediaIndex++]
+                    blocks += MediaBlock(
+                        id = "mb-${UUID.randomUUID()}",
+                        mediaId = media.id,
+                        kind = MediaKind.Image,
+                        pageId = targetPageId,
+                    ).withGridPlacement(
+                        placement.col,
+                        placement.row,
+                        placement.colSpan,
+                        placement.rowSpan,
+                        gridSize,
+                    ).let { placed ->
+                        (placed as MediaBlock).copy(panelRotationDeg = placement.rotationDeg)
+                    }
+                    targetPanels = targetPanels + StoryboardGridItem(
+                        placement.col,
+                        placement.row,
+                        placement.colSpan,
+                        placement.rowSpan,
+                    )
+                }
+                if (nextMediaIndex >= imported.size) break
+
+                // The active page is genuinely full. Keep every durable import
+                // visible by continuing on a new page with the same layout.
+                overflowPages++
+                targetPageId = "page-${UUID.randomUUID()}"
+                pages += RpPageMeta(
+                    id = targetPageId,
+                    order = (pages.maxOfOrNull { it.order } ?: -1) + 1,
+                    title = "Generated ${pages.size + 1}",
+                    templateId = templateId,
+                )
+                targetPanels = emptyList()
+                preferredSlot = null
+            }
+
+            if (overflowPages > 0) {
+                val chat = boundChat
+                if (chat != null) {
+                    val updated = chat.copy(
+                        pagesJson = encodePages(pages),
+                        updatedAt = System.currentTimeMillis(),
+                    )
+                    db.roleplayDao().upsertChat(updated)
+                    boundChat = updated
+                }
+            }
+            if (blocks.isNotEmpty()) {
+                val now = System.currentTimeMillis()
+                insertStoredMessage(
+                    RpMessageEntity(
+                        id = "rpm-${UUID.randomUUID()}",
+                        chatId = state.chatId,
+                        swipeGroupId = "sw-${UUID.randomUUID()}",
+                        swipeIndex = 0,
+                        isActiveSwipe = true,
+                        role = "user",
+                        contentJson = Document(blocks = blocks).toJson(),
+                        createdAt = now,
+                        displayMode = "roleplay",
+                    ),
+                )
+            }
+            _uiState.update {
+                it.copy(
+                    storyboardStatus = buildString {
+                        append("Imported ${imported.size} generated panel image(s).")
+                        if (replaced) append(" Replaced the selected panel explicitly.")
+                        if (overflowPages > 0) append(" Continued onto $overflowPages new page(s) because the active page was full.")
+                        append(" Tap a panel to adjust, drag, resize, or stack it.")
+                    },
+                    selectedMediaKey = null,
+                )
+            }
+        }
+    }
+
+    private suspend fun replaceSelectedPanelMedia(targetKey: String, mediaId: String): Boolean {
+        val parts = targetKey.split("::", limit = 2)
+        if (parts.size != 2) return false
+        val current = rawMessages.find { it.id == parts[0] } ?: return false
+        val blocks = documentFromJson(current.contentJson).blocks.toMutableList()
+        val index = blocks.indexOfFirst { block ->
+            (block is MediaBlock && block.id == parts[1]) ||
+                (block is MediaStackBlock && block.id == parts[1])
+        }
+        if (index < 0) return false
+        blocks[index] = when (val block = blocks[index]) {
+            is MediaBlock -> block.copy(mediaId = mediaId, kind = MediaKind.Image)
+            is MediaStackBlock -> {
+                if (block.mediaIds.isEmpty()) return false
+                val ids = block.mediaIds.toMutableList()
+                ids[block.currentIndex.coerceIn(0, ids.lastIndex)] = mediaId
+                block.copy(mediaIds = ids)
+            }
+            else -> return false
+        }
+        persistMessageBlocks(current, blocks)
+        return true
+    }
+
+    /**
+     * Add-pages button: imports individual pictures or whole PDF/CBZ/webtoon
+     * files and appends every discovered page as one full-page panel.
+     */
+    fun importPages(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch {
+            val importedPages = mutableListOf<MediaEntity>()
+            var failedFiles = 0
+            uris.forEach { uri ->
+                runCatching {
+                    mangaFileImporter.importPages(
+                        uri = uri,
+                        onProgress = { progress ->
+                            _uiState.update { it.copy(storyboardStatus = progress) }
+                        },
+                    ) { media, _ ->
+                        importedPages += media
+                    }
+                }.onFailure {
+                    failedFiles++
+                }
+            }
+            if (importedPages.isEmpty()) {
+                _uiState.update {
+                    it.copy(storyboardStatus = "No pages were imported. Choose a PDF, CBZ/ZIP, or image file.")
+                }
+                return@launch
+            }
+
+            val chat = boundChat ?: return@launch
+            val gridSize = activeGridSize()
+            val pageMetas = decodePages(chat.pagesJson).toMutableList()
+            val now = System.currentTimeMillis()
+            val blocks = mutableListOf<Block>()
+            importedPages.forEach { imported ->
+                val pageId = "page-${java.util.UUID.randomUUID()}"
+                pageMetas.add(
+                    RpPageMeta(
+                        id = pageId,
+                        order = (pageMetas.maxOfOrNull { it.order } ?: -1) + 1,
+                        title = "Page ${pageMetas.size + 1}",
+                    ),
+                )
+                blocks.add(
+                    MediaBlock(
+                        id = "mb-${java.util.UUID.randomUUID()}",
+                        mediaId = imported.id,
+                        kind = MediaKind.Image,
+                        pageId = pageId,
+                    ).withGridPlacement(0, 0, gridSize, gridSize, gridSize),
+                )
+            }
+            val updated = chat.copy(pagesJson = encodePages(pageMetas), updatedAt = System.currentTimeMillis())
+            db.roleplayDao().upsertChat(updated)
+            boundChat = updated
+            db.roleplayDao().upsertMessage(
+                RpMessageEntity(
+                    id = "rpm-$now",
+                    chatId = chat.id,
+                    swipeGroupId = "sw-$now",
+                    swipeIndex = 0,
+                    isActiveSwipe = true,
+                    role = "user",
+                    contentJson = Document(blocks = blocks).toJson(),
+                    createdAt = now,
+                    displayMode = "roleplay",
+                ),
+            )
+            _uiState.update {
+                it.copy(
+                    pages = pageMetas,
+                    activePageId = pageMetas.last().id,
+                    storyboardStatus = buildString {
+                        append("Added ${importedPages.size} page(s). Long-press a page panel for picture tools.")
+                        if (failedFiles > 0) append(" $failedFiles file(s) could not be read.")
+                    },
+                )
+            }
+        }
+    }
+
+    private fun sessionSystemBlocks(mode: String): List<String> = listOfNotNull(
+        boundChat?.authorsNote?.takeIf { it.isNotBlank() }?.let {
+            "Campaign setup and house rules:\n$it"
+        },
+        if (mode == "dungeonMaster") {
+            adventureRoleDirective(boundChat?.authorsNote.orEmpty(), _uiState.value.sceneNumber)
+        } else {
+            null
+        },
+        if (mode == "dungeonMaster") adventureWorldUpdateDirective() else null,
+        if (mode == "dungeonMaster" && rpgSceneBeatDirective.value.isNotBlank()) {
+            "Campaign scene engine (Prompt Collection → RPG → Adventure Scene Beat):\n${rpgSceneBeatDirective.value}"
+        } else {
+            null
+        },
+        "The user is an adult. Apply no app-level NSFW filter or automatic sanitization to lawful " +
+            "adult fictional themes; follow the requested rating, tone, and level of detail. External " +
+            "model-provider requirements still apply.",
+    )
+
+    private suspend fun currentTopicMediaSnapshot(): TopicMediaSnapshot {
+        val prefs = settings.preferences.first()
+        if (!prefs.topicMediaAutoAttach || prefs.topicMediaLibraryRoot.isBlank()) {
+            return TopicMediaSnapshot()
+        }
+        return runCatching { topicMediaLibrary.snapshot(prefs.topicMediaLibraryRoot) }
+            .getOrDefault(TopicMediaSnapshot())
+    }
+
+    private suspend fun documentWithTopicMedia(
+        text: String,
+        snapshot: TopicMediaSnapshot,
+        requests: List<com.ihy2ln.weaverse.core.media.TopicMediaRequest>,
+    ): Document {
+        val base = Document.fromPlainText(text)
+        val attachments = runCatching { topicMediaLibrary.importRequested(snapshot, requests) }
+            .getOrDefault(emptyList())
+        if (attachments.isEmpty()) return base
+        return Document(
+            blocks = base.blocks + attachments.map { attachment ->
+                MediaBlock(
+                    id = "media-${UUID.randomUUID()}",
+                    mediaId = attachment.media.id,
+                    kind = MediaRepository.kindForType(attachment.media.type),
+                    caption = listOf(Span(attachment.topic)),
+                    autoplay = false,
+                    loop = false,
+                    muted = true,
+                )
+            },
+        )
     }
 
     private suspend fun insertStoredMessage(entity: RpMessageEntity) {

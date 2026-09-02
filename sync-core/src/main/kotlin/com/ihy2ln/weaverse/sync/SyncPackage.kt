@@ -129,17 +129,46 @@ object SyncPackage {
                     }
                 }
             }
-            val stagedMedia = File(staging, "media")
-            if (stagedMedia.exists()) {
-                mediaDir.mkdirs()
-                stagedMedia.walkTopDown().filter { it.isFile }.forEach { file ->
-                    val target = File(mediaDir, file.relativeTo(stagedMedia).invariantSeparatorsPath)
-                    target.parentFile?.mkdirs()
-                    file.copyTo(target, overwrite = true)
-                }
+            copyMedia(File(staging, "media"), mediaDir)
+        } finally {
+            staging.deleteRecursively()
+        }
+    }
+
+    /**
+     * Record-level merge of a peer package into an already-open database.
+     * The live connection stays open; Room observers refresh in place.
+     */
+    fun mergeFromZip(
+        zipFile: File,
+        live: SyncSql,
+        mediaDir: File,
+    ): SyncMerge.Report {
+        val staging = File(zipFile.parentFile, "merge-staging-${System.currentTimeMillis()}")
+        try {
+            extractTo(zipFile, staging)
+            copyMedia(File(staging, "media"), mediaDir)
+            val stagedDb = File(staging, "weaverse.db")
+            if (!stagedDb.exists()) return SyncMerge.Report()
+            val escaped = stagedDb.absolutePath.replace('\\', '/').replace("'", "''")
+            live.exec("ATTACH DATABASE '$escaped' AS incoming")
+            try {
+                return SyncMerge.mergeInto(live)
+            } finally {
+                runCatching { live.exec("DETACH DATABASE incoming") }
             }
         } finally {
             staging.deleteRecursively()
+        }
+    }
+
+    private fun copyMedia(stagedMedia: File, mediaDir: File) {
+        if (!stagedMedia.exists()) return
+        mediaDir.mkdirs()
+        stagedMedia.walkTopDown().filter { it.isFile }.forEach { file ->
+            val target = File(mediaDir, file.relativeTo(stagedMedia).invariantSeparatorsPath)
+            target.parentFile?.mkdirs()
+            file.copyTo(target, overwrite = true)
         }
     }
 }
