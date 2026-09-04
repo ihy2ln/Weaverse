@@ -428,7 +428,7 @@ class WorkshopChatViewModel @Inject constructor(
             )
             db.workshopChatDao().upsertMessage(userMessage)
             pendingMedia = emptyList()
-                _uiState.update { it.copy(hasPendingMedia = false) }
+            _uiState.update { it.copy(hasPendingMedia = false) }
             _uiState.update { it.copy(input = "", isStreaming = true, streamingText = "", errorMessage = "") }
             val builder = StringBuilder()
             var usageText = ""

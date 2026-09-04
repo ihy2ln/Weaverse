@@ -490,45 +490,45 @@ class BrainstormChatViewModel @Inject constructor(
         )
         db.workshopChatDao().upsertMessage(userMessage)
         pendingMedia = emptyList()
-                _uiState.update { it.copy(hasPendingMedia = false) }
+        _uiState.update { it.copy(hasPendingMedia = false) }
         _uiState.update { it.copy(input = "", isStreaming = true, streamingText = "", errorMessage = "") }
-            refreshContext()
-            val builder = StringBuilder()
-            var usageText = ""
-            var promptTokens = 0
-            var completionTokens = 0
-            var costUsd = 0.0
-            runCatching {
-                aiGeneration.stream(
-                    userMessage = userText,
-                    assembled = assembledPrompt,
-                    modelRef = modelRef,
-                    maxTokens = (state.maximumWords * 1.7 + 192).toInt().coerceIn(192, 8192),
-                ).collect { chunk ->
-                    when (chunk) {
-                        is AIChunk.Delta -> {
-                            builder.append(chunk.text)
-                            _uiState.update { it.copy(streamingText = builder.toString()) }
-                        }
-                        is AIChunk.Usage -> {
-                            promptTokens = chunk.promptTokens
-                            completionTokens = chunk.completionTokens
-                            costUsd = chunk.cost ?: 0.0
-                            usageText = UsageFormat.formatUsage(
-                                promptTokens = chunk.promptTokens,
-                                completionTokens = chunk.completionTokens,
-                                totalTokens = chunk.totalTokens,
-                                cost = chunk.cost,
-                            )
-                        }
-                        is AIChunk.RetryWait -> {
-                            _uiState.update {
-                                it.copy(errorMessage = "Rate limited — retry in ${chunk.secondsLeft}s")
-                            }
-                        }
-                        AIChunk.Done -> Unit
+        refreshContext()
+        val builder = StringBuilder()
+        var usageText = ""
+        var promptTokens = 0
+        var completionTokens = 0
+        var costUsd = 0.0
+        runCatching {
+            aiGeneration.stream(
+                userMessage = userText,
+                assembled = assembledPrompt,
+                modelRef = modelRef,
+                maxTokens = (state.maximumWords * 1.7 + 192).toInt().coerceIn(192, 8192),
+            ).collect { chunk ->
+                when (chunk) {
+                    is AIChunk.Delta -> {
+                        builder.append(chunk.text)
+                        _uiState.update { it.copy(streamingText = builder.toString()) }
                     }
+                    is AIChunk.Usage -> {
+                        promptTokens = chunk.promptTokens
+                        completionTokens = chunk.completionTokens
+                        costUsd = chunk.cost ?: 0.0
+                        usageText = UsageFormat.formatUsage(
+                            promptTokens = chunk.promptTokens,
+                            completionTokens = chunk.completionTokens,
+                            totalTokens = chunk.totalTokens,
+                            cost = chunk.cost,
+                        )
+                    }
+                    is AIChunk.RetryWait -> {
+                        _uiState.update {
+                            it.copy(errorMessage = "Rate limited — retry in ${chunk.secondsLeft}s")
+                        }
+                    }
+                    AIChunk.Done -> Unit
                 }
+            }
         }.onFailure { err ->
             _uiState.update {
                 it.copy(isStreaming = false, streamingText = "", errorMessage = formatError(err))
