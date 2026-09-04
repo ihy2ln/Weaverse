@@ -36,6 +36,7 @@ private val json = Json { ignoreUnknownKeys = true }
 @Singleton
 class DatabaseSeeder @Inject constructor(
     private val db: WeaverseDatabase,
+    private val adamsHavenRpgSeeder: AdamsHavenRpgSeeder,
 ) {
     private val categoryNames = listOf(
         "Characters", "Locations", "Objects/Items", "Lore",
@@ -46,6 +47,7 @@ class DatabaseSeeder @Inject constructor(
     suspend fun seedIfEmpty() {
         if (db.bookDao().count() > 0) {
             seedPromptsIfEmpty()
+            adamsHavenRpgSeeder.seedIfMissing()
             return
         }
         val now = System.currentTimeMillis()
@@ -228,6 +230,7 @@ class DatabaseSeeder @Inject constructor(
             ),
         )
         seedPromptsIfEmpty()
+        adamsHavenRpgSeeder.seedIfMissing()
     }
 
     private suspend fun seedPromptsIfEmpty() {
