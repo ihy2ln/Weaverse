@@ -16,13 +16,21 @@ class TextGameEngineTest {
 
     @Test
     fun campaignStartsAtCrossroadsAndKeepsHubNavigationAvailable() {
-        val state = engine.initialState()
+        val start = engine.initialState()
+        assertEquals("void_arrival", start.run.nodeId)
+        val forest = engine.reduce(start, TextGameAction.Choose("arrive_dirt")).state
+        assertEquals("forest_path", forest.run.nodeId)
+        val state = engine.reduce(forest, TextGameAction.Choose("follow_path")).state
         assertEquals("crossroads", state.run.nodeId)
         assertTrue(setOf("to_dungeon", "to_farm", "to_town", "to_house").all { id -> definition.node("crossroads")!!.choices.any { it.id == id } })
         assertTrue(definition.node("crossroads")!!.hotspots.size >= 4)
         assertEquals(1, state.persistent.farmLevel)
         assertEquals(1, state.persistent.townLevel)
         assertEquals(1, state.persistent.homeLevel)
+        listOf("void_arrival", "forest_path", "kitchen", "farmhouse_night", "guild_summon").forEach {
+            assertNotNull(definition.node(it), "missing scene $it")
+        }
+        assertEquals(5, definition.schemaVersion)
     }
 
     @Test
@@ -194,14 +202,14 @@ class TextGameEngineTest {
         assertEquals("defeat", state.run.nodeId)
         assertEquals(0, state.run.playerHealth)
         val reset = engine.reduce(state, TextGameAction.Reset).state
-        assertEquals("crossroads", reset.run.nodeId)
+        assertEquals("void_arrival", reset.run.nodeId)
         assertEquals(TextGameDifficulty.Veteran, reset.persistent.difficulty)
         assertTrue(reset.persistent.flags.isEmpty())
     }
 
     @Test
     fun aiStoryProposalDoesNotChangeStateUntilConfirmed() {
-        val state = engine.initialState()
+        val state = toCrossroads(engine.initialState())
         val proposal = parseTextGameStoryProposal(
             "I watch the road breathe beneath the roots.\nSTORY_OPTIONS:\n1. Walk toward the lantern.\n2. Search the shack. [ACTION: to_house]\n3. Wait for a sign.\n4. Custom prompt: tell the narrator what I attempt.",
             "message-1",
@@ -265,8 +273,9 @@ class TextGameEngineTest {
     @Test
     fun bundledCampaignUsesSummonerFirstPersonAndCatalog() {
         assertTrue(definition.nodes.all { it.prose.contains(Regex("\\b(I|my|me)\\b", RegexOption.IGNORE_CASE)) })
-        assertEquals(69, definition.collectibleCards.size)
-        assertEquals(69, definition.collectibleCards.map { it.id }.distinct().size)
+        assertEquals(76, definition.collectibleCards.size)
+        assertEquals(76, definition.collectibleCards.map { it.id }.distinct().size)
+        assertTrue(definition.collectibleCards.any { it.id == "characters/class-warrior" })
         assertTrue(definition.collectibleCards.all { it.artAssetPath.endsWith(".png") })
         listOf("farm", "town", "home").forEach { nodeId ->
             val node = definition.node(nodeId)!!
@@ -333,8 +342,19 @@ class TextGameEngineTest {
         ).id)
     }
 
+    private fun toCrossroads(state: TextGameState): TextGameState {
+        var next = state
+        if (next.run.nodeId == "void_arrival") {
+            next = engine.reduce(next, TextGameAction.Choose("arrive_dirt")).state
+        }
+        if (next.run.nodeId == "forest_path") {
+            next = engine.reduce(next, TextGameAction.Choose("follow_path")).state
+        }
+        return next
+    }
+
     private fun battleState(difficulty: TextGameDifficulty = TextGameDifficulty.Standard): TextGameState {
-        var state = engine.initialState(difficulty)
+        var state = toCrossroads(engine.initialState(difficulty))
         state = engine.reduce(state, TextGameAction.Choose("to_dungeon")).state
         val mission = testMission(state.persistent.rngSeed)
         state = offerMission(state, mission)

@@ -1,6 +1,6 @@
 package com.ihy2ln.weaverse.feature.roleplay.textgame
 
-/** The 69 V2-Varied Codex card fronts bundled with the Adams Haven prototype. */
+/** Adams Haven collectible card fronts (Codex portraits plus the seven class cards). */
 fun adamsHavenCardCatalog(): List<TextGameCollectibleCard> = listOf(
     collectible("characters", "amara-the-alluring-empress", "Amara, the Alluring Empress"),
     collectible("characters", "carmen-delga", "Carmen Delga"),
@@ -71,6 +71,21 @@ fun adamsHavenCardCatalog(): List<TextGameCollectibleCard> = listOf(
     collectible("objects", "celestium-clone-bodies", "Celestium Clone Bodies"),
     collectible("objects", "celestium", "Celestium"),
     collectible("objects", "life-technology-e-xperience-ltx", "Life Technology eXperience (LTX)"),
+    classCard("warrior", "Warrior", "kaela-stormfang"),
+    classCard("guardian", "Guardian", "vera-ironbough"),
+    classCard("ranger", "Ranger", "lyra-thornbrook"),
+    classCard("mage", "Mage", "elara-vellum"),
+    classCard("healer", "Healer", "helda-frostmane"),
+    classCard("assassin", "Assassin", "ghislaine-dedoldia"),
+    classCard("summoner", "Summoner", "isekai-incubus-system"),
+)
+
+private fun classCard(slug: String, title: String, artSlug: String) = TextGameCollectibleCard(
+    id = "characters/class-$slug",
+    title = title,
+    category = "characters",
+    mediaId = "adams-haven-characters-class-$slug",
+    artAssetPath = "images/adams_haven/characters/$artSlug.png",
 )
 
 private fun collectible(category: String, slug: String, title: String) = TextGameCollectibleCard(

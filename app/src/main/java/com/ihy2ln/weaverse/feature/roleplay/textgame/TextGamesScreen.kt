@@ -196,7 +196,7 @@ private fun TextGameShelf(
                 Text("Branching story · Card battle · Reward draft · Farm · Town · Home")
                 Row(horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
                     Button(onClick = onPlay) { Text(if (hasProgress) "Continue ${playStyle.label}" else "Start ${playStyle.label}") }
-                    OutlinedButton(onClick = onCards) { Text("Browse 69 cards") }
+                    OutlinedButton(onClick = onCards) { Text("Browse ${definition.collectibleCards.size} cards") }
                 }
             }
         }
