@@ -97,6 +97,7 @@ android {
     lint {
         checkReleaseBuilds = false
         disable += "NullSafeMutableLiveData"
+        lintConfig = file("lint.xml")
     }
 }
 

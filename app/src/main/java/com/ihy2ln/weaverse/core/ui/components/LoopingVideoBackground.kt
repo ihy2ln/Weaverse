@@ -1,6 +1,7 @@
 package com.ihy2ln.weaverse.core.ui.components
 
 import android.net.Uri
+import androidx.annotation.OptIn
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -21,6 +22,7 @@ import java.io.File
  * space, plays automatically, and releases the player when it leaves composition.
  */
 @OptIn(UnstableApi::class)
+@Suppress("UnsafeOptInUsageError")
 @Composable
 fun LoopingVideoBackground(
     path: String,

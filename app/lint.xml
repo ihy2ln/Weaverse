@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <issue id="UnsafeOptInUsageError">
+        <ignore path="src/main/java/com/ihy2ln/weaverse/core/ui/components/LoopingVideoBackground.kt" />
+    </issue>
+</lint>
