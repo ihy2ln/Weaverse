@@ -3,6 +3,14 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.3.71-beta — Adams Haven card-game scenes in the Text Game
+
+- The First Draw now opens on the transfer: **void arrival → forest path → Haven Crossroads**.
+- New hubs from the lane-tactics / gacha game: **Kitchen**, **Farmhouse night**, **Guild Hall summon**.
+- Starter farm prose matches the 2×2 clearing (oak / weed / rock / tilled tile).
+- Seven **class cards** (Warrior, Guardian, Ranger, Mage, Healer, Assassin, Summoner) reuse existing portraits and sit on the roster as Class Card entries.
+- Text Game `schemaVersion` is 5 (old saves reset).
+
 ## v1.3.48-beta — ! commands write the entry and the prose at once
 
 - Typing `!character`, `!location`, `!object`, `!lore` or `!other` (plus the

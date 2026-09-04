@@ -89,7 +89,7 @@ tasks.register<Exec>("packageAppImage") {
         "--main-jar", "Weaverse.jar",
         "--main-class", "com.ihy2ln.weaverse.desktop.MainKt",
         "--dest", out.absolutePath,
-        "--app-version", "1.2.0",
+        "--app-version", "1.3.71",
         "--description", "Weaverse Desktop — write companion with Wi‑Fi / remote sync",
         "--vendor", "Weaverse",
     )
