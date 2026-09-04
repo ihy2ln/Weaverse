@@ -16,6 +16,8 @@ class WebChromeTest {
         assertTrue(html.contains("data-tab=\"roleplay\""))
         assertTrue(html.contains("data-tab=\"notes\""))
         assertTrue(html.contains("data-tab=\"pictures\""))
+        assertTrue(html.contains("Adams Haven RPG"))
+        assertTrue(html.contains("id=\"rpgScenes\""))
         assertTrue(html.contains("Codex · shared"))
         assertTrue(html.contains("Notes · shared"))
     }

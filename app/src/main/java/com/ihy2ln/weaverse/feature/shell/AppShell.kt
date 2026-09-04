@@ -87,6 +87,7 @@ import com.ihy2ln.weaverse.feature.roleplay.lorebook.LorebookScreen
 import com.ihy2ln.weaverse.feature.roleplay.personas.PersonaDetailScreen
 import com.ihy2ln.weaverse.feature.roleplay.personas.PersonasScreen
 import com.ihy2ln.weaverse.feature.roleplay.presets.PresetsScreen
+import com.ihy2ln.weaverse.feature.roleplay.rpg.RpgScenesScreen
 import com.ihy2ln.weaverse.feature.search.GlobalSearchScreen
 import com.ihy2ln.weaverse.feature.search.SearchResultType
 import com.ihy2ln.weaverse.feature.settings.SettingsScreen
@@ -101,7 +102,7 @@ fun AppShell(
 ) {
     var mode by rememberSaveable { mutableStateOf(AppMode.Novel.name) }
     var novelDest by rememberSaveable { mutableStateOf(NovelDestination.Plan.name) }
-    var rpDest by rememberSaveable { mutableStateOf(RoleplayDestination.Chats.name) }
+    var rpDest by rememberSaveable { mutableStateOf(RoleplayDestination.Rpg.name) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showSearch by rememberSaveable { mutableStateOf(false) }
     var showLibrary by rememberSaveable { mutableStateOf(true) }
@@ -495,6 +496,13 @@ fun AppShell(
                             }
                             AppMode.Notes.name -> NotesScreen(viewModel = notesViewModel)
                             else -> when (RoleplayDestination.valueOf(rd)) {
+                                RoleplayDestination.Rpg -> RpgScenesScreen(
+                                    onSceneClick = {
+                                        selectedRpChatId = it
+                                        rpDest = RoleplayDestination.Chats.name
+                                    },
+                                    onCharacterClick = { selectedCharacterId = it },
+                                )
                                 RoleplayDestination.Chats -> {
                                     if (chatId != null) {
                                         RoleplayChatDetailScreen(

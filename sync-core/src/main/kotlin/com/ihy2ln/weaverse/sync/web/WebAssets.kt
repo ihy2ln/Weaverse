@@ -65,7 +65,8 @@ fun webIndexHtml(): String = """
         </div>
         <div id="view-roleplay" class="view">
           <h2>Roleplay · Messenger · DM · Manga</h2>
-          <p class="lead">Chats stay mode-isolated (Messenger, 3×3 DM, 6×6 manga). Open a chat to read the active swipe.</p>
+          <p class="lead">Adams Haven RPG scenes and gacha cards seed into Roleplay. Chats stay mode-isolated (Messenger, 3×3 DM, 6×6 manga).</p>
+          <div id="rpgScenes" class="cards"></div>
           <div id="rpArt" class="art-row"></div>
           <div id="rpLog" class="log"></div>
         </div>
@@ -173,6 +174,7 @@ button.ghost { background: transparent; color: var(--ink); border: 1px solid var
 .card {
   border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: #fff;
 }
+#rpgScenes .card { cursor: pointer; }
 .log { display: flex; flex-direction: column; gap: 8px; }
 .bubble { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: #fff; }
 .bubble .who { font-size: 0.75rem; letter-spacing: 0.06em; color: var(--muted); }
@@ -307,8 +309,22 @@ fun webAppJs(): String = """
     }
   }
 
+  function renderRpg() {
+    const box = el('rpgScenes');
+    if (!box) return;
+    const scenes = (state.workspace.rpChats || []).filter((c) => (c.id || '').indexOf('ah-rpg-scene-') === 0);
+    box.innerHTML = scenes.map((c) =>
+      '<article class="card" data-kind="rp" data-id="' + esc(c.id) + '"><strong>' + esc(c.title) +
+      '</strong><div class="sub">' + esc(c.displayMode) + '</div></article>'
+    ).join('') || '<article class="card">Adams Haven RPG scenes appear here after Android seeds Roleplay (or you Push a library that already has them).</article>';
+    box.querySelectorAll('article[data-id]').forEach((card) => {
+      card.addEventListener('click', () => onRail(card.dataset.kind, card.dataset.id, null));
+    });
+  }
+
   function renderPlan() {
     renderArt();
+    renderRpg();
     el('planGrid').innerHTML = (state.workspace.scenes || []).map((s) =>
       '<article class="card"><strong>' + esc(s.title) + '</strong><div class="sub">' +
       esc([s.actTitle, s.chapterTitle, s.status, s.wordCount + ' words'].filter(Boolean).join(' · ')) +

@@ -2,6 +2,7 @@ package com.ihy2ln.weaverse
 
 import android.app.Application
 import com.ihy2ln.weaverse.data.export.SampleBookImporter
+import com.ihy2ln.weaverse.data.seed.AdamsHavenRpgSeeder
 import com.ihy2ln.weaverse.data.seed.DatabaseSeeder
 import com.ihy2ln.weaverse.data.sync.SyncCoordinator
 import dagger.hilt.android.HiltAndroidApp
@@ -14,6 +15,7 @@ import javax.inject.Inject
 @HiltAndroidApp
 class WeaverseApp : Application() {
     @Inject lateinit var seeder: DatabaseSeeder
+    @Inject lateinit var adamsHavenRpgSeeder: AdamsHavenRpgSeeder
     @Inject lateinit var syncCoordinator: SyncCoordinator
     @Inject lateinit var sampleBookImporter: SampleBookImporter
 
@@ -23,7 +25,8 @@ class WeaverseApp : Application() {
         super.onCreate()
         appScope.launch {
             seeder.seedIfEmpty()
-            sampleBookImporter.importBundledIsekaiGachaIfMissing()
+            runCatching { sampleBookImporter.importBundledIsekaiGachaIfMissing() }
+            adamsHavenRpgSeeder.seedIfMissing()
             syncCoordinator.suggestedWebUrl()
         }
     }
