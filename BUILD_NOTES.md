@@ -3,6 +3,19 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.3.74-beta — RPG First Light guided loop
+
+- RPG Adventure is a tap-first guided loop: scene + objective, three AI action
+  cards plus **Write your own action**, preview (no mutation), confirm, then a
+  local d20 resolve.
+- RPG-native card combat (shared hand, AP/EP/SP, visible enemy intent) and
+  campaign ledgers (bonds, crafting, factions, objectives) live under
+  `feature.roleplay.rpg`. AI cannot mutate world state; all changes go through
+  `RpgReducer`.
+- Additive Room `rpg_campaign_saves` (MIGRATION_17_18). Text Game is unchanged.
+- First Light chapter: onboarding, forest verge, Thornbound Wisp fight, Mira
+  bond, moonroot/Lantern Salve, Haven Wardens standing, recap.
+
 ## v1.3.71-beta — Adams Haven card-game scenes in the Text Game
 
 - The First Draw now opens on the transfer: **void arrival → forest path → Haven Crossroads**.
