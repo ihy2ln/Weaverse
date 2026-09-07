@@ -12,7 +12,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.ui.Modifier
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -123,7 +123,7 @@ class RpgAdventureUiTest {
         ).state
         compose.setContent {
             WeaverseTheme {
-                BoxWithConstraints(Modifier.requiredSize(DpSize(800.dp, 360.dp))) {
+                Box(Modifier.requiredSize(DpSize(800.dp, 360.dp))) {
                     RpgAdventurePane(RpgAdventureUiState(loading = false, game = game))
                 }
             }
