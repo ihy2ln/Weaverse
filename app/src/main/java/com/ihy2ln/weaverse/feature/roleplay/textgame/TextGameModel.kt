@@ -45,13 +45,13 @@ val TextGameDifficulty.label: String
 val TextGameDifficulty.description: String
     get() = when (this) {
         TextGameDifficulty.Story -> "Gentler fights with full story and haven progression."
-        TextGameDifficulty.Standard -> "The intended balance across battle, Farm, Town, and Home."
+        TextGameDifficulty.Standard -> "The intended balance across battle and the Silverbrook lots."
         TextGameDifficulty.Veteran -> "Hardier enemies, sharper intents, and better coin rewards."
         TextGameDifficulty.Nightmare -> "The strongest enemies and highest deterministic rewards."
     }
 
 @Serializable
-enum class TextGameNodeType { Narrative, MissionBoard, Battle, Reward, Gacha, Hub, Ending }
+enum class TextGameNodeType { Narrative, MissionBoard, Battle, Reward, Gacha, Hub, Tycoon, Ending }
 
 @Serializable
 data class TextGameHotspot(
@@ -76,7 +76,7 @@ data class TextGameRosterMember(
 @Serializable
 data class TextGameSceneAsset(
     val id: String,
-    /** Logical lookup key such as crossroads, town, farm, dungeon, or battle. */
+    /** Logical lookup key such as crossroads, tycoon, dungeon, or battle. */
     val sceneTypes: List<String>,
     val mediaId: String,
     val artAssetPath: String,
@@ -301,6 +301,8 @@ data class TextGamePersistentState(
     val dungeon: DungeonState? = null,
     /** Persisted mission-board history shown in the Mission Log after a run. */
     val missionLog: List<TextGameMissionLogEntry> = emptyList(),
+    /** Top-down Silverbrook lot board. Starts at 25 tiles and expands. */
+    val tycoon: TycoonBoardState = TycoonBoardState(),
 )
 
 @Serializable
@@ -389,6 +391,12 @@ sealed interface TextGameAction {
     data class DungeonStep(val x: Int, val y: Int) : TextGameAction
     data object LeaveDungeon : TextGameAction
     data object CastUltimate : TextGameAction
+    data class SelectTycoonCard(val buildingId: String) : TextGameAction
+    data class SelectTycoonPlacement(val placementId: String) : TextGameAction
+    data class PlaceTycoonBuilding(val buildingId: String, val x: Int, val y: Int) : TextGameAction
+    data class TakeTycoonCard(val buildingId: String) : TextGameAction
+    data class ExpandTycoon(val way: TycoonExpandWay) : TextGameAction
+    data class UseTycoonBuilding(val placementId: String, val verbId: String) : TextGameAction
     data object Reset : TextGameAction
 }
 

@@ -228,7 +228,7 @@ class TextGameViewModel @Inject constructor(
         val templates = listOf(
             Triple("coin_run", "Coin Run", "I start by chasing Silverbrook's coin — every favor answered pays in full.") to
                 TextGameEffect(coinsDelta = 4),
-            Triple("seed_scholar", "Seed Scholar", "I barter for lanternroot stock and trust the Farm to feed the whole run.") to
+        Triple("seed_scholar", "Seed Scholar", "I barter for lanternroot stock and trust the lots to feed the whole run.") to
                 TextGameEffect(seedsDelta = 2, harvestDelta = 1),
             Triple("scrappers_start", "Scrapper's Start", "Salvage first, questions later — my pack begins heavy with ore.") to
                 TextGameEffect(materialsDelta = 2),

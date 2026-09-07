@@ -3,6 +3,15 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.3.72-beta — Silverbrook Tycoon scene
+
+- Removed the separate **Home**, **Town**, and **Farm** hub scenes.
+- Added a from-scratch **Tycoon** scene: top-down card placement on Silverbrook Settlement.
+- Five districts (Residential, Farmland, Commercial, Industrial, Governates) share a starter **5×5 / 25-lot** board.
+- Building cards (Cottage, Crop, Deck Hall, Guild, Market, and the rest) reuse existing Adams Haven location/object art — no new pictures.
+- The charter expands by gold, delve spoils, harvest annex, and guild decree, up to the 20×12 map from the settlement template.
+- Text Game `schemaVersion` is 6 (old saves reset).
+
 ## v1.3.71-beta — Adams Haven card-game scenes in the Text Game
 
 - The First Draw now opens on the transfer: **void arrival → forest path → Haven Crossroads**.
