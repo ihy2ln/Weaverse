@@ -6,13 +6,11 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -61,6 +59,25 @@ internal fun tycoonDistrictColor(district: TycoonDistrict): Color = when (distri
     TycoonDistrict.Governates -> Color(0xFF8B6BB0)
 }
 
+/** Compose scroll parents report Infinity; NaN/Inf cell sizes crash the lots scene. */
+internal fun tycoonFiniteDp(value: Float, fallback: Float): Float =
+    if (value.isFinite() && value > 0f) value else fallback
+
+internal fun tycoonCellSizeDp(
+    availableWidth: Float,
+    availableHeight: Float,
+    columns: Int,
+    rows: Int,
+    zoom: Float,
+): Float {
+    val cols = columns.coerceAtLeast(1)
+    val rowCount = rows.coerceAtLeast(1)
+    val width = tycoonFiniteDp(availableWidth, 360f)
+    val height = tycoonFiniteDp(availableHeight, 360f)
+    val fit = minOf(width / cols, height / rowCount)
+    return (fit * zoom.coerceIn(0.7f, 2.2f)).coerceIn(28f, 96f)
+}
+
 @Composable
 internal fun TycoonScene(
     ui: TextGameUiState,
@@ -75,32 +92,35 @@ internal fun TycoonScene(
     var filter by remember { mutableStateOf<TycoonDistrict?>(null) }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val wide = maxWidth >= 840.dp
+        val sidebar: @Composable (Modifier) -> Unit = { sidebarModifier ->
+            TycoonSidebar(
+                ui = ui,
+                node = node,
+                board = board,
+                bonuses = bonuses,
+                counts = counts,
+                filter = filter,
+                onFilter = { filter = if (filter == it) null else it },
+                onZoomIn = { zoom = (zoom + 0.2f).coerceAtMost(2.2f) },
+                onZoomOut = { zoom = (zoom - 0.2f).coerceAtLeast(0.7f) },
+                isChoiceEnabled = isChoiceEnabled,
+                dispatch = dispatch,
+                modifier = sidebarModifier,
+            )
+        }
         if (wide) {
             Row(
-                Modifier.fillMaxWidth().heightIn(min = 520.dp, max = 760.dp),
+                Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
             ) {
                 TycoonBoardPane(
                     ui = ui,
                     board = board,
                     zoom = zoom,
-                    modifier = Modifier.weight(1.45f).fillMaxHeight(),
+                    modifier = Modifier.weight(1.45f),
                     dispatch = dispatch,
                 )
-                TycoonSidebar(
-                    ui = ui,
-                    node = node,
-                    board = board,
-                    bonuses = bonuses,
-                    counts = counts,
-                    filter = filter,
-                    onFilter = { filter = if (filter == it) null else it },
-                    onZoomIn = { zoom = (zoom + 0.2f).coerceAtMost(2.2f) },
-                    onZoomOut = { zoom = (zoom - 0.2f).coerceAtLeast(0.7f) },
-                    isChoiceEnabled = isChoiceEnabled,
-                    dispatch = dispatch,
-                    modifier = Modifier.widthIn(min = 260.dp, max = 340.dp).fillMaxHeight(),
-                )
+                sidebar(Modifier.widthIn(min = 260.dp, max = 340.dp))
             }
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
@@ -108,23 +128,10 @@ internal fun TycoonScene(
                     ui = ui,
                     board = board,
                     zoom = zoom,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 360.dp, max = 520.dp),
-                    dispatch = dispatch,
-                )
-                TycoonSidebar(
-                    ui = ui,
-                    node = node,
-                    board = board,
-                    bonuses = bonuses,
-                    counts = counts,
-                    filter = filter,
-                    onFilter = { filter = if (filter == it) null else it },
-                    onZoomIn = { zoom = (zoom + 0.2f).coerceAtMost(2.2f) },
-                    onZoomOut = { zoom = (zoom - 0.2f).coerceAtLeast(0.7f) },
-                    isChoiceEnabled = isChoiceEnabled,
-                    dispatch = dispatch,
                     modifier = Modifier.fillMaxWidth(),
+                    dispatch = dispatch,
                 )
+                sidebar(Modifier.fillMaxWidth())
             }
         }
     }
@@ -143,21 +150,24 @@ private fun TycoonBoardPane(
         colors = CardDefaults.cardColors(containerColor = TycoonInk),
         shape = RoundedCornerShape(16.dp),
     ) {
-        BoxWithConstraints(Modifier.fillMaxSize().padding(10.dp)) {
-            val cell = ((minOf(maxWidth.value, maxHeight.value) / maxOf(board.width, board.height)) * zoom)
-                .coerceIn(28f, 96f).dp
-            val gridW = cell * board.width
-            val gridH = cell * board.height
-            val hScroll = rememberScrollState()
-            val vScroll = rememberScrollState()
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Box(
-                    Modifier
-                        .horizontalScroll(hScroll)
-                        .verticalScroll(vScroll)
-                        .width(gridW)
-                        .height(gridH),
-                ) {
+        BoxWithConstraints(Modifier.fillMaxWidth().heightIn(min = 280.dp, max = 520.dp).padding(10.dp)) {
+            val cell = tycoonCellSizeDp(
+                availableWidth = maxWidth.value,
+                availableHeight = maxHeight.value,
+                columns = board.width,
+                rows = board.height,
+                zoom = zoom,
+            ).dp
+            val gridW = cell * board.width.coerceAtLeast(1)
+            val gridH = cell * board.height.coerceAtLeast(1)
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(gridH)
+                    .horizontalScroll(rememberScrollState()),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                Box(Modifier.width(gridW).height(gridH)) {
                     TycoonGrid(
                         ui = ui,
                         board = board,
@@ -197,6 +207,7 @@ private fun TycoonGrid(
                         },
                 ) {
                     Canvas(Modifier.fillMaxSize()) {
+                        if (size.minDimension <= 0f) return@Canvas
                         val step = size.minDimension / 4f
                         for (i in -2..6) {
                             drawLine(
@@ -309,7 +320,7 @@ private fun TycoonSidebar(
         shape = RoundedCornerShape(16.dp),
     ) {
         Column(
-            Modifier.padding(InkSpacing.md).verticalScroll(rememberScrollState()),
+            Modifier.padding(InkSpacing.md),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text("SILVERBROOK SETTLEMENT", color = TycoonGold, fontWeight = FontWeight.Bold, fontSize = 13.sp)
@@ -418,7 +429,7 @@ private fun TycoonSidebar(
                     ) { Text(choice.label, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 OutlinedButton(onClick = onZoomIn, modifier = Modifier.weight(1f)) { Text("Zoom in") }
                 OutlinedButton(onClick = onZoomOut, modifier = Modifier.weight(1f)) { Text("Zoom out") }
             }

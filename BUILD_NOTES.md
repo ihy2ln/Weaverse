@@ -3,6 +3,11 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.3.73-beta — Tycoon lots no longer crash on open
+
+- The Silverbrook board sat inside the Text Game page scroller *and* used its own vertical scroller, which Compose rejects (infinite height). Opening the lots crashed.
+- The board now uses a bounded height and horizontal pan only; the page scroller moves the sidebar. Cell size ignores Infinity/NaN constraints.
+
 ## v1.3.72-beta — Silverbrook Tycoon scene
 
 - Removed the separate **Home**, **Town**, and **Farm** hub scenes.

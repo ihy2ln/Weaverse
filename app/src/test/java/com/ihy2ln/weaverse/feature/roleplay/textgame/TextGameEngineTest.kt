@@ -374,6 +374,34 @@ class TextGameEngineTest {
         assertEquals("cottage", placed.state.persistent.tycoon.placements.single().buildingId)
     }
 
+    @Test
+    fun tycoonCellSizeStaysFiniteWhenComposeReportsInfiniteConstraints() {
+        val fromInfinite = tycoonCellSizeDp(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY, 5, 5, 1f)
+        assertTrue(fromInfinite.isFinite() && fromInfinite in 28f..96f)
+        val fromNaN = tycoonCellSizeDp(Float.NaN, Float.NaN, 5, 5, 1f)
+        assertTrue(fromNaN.isFinite() && fromNaN in 28f..96f)
+        val fitted = tycoonCellSizeDp(360f, 360f, 5, 5, 1f)
+        assertEquals(72f, fitted)
+        val largeBoard = tycoonCellSizeDp(360f, 520f, 20, 12, 1.4f)
+        assertTrue(largeBoard.isFinite() && largeBoard in 28f..96f)
+        assertEquals(360f, tycoonFiniteDp(Float.NEGATIVE_INFINITY, 360f))
+        assertEquals(360f, tycoonFiniteDp(0f, 360f))
+    }
+
+    @Test
+    fun enteringTycoonFromCrossroadsAndSimulationStartDoesNotReject() {
+        var campaign = afterGacha()
+        val entered = engine.reduce(campaign, TextGameAction.Choose("to_tycoon"))
+        assertTrue(entered.accepted)
+        assertEquals("tycoon", entered.state.run.nodeId)
+        assertEquals(TextGameNodeType.Tycoon, definition.node(entered.state.run.nodeId)?.type)
+        val simulation = TextGameEngine(adamsHavenDefinition(TextGamePlayStyle.Simulation)).initialState()
+        assertEquals("sim_tycoon", simulation.run.nodeId)
+        assertEquals(TextGameNodeType.Tycoon, adamsHavenDefinition(TextGamePlayStyle.Simulation).node(simulation.run.nodeId)?.type)
+        assertEquals(5, simulation.persistent.tycoon.width)
+        assertEquals(listOf("cottage"), simulation.persistent.tycoon.hand)
+    }
+
     private fun settleLots(state: TextGameState): TextGameState {
         var next = engine.reduce(state, TextGameAction.Choose("to_tycoon")).state
         next = engine.reduce(next, TextGameAction.PlaceTycoonBuilding("cottage", 0, 0)).state
