@@ -77,9 +77,10 @@ object HelpContent {
                 HelpEntry(
                     "Create a campaign",
                     "Choose one or more main characters from You, Roster, or the Characters " +
-                        "Codex. Choose Character(s) or Dungeon Master mode, a single- or " +
-                        "multi-perspective point of view, AI-backed setting/rules templates, and " +
-                        "narrative tense, then add setting details and house rules. Their full " +
+                        "Codex. Choose Character(s) or Dungeon Master mode, Story opening or " +
+                        "Tabletop session pacing, a single- or multi-perspective point of view, " +
+                        "AI-backed setting/rules templates, and narrative tense, then add " +
+                        "setting details and house rules. Their full " +
                         "guidance is supplied to the game master during play.",
                 ),
                 HelpEntry(
@@ -92,7 +93,8 @@ object HelpContent {
                     "Setup — campaign options",
                     "The Setup button on the adventure page reopens the campaign options " +
                         "sheet at any time: add or remove character perspectives (You, Roster, " +
-                        "or Characters Codex), switch Dungeon Master/Character play, change the " +
+                        "or Characters Codex), switch Dungeon Master/Character play, Story " +
+                        "opening or Tabletop session pacing, change the " +
                         "setting template and details, point of view, tense, rules system, and " +
                         "house rules. Saving rewrites the campaign setup the AI plays by.",
                 ),

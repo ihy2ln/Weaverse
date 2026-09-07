@@ -293,14 +293,20 @@ fun userIsDungeonMaster(campaignSetup: String): Boolean =
     Regex("Player role:\\s*Dungeon Master", RegexOption.IGNORE_CASE).containsMatchIn(campaignSetup) ||
         campaignSetup.contains("The user is the Dungeon Master", ignoreCase = true)
 
-fun adventureRoleDirective(campaignSetup: String, sceneNumber: Int): String =
-    if (userIsDungeonMaster(campaignSetup)) {
+fun adventureRoleDirective(campaignSetup: String, sceneNumber: Int): String {
+    val tabletop = adventurePacingFromSetup(campaignSetup) == AdventurePacing.Tabletop
+    val tabletopPacing =
+        " Play like a live Dungeons & Dragons table: follow the party's declared actions, let exploration, " +
+            "conversation, and combat emerge from play, and do not railroad a campaign-arc hook every beat. " +
+            "Offer rumors, NPCs, and a situation; wait for the next declaration."
+    return if (userIsDungeonMaster(campaignSetup)) {
         "The human user is the Dungeon Master for scene $sceneNumber and has authority over the " +
             "world, NPCs, opposition, scene framing, and rulings. You play the selected player-character " +
             "party. Treat the user's entry as DM narration, a situation, NPC dialogue, or a ruling; respond " +
             "with the party's decisions, actions, dialogue, and rules-consistent reactions. Use the supplied " +
             "hidden roll only when a party action is uncertain. Never override the user's world facts, decide " +
-            "NPC actions for them, or take over the Dungeon Master role."
+            "NPC actions for them, or take over the Dungeon Master role." +
+            if (tabletop) tabletopPacing else ""
     } else {
         "You are the AI game master for scene $sceneNumber. Determine the world's action and consequences " +
             "in response to the player's declared action, using the supplied hidden roll when a check is " +
@@ -308,5 +314,7 @@ fun adventureRoleDirective(campaignSetup: String, sceneNumber: Int): String =
             "action. Keep play in the current scene until the player asks to move on or a decisive fictional " +
             "transition makes a new scene necessary. If you independently advance, begin the response with " +
             "[[ADVANCE_SCENE: short reason]]. Never emit that marker otherwise, never format the response as " +
-            "text messages, and always obey a player's explicit request to stay or return to the current scene."
+            "text messages, and always obey a player's explicit request to stay or return to the current scene." +
+            if (tabletop) tabletopPacing else ""
     }
+}

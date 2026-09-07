@@ -140,5 +140,13 @@ class AdventureDiceTest {
         assertTrue(!userIsDungeonMaster("Player role: Adventurer"))
         assertTrue("You are the AI game master" in directive)
         assertTrue("scene 2" in directive)
+        assertTrue("do not railroad a campaign-arc hook" !in directive)
+    }
+
+    @Test
+    fun tabletopPacingAddsFreeFlowingTableDirection() {
+        val directive = adventureRoleDirective("Player role: Adventurer\nPlay pacing: Tabletop session", 1)
+        assertTrue("live Dungeons & Dragons table" in directive)
+        assertTrue("do not railroad a campaign-arc hook" in directive)
     }
 }

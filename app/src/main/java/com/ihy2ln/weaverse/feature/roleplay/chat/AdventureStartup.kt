@@ -7,6 +7,7 @@ enum class AdventureStartupPhase(val storageName: String) {
     Character("character"),
     Choose("choose"),
     Questions("questions"),
+    Intro("intro"),
     Complete("complete"),
 }
 
@@ -16,8 +17,20 @@ enum class AdventureStartupChoice {
     Random,
 }
 
+enum class AdventurePacing {
+    Guided,
+    Tabletop,
+}
+
+fun AdventureStartupPhase.isPendingSetup(): Boolean = this in setOf(
+    AdventureStartupPhase.Character,
+    AdventureStartupPhase.Choose,
+    AdventureStartupPhase.Questions,
+    AdventureStartupPhase.Intro,
+)
+
 private val StartupMarker = Regex(
-    "\\[\\[ADVENTURE_STARTUP:\\s*(character|choose|questions|complete)]]",
+    "\\[\\[ADVENTURE_STARTUP:\\s*(character|choose|questions|intro|complete)]]",
     RegexOption.IGNORE_CASE,
 )
 
@@ -38,7 +51,26 @@ private val RandomOpenings = listOf(
     "the party wakes inside a moving colossal creature with a map tattooed across their shared memories",
 )
 
-fun adventureStartupPrompt(userIsDungeonMaster: Boolean, needsCharacter: Boolean = false): String {
+fun adventurePacingFromSetup(campaignSetup: String): AdventurePacing {
+    val line = Regex("(?im)^Play pacing:\\s*(.*)$").find(campaignSetup)
+        ?.groupValues?.getOrNull(1)?.trim().orEmpty()
+    return if (line.contains("tabletop", ignoreCase = true)) {
+        AdventurePacing.Tabletop
+    } else {
+        AdventurePacing.Guided
+    }
+}
+
+fun adventurePacingLabel(pacing: AdventurePacing): String = when (pacing) {
+    AdventurePacing.Guided -> "Story opening"
+    AdventurePacing.Tabletop -> "Tabletop session"
+}
+
+fun adventureStartupPrompt(
+    userIsDungeonMaster: Boolean,
+    needsCharacter: Boolean = false,
+    pacing: AdventurePacing = AdventurePacing.Guided,
+): String {
     val perspective = if (userIsDungeonMaster) {
         "I’ll help frame the opening before you take over as Dungeon Master."
     } else {
@@ -55,10 +87,19 @@ fun adventureStartupPrompt(userIsDungeonMaster: Boolean, needsCharacter: Boolean
                 appendLine("2 · Character concept, personality, appearance, and main motivation")
                 appendLine("3 · Choose Standard Array (15, 14, 13, 12, 10, 8), roll-style stats, or give your own six scores")
                 appendLine("4 · Starting equipment, notable skill, spell, or signature weapon")
-                append("You can also say “surprise me.” I’ll build a complete editable roster sheet and visual portrait brief, then we’ll choose the opening.")
+                append(
+                    if (pacing == AdventurePacing.Tabletop) {
+                        "You can also say “surprise me.” I’ll build a complete editable roster sheet and visual portrait brief, then we’ll do tabletop introductions."
+                    } else {
+                        "You can also say “surprise me.” I’ll build a complete editable roster sheet and visual portrait brief, then we’ll choose the opening."
+                    },
+                )
             },
             AdventureStartupPhase.Character,
         )
+    }
+    if (pacing == AdventurePacing.Tabletop) {
+        return withAdventureStartupMarker(tabletopIntroPrompt(userIsDungeonMaster), AdventureStartupPhase.Intro)
     }
     return withAdventureStartupMarker(
         buildString {
@@ -75,12 +116,27 @@ fun adventureStartupPrompt(userIsDungeonMaster: Boolean, needsCharacter: Boolean
     )
 }
 
+private fun tabletopIntroPrompt(userIsDungeonMaster: Boolean): String = buildString {
+    appendLine("Session 0 — character introductions")
+    if (userIsDungeonMaster) {
+        appendLine("The table is seated. Before you take the Dungeon Master chair, the party introduces itself.")
+    } else {
+        appendLine("The table is seated. Before we play, introduce who you are playing.")
+    }
+    appendLine()
+    appendLine("1 · Choose a character from the campaign party, or describe a new adventurer")
+    appendLine("2 · Give a short introduction: name, look, what they want at the table, one bond or rumor")
+    appendLine("3 · Say whether the party already knows each other, or if this is the first meeting")
+    append("Reply with your introduction. This is session setup, so no action roll is needed.")
+}
+
 fun adventureStartupPhase(text: String): AdventureStartupPhase = when (
     StartupMarker.find(text)?.groupValues?.getOrNull(1)?.lowercase()
 ) {
     "character" -> AdventureStartupPhase.Character
     "choose" -> AdventureStartupPhase.Choose
     "questions" -> AdventureStartupPhase.Questions
+    "intro" -> AdventureStartupPhase.Intro
     "complete" -> AdventureStartupPhase.Complete
     else -> AdventureStartupPhase.None
 }
@@ -105,8 +161,14 @@ fun adventureStartupChoice(input: String): AdventureStartupChoice {
 fun nextAdventureStartupPhase(
     current: AdventureStartupPhase,
     input: String,
+    pacing: AdventurePacing = AdventurePacing.Guided,
 ): AdventureStartupPhase = when (current) {
-    AdventureStartupPhase.Character -> AdventureStartupPhase.Choose
+    AdventureStartupPhase.Character -> if (pacing == AdventurePacing.Tabletop) {
+        AdventureStartupPhase.Intro
+    } else {
+        AdventureStartupPhase.Choose
+    }
+    AdventureStartupPhase.Intro -> AdventureStartupPhase.Complete
     AdventureStartupPhase.Choose -> if (adventureStartupChoice(input) == AdventureStartupChoice.Interview) {
         AdventureStartupPhase.Questions
     } else {
@@ -120,6 +182,7 @@ fun adventureStartupDirective(
     current: AdventureStartupPhase,
     input: String,
     random: Random = Random.Default,
+    pacing: AdventurePacing = AdventurePacing.Guided,
 ): String = when (current) {
     AdventureStartupPhase.Character ->
         "Create one complete level-1 player character from the player's answers. Fill harmless omissions " +
@@ -128,8 +191,24 @@ fun adventureStartupDirective(
             "class=Class|background=Background|level=1|strength=10|dexterity=10|constitution=10|" +
             "intelligence=10|wisdom=10|charisma=10|role=Team|description=One sentence|" +
             "portrait=Concise visual portrait brief]]. Do not use the | character inside a value. Then briefly " +
-            "introduce the finished editable character and present the three opening choices: 1 classic D&D, " +
-            "2 build it together, or 3 random. Do not begin the adventure and do not roll dice."
+            "introduce the finished editable character" +
+            if (pacing == AdventurePacing.Tabletop) {
+                " and invite a short tabletop introduction: who they are playing, how they look, what they " +
+                    "want at the table, one bond or rumor, and whether the party already knows each other. " +
+                    "Do not offer classic, interview, or random openings, do not begin the adventure, and do not roll dice."
+            } else {
+                " and present the three opening choices: 1 classic D&D, 2 build it together, or 3 random. " +
+                    "Do not begin the adventure and do not roll dice."
+            }
+    AdventureStartupPhase.Intro ->
+        "Stay in session 0 until the introduction is acknowledged. If a new character was described, emit " +
+            "[[ROSTER_CHARACTER|name=Name|species=Species|class=Class|background=Background|level=1|" +
+            "strength=10|dexterity=10|constitution=10|intelligence=10|wisdom=10|charisma=10|role=Team|" +
+            "description=One sentence|portrait=Concise visual portrait brief]] before the visible reply. " +
+            "Confirm who is at the table. Then write the first live tabletop beat: a specific place, who is " +
+            "present, and what is happening in the room right now. Do not invent a campaign-spanning quest " +
+            "or force a plot hook. Play like a Dungeon Master at an open table: the players decide what to " +
+            "pursue. End with a clear invitation for the party's first action. Do not roll dice for setup."
     AdventureStartupPhase.Choose -> when (adventureStartupChoice(input)) {
         AdventureStartupChoice.Classic ->
             openingDirective("Classic tabletop opening selected: ${ClassicOpenings.random(random)}.")

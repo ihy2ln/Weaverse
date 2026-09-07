@@ -3,6 +3,7 @@ package com.ihy2ln.weaverse.feature.shell
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ihy2ln.weaverse.core.ui.components.CreateWorkVocabulary
+import com.ihy2ln.weaverse.core.ui.components.CampaignPacingTemplates
 import com.ihy2ln.weaverse.core.ui.components.CampaignRulesetTemplates
 import com.ihy2ln.weaverse.core.ui.components.NewWorkDetails
 import com.ihy2ln.weaverse.core.ui.components.WorkCharacterOption
@@ -23,6 +24,7 @@ import com.ihy2ln.weaverse.data.repo.SeriesRepository
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
 import com.ihy2ln.weaverse.feature.prompt.PromptEntryBus
 import com.ihy2ln.weaverse.feature.prompt.PromptEntryKind
+import com.ihy2ln.weaverse.feature.roleplay.chat.AdventurePacing
 import com.ihy2ln.weaverse.feature.roleplay.chat.adventureStartupPrompt
 import com.ihy2ln.weaverse.feature.roleplay.characters.RpgCharacterSheet
 import com.ihy2ln.weaverse.feature.roleplay.characters.encodeRpgSheet
@@ -263,6 +265,11 @@ class AppShellViewModel @Inject constructor(
             appendLine("Narrative tense: ${if (textGame) "Present tense" else details.tense.ifBlank { "Past tense" }}")
             appendLine("Narrative point of view: ${if (textGame) "First-person Summoner" else details.narrativePov.ifBlank { "Third-person multiple" }}")
             appendLine("Player role: ${if (textGame) "Summoner / MC" else if (userIsDungeonMaster) "Dungeon Master" else "Adventurer"}")
+            if (!textGame) {
+                val pacing = CampaignPacingTemplates.firstOrNull { it.id == details.pacingId }
+                    ?: CampaignPacingTemplates.first()
+                appendLine("Play pacing: ${pacing.label}")
+            }
             if (textGame) appendLine("Text Game difficulty: ${details.difficultyId}")
             val rulesetLabel = CampaignRulesetTemplates
                 .firstOrNull { it.id == details.rulesetId }
@@ -290,6 +297,7 @@ class AppShellViewModel @Inject constructor(
         val opening = adventureStartupPrompt(
             userIsDungeonMaster = userIsDungeonMaster,
             needsCharacter = details.mainCharacters.isEmpty() && !userIsDungeonMaster,
+            pacing = if (details.pacingId == "tabletop") AdventurePacing.Tabletop else AdventurePacing.Guided,
         )
         db.roleplayDao().upsertMessage(
             RpMessageEntity(

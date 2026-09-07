@@ -24,6 +24,7 @@ import com.ihy2ln.weaverse.core.media.topicMediaRequestsFor
 import com.ihy2ln.weaverse.core.media.topicMediaVisibleText
 import com.ihy2ln.weaverse.core.roleplay.avatarColorHexFor
 import com.ihy2ln.weaverse.core.ui.components.MediaEditAction
+import com.ihy2ln.weaverse.core.ui.components.CampaignPacingTemplates
 import com.ihy2ln.weaverse.core.ui.components.CampaignPerspectiveTemplates
 import com.ihy2ln.weaverse.core.ui.components.CampaignRulesetTemplates
 import com.ihy2ln.weaverse.core.ui.components.CampaignSettingTemplate
@@ -1453,11 +1454,7 @@ class RoleplayChatViewModel @Inject constructor(
             runRpgTurn(turn)
             return
         }
-        val startupPending = _uiState.value.adventureStartupPhase in setOf(
-            AdventureStartupPhase.Character,
-            AdventureStartupPhase.Choose,
-            AdventureStartupPhase.Questions,
-        )
+        val startupPending = _uiState.value.adventureStartupPhase.isPendingSetup()
         if (_uiState.value.entryMode == "nai" && !startupPending) addManualEntry() else generate()
     }
 
@@ -1834,11 +1831,7 @@ class RoleplayChatViewModel @Inject constructor(
     fun generate(forceAdventureRoll: Boolean = false) {
         val state = _uiState.value
         if (state.input.isBlank() || state.chatId.isBlank() || state.isStreaming) return
-        val startupPending = state.adventureStartupPhase in setOf(
-            AdventureStartupPhase.Character,
-            AdventureStartupPhase.Choose,
-            AdventureStartupPhase.Questions,
-        )
+        val startupPending = state.adventureStartupPhase.isPendingSetup()
         if (state.entryMode == "nai" && !startupPending && !forceAdventureRoll) {
             addManualEntry()
             return
@@ -1860,19 +1853,15 @@ class RoleplayChatViewModel @Inject constructor(
             val mode = currentDisplayMode()
             val topicMedia = currentTopicMediaSnapshot()
             val startupPhase = currentAdventureStartupPhase()
-            val startupActive = mode == "dungeonMaster" &&
-                startupPhase in setOf(
-                    AdventureStartupPhase.Character,
-                    AdventureStartupPhase.Choose,
-                    AdventureStartupPhase.Questions,
-                )
+            val campaignPacing = adventurePacingFromSetup(boundChat?.authorsNote.orEmpty())
+            val startupActive = mode == "dungeonMaster" && startupPhase.isPendingSetup()
             val startupDirective = if (startupActive) {
-                adventureStartupDirective(startupPhase, userText)
+                adventureStartupDirective(startupPhase, userText, pacing = campaignPacing)
             } else {
                 ""
             }
             val nextStartupPhase = if (startupActive) {
-                nextAdventureStartupPhase(startupPhase, userText)
+                nextAdventureStartupPhase(startupPhase, userText, campaignPacing)
             } else {
                 AdventureStartupPhase.None
             }
@@ -2328,6 +2317,7 @@ class RoleplayChatViewModel @Inject constructor(
                             "Main character IDs: none",
                             ignoreCase = true,
                         ),
+                        pacing = adventurePacingFromSetup(chat.authorsNote),
                     ),
                 ).toJson(),
             ),
@@ -2580,6 +2570,9 @@ class RoleplayChatViewModel @Inject constructor(
         val rulesId = CampaignRulesetTemplates.firstOrNull { it.label.equals(rulesLabel, ignoreCase = true) }
             ?.id ?: "dnd-5e"
         val campaignRoleId = if (line("Player role").contains("Dungeon Master", ignoreCase = true)) "dm" else "player"
+        val pacingId = CampaignPacingTemplates.firstOrNull {
+            it.label.equals(line("Play pacing"), ignoreCase = true)
+        }?.id ?: "guided"
         val houseRules = Regex("(?im)^House rules:\\s*([\\s\\S]*?)(?=\\n\\n|\\z)").find(note)
             ?.groupValues?.getOrNull(1)?.trim().orEmpty()
         _uiState.update {
@@ -2595,6 +2588,7 @@ class RoleplayChatViewModel @Inject constructor(
                     settingId = settingTemplate?.id ?: "high-fantasy",
                     narrativePov = povLabel,
                     campaignRoleId = campaignRoleId,
+                    pacingId = pacingId,
                 ),
             )
         }
@@ -2637,6 +2631,7 @@ class RoleplayChatViewModel @Inject constructor(
                     adventureStartupPrompt(
                         userIsDungeonMaster = userIsDungeonMaster(chat.authorsNote),
                         needsCharacter = true,
+                        pacing = adventurePacingFromSetup(chat.authorsNote),
                     ),
                 ).toJson(),
                 createdAt = now,
@@ -2693,6 +2688,8 @@ class RoleplayChatViewModel @Inject constructor(
                 } else {
                     "User role guidance: The user controls the selected player character(s). The AI is the Dungeon Master and controls the world, NPCs, opposition, and consequences without choosing the player's actions."
                 },
+                "Pacing guidance: " +
+                    (CampaignPacingTemplates.firstOrNull { it.id == details.pacingId } ?: CampaignPacingTemplates.first()).directive,
                 details.styleGuide.trim().takeIf { it.isNotBlank() }?.let { "House rules: $it" }.orEmpty(),
             ).filter { it.isNotBlank() }.joinToString("\n\n")
             val setup = buildString {
@@ -2705,6 +2702,10 @@ class RoleplayChatViewModel @Inject constructor(
                 appendLine("Narrative tense: ${details.tense.ifBlank { "Past tense" }}")
                 appendLine("Narrative point of view: ${details.narrativePov.ifBlank { "Third-person multiple" }}")
                 appendLine("Player role: ${if (userIsDungeonMaster) "Dungeon Master" else "Adventurer"}")
+                appendLine(
+                    "Play pacing: " +
+                        (CampaignPacingTemplates.firstOrNull { it.id == details.pacingId } ?: CampaignPacingTemplates.first()).label,
+                )
                 appendLine("Rules system: ${ruleset.label}")
                 if (guidance.isNotBlank()) append(guidance)
             }.trim()
