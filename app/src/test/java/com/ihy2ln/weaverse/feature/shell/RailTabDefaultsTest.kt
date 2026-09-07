@@ -40,11 +40,11 @@ class RailTabDefaultsTest {
         // Constants are persisted in shell state and the launchMode preference, so
         // Roleplay keeps its name and only carries the "RPG" label.
         assertEquals(
-            listOf("Novel", "Roleplay", "Chatting", "Storyboard", "Notes"),
+            listOf("Novel", "Roleplay", "Games", "Chatting", "Storyboard", "Notes"),
             AppMode.entries.map { it.name },
         )
         assertEquals(
-            listOf("Novel", "RPG", "Chatting", "Storyboard", "Notes"),
+            listOf("Novel", "RPG", "Games", "Chatting", "Storyboard", "Brainstorm/Notes"),
             AppMode.entries.map { it.label },
         )
     }
@@ -117,9 +117,9 @@ class RailTabDefaultsTest {
     @Test
     fun chromeToolsStayGlobal() {
         val tools = workspaceChromeTools()
-        assertTrue(tools.containsAll(listOf(RailTab.Codex, RailTab.Prompts, RailTab.Notes)))
+        assertTrue(tools.containsAll(listOf(RailTab.Codex, RailTab.Prompts, RailTab.Pictures)))
         assertEquals(
-            listOf("Codex", "Prompts", "Notes", "Snippets", "Chats", "Pictures"),
+            listOf("Codex", "Prompts", "Pictures"),
             tools.map { it.label },
         )
     }

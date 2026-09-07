@@ -193,7 +193,7 @@ private fun TextGameShelf(
                 Text("BUILT-IN · OFFLINE", style = MaterialTheme.typography.labelSmall, color = tokens.activePill)
                 Text(definition.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text(definition.subtitle, color = tokens.secondaryText)
-                Text("Branching story · Card battle · Reward draft · Farm · Town · Home")
+                Text("Branching story · Card battle · Reward draft · Tycoon lots")
                 Row(horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
                     Button(onClick = onPlay) { Text(if (hasProgress) "Continue ${playStyle.label}" else "Start ${playStyle.label}") }
                     OutlinedButton(onClick = onCards) { Text("Browse ${definition.collectibleCards.size} cards") }
@@ -294,6 +294,8 @@ private fun TextGamePlayer(
             )
         } else if (node.type == TextGameNodeType.Battle) {
             BattleGameBoard(ui, node, canPlay, canSelectCard, dispatch)
+        } else if (node.type == TextGameNodeType.Tycoon) {
+            TycoonScene(ui, node, isChoiceEnabled, dispatch)
         } else {
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val wide = maxWidth >= 840.dp
@@ -580,7 +582,7 @@ private fun ScenePicture(
     val colors = when (node.type) {
         TextGameNodeType.Battle -> listOf(Color(0xFF201A39), Color(0xFF7B3D50))
         TextGameNodeType.Reward -> listOf(Color(0xFF202A42), Color(0xFF3C6A75))
-        TextGameNodeType.Hub -> listOf(Color(0xFF35253D), Color(0xFFB36E5F))
+        TextGameNodeType.Hub, TextGameNodeType.Tycoon -> listOf(Color(0xFF35253D), Color(0xFFB36E5F))
         TextGameNodeType.Ending -> listOf(Color(0xFF182A2C), Color(0xFFB58C5D))
         else -> listOf(Color(0xFF111A2A), Color(0xFF9B5C5B))
     }
@@ -804,10 +806,13 @@ private fun StatusStrip(state: TextGameState) {
         if (state.persistent.harvest > 0 || state.persistent.dishes > 0) {
             StatusChip("♣ FARM", "${state.persistent.harvest} produce · ${state.persistent.dishes} dish", Color(0xFF77B982))
         }
-        if (state.persistent.farmLevel > 1 || state.persistent.townLevel > 0 || state.persistent.homeLevel > 1) {
+        if (state.persistent.farmLevel > 1 || state.persistent.townLevel > 1 || state.persistent.homeLevel > 1 ||
+            state.persistent.tycoon.placements.isNotEmpty()
+        ) {
+            val lots = state.persistent.tycoon
             StatusChip(
-                "⌂ HAVEN",
-                "Home Lv ${state.persistent.homeLevel} · Farm Lv ${state.persistent.farmLevel} · Town Lv ${state.persistent.townLevel}",
+                "⌂ LOTS",
+                "${lots.width}×${lots.height} · ${lots.placements.size} buildings",
                 Color(0xFFE0B24E),
             )
         }

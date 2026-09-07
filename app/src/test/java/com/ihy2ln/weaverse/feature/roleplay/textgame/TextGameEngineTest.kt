@@ -22,20 +22,28 @@ class TextGameEngineTest {
         assertEquals("forest_path", forest.run.nodeId)
         val state = engine.reduce(forest, TextGameAction.Choose("follow_path")).state
         assertEquals("crossroads", state.run.nodeId)
-        assertTrue(setOf("to_dungeon", "to_farm", "to_town", "to_house").all { id -> definition.node("crossroads")!!.choices.any { it.id == id } })
+        assertTrue(setOf("to_dungeon", "to_tycoon", "to_farm", "to_town", "to_house").all { id -> definition.node("crossroads")!!.choices.any { it.id == id } })
         assertTrue(definition.node("crossroads")!!.hotspots.size >= 4)
         assertEquals(1, state.persistent.farmLevel)
         assertEquals(1, state.persistent.townLevel)
         assertEquals(1, state.persistent.homeLevel)
-        listOf("void_arrival", "forest_path", "kitchen", "farmhouse_night", "guild_summon").forEach {
+        listOf("void_arrival", "forest_path", "tycoon", "kitchen", "farmhouse_night", "guild_summon").forEach {
             assertNotNull(definition.node(it), "missing scene $it")
         }
-        assertEquals(5, definition.schemaVersion)
+        assertNull(definition.node("farm"))
+        assertNull(definition.node("town"))
+        assertNull(definition.node("home"))
+        assertEquals(TextGameNodeType.Tycoon, definition.node("tycoon")?.type)
+        assertEquals(5, state.persistent.tycoon.width)
+        assertEquals(5, state.persistent.tycoon.height)
+        assertEquals(25, state.persistent.tycoon.width * state.persistent.tycoon.height)
+        assertEquals(6, definition.schemaVersion)
     }
 
     @Test
     fun narrativeChoicesAndConditionsAreValidated() {
-        var state = engine.reduce(engine.initialState(), TextGameAction.Choose("to_dungeon")).state
+        var state = toCrossroads(engine.initialState())
+        state = engine.reduce(state, TextGameAction.Choose("to_dungeon")).state
         assertEquals(TextGameNodeType.MissionBoard, definition.node(state.run.nodeId)?.type)
         val mission = testMission(state.persistent.rngSeed)
         val forged = engine.reduce(state, TextGameAction.BeginMission(mission.copy(id = "not_offered")))
@@ -121,15 +129,12 @@ class TextGameEngineTest {
     @Test
     fun farmRequiresClearThenPlantAndBattleAdvancesGrowth() {
         var state = afterGacha()
-        state = engine.reduce(state, TextGameAction.Choose("to_farm")).state
-        assertFalse(engine.reduce(state, TextGameAction.Choose("plant")).accepted)
-        state = engine.reduce(state, TextGameAction.Choose("clear_plot")).state
+        state = settleLots(state)
         assertEquals(1, state.persistent.farmLevel)
-        state = engine.reduce(state, TextGameAction.Choose("plant")).state
         assertEquals(1, state.persistent.seeds)
+        assertTrue("crop_planted" in state.persistent.flags)
+        assertTrue("deck_hall_built" in state.persistent.flags)
         assertFalse(engine.reduce(state, TextGameAction.Choose("harvest")).accepted)
-        state = engine.reduce(state, TextGameAction.Choose("to_town")).state
-        state = engine.reduce(state, TextGameAction.Choose("build_deck_hall")).state
         state = engine.reduce(state, TextGameAction.Choose("prepare_home")).state
         state = engine.reduce(state, TextGameAction.Choose("take_contract")).state
         state = engine.reduce(state, TextGameAction.Choose("protect_the_road")).state
@@ -137,6 +142,7 @@ class TextGameEngineTest {
         assertEquals(1, state.persistent.cropGrowth)
         assertEquals(4, state.run.resources.size)
         state = engine.reduce(state, TextGameAction.ClaimReward(state.run.rewardOptions.first())).state
+        assertEquals("tycoon", state.run.nodeId)
         state = engine.reduce(state, TextGameAction.Choose("harvest")).state
         assertEquals(0, state.persistent.cropGrowth)
         assertEquals(2, state.persistent.harvest)
@@ -145,35 +151,37 @@ class TextGameEngineTest {
 
     @Test
     fun townAndHouseHaveSeparateProgression() {
-        val town = definition.node("town")!!
-        val home = definition.node("home")!!
-        assertTrue(town.choices.any { it.id == "build_deck_hall" })
-        assertTrue((3..5).all { level -> town.choices.any { it.id == "town_l$level" } })
-        assertTrue((2..5).all { level -> home.choices.any { it.id == "upgrade_house_l$level" } })
+        val tycoon = definition.node("tycoon")!!
+        assertEquals(TextGameNodeType.Tycoon, tycoon.type)
+        assertTrue(tycoon.choices.any { it.id == "prepare_home" })
+        assertTrue(tycoonBuilding("deck_hall") != null)
+        assertTrue(tycoonBuilding("the_house") != null)
         var state = afterGacha()
-        state = engine.reduce(state, TextGameAction.Choose("to_farm")).state
-        state = engine.reduce(state, TextGameAction.Choose("clear_plot")).state
-        state = engine.reduce(state, TextGameAction.Choose("plant")).state
-        state = engine.reduce(state, TextGameAction.Choose("to_town")).state
+        state = engine.reduce(state, TextGameAction.Choose("to_tycoon")).state
         val before = state.persistent.coins
-        state = engine.reduce(state, TextGameAction.Choose("build_deck_hall")).state
+        state = engine.reduce(state, TextGameAction.PlaceTycoonBuilding("cottage", 0, 0)).state
+        state = engine.reduce(state, TextGameAction.TakeTycoonCard("deck_hall")).state
         assertEquals(before - 5, state.persistent.coins)
+        state = engine.reduce(state, TextGameAction.PlaceTycoonBuilding("deck_hall", 3, 3)).state
         assertTrue(state.persistent.townLevel > 1)
         assertTrue("deck_hall_built" in state.persistent.flags)
         state = state.copy(persistent = state.persistent.copy(coins = 10, materials = 2))
-        state = engine.reduce(state, TextGameAction.Choose("upgrade_house_l2")).state
+        state = engine.reduce(state, TextGameAction.TakeTycoonCard("the_house")).state
+        state = engine.reduce(state, TextGameAction.PlaceTycoonBuilding("the_house", 0, 0)).state
         assertTrue(state.persistent.homeLevel > 1)
+        assertTrue("house_l2" in state.persistent.flags)
     }
 
     @Test
     fun completeCampaignLinksFarmTownHouseAndFinalBattle() {
         var state = afterGacha()
-        listOf("to_farm", "clear_plot", "plant", "to_town", "build_deck_hall", "prepare_home", "take_contract", "protect_the_road").forEach {
+        state = settleLots(state)
+        listOf("prepare_home", "take_contract", "protect_the_road").forEach {
             state = engine.reduce(state, TextGameAction.Choose(it)).state
         }
         state = winContract(state)
         state = engine.reduce(state, TextGameAction.ClaimReward(state.run.rewardOptions.first())).state
-        listOf("harvest", "cook_dish", "carry_to_market", "sell_produce", "buy_coat", "serve_meal", "final_patrol").forEach {
+        listOf("harvest", "cook_dish", "sell_produce", "buy_coat", "serve_meal", "final_patrol").forEach {
             state = engine.reduce(state, TextGameAction.Choose(it)).state
         }
         assertEquals("final_battle", state.run.nodeId)
@@ -220,7 +228,7 @@ class TextGameEngineTest {
         assertEquals(state.persistent, queued.persistent)
         assertEquals("crossroads", queued.run.nodeId)
         assertEquals("crossroads", engine.reduce(queued, TextGameAction.ConfirmStoryOption("message-1-1")).state.run.nodeId)
-        assertEquals("home", engine.reduce(queued, TextGameAction.ConfirmStoryOption("message-1-2")).state.run.nodeId)
+        assertEquals("tycoon", engine.reduce(queued, TextGameAction.ConfirmStoryOption("message-1-2")).state.run.nodeId)
     }
 
     @Test
@@ -257,7 +265,8 @@ class TextGameEngineTest {
         val simulation = adamsHavenDefinition(TextGamePlayStyle.Simulation)
         assertEquals(3, setOf(campaign.id, endless.id, simulation.id).size)
         assertEquals(TextGameNodeType.Battle, endless.node(endless.startNodeId)?.type)
-        assertEquals("sim_home", simulation.startNodeId)
+        assertEquals("sim_tycoon", simulation.startNodeId)
+        assertEquals(TextGameNodeType.Tycoon, simulation.node("sim_tycoon")?.type)
     }
 
     @Test
@@ -277,12 +286,10 @@ class TextGameEngineTest {
         assertEquals(76, definition.collectibleCards.map { it.id }.distinct().size)
         assertTrue(definition.collectibleCards.any { it.id == "characters/class-warrior" })
         assertTrue(definition.collectibleCards.all { it.artAssetPath.endsWith(".png") })
-        listOf("farm", "town", "home").forEach { nodeId ->
-            val node = definition.node(nodeId)!!
-            assertNotNull(node.sceneMotionMediaId)
-            assertTrue(node.bundledSceneMotionAssetPath!!.endsWith(".mp4"))
-            assertNotNull(node.bundledSceneAssetPath)
-        }
+        val tycoon = definition.node("tycoon")!!
+        assertEquals(TextGameNodeType.Tycoon, tycoon.type)
+        assertNotNull(tycoon.bundledSceneAssetPath)
+        assertTrue(tycoon.prose.contains("5×5") || tycoon.prose.contains("5x5") || tycoon.prose.contains("25"))
     }
 
     @Test
@@ -340,6 +347,68 @@ class TextGameEngineTest {
         assertEquals(combat.id, adamsHavenDungeonMediaMetadata(
             "forest_dungeon_set/standard_combat/standard-combat-01-mossgate-arena.png",
         ).id)
+    }
+
+    @Test
+    fun tycoonBoardStartsAtTwentyFiveTilesAndExpandsSeveralWays() {
+        assertEquals(25, TYCOON_START_TILES)
+        assertEquals(5, tycoonBuildings().map { it.district }.distinct().size)
+        TycoonDistrict.entries.forEach { district ->
+            val tiles = (0 until 5).flatMap { y -> (0 until 5).map { x -> tycoonDistrictAt(x, y) } }
+            assertEquals(5, tiles.count { it == district }, "$district should own 5 starter tiles")
+        }
+        var state = afterGacha()
+        state = engine.reduce(state, TextGameAction.Choose("to_tycoon")).state
+        assertEquals(5, state.persistent.tycoon.width)
+        assertEquals(5, state.persistent.tycoon.height)
+        val gold = engine.reduce(state, TextGameAction.ExpandTycoon(TycoonExpandWay.Gold))
+        assertTrue(gold.accepted)
+        assertEquals(6, gold.state.persistent.tycoon.width)
+        assertEquals(5, gold.state.persistent.tycoon.height)
+        val dungeon = engine.reduce(gold.state, TextGameAction.ExpandTycoon(TycoonExpandWay.Dungeon))
+        assertTrue(dungeon.accepted)
+        assertTrue(dungeon.state.persistent.tycoon.width * dungeon.state.persistent.tycoon.height > 30)
+        assertFalse(engine.reduce(state, TextGameAction.PlaceTycoonBuilding("cottage", 4, 0)).accepted)
+        val placed = engine.reduce(state, TextGameAction.PlaceTycoonBuilding("cottage", 0, 0))
+        assertTrue(placed.accepted)
+        assertEquals("cottage", placed.state.persistent.tycoon.placements.single().buildingId)
+    }
+
+    @Test
+    fun tycoonCellSizeStaysFiniteWhenComposeReportsInfiniteConstraints() {
+        val fromInfinite = tycoonCellSizeDp(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY, 5, 5, 1f)
+        assertTrue(fromInfinite.isFinite() && fromInfinite in 28f..96f)
+        val fromNaN = tycoonCellSizeDp(Float.NaN, Float.NaN, 5, 5, 1f)
+        assertTrue(fromNaN.isFinite() && fromNaN in 28f..96f)
+        val fitted = tycoonCellSizeDp(360f, 360f, 5, 5, 1f)
+        assertEquals(72f, fitted)
+        val largeBoard = tycoonCellSizeDp(360f, 520f, 20, 12, 1.4f)
+        assertTrue(largeBoard.isFinite() && largeBoard in 28f..96f)
+        assertEquals(360f, tycoonFiniteDp(Float.NEGATIVE_INFINITY, 360f))
+        assertEquals(360f, tycoonFiniteDp(0f, 360f))
+    }
+
+    @Test
+    fun enteringTycoonFromCrossroadsAndSimulationStartDoesNotReject() {
+        var campaign = afterGacha()
+        val entered = engine.reduce(campaign, TextGameAction.Choose("to_tycoon"))
+        assertTrue(entered.accepted)
+        assertEquals("tycoon", entered.state.run.nodeId)
+        assertEquals(TextGameNodeType.Tycoon, definition.node(entered.state.run.nodeId)?.type)
+        val simulation = TextGameEngine(adamsHavenDefinition(TextGamePlayStyle.Simulation)).initialState()
+        assertEquals("sim_tycoon", simulation.run.nodeId)
+        assertEquals(TextGameNodeType.Tycoon, adamsHavenDefinition(TextGamePlayStyle.Simulation).node(simulation.run.nodeId)?.type)
+        assertEquals(5, simulation.persistent.tycoon.width)
+        assertEquals(listOf("cottage"), simulation.persistent.tycoon.hand)
+    }
+
+    private fun settleLots(state: TextGameState): TextGameState {
+        var next = engine.reduce(state, TextGameAction.Choose("to_tycoon")).state
+        next = engine.reduce(next, TextGameAction.PlaceTycoonBuilding("cottage", 0, 0)).state
+        next = engine.reduce(next, TextGameAction.TakeTycoonCard("crop")).state
+        next = engine.reduce(next, TextGameAction.PlaceTycoonBuilding("crop", 2, 2)).state
+        next = engine.reduce(next, TextGameAction.TakeTycoonCard("deck_hall")).state
+        return engine.reduce(next, TextGameAction.PlaceTycoonBuilding("deck_hall", 3, 3)).state
     }
 
     private fun toCrossroads(state: TextGameState): TextGameState {

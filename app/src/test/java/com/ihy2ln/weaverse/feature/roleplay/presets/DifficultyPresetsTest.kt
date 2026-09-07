@@ -9,7 +9,7 @@ class DifficultyPresetsTest {
     @Test
     fun presetsRunSliceOfLifeToRuthless() {
         assertEquals(
-            listOf("Slice of life", "Normal", "Hard", "Ruthless"),
+            listOf("Easy", "Medium", "Hard", "Very Hard"),
             defaultPresets.map { it.name },
         )
     }
@@ -32,6 +32,6 @@ class DifficultyPresetsTest {
     fun theStoredDefaultStillResolves() {
         // UserPreferences defaults to preset-balanced; renaming must not orphan it.
         assertNotNull(defaultPresets.firstOrNull { it.id == "preset-balanced" })
-        assertEquals("Normal", defaultPresets.first { it.id == "preset-balanced" }.name)
+        assertEquals("Medium", defaultPresets.first { it.id == "preset-balanced" }.name)
     }
 }

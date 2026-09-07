@@ -35,6 +35,12 @@ class TextGameEngine(private val definition: TextGameDefinition) {
         is TextGameAction.DungeonStep -> dungeonStep(state, action.x, action.y)
         TextGameAction.LeaveDungeon -> leaveDungeon(state)
         TextGameAction.CastUltimate -> castUltimate(state)
+        is TextGameAction.SelectTycoonCard -> selectTycoonCard(state, action.buildingId)
+        is TextGameAction.SelectTycoonPlacement -> selectTycoonPlacement(state, action.placementId)
+        is TextGameAction.PlaceTycoonBuilding -> placeTycoonBuilding(state, action.buildingId, action.x, action.y)
+        is TextGameAction.TakeTycoonCard -> takeTycoonCard(state, action.buildingId)
+        is TextGameAction.ExpandTycoon -> expandTycoon(state, action.way)
+        is TextGameAction.UseTycoonBuilding -> useTycoonBuilding(state, action.placementId, action.verbId)
         TextGameAction.DismissStoryProposal -> accepted(
             state.copy(run = state.run.copy(pendingStoryProposal = null)),
             "I dismiss the unconfirmed story proposal.",
@@ -609,6 +615,181 @@ class TextGameEngine(private val definition: TextGameDefinition) {
                 add(remaining.removeAt(index))
             }
         }
+    }
+
+    private fun requireTycoon(state: TextGameState): TextGameResolution? {
+        val node = definition.node(state.run.nodeId)
+        return if (node?.type == TextGameNodeType.Tycoon) null
+        else rejected(state, "The Silverbrook lots are not open from this scene.")
+    }
+
+    private fun selectTycoonCard(state: TextGameState, buildingId: String): TextGameResolution {
+        requireTycoon(state)?.let { return it }
+        val board = state.persistent.tycoon
+        if (buildingId !in board.hand) return rejected(state, "That building card is not in my hand.")
+        val title = tycoonBuilding(buildingId)?.title ?: buildingId
+        return accepted(
+            state.copy(persistent = state.persistent.copy(tycoon = board.copy(selectedBuildingId = buildingId, selectedPlacementId = null))),
+            "$title selected. I place it on a matching district.",
+        )
+    }
+
+    private fun selectTycoonPlacement(state: TextGameState, placementId: String): TextGameResolution {
+        requireTycoon(state)?.let { return it }
+        val placement = state.persistent.tycoon.placements.firstOrNull { it.id == placementId }
+            ?: return rejected(state, "That building is not on the lots.")
+        val title = tycoonBuilding(placement.buildingId)?.title ?: placement.buildingId
+        return accepted(
+            state.copy(
+                persistent = state.persistent.copy(
+                    tycoon = state.persistent.tycoon.copy(selectedPlacementId = placementId, selectedBuildingId = null),
+                ),
+            ),
+            "$title selected on the lots.",
+        )
+    }
+
+    private fun takeTycoonCard(state: TextGameState, buildingId: String): TextGameResolution {
+        requireTycoon(state)?.let { return it }
+        val def = tycoonBuilding(buildingId) ?: return rejected(state, "Unknown building card.")
+        val board = state.persistent.tycoon
+        if (def.starter) return rejected(state, "${def.title} is already among the starter cards.")
+        if (buildingId in board.hand) return rejected(state, "${def.title} is already in my hand.")
+        if (board.placements.any { it.buildingId == buildingId }) {
+            return rejected(state, "${def.title} already sits on the lots.")
+        }
+        if (state.persistent.coins < def.coinCost || state.persistent.materials < def.materialCost) {
+            return rejected(state, "${def.title} costs ${def.coinCost} coins and ${def.materialCost} materials.")
+        }
+        val paid = applyEffects(
+            state.persistent,
+            state.run.playerHealth,
+            listOf(TextGameEffect(coinsDelta = -def.coinCost, materialsDelta = -def.materialCost)),
+        )
+        val nextBoard = board.copy(
+            hand = board.hand + buildingId,
+            selectedBuildingId = buildingId,
+            selectedPlacementId = null,
+        )
+        return accepted(
+            state.copy(
+                persistent = paid.first.copy(tycoon = nextBoard),
+                run = state.run.copy(playerHealth = paid.second),
+            ),
+            "I take ${def.title} into my hand.",
+        )
+    }
+
+    private fun placeTycoonBuilding(state: TextGameState, buildingId: String, x: Int, y: Int): TextGameResolution {
+        requireTycoon(state)?.let { return it }
+        val def = tycoonBuilding(buildingId) ?: return rejected(state, "Unknown building card.")
+        var board = state.persistent.tycoon
+        if (buildingId !in board.hand) return rejected(state, "${def.title} is not in my hand.")
+        if (state.persistent.seeds < def.seedCost) {
+            return rejected(state, "${def.title} needs ${def.seedCost} seed to plant.")
+        }
+        if (buildingId == "the_house") {
+            val cottage = board.placements.filter { it.buildingId == "cottage" }
+            val withoutCottage = board.copy(placements = board.placements.filterNot { it.buildingId == "cottage" })
+            val cottageCovered = cottage.all { placement ->
+                placement.x in x until (x + def.width) && placement.y in y until (y + def.height)
+            }
+            if (cottageCovered && tycoonCanPlace(withoutCottage, buildingId, x, y)) {
+                board = withoutCottage
+            }
+        }
+        if (!tycoonCanPlace(board, buildingId, x, y)) {
+            return rejected(state, "${def.title} needs a free ${def.width}×${def.height} ${def.district.displayName} plot.")
+        }
+        val placement = TycoonPlacement(id = "$buildingId-$x-$y", buildingId = buildingId, x = x, y = y)
+        val placedBoard = board.copy(
+            placements = board.placements + placement,
+            hand = board.hand.filterNot { it == buildingId },
+            selectedBuildingId = board.hand.firstOrNull { it != buildingId },
+            selectedPlacementId = placement.id,
+        )
+        val paid = applyEffects(
+            state.persistent.copy(tycoon = placedBoard),
+            state.run.playerHealth,
+            listOf(TextGameEffect(seedsDelta = -def.seedCost)) + def.placeEffects,
+        )
+        return accepted(
+            state.copy(
+                persistent = paid.first,
+                run = state.run.copy(playerHealth = paid.second),
+            ),
+            "I seat ${def.title} on the ${def.district.displayName} lots.",
+        )
+    }
+
+    private fun expandTycoon(state: TextGameState, way: TycoonExpandWay): TextGameResolution {
+        requireTycoon(state)?.let { return it }
+        val board = state.persistent.tycoon
+        val cap = tycoonBoardCap(state.persistent.flags)
+        val nextSize = tycoonNextSize(board.width, board.height, cap)
+            ?: return rejected(state, "The lots already fill the current charter.")
+        val (costCoins, costMaterials) = tycoonExpandGoldCost(board.expansionsBought)
+        val effects = when (way) {
+            TycoonExpandWay.Gold -> {
+                if (state.persistent.coins < costCoins || state.persistent.materials < costMaterials) {
+                    return rejected(state, "Buying lots costs $costCoins coins and $costMaterials materials.")
+                }
+                listOf(TextGameEffect(coinsDelta = -costCoins, materialsDelta = -costMaterials))
+            }
+            TycoonExpandWay.Dungeon -> {
+                if (state.persistent.battlesWon <= board.dungeonExpansionsClaimed) {
+                    return rejected(state, "A finished delve is required to claim spoils-lots.")
+                }
+                emptyList()
+            }
+            TycoonExpandWay.Farm -> {
+                if (state.persistent.harvest < 3) {
+                    return rejected(state, "Farm annex needs 3 produce.")
+                }
+                listOf(TextGameEffect(harvestDelta = -3, farmLevelDelta = 1))
+            }
+            TycoonExpandWay.Annex -> {
+                if ("town_l3" !in state.persistent.flags) {
+                    return rejected(state, "A Guild Hall decree is required to annex lots.")
+                }
+                if (state.persistent.coins < 8) return rejected(state, "Annex costs 8 coins.")
+                listOf(TextGameEffect(coinsDelta = -8, townLevelDelta = 1))
+            }
+        }
+        val expanded = board.copy(
+            width = nextSize.first,
+            height = nextSize.second,
+            expansionsBought = board.expansionsBought + if (way == TycoonExpandWay.Gold) 1 else 0,
+            dungeonExpansionsClaimed = board.dungeonExpansionsClaimed + if (way == TycoonExpandWay.Dungeon) 1 else 0,
+            farmExpansionsClaimed = board.farmExpansionsClaimed + if (way == TycoonExpandWay.Farm) 1 else 0,
+            annexExpansionsClaimed = board.annexExpansionsClaimed + if (way == TycoonExpandWay.Annex) 1 else 0,
+        )
+        val paid = applyEffects(state.persistent.copy(tycoon = expanded), state.run.playerHealth, effects)
+        return accepted(
+            state.copy(
+                persistent = paid.first,
+                run = state.run.copy(playerHealth = paid.second),
+            ),
+            "The charter grows to ${nextSize.first}×${nextSize.second} lots.",
+        )
+    }
+
+    private fun useTycoonBuilding(state: TextGameState, placementId: String, verbId: String): TextGameResolution {
+        requireTycoon(state)?.let { return it }
+        val placement = state.persistent.tycoon.placements.firstOrNull { it.id == placementId }
+            ?: return rejected(state, "That building is not on the lots.")
+        val def = tycoonBuilding(placement.buildingId) ?: return rejected(state, "Unknown building card.")
+        val verb = def.verbs.firstOrNull { it.id == verbId }
+            ?: return rejected(state, "${def.title} cannot do that.")
+        val choice = TextGameChoice(verb.id, verb.label, verb.destinationNodeId ?: state.run.nodeId, verb.condition, verb.effects)
+        if (!isChoiceEnabled(state, choice)) return rejected(state, "I do not meet that building's requirements.")
+        val paid = applyEffects(state.persistent.copy(tycoon = state.persistent.tycoon.copy(selectedPlacementId = placementId)), state.run.playerHealth, verb.effects)
+        val destination = verb.destinationNodeId ?: state.run.nodeId
+        val moved = state.copy(
+            persistent = paid.first,
+            run = state.run.copy(nodeId = destination, playerHealth = paid.second),
+        )
+        return accepted(enterNode(moved), verb.label)
     }
 
     private fun applyEffects(
