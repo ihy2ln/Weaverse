@@ -39,19 +39,26 @@ class RpgCampaignCodecTest {
 
     @Test
     fun rpgSaveTableIsIsolatedFromTextGameSchema() {
-        val rpg = com.ihy2ln.weaverse.data.db.entities.RpgCampaignSaveEntity::class.java
-        val text = TextGameSaveEntity::class.java
-        assertEquals("rpg_campaign_saves", tableName(rpg))
-        assertEquals("text_game_saves", tableName(text))
-        assertFalse(rpg.declaredFields.map { it.name }.contains("runStateJson"))
-        assertTrue(text.declaredFields.map { it.name }.contains("runStateJson"))
-        assertTrue(text.declaredFields.map { it.name }.contains("persistentStateJson"))
-        assertTrue(rpg.declaredFields.map { it.name }.contains("stateJson"))
-    }
-
-    private fun tableName(type: Class<*>): String {
-        val entity = type.getAnnotation(androidx.room.Entity::class.java)
-        return entity.tableName
+        val rpgFields = com.ihy2ln.weaverse.data.db.entities.RpgCampaignSaveEntity::class.java.declaredFields.map { it.name }
+        val textFields = TextGameSaveEntity::class.java.declaredFields.map { it.name }
+        assertTrue(rpgFields.contains("stateJson"))
+        assertTrue(rpgFields.contains("campaignId"))
+        assertTrue(rpgFields.contains("schemaVersion"))
+        assertFalse(rpgFields.contains("runStateJson"))
+        assertFalse(rpgFields.contains("persistentStateJson"))
+        assertTrue(textFields.contains("runStateJson"))
+        assertTrue(textFields.contains("persistentStateJson"))
+        assertFalse(textFields.contains("stateJson"))
+        val rpgSource = listOf(
+            File("src/main/java/com/ihy2ln/weaverse/data/db/entities/RpgCampaignSaveEntity.kt"),
+            File("app/src/main/java/com/ihy2ln/weaverse/data/db/entities/RpgCampaignSaveEntity.kt"),
+        ).first { it.exists() }.readText()
+        val textSource = listOf(
+            File("src/main/java/com/ihy2ln/weaverse/data/db/entities/TextGameSaveEntity.kt"),
+            File("app/src/main/java/com/ihy2ln/weaverse/data/db/entities/TextGameSaveEntity.kt"),
+        ).first { it.exists() }.readText()
+        assertTrue("tableName = \"rpg_campaign_saves\"" in rpgSource)
+        assertTrue("tableName = \"text_game_saves\"" in textSource)
     }
 }
 

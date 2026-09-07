@@ -47,9 +47,13 @@ class RpgCombatTest {
                 pendingBlock = 0,
             ),
         )
-        val ended = reducer.endCombatRound(weakened)
-        assertEquals(RpgCombatResult.Defeat, ended.state.combat?.result)
-        val retry = reducer.retryCombat(ended.state)
+        var current = weakened
+        var guard = 0
+        while (current.combat?.result == RpgCombatResult.Ongoing && guard++ < 6) {
+            current = reducer.endCombatRound(current).state
+        }
+        assertEquals(RpgCombatResult.Defeat, current.combat?.result)
+        val retry = reducer.retryCombat(current)
         assertEquals(RpgCombatResult.Ongoing, retry.state.combat?.result)
         assertTrue(retry.state.combat!!.party.all { it.hp == it.maxHp })
     }

@@ -275,10 +275,10 @@ class RpgReducer {
         nextCombat = concludeIfNeeded(nextCombat)
         if (nextCombat.result == RpgCombatResult.Ongoing) {
             val (index, rolled) = RpgDice.pick(state, 2)
-            val mira = nextCombat.party.firstOrNull { it.id == FirstLightChapter.MIRA_ID }
-                ?: nextCombat.party.first()
-            val summoner = nextCombat.party.firstOrNull { it.isSummoner } ?: mira
-            val target = if (index == 0) mira else summoner
+            val living = nextCombat.party.filter { it.hp > 0 }
+            val target = living.getOrElse(index % living.size.coerceAtLeast(1)) {
+                nextCombat.party.first()
+            }
             nextCombat = nextCombat.copy(
                 round = nextCombat.round + 1,
                 party = nextCombat.party.map { it.copy(ap = it.maxAp) },
