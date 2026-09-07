@@ -14,6 +14,7 @@ import com.ihy2ln.weaverse.data.db.dao.RoleplayDao
 import com.ihy2ln.weaverse.data.db.dao.SeriesDao
 import com.ihy2ln.weaverse.data.db.dao.SnippetDao
 import com.ihy2ln.weaverse.data.db.dao.WorkshopChatDao
+import com.ihy2ln.weaverse.data.db.dao.RpgCampaignSaveDao
 import com.ihy2ln.weaverse.data.db.dao.TextGameSaveDao
 import com.ihy2ln.weaverse.data.db.entities.ActEntity
 import com.ihy2ln.weaverse.data.db.entities.AiProfileEntity
@@ -36,6 +37,7 @@ import com.ihy2ln.weaverse.data.db.entities.SceneEntity
 import com.ihy2ln.weaverse.data.db.entities.SceneRevisionEntity
 import com.ihy2ln.weaverse.data.db.entities.SeriesEntity
 import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
+import com.ihy2ln.weaverse.data.db.entities.RpgCampaignSaveEntity
 import com.ihy2ln.weaverse.data.db.entities.TextGameSaveEntity
 
 @Database(
@@ -62,8 +64,9 @@ import com.ihy2ln.weaverse.data.db.entities.TextGameSaveEntity
         PromptEntity::class,
         AiProfileEntity::class,
         TextGameSaveEntity::class,
+        RpgCampaignSaveEntity::class,
     ],
-    version = 17,
+    version = 18,
     exportSchema = false,
 )
 @TypeConverters(InkTypeConverters::class)
@@ -78,8 +81,29 @@ abstract class WeaverseDatabase : RoomDatabase() {
     abstract fun mediaDao(): MediaDao
     abstract fun promptDao(): PromptDao
     abstract fun textGameSaveDao(): TextGameSaveDao
+    abstract fun rpgCampaignSaveDao(): RpgCampaignSaveDao
 
     companion object {
+        /** Guided RPG campaign bundle — additive, separate from Text Game saves. */
+        val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS rpg_campaign_saves (
+                        campaignId TEXT NOT NULL,
+                        schemaVersion INTEGER NOT NULL,
+                        stateJson TEXT NOT NULL,
+                        updatedAt INTEGER NOT NULL,
+                        PRIMARY KEY(campaignId)
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_rpg_campaign_saves_campaignId ON rpg_campaign_saves(campaignId)",
+                )
+            }
+        }
+
         /** Adds first-class Pictures organization and machine-searchable scene labels. */
         val MIGRATION_16_17 = object : Migration(16, 17) {
             override fun migrate(db: SupportSQLiteDatabase) {

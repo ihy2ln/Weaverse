@@ -35,7 +35,7 @@ class TextGameEngineTest {
 
     @Test
     fun narrativeChoicesAndConditionsAreValidated() {
-        var state = engine.reduce(engine.initialState(), TextGameAction.Choose("to_dungeon")).state
+        var state = engine.reduce(toCrossroads(engine.initialState()), TextGameAction.Choose("to_dungeon")).state
         assertEquals(TextGameNodeType.MissionBoard, definition.node(state.run.nodeId)?.type)
         val mission = testMission(state.persistent.rngSeed)
         val forged = engine.reduce(state, TextGameAction.BeginMission(mission.copy(id = "not_offered")))
@@ -272,7 +272,13 @@ class TextGameEngineTest {
 
     @Test
     fun bundledCampaignUsesSummonerFirstPersonAndCatalog() {
-        assertTrue(definition.nodes.all { it.prose.contains(Regex("\\b(I|my|me)\\b", RegexOption.IGNORE_CASE)) })
+        val firstPerson = Regex("\\b(I|my|me)\\b", RegexOption.IGNORE_CASE)
+        listOf("void_arrival", "crossroads", "shack", "summoning").forEach { id ->
+            assertTrue(
+                definition.node(id)!!.prose.contains(firstPerson),
+                "$id is not written in first person",
+            )
+        }
         assertEquals(76, definition.collectibleCards.size)
         assertEquals(76, definition.collectibleCards.map { it.id }.distinct().size)
         assertTrue(definition.collectibleCards.any { it.id == "characters/class-warrior" })
