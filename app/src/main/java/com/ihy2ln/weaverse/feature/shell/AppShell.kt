@@ -103,7 +103,7 @@ import com.ihy2ln.weaverse.feature.novel.snippets.SnippetsRailScreen
 import com.ihy2ln.weaverse.feature.novel.write.WriteScreen
 import com.ihy2ln.weaverse.feature.prompts.PromptsScreen
 import com.ihy2ln.weaverse.feature.roleplay.characters.CharacterDetailScreen
-import com.ihy2ln.weaverse.feature.roleplay.chat.AdventurePlayScreen
+import com.ihy2ln.weaverse.feature.roleplay.rpg.RpgAdventureScreen
 import com.ihy2ln.weaverse.feature.chatting.DiscordChatScreen
 import com.ihy2ln.weaverse.feature.roleplay.chat.RoleplayChatChrome
 import com.ihy2ln.weaverse.feature.roleplay.chat.RoleplayChatDetailScreen
@@ -992,11 +992,7 @@ fun AppShell(
                             else -> when (roleplayDestinationOf(rd)) {
                                 RoleplayDestination.Chats -> {
                                     if (chatId != null) {
-                                        AdventurePlayScreen(
-                                            chatId = chatId,
-                                            onChromeChange = { rpChrome = it },
-                                            onOpenCodexEntry = { selectedCodexEntryId = it },
-                                        )
+                                        RpgAdventureScreen(campaignId = chatId)
                                     } else {
                                         WorkShelfScreen(
                                             kind = WorkShelfKind.Campaign,
