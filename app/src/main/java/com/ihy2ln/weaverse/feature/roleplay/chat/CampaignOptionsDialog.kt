@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.ihy2ln.weaverse.core.ui.components.CampaignPacingTemplates
 import com.ihy2ln.weaverse.core.ui.components.CampaignPerspectiveTemplates
 import com.ihy2ln.weaverse.core.ui.components.CampaignRulesetTemplates
 import com.ihy2ln.weaverse.core.ui.components.CampaignSettingTemplate
@@ -64,6 +65,11 @@ fun CampaignOptionsDialog(
         mutableStateOf(initial.mainCharacters.map { it.id }.toSet())
     }
     var campaignRoleId by remember { mutableStateOf(initial.campaignRoleId.ifBlank { "player" }) }
+    var pacingId by remember {
+        mutableStateOf(
+            CampaignPacingTemplates.firstOrNull { it.id == initial.pacingId }?.id ?: "guided",
+        )
+    }
     var narrativePovId by remember {
         mutableStateOf(
             CampaignPerspectiveTemplates.firstOrNull { it.label == initial.narrativePov }?.id
@@ -293,6 +299,23 @@ fun CampaignOptionsDialog(
                     style = MaterialTheme.typography.labelSmall,
                     color = tokens.secondaryText,
                 )
+                Text("Campaign pacing", style = MaterialTheme.typography.labelMedium)
+                InkSegmentedPill(
+                    options = CampaignPacingTemplates.map { SegmentedOption(it.id, it.label) },
+                    selectedId = pacingId,
+                    onSelect = { pacingId = it },
+                    compact = true,
+                    scrollable = true,
+                )
+                Text(
+                    if (pacingId == "tabletop") {
+                        "Session 0 character introductions, then a free-flowing D&D table. Story opening remains the default choice."
+                    } else {
+                        "Current setup: Classic, Build it together, or Random, then the AI frames the first quest."
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.secondaryText,
+                )
                 Text("Point of view", style = MaterialTheme.typography.labelMedium)
                 Box(modifier = Modifier.fillMaxWidth()) {
                     InkOutlinedButton(
@@ -403,6 +426,8 @@ fun CampaignOptionsDialog(
                             } else {
                                 "User role guidance: The user controls the selected player character(s). The AI is the Dungeon Master and controls the world, NPCs, opposition, and consequences without choosing the player's actions."
                             },
+                            "Pacing guidance: " +
+                                CampaignPacingTemplates.first { it.id == pacingId }.directive,
                             styleGuide.trim().takeIf { it.isNotBlank() }?.let { "House rules: $it" }.orEmpty(),
                         ).filter { it.isNotBlank() }.joinToString("\n\n"),
                         mainCharacters = characterOptions.filter { it.id in selectedCharacterIds },
@@ -410,6 +435,7 @@ fun CampaignOptionsDialog(
                         settingId = settingId,
                         narrativePov = CampaignPerspectiveTemplates.first { it.id == narrativePovId }.label,
                         campaignRoleId = campaignRoleId,
+                        pacingId = pacingId,
                     ),
                 )
             }) { Text("Save setup") }

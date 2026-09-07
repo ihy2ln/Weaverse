@@ -34,6 +34,70 @@ class AdventureStartupTest {
     }
 
     @Test
+    fun tabletopPacingStartsWithCharacterIntroInsteadOfOpeningChoices() {
+        val stored = adventureStartupPrompt(
+            userIsDungeonMaster = false,
+            pacing = AdventurePacing.Tabletop,
+        )
+        assertEquals(AdventureStartupPhase.Intro, adventureStartupPhase(stored))
+        val visible = adventureStartupProseFrom(stored)
+        assertTrue("Session 0" in visible)
+        assertTrue("Choose a character" in visible)
+        assertTrue("introduction" in visible.lowercase())
+        assertFalse("Classic D&D opening" in visible)
+        assertEquals(
+            AdventureStartupPhase.Complete,
+            nextAdventureStartupPhase(AdventureStartupPhase.Intro, "I play Mira the ranger", AdventurePacing.Tabletop),
+        )
+        val directive = adventureStartupDirective(
+            AdventureStartupPhase.Intro,
+            "I play Mira the ranger",
+            pacing = AdventurePacing.Tabletop,
+        )
+        assertTrue("session 0" in directive.lowercase() || "Confirm who is at the table" in directive)
+        assertTrue("Do not invent a campaign-spanning quest" in directive)
+        assertFalse("must begin the quest chain" in directive)
+    }
+
+    @Test
+    fun tabletopCharacterCreationThenMovesToIntroNotOpeningChoices() {
+        val stored = adventureStartupPrompt(
+            userIsDungeonMaster = false,
+            needsCharacter = true,
+            pacing = AdventurePacing.Tabletop,
+        )
+        assertEquals(AdventureStartupPhase.Character, adventureStartupPhase(stored))
+        assertTrue("tabletop introductions" in adventureStartupProseFrom(stored))
+        assertEquals(
+            AdventureStartupPhase.Intro,
+            nextAdventureStartupPhase(AdventureStartupPhase.Character, "surprise me", AdventurePacing.Tabletop),
+        )
+        val afterCreate = adventureStartupDirective(
+            AdventureStartupPhase.Character,
+            "surprise me",
+            pacing = AdventurePacing.Tabletop,
+        )
+        assertTrue("tabletop introduction" in afterCreate)
+        assertFalse("1 classic D&D" in afterCreate)
+    }
+
+    @Test
+    fun guidedPacingIsUnchangedWhenTabletopIsNotSelected() {
+        val stored = adventureStartupPrompt(userIsDungeonMaster = false)
+        assertEquals(AdventureStartupPhase.Choose, adventureStartupPhase(stored))
+        assertEquals(
+            AdventureStartupPhase.Choose,
+            nextAdventureStartupPhase(AdventureStartupPhase.Character, "surprise me"),
+        )
+        assertTrue("1 classic D&D" in adventureStartupDirective(AdventureStartupPhase.Character, "surprise me"))
+        assertEquals(AdventurePacing.Guided, adventurePacingFromSetup("Player role: Adventurer"))
+        assertEquals(
+            AdventurePacing.Tabletop,
+            adventurePacingFromSetup("Play pacing: Tabletop session\nPlayer role: Adventurer"),
+        )
+    }
+
+    @Test
     fun interviewRemainsInSetupUntilAnswersAreSubmitted() {
         assertEquals(AdventureStartupChoice.Interview, adventureStartupChoice("2"))
         assertEquals(

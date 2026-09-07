@@ -198,6 +198,10 @@ object WikiContent {
                   time from the Setup button.
                 - **Play as** — Character(s) (you act, AI runs the world) or
                   Dungeon Master (you run the world, AI plays the party).
+                - **Campaign pacing** — **Story opening** is the current
+                  setup (Classic / Build it together / Random, then a framed
+                  quest). **Tabletop session** is extra: session-0 character
+                  introductions, then a free-flowing D&D table.
                 - **Setting template** and setting details, **point of
                   view**, **tense**, **rules system** (D&D 5e, Pathfinder 2e,
                   older D&D, OSR, PbtA, Fate, custom), and **house rules**.
@@ -209,7 +213,7 @@ object WikiContent {
 
                 The **Setup** button on the adventure page reopens the same
                 sheet for an existing campaign. Add or remove character
-                perspectives, change the setting, role, point of view, tense,
+                perspectives, change the setting, role, pacing, point of view, tense,
                 rules, or house rules — saving rewrites the campaign setup
                 the AI plays by. Your story is untouched.
 

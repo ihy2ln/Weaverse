@@ -42,6 +42,8 @@ data class NewWorkDetails(
     val settingId: String = "",
     val narrativePov: String = "",
     val campaignRoleId: String = "",
+    /** `guided` keeps the current story opening; `tabletop` is free-flowing D&D session play. */
+    val pacingId: String = "guided",
     val difficultyId: String = "standard",
     /** Storyboard only: a whole manga/comic file (PDF/CBZ/long strip) to page-split on creation. */
     val mangaFileUri: String = "",
@@ -67,6 +69,12 @@ data class CampaignSettingTemplate(
 )
 
 data class CampaignPerspectiveTemplate(
+    val id: String,
+    val label: String,
+    val directive: String,
+)
+
+data class CampaignPacingTemplate(
     val id: String,
     val label: String,
     val directive: String,
@@ -115,6 +123,19 @@ val CampaignPerspectiveTemplates = listOf(
         "cinematic",
         "Cinematic",
         "Use a cinematic external viewpoint focused on visible action, environment, dialogue, and staging. Avoid asserting private thoughts unless expressed through behavior or speech.",
+    ),
+)
+
+val CampaignPacingTemplates = listOf(
+    CampaignPacingTemplate(
+        "guided",
+        "Story opening",
+        "Keep the current campaign opening: if no character is selected, create one, then offer Classic, Build it together, or Random. The AI Dungeon Master then frames the first quest situation with a concrete goal.",
+    ),
+    CampaignPacingTemplate(
+        "tabletop",
+        "Tabletop session",
+        "Run a free-flowing Dungeons & Dragons table. Open with session-0 character introductions and selection. Then play like a live table: describe the immediate situation, wait for player declarations, resolve uncertainty with the campaign rules, and let exploration, conversation, and combat emerge from what the party does. Do not railroad a campaign-arc hook every beat.",
     ),
 )
 
@@ -373,6 +394,7 @@ fun CreateWorkDialog(
     var narrativePovId by remember { mutableStateOf(if (vocabulary.textGameSpecific) "first-summoner" else "third-multiple") }
     var perspectiveMenuOpen by remember { mutableStateOf(false) }
     var campaignRoleId by remember { mutableStateOf("player") }
+    var pacingId by remember { mutableStateOf("guided") }
     var difficultyId by remember { mutableStateOf("standard") }
     var mangaFileUri by remember { mutableStateOf("") }
     var mangaFileName by remember { mutableStateOf("") }
@@ -647,6 +669,23 @@ fun CreateWorkDialog(
                             style = MaterialTheme.typography.labelSmall,
                             color = tokens.secondaryText,
                         )
+                        Text("Campaign pacing", style = MaterialTheme.typography.labelMedium)
+                        InkSegmentedPill(
+                            options = CampaignPacingTemplates.map { SegmentedOption(it.id, it.label) },
+                            selectedId = pacingId,
+                            onSelect = { pacingId = it },
+                            compact = true,
+                            scrollable = true,
+                        )
+                        Text(
+                            if (pacingId == "tabletop") {
+                                "Session 0 character introductions, then a free-flowing D&D table. Story opening stays available as the other choice."
+                            } else {
+                                "Current setup: Classic, Build it together, or Random, then the AI frames the first quest."
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = tokens.secondaryText,
+                        )
                         Text("Point of view", style = MaterialTheme.typography.labelMedium)
                         Box(modifier = Modifier.fillMaxWidth()) {
                             InkOutlinedButton(
@@ -799,6 +838,11 @@ fun CreateWorkDialog(
                                     "User role guidance: The user controls the selected player character(s). The AI is the Dungeon Master and controls the world, NPCs, opposition, and consequences without choosing the player's actions."
                                 },
                                 if (isTextGame) {
+                                    ""
+                                } else {
+                                    "Pacing guidance: ${CampaignPacingTemplates.first { it.id == pacingId }.directive}"
+                                },
+                                if (isTextGame) {
                                     "Difficulty: ${TextGameDifficultyTemplates.first { it.id == difficultyId }.label}. ${TextGameDifficultyTemplates.first { it.id == difficultyId }.description}"
                                 } else "",
                                 styleGuide.trim().takeIf { it.isNotBlank() }?.let { "House rules: $it" }.orEmpty(),
@@ -813,6 +857,7 @@ fun CreateWorkDialog(
                             CampaignPerspectiveTemplates.first { it.id == narrativePovId }.label
                         } else "",
                         campaignRoleId = if (isTextGame) "player" else if (isCampaign) campaignRoleId else "",
+                        pacingId = if (isTextGame) "guided" else if (isCampaign) pacingId else "guided",
                         difficultyId = if (isTextGame) difficultyId else "standard",
                         mangaFileUri = if (vocabulary.storyboardSpecific) mangaFileUri else "",
                         mangaFileName = if (vocabulary.storyboardSpecific) mangaFileName else "",

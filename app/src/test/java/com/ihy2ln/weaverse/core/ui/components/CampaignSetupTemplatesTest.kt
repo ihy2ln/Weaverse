@@ -38,4 +38,13 @@ class CampaignSetupTemplatesTest {
         assertTrue(CampaignPerspectiveTemplates.any { it.id == "first-multiple" })
         assertTrue(CampaignPerspectiveTemplates.any { it.id == "second-person" })
     }
+
+    @Test
+    fun pacingKeepsGuidedStoryOpeningAndAddsTabletopSession() {
+        assertEquals(CampaignPacingTemplates.size, CampaignPacingTemplates.map { it.id }.distinct().size)
+        assertTrue(CampaignPacingTemplates.any { it.id == "guided" })
+        assertTrue(CampaignPacingTemplates.any { it.id == "tabletop" && "introduction" in it.directive.lowercase() })
+        assertTrue(CampaignPacingTemplates.first { it.id == "guided" }.directive.contains("Classic"))
+        assertEquals("guided", NewWorkDetails(title = "Test").pacingId)
+    }
 }

@@ -161,11 +161,7 @@ fun AdventurePlayScreen(
     }
 
     val sceneArt = state.mediaPanels.lastOrNull { it.path.isNotBlank() && !it.isAudio }
-    val startupPending = state.adventureStartupPhase in setOf(
-        AdventureStartupPhase.Character,
-        AdventureStartupPhase.Choose,
-        AdventureStartupPhase.Questions,
-    )
+    val startupPending = state.adventureStartupPhase.isPendingSetup()
 
     Box(
         modifier = Modifier
@@ -528,6 +524,8 @@ fun AdventurePlayScreen(
                 "Choose 1, 2, or 3…"
             } else if (state.adventureStartupPhase == AdventureStartupPhase.Questions) {
                 "Answer the AI DM's setup questions…"
+            } else if (state.adventureStartupPhase == AdventureStartupPhase.Intro) {
+                "Introduce who you are playing…"
             } else if (state.userIsDungeonMaster) {
                 "What happens next? · Describe the scene, NPC response, or ruling…"
             } else {
