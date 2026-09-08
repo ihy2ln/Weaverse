@@ -90,6 +90,14 @@ val CampaignSettingDetailTemplates = listOf(
     CampaignSettingDetailTemplate("city", "Factional city", "A crowded city of guilds, noble houses, undercity networks, and public choices that shift faction power."),
     CampaignSettingDetailTemplate("wilds", "Wilderness expedition", "A dangerous wilderness expedition where weather, supplies, discovery, and travel routes shape the adventure."),
     CampaignSettingDetailTemplate("war", "War-torn realm", "A realm divided by active conflict, with scarce resources, shifting borders, refugees, and hard moral decisions."),
+    CampaignSettingDetailTemplate("coastal", "Stormbound coast", "A chain of salt-worn ports and lighthouse villages where storms, smugglers, sea ruins, and rival captains shape every journey."),
+    CampaignSettingDetailTemplate("sky", "Sky-island frontier", "Floating islands drift above a cloud sea; airship routes, ancient weather engines, and falling ruins turn travel into discovery."),
+    CampaignSettingDetailTemplate("undercity", "Under-city intrigue", "A prosperous city sits over a hidden world of tunnels, forgotten gods, secret markets, and factions competing below the streets."),
+    CampaignSettingDetailTemplate("academy", "Arcane academy", "A living school of magic and rival apprentices where lessons, forbidden experiments, faculty politics, and student bonds drive the story."),
+    CampaignSettingDetailTemplate("wasteland", "Reclaimed wasteland", "Survivors rebuild among broken roads and scarce water while expeditions recover lost technology and negotiate with rival enclaves."),
+    CampaignSettingDetailTemplate("fae", "Fey borderlands", "A mortal village borders a beautiful, dangerous fey realm where names, promises, seasons, and bargains have literal power."),
+    CampaignSettingDetailTemplate("clockwork", "Clockwork metropolis", "A soot-dark metropolis runs on gears, contracts, and living engines while inventors, labor guilds, and old houses fight for control."),
+    CampaignSettingDetailTemplate("cosmic", "Stars beyond the veil", "Strange lights and impossible visitors appear in a familiar world, drawing the party into a mystery that reaches beyond the sky."),
     CampaignSettingDetailTemplate("custom", "Custom setting details", "Describe the kingdom, era, locations, factions, tone, and boundaries in your own words."),
 )
 

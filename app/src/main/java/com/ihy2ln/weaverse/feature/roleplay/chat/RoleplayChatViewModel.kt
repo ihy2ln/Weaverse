@@ -1470,6 +1470,15 @@ class RoleplayChatViewModel @Inject constructor(
         if (_uiState.value.entryMode == "nai" && !startupPending) addManualEntry() else generate()
     }
 
+    /** Starts one of the curated Adventure setup openings with a single tap. */
+    fun startAdventurePreset(presetId: String) {
+        val state = _uiState.value
+        if (state.isStreaming || state.adventureStartupPhase != AdventureStartupPhase.Choose) return
+        val preset = adventureStartupPresets().firstOrNull { it.id == presetId } ?: return
+        _uiState.update { it.copy(input = preset.command, errorMessage = "") }
+        send()
+    }
+
     /**
      * Runs a `*` player-turn command: tag the prompt, and resolve a roll for
      * the commands that need one (action / check / attack / cast).

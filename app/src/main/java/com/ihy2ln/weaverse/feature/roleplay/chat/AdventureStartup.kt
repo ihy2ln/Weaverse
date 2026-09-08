@@ -16,6 +16,53 @@ enum class AdventureStartupChoice {
     Random,
     Ai,
     CharacterSelector,
+    Curated,
+}
+
+/** A one-tap opening that uses the campaign's saved setting, mode, and rules. */
+data class AdventureStartupPreset(
+    val id: String,
+    val title: String,
+    val description: String,
+    val command: String,
+)
+
+private val CuratedStartupPresets = listOf(
+    AdventureStartupPreset(
+        id = "campaign-hook",
+        title = "Open on the campaign hook",
+        description = "Start at the first authored problem with the setting's factions and tone in motion.",
+        command = "Start with the campaign hook",
+    ),
+    AdventureStartupPreset(
+        id = "character-spotlight",
+        title = "Spotlight a character",
+        description = "Begin with a personal problem tied to the selected character's background and goals.",
+        command = "Start with a character spotlight",
+    ),
+    AdventureStartupPreset(
+        id = "mystery-lead",
+        title = "Follow a mystery lead",
+        description = "Open on a clue, omen, or strange arrival that invites investigation before combat.",
+        command = "Start with a mystery lead",
+    ),
+    AdventureStartupPreset(
+        id = "urgent-crisis",
+        title = "Drop us into a crisis",
+        description = "Begin in immediate danger with a clear objective and a meaningful first decision.",
+        command = "Start with an urgent crisis",
+    ),
+)
+
+fun adventureStartupPresets(): List<AdventureStartupPreset> = CuratedStartupPresets
+
+fun adventureStartupPreset(input: String): AdventureStartupPreset? {
+    val normalized = input.trim().lowercase()
+    return CuratedStartupPresets.firstOrNull { preset ->
+        normalized == preset.id || normalized == preset.command.lowercase() ||
+            normalized.contains(preset.id.replace('-', ' ')) ||
+            normalized.contains(preset.title.lowercase())
+    }
 }
 
 private val StartupMarker = Regex(
@@ -71,7 +118,7 @@ fun adventureStartupPrompt(userIsDungeonMaster: Boolean, needsCharacter: Boolean
             appendLine("1 · AI Startup — provide character backstory, current situation, and future goals.")
             appendLine("2 · Character Selector — choose the protagonist, then pick one of three random opening scenes.")
             appendLine("3 · Quick random start — I’ll surprise you with the party’s first problem and objective.")
-            append("Reply with 1, 2, or 3. This is campaign setup, so no action roll is needed.")
+            append("Reply with 1, 2, or 3, or tap a curated start below. This is campaign setup, so no action roll is needed.")
         },
         AdventureStartupPhase.Choose,
     )
@@ -96,6 +143,7 @@ fun withAdventureStartupMarker(text: String, phase: AdventureStartupPhase): Stri
 fun adventureStartupChoice(input: String): AdventureStartupChoice {
     val normalized = input.trim().lowercase()
     return when {
+        adventureStartupPreset(input) != null -> AdventureStartupChoice.Curated
         normalized == "1" || "ai" in normalized || "backstory" in normalized || "goals" in normalized ->
             AdventureStartupChoice.Ai
         normalized == "2" || "character" in normalized || "selector" in normalized ->
@@ -135,6 +183,12 @@ fun adventureStartupDirective(
             "introduce the finished editable character and present the three opening choices: 1 classic D&D, " +
             "2 build it together, or 3 random. Do not begin the adventure and do not roll dice."
     AdventureStartupPhase.Choose -> when (adventureStartupChoice(input)) {
+        AdventureStartupChoice.Curated -> adventureStartupPreset(input)?.let { preset ->
+            openingDirective(
+                "${preset.title} selected. ${preset.description} " +
+                    "Use the saved campaign setting details, mode, rule system, and house rules as authoritative context.",
+            )
+        } ?: openingDirective("Curated campaign opening selected.")
         AdventureStartupChoice.Ai -> adventureAiStartupFieldsPrompt()
         AdventureStartupChoice.CharacterSelector -> characterSelectorStartupPrompt()
         AdventureStartupChoice.Classic ->

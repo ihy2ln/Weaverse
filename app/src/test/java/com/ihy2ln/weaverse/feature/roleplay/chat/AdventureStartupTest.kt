@@ -1,6 +1,7 @@
 package com.ihy2ln.weaverse.feature.roleplay.chat
 
 import kotlin.random.Random
+import com.ihy2ln.weaverse.core.ui.components.CampaignSettingDetailTemplates
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -62,6 +63,32 @@ class AdventureStartupTest {
             AdventureStartupPhase.Complete,
             nextAdventureStartupPhase(AdventureStartupPhase.Choose, "3"),
         )
+    }
+
+    @Test
+    fun curatedStartsAreOneTapCommandsThatUseCampaignContext() {
+        val presets = adventureStartupPresets()
+        assertEquals(4, presets.size)
+        assertTrue(presets.all { it.title.isNotBlank() && it.description.isNotBlank() })
+        val selected = presets.first()
+        assertEquals(selected, adventureStartupPreset(selected.command))
+        assertEquals(AdventureStartupChoice.Curated, adventureStartupChoice(selected.command))
+        assertEquals(
+            AdventureStartupPhase.Complete,
+            nextAdventureStartupPhase(AdventureStartupPhase.Choose, selected.command),
+        )
+        val directive = adventureStartupDirective(AdventureStartupPhase.Choose, selected.command, Random(4))
+        assertTrue("saved campaign setting details" in directive)
+        assertTrue("AI DM—not the player—must begin the quest chain" in directive)
+    }
+
+    @Test
+    fun settingDetailsCatalogOffersMultipleCuratedWorlds() {
+        assertTrue(CampaignSettingDetailTemplates.size >= 12)
+        assertTrue(CampaignSettingDetailTemplates.any { it.id == "coastal" })
+        assertTrue(CampaignSettingDetailTemplates.any { it.id == "fae" })
+        assertTrue(CampaignSettingDetailTemplates.any { it.id == "clockwork" })
+        assertTrue(CampaignSettingDetailTemplates.any { it.id == "custom" })
     }
 
     @Test

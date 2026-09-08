@@ -483,11 +483,11 @@ fun AdventurePlayScreen(
                         }
                     }
                 }
-                if (state.streamingText.isNotBlank()) {
-                    item("streaming") {
-                        SelectionContainer {
-                            Text(
-                                state.streamingText,
+            if (state.streamingText.isNotBlank()) {
+                item("streaming") {
+                    SelectionContainer {
+                        Text(
+                            state.streamingText,
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = tokens.primaryText,
                             )
@@ -540,6 +540,59 @@ fun AdventurePlayScreen(
             }
         }
 
+        if (state.adventureStartupPhase == AdventureStartupPhase.Choose) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = InkSpacing.lg),
+                verticalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+            ) {
+                Text(
+                    "Curated starts",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = tokens.activePill,
+                )
+                Text(
+                    "One tap uses this campaign’s setting details, ${state.rpgCombatMode.label} mode, rules, and house rules.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.secondaryText,
+                )
+                adventureStartupPresets().forEach { preset ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(inkRadiusSm()))
+                            .background(tokens.panel)
+                            .border(
+                                1.dp,
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                                RoundedCornerShape(inkRadiusSm()),
+                            )
+                            .clickable(
+                                enabled = !state.isStreaming,
+                                onClickLabel = "Play ${preset.title}",
+                            ) { viewModel.startAdventurePreset(preset.id) }
+                            .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
+                    ) {
+                        Column {
+                            Text(
+                                preset.title,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                preset.description,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = tokens.secondaryText,
+                                maxLines = 2,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         if (state.errorMessage.isNotBlank()) {
             Text(
                 state.errorMessage,
@@ -582,7 +635,7 @@ fun AdventurePlayScreen(
             placeholder = if (state.adventureStartupPhase == AdventureStartupPhase.Character) {
                 "Describe your character or say surprise me…"
             } else if (state.adventureStartupPhase == AdventureStartupPhase.Choose) {
-                "Choose 1, 2, or 3…"
+                "Choose 1, 2, 3, or a curated start…"
             } else if (state.adventureStartupPhase == AdventureStartupPhase.Questions) {
                 "Answer the AI DM's setup questions…"
             } else if (state.userIsDungeonMaster) {
