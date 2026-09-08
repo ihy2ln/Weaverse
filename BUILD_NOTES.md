@@ -3,6 +3,20 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.3.89-rpg-depth — Refined RPG modes and campaign loop
+
+- RPG mode depth milestone is documented in `docs/REFINED-GDD-RPG.md` and
+  `docs/REFINED-RPG.md`; the RPG wiki now covers modes, rule systems, setup
+  presets, hybrid map behavior, offline fallback, and structured saves.
+- Campaign setup keeps Mode (Focused Tactical Cards, D&D d20, Text Reactions)
+  distinct from Rule system, with Setting Details and Additional House Rules
+  preset catalogs plus custom guidance.
+- Structured RPG saves, authored/freeform map state, encounter overrides,
+  normalized combat outcomes, companion consequences, milestone progression,
+  and chapter recap are included in the milestone implementation.
+- Existing test APK: `Beta.Test.Build/weaververse-rpg-depth-milestone-v5-debug.apk`
+  (SHA-256 `948E805713A864D3C172FCE0F8407C4E8300769884BDA649E25DD985AEB64AC0`).
+
 ## v1.3.87-beta — Town/Farm card board on plot pictures (VN)
 
 - Town and Farm are visual-novel plot pictures again — not tycoon tap maps.

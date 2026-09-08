@@ -16,6 +16,37 @@ party. POV choices include third-person multiple/limited, rotating first
 person, second person, omniscient ensemble, and cinematic. The Past, Present,
 and Future controls use a tighter single-row layout.
 
+### RPG modes, rule systems, and presets
+
+The setup hierarchy is Setting Template, Setting Details preset (or custom
+details), Mode, Rule system, Additional House Rules preset (or custom rules),
+then characters and table preferences. Mode is the player-facing interaction:
+
+* **Focused Tactical Cards** is the Adams Haven Card Game-style combat mode,
+  with a shared hand, AP/EP costs, target previews, statuses, and visible enemy
+  intent.
+* **D&D d20** is the character-sheet mode, showing deterministic d20 rolls,
+  modifiers, proficiency, AC, HP, conditions, and outcome explanations.
+* **Text Reactions** is the traditional text-first mode, with legal action
+  validation and a check preview before risky actions.
+
+Rule system remains a separate RPG convention selector. An encounter can use a
+one-battle override from its scene card (title, stakes, scene art, enemy intent,
+party readiness, and current mode); ending the battle restores the saved
+campaign default. All modes write the same normalized outcome so rewards,
+health, companions, milestones, map progress, and chapter recap stay coherent.
+
+Setting Details presets currently include Frontier, City, Wilds, and War.
+Additional House Rules presets include Cinematic, Gritty, Heroic, and Political.
+Preset identity is saved alongside custom text, so custom guidance supplements
+or overrides the preset without losing its source label.
+
+RPG saves use a versioned structured campaign envelope, separate from Text Game
+saves. The hybrid adventure map exposes authored chapter nodes plus a bounded
+Explore Freely branch that returns to a known node. Authored fallback scenes and
+encounters keep the chapter playable offline; AI varies prose and local scene
+art but cannot skip locked nodes or own rolls, damage, rewards, or legality.
+
 Pick a campaign to enter Adventure, its dedicated play session. Adventure is
 an illustrated story rather than a messenger: a single large scene image sits
 above the narrative, player actions are marked in the story, and the action
