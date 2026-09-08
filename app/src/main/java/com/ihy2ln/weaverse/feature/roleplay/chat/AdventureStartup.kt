@@ -35,6 +35,22 @@ data class AdventureSetupQuickResponse(
     val isRandom: Boolean = false,
 )
 
+data class AdventurePlanQuestion(
+    val id: String,
+    val prompt: String,
+    val presets: List<String>,
+)
+
+private val AdventurePlanQuestions = listOf(
+    AdventurePlanQuestion("spotlight", "Which character, bond, or goal should be in the spotlight?", listOf("My character's past", "A companion bond", "The party's main goal")),
+    AdventurePlanQuestion("situation", "What is the current situation when the story opens?", listOf("A normal day breaks", "We arrive somewhere new", "We are already in danger")),
+    AdventurePlanQuestion("goal", "What should the party hope to accomplish first?", listOf("Find answers", "Protect someone", "Find a way home")),
+    AdventurePlanQuestion("tone", "What tone should guide the opening?", listOf("Hopeful adventure", "Tense survival", "Mystery and wonder")),
+    AdventurePlanQuestion("complication", "What complication should make the opening memorable?", listOf("A hidden betrayal", "A time limit", "An unexpected ally")),
+)
+
+fun adventurePlanQuestions(): List<AdventurePlanQuestion> = AdventurePlanQuestions
+
 private val SetupQuickResponses = listOf(
     AdventureSetupQuickResponse("spotlight-character", "Spotlight my character", "Spotlight: center the opening on my main character's history and immediate personal stake."),
     AdventureSetupQuickResponse("spotlight-bond", "Test a companion bond", "Spotlight: center the opening on a companion bond and a choice that tests our trust."),
@@ -238,9 +254,10 @@ private fun curatedStartupQuestions(preset: AdventureStartupPreset?): String {
     val selected = preset?.let { "${it.title} selected. ${it.description}" }
         ?: "A curated campaign opening was selected."
     return selected + " Use the saved campaign setting details, mode, rule system, and house rules as authoritative context. " +
-        "Before writing the opening scene, ask for two short setup details: (1) which character, bond, or goal " +
-        "should be in the spotlight, and (2) whether the player wants a specific tone or should say 'randomize' " +
-        "for a surprise complication. Do not begin the adventure yet, do not roll dice, and end by inviting the answer."
+        "Before writing the opening scene, present the five-question Adventure Plan: spotlight character/bond/goal, " +
+        "current situation, first party goal, tone, and opening complication. For each question offer concise preset " +
+        "answers, accept the player's own wording, and allow Skip. Do not begin the adventure yet, do not roll dice, " +
+        "and end by inviting the plan answers."
 }
 
 private fun openingDirective(seed: String): String =

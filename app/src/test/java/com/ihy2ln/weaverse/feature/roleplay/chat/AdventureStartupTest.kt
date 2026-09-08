@@ -81,7 +81,7 @@ class AdventureStartupTest {
         )
         val directive = adventureStartupDirective(AdventureStartupPhase.Choose, selected.command, Random(4))
         assertTrue("saved campaign setting details" in directive)
-        assertTrue("ask for two short setup details" in directive)
+        assertTrue("five-question Adventure Plan" in directive)
         assertTrue("Do not begin the adventure yet" in directive)
         assertEquals(
             AdventureStartupPhase.Complete,
@@ -127,5 +127,14 @@ class AdventureStartupTest {
         assertEquals(2, options.count { it.isRandom })
         assertTrue(options.all { it.title.isNotBlank() && it.answer.isNotBlank() })
         assertTrue(options.filter { it.isRandom }.all { "randomize" in it.answer.lowercase() })
+    }
+
+    @Test
+    fun adventurePlanOffersFiveQuestionsWithPresets() {
+        val questions = adventurePlanQuestions()
+        assertEquals(5, questions.size)
+        assertTrue(questions.all { it.prompt.isNotBlank() && it.presets.size >= 3 })
+        assertTrue(questions.any { "Current situation" in it.prompt })
+        assertTrue(questions.any { "complication" in it.prompt.lowercase() })
     }
 }

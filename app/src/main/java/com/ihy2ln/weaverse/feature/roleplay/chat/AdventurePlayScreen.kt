@@ -111,6 +111,8 @@ fun AdventurePlayScreen(
     var sceneArtSize by rememberSaveable { mutableStateOf(0) }
     var modelSearch by rememberSaveable { mutableStateOf("") }
     var setupSpotlight by rememberSaveable { mutableStateOf("") }
+    var setupSituation by rememberSaveable { mutableStateOf("") }
+    var setupGoal by rememberSaveable { mutableStateOf("") }
     var setupTone by rememberSaveable { mutableStateOf("") }
     var setupComplication by rememberSaveable { mutableStateOf("") }
     var minimumWordsText by rememberSaveable { mutableStateOf(state.minimumOutputWords.toString()) }
@@ -606,63 +608,95 @@ fun AdventurePlayScreen(
                     .padding(horizontal = InkSpacing.lg),
                 verticalArrangement = Arrangement.spacedBy(InkSpacing.xs),
             ) {
-                Text("Adventure details", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                Text("Use these fields instead of a freeform setup reply. You can leave any field blank.", style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
+                Text("Adventure plan", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                Text("Answer each open-ended question, tap a preset, or skip it. The prompt writer below remains available for your own wording.", style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
                 OutlinedTextField(
                     value = setupSpotlight,
                     onValueChange = { setupSpotlight = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Character, bond, or goal in the spotlight") },
+                    label = { Text("1. Character, bond, or goal in the spotlight") },
                     singleLine = false,
                 )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                    adventurePlanQuestions()[0].presets.forEach { preset ->
+                        InkTextButton(label = preset, onClick = { setupSpotlight = preset }, compact = true)
+                    }
+                    InkTextButton(label = "Skip", onClick = { setupSpotlight = "" }, compact = true)
+                }
+                OutlinedTextField(
+                    value = setupSituation,
+                    onValueChange = { setupSituation = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("2. Current situation at the opening") },
+                    singleLine = false,
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                    adventurePlanQuestions()[1].presets.forEach { preset ->
+                        InkTextButton(label = preset, onClick = { setupSituation = preset }, compact = true)
+                    }
+                    InkTextButton(label = "Skip", onClick = { setupSituation = "" }, compact = true)
+                }
+                OutlinedTextField(
+                    value = setupGoal,
+                    onValueChange = { setupGoal = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("3. The party's first goal") },
+                    singleLine = false,
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                    adventurePlanQuestions()[2].presets.forEach { preset ->
+                        InkTextButton(label = preset, onClick = { setupGoal = preset }, compact = true)
+                    }
+                    InkTextButton(label = "Skip", onClick = { setupGoal = "" }, compact = true)
+                }
                 OutlinedTextField(
                     value = setupTone,
                     onValueChange = { setupTone = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Tone and presentation") },
+                    label = { Text("4. Tone and presentation") },
                     placeholder = { Text("Hopeful, grim, romantic, comedic…") },
                     singleLine = true,
                 )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                    adventurePlanQuestions()[3].presets.forEach { preset ->
+                        InkTextButton(label = preset, onClick = { setupTone = preset }, compact = true)
+                    }
+                    InkTextButton(label = "Skip", onClick = { setupTone = "" }, compact = true)
+                }
                 OutlinedTextField(
                     value = setupComplication,
                     onValueChange = { setupComplication = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Opening complication or randomize") },
+                    label = { Text("5. Opening complication") },
                     singleLine = false,
                 )
-                Text("Quick responses", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                Text("Choose one of four curated answers or let the RNG decide. You can still use the prompt writer below.", style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
-                adventureSetupQuickResponses().chunked(2).forEach { pair ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                    adventurePlanQuestions()[4].presets.forEach { preset ->
+                        InkTextButton(label = preset, onClick = { setupComplication = preset }, compact = true)
+                    }
+                    InkTextButton(label = "Skip", onClick = { setupComplication = "" }, compact = true)
+                }
+                Text("Random plan options", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                adventureSetupQuickResponses().filter { it.isRandom }.forEach { response ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
-                        pair.forEach { response ->
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(inkRadiusSm()))
-                                    .background(if (response.isRandom) tokens.activePill.copy(alpha = 0.16f) else tokens.panel)
-                                    .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f), RoundedCornerShape(inkRadiusSm()))
-                                    .clickable(
-                                        enabled = !state.isStreaming,
-                                        onClickLabel = "Use ${response.title}",
-                                    ) {
-                                        viewModel.onInputChange(response.answer)
-                                        viewModel.send()
-                                    }
-                                    .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
-                            ) {
-                                Text(response.title, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                        if (pair.size == 1) Box(Modifier.weight(1f))
+                        InkOutlinedButton(label = response.title, onClick = {
+                            setupSpotlight = "Randomize"
+                            setupSituation = "Randomize"
+                            setupGoal = "Randomize"
+                            setupTone = "Randomize"
+                            setupComplication = "Randomize"
+                        }, modifier = Modifier.fillMaxWidth(), enabled = !state.isStreaming)
                     }
                 }
                 InkOutlinedButton(
                     label = "Use these details",
                     onClick = {
                         val answer = listOf(
-                            "Spotlight: ${setupSpotlight.trim().ifBlank { "Surprise me" }}",
-                            "Tone: ${setupTone.trim().ifBlank { "Use the campaign preset" }}",
-                            "Complication: ${setupComplication.trim().ifBlank { "Randomize" }}",
+                            "1. Spotlight: ${setupSpotlight.trim().ifBlank { "[SKIPPED]" }}",
+                            "2. Situation: ${setupSituation.trim().ifBlank { "[SKIPPED]" }}",
+                            "3. Goal: ${setupGoal.trim().ifBlank { "[SKIPPED]" }}",
+                            "4. Tone: ${setupTone.trim().ifBlank { "[SKIPPED]" }}",
+                            "5. Complication: ${setupComplication.trim().ifBlank { "[SKIPPED]" }}",
                         ).joinToString("\n")
                         viewModel.onInputChange(answer)
                         viewModel.send()

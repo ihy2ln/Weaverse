@@ -51,12 +51,15 @@ The player may always reject these choices and write a custom action; custom act
 """.trimIndent()
 
 fun adventureAiStartupFieldsPrompt(): String = """
-AI STARTUP. Ask for exactly these three setup fields before beginning:
-1. Character backstory
-2. Current situation
-3. Future goals
-Use the answers as campaign canon. Summarize them into a starting objective, a personal complication,
-and a suggested opening location. Do not roll dice during setup.
+AI STARTUP PLAN MODE. Ask the player to complete this five-question setup plan before beginning:
+1. Character, bond, or goal in the spotlight
+2. Current situation at the opening
+3. The party's first goal
+4. Tone and presentation
+5. Opening complication
+Each answer may be open-ended, selected from a preset, or skipped. Treat [SKIPPED] as permission to
+invent a fitting detail from campaign context. Use the answers as campaign canon. Summarize them into a
+starting objective, a personal complication, and a suggested opening location. Do not roll dice during setup.
 """.trimIndent()
 
 fun characterSelectorStartupPrompt(): String = """
