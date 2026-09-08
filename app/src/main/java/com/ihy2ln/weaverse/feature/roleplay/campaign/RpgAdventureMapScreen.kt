@@ -35,10 +35,13 @@ fun RpgAdventureMapScreen(
             items(state.map.nodes) { node ->
                 val completed = node.id in state.map.completedNodeIds
                 val available = node in availableRpgSceneNodes(state)
+                val discovered = node.id in state.map.discoveredNodeIds
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Column(Modifier.weight(1f)) {
-                        Text(if (completed) "✓ ${node.title}" else node.title, style = MaterialTheme.typography.titleMedium)
+                        Text(if (completed) "✓ ${node.title}" else if (discovered) node.title else "? Unknown chapter node", style = MaterialTheme.typography.titleMedium)
                         Text(node.summary, style = MaterialTheme.typography.bodySmall)
+                        if (available) Text("Objective: ${node.objective}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                        if (node.location.isNotBlank()) Text(node.location, style = MaterialTheme.typography.labelSmall)
                     }
                     InkTextButton(label = if (available) "Enter" else if (completed) "Done" else "Locked", onClick = { if (available) onSelectNode(node) }, enabled = available)
                 }

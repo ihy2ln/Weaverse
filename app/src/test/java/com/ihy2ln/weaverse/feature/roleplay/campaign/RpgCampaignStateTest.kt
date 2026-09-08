@@ -35,4 +35,17 @@ class RpgCampaignStateTest {
         assertEquals("Supportive", updated.companions.single().stance)
         assertEquals(30, updated.companions.single().relationship)
     }
+
+    @Test fun `completing a node discovers branches and records objective recap`() {
+        val updated = completeRpgSceneNode(createRpgCampaign("c1"), "chapter-1-arrival", "The party found a coded map.")
+        assertTrue("chapter-1-arrival" in updated.map.completedNodeIds)
+        assertTrue("chapter-1-crossroads" in updated.map.discoveredNodeIds)
+        assertTrue(updated.chapterRecap.contains("coded map"))
+        assertEquals(1, updated.progression.milestonePoints)
+    }
+
+    @Test fun `scene entry rejects locked nodes`() {
+        val state = createRpgCampaign("c1")
+        assertEquals(state, enterRpgSceneNode(state, "chapter-1-vault"))
+    }
 }

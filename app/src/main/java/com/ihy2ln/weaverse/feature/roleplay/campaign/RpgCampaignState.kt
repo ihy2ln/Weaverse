@@ -13,6 +13,9 @@ data class RpgSceneNode(
     val prerequisites: List<String> = emptyList(),
     val encounterId: String? = null,
     val sceneArtAssetId: String = "",
+    val objective: String = "Reach the next story beat.",
+    val branchIds: List<String> = emptyList(),
+    val location: String = "",
 )
 
 @Serializable
@@ -29,6 +32,7 @@ data class RpgExplorationState(
     val location: String = "",
     val returnNodeId: String = "",
     val summary: String = "",
+    val discoveredSceneIds: Set<String> = emptySet(),
 )
 
 @Serializable
@@ -75,9 +79,10 @@ data class RpgCampaignState(
 const val CURRENT_RPG_SCHEMA = 1
 
 fun defaultRpgSceneNodes(): List<RpgSceneNode> = listOf(
-    RpgSceneNode("chapter-1-arrival", "The First Sign", "A strange summons pulls the party into the opening mystery.", sceneArtAssetId = "scene_forest_waystone"),
-    RpgSceneNode("chapter-1-crossroads", "The Crossroads", "Three leads compete for the party's attention.", prerequisites = listOf("chapter-1-arrival"), encounterId = "encounter-crossroads", sceneArtAssetId = "scene_crossroads"),
-    RpgSceneNode("chapter-1-vault", "The Sealed Vault", "The first chapter's danger waits behind an ancient seal.", prerequisites = listOf("chapter-1-crossroads"), encounterId = "encounter-vault", sceneArtAssetId = "scene_vault"),
+    RpgSceneNode("chapter-1-arrival", "The First Sign", "A strange summons pulls the party into the opening mystery.", objective = "Inspect the waystone and identify who sent the summons.", branchIds = listOf("chapter-1-crossroads", "chapter-1-wild-trail"), location = "Whispering Forest", sceneArtAssetId = "scene_forest_waystone"),
+    RpgSceneNode("chapter-1-crossroads", "The Crossroads", "Three leads compete for the party's attention.", objective = "Choose which lead to follow before nightfall.", prerequisites = listOf("chapter-1-arrival"), encounterId = "encounter-crossroads", location = "Old Crossroads", sceneArtAssetId = "scene_crossroads"),
+    RpgSceneNode("chapter-1-wild-trail", "The Wild Trail", "A risky shortcut reveals a different side of the mystery.", objective = "Follow the tracks without alerting the hidden watchers.", prerequisites = listOf("chapter-1-arrival"), location = "Whispering Forest", sceneArtAssetId = "scene_forest_trail"),
+    RpgSceneNode("chapter-1-vault", "The Sealed Vault", "The first chapter's danger waits behind an ancient seal.", objective = "Break the seal and survive what answers from within.", prerequisites = listOf("chapter-1-crossroads"), encounterId = "encounter-vault", location = "Sunken Vault", sceneArtAssetId = "scene_vault"),
 )
 
 fun createRpgCampaign(campaignId: String, modeId: String = RpgCombatRuleset.DndD20.id, ruleSystemId: String = "dnd-5e"): RpgCampaignState =
@@ -88,7 +93,33 @@ fun availableRpgSceneNodes(state: RpgCampaignState): List<RpgSceneNode> = state.
 }
 
 fun enterFreeformExploration(state: RpgCampaignState, location: String): RpgCampaignState =
-    state.copy(exploration = RpgExplorationState(true, location, state.map.currentNodeId))
+    state.copy(exploration = RpgExplorationState(true, location, state.map.currentNodeId, "Explore $location and uncover a lead."))
+
+fun discoverExplorationScene(state: RpgCampaignState, sceneId: String): RpgCampaignState =
+    if (!state.exploration.active) state else state.copy(
+        exploration = state.exploration.copy(discoveredSceneIds = state.exploration.discoveredSceneIds + sceneId),
+    )
+
+fun enterRpgSceneNode(state: RpgCampaignState, nodeId: String): RpgCampaignState {
+    val node = state.map.nodes.firstOrNull { it.id == nodeId } ?: return state
+    if (node !in availableRpgSceneNodes(state)) return state
+    return state.copy(map = state.map.copy(currentNodeId = node.id, discoveredNodeIds = state.map.discoveredNodeIds + node.id))
+}
+
+fun completeRpgSceneNode(state: RpgCampaignState, nodeId: String, consequence: String = ""): RpgCampaignState {
+    val node = state.map.nodes.firstOrNull { it.id == nodeId } ?: return state
+    val completed = state.map.completedNodeIds + node.id
+    val discovered = state.map.discoveredNodeIds + node.branchIds
+    val recap = buildString {
+        append("${node.title} completed. ")
+        if (consequence.isNotBlank()) append(consequence)
+    }.trim()
+    return state.copy(
+        map = state.map.copy(currentNodeId = node.id, completedNodeIds = completed, discoveredNodeIds = discovered),
+        progression = state.progression.copy(milestonePoints = state.progression.milestonePoints + 1),
+        chapterRecap = recap,
+    )
+}
 
 fun returnToChapterNode(state: RpgCampaignState): RpgCampaignState =
     state.copy(exploration = RpgExplorationState(), map = state.map.copy(currentNodeId = state.exploration.returnNodeId.ifBlank { state.map.currentNodeId }))
