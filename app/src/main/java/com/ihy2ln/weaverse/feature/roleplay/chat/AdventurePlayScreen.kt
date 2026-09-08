@@ -317,11 +317,17 @@ fun AdventurePlayScreen(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                     )
-                    Text(
-                        if (state.userIsDungeonMaster) "DM mode · You run the world" else "Adventure story",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = tokens.secondaryText,
-                    )
+                Text(
+                    if (state.userIsDungeonMaster) "DM mode · You run the world" else "Adventure story",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.secondaryText,
+                )
+                Text(
+                    "RPG mode · ${state.rpgCombatMode.label}",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     InkTextButton(
@@ -489,6 +495,49 @@ fun AdventurePlayScreen(
                     }
                 }
             }
+            if (!startupPending && state.rpgActionChoices.isNotEmpty()) {
+                Text(
+                    "Choose the party’s direction",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = tokens.activePill,
+                    modifier = Modifier.padding(top = InkSpacing.xs, bottom = InkSpacing.xs),
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+                ) {
+                    state.rpgActionChoices.forEach { choice ->
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(inkRadiusSm()))
+                                .background(tokens.panel)
+                                .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.55f), RoundedCornerShape(inkRadiusSm()))
+                                .clickable(onClickLabel = "Choose ${choice.title}") {
+                                    viewModel.onInputChange(choice.title)
+                                }
+                                .padding(InkSpacing.xs),
+                        ) {
+                            Text(choice.title, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                            if (choice.description.isNotBlank()) {
+                                Text(
+                                    choice.description,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = tokens.secondaryText,
+                                    maxLines = 3,
+                                )
+                            }
+                        }
+                    }
+                }
+                Text(
+                    "Or use the action box below to write your own path.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.secondaryText,
+                    modifier = Modifier.padding(top = InkSpacing.xs),
+                )
+            }
         }
 
         if (state.errorMessage.isNotBlank()) {
@@ -503,6 +552,14 @@ fun AdventurePlayScreen(
             Text(
                 state.composerStatus,
                 style = MaterialTheme.typography.labelMedium,
+                color = tokens.secondaryText,
+                modifier = Modifier.padding(horizontal = InkSpacing.lg),
+            )
+        }
+        state.rpgSceneArt?.let { art ->
+            Text(
+                "AI scene art · ${art.category}${art.mood.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()} · ${art.assetId}",
+                style = MaterialTheme.typography.labelSmall,
                 color = tokens.secondaryText,
                 modifier = Modifier.padding(horizontal = InkSpacing.lg),
             )

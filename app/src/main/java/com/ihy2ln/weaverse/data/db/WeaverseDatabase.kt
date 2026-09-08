@@ -37,6 +37,7 @@ import com.ihy2ln.weaverse.data.db.entities.SceneRevisionEntity
 import com.ihy2ln.weaverse.data.db.entities.SeriesEntity
 import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
 import com.ihy2ln.weaverse.data.db.entities.TextGameSaveEntity
+import com.ihy2ln.weaverse.data.db.entities.RpgCampaignSaveEntity
 
 @Database(
     entities = [
@@ -62,8 +63,9 @@ import com.ihy2ln.weaverse.data.db.entities.TextGameSaveEntity
         PromptEntity::class,
         AiProfileEntity::class,
         TextGameSaveEntity::class,
+        RpgCampaignSaveEntity::class,
     ],
-    version = 17,
+    version = 18,
     exportSchema = false,
 )
 @TypeConverters(InkTypeConverters::class)
@@ -80,6 +82,11 @@ abstract class WeaverseDatabase : RoomDatabase() {
     abstract fun textGameSaveDao(): TextGameSaveDao
 
     companion object {
+        val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS rpg_campaign_saves (campaignId TEXT NOT NULL PRIMARY KEY, schemaVersion INTEGER NOT NULL DEFAULT 1, stateJson TEXT NOT NULL, updatedAt INTEGER NOT NULL)")
+            }
+        }
         /** Adds first-class Pictures organization and machine-searchable scene labels. */
         val MIGRATION_16_17 = object : Migration(16, 17) {
             override fun migrate(db: SupportSQLiteDatabase) {

@@ -34,6 +34,10 @@ data class TextGameUiState(
     val sceneImagePath: String? = null,
     val sceneMotionPath: String? = null,
     val cardImagePaths: Map<String, String> = emptyMap(),
+    /** Absolute file paths for card-face looping videos, keyed by collectible id. */
+    val cardMotionPaths: Map<String, String> = emptyMap(),
+    /** Absolute file paths for GKOM variant monster portraits, keyed by monster id. */
+    val gkomImagePaths: Map<String, String> = emptyMap(),
     val playStyle: TextGamePlayStyle = TextGamePlayStyle.Campaign,
     val generatedNarration: List<String> = emptyList(),
     val loading: Boolean = true,
@@ -61,6 +65,8 @@ class TextGameViewModel @Inject constructor(
         if (_uiState.value.campaignId == campaignId && !_uiState.value.loading) return
         viewModelScope.launch {
             val cardImagePaths = installBundledImageLibrary()
+            val cardMotionPaths = installBundledCardMotionLibrary()
+            val gkomImagePaths = installBundledGkomMonsterLibrary()
             val campaign = db.roleplayDao().getChat(campaignId)
             campaignDifficulty = parseTextGameDifficulty(campaign?.authorsNote)
             definition = adamsHavenDefinition(TextGamePlayStyle.Campaign)
@@ -74,9 +80,11 @@ class TextGameViewModel @Inject constructor(
                 campaignTitle = campaign?.title.orEmpty().ifBlank { "Campaign" },
                 definition = definition,
                 game = game,
-                sceneImagePath = loadSceneImage(game.run.nodeId, game.persistent.rngSeed),
+                sceneImagePath = loadSceneImage(game),
                 sceneMotionPath = loadSceneMotion(game.run.nodeId, game.persistent.rngSeed),
                 cardImagePaths = cardImagePaths,
+                cardMotionPaths = cardMotionPaths,
+                gkomImagePaths = gkomImagePaths,
                 playStyle = TextGamePlayStyle.Campaign,
                 loading = false,
             )
@@ -97,7 +105,7 @@ class TextGameViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(
                 definition = definition,
                 game = game,
-                sceneImagePath = loadSceneImage(game.run.nodeId, game.persistent.rngSeed),
+                sceneImagePath = loadSceneImage(game),
                 sceneMotionPath = loadSceneMotion(game.run.nodeId, game.persistent.rngSeed),
                 loading = false,
             )
@@ -116,7 +124,7 @@ class TextGameViewModel @Inject constructor(
         if (action is TextGameAction.Reset || enteredEmptyMissionBoard) generateMissions()
         saveJob?.cancel()
         saveJob = viewModelScope.launch {
-            val sceneImagePath = loadSceneImage(next.run.nodeId, next.persistent.rngSeed)
+            val sceneImagePath = loadSceneImage(next)
             val sceneMotionPath = loadSceneMotion(next.run.nodeId, next.persistent.rngSeed)
             runCatching { persist(current.campaignId, next) }
                 .onSuccess { _uiState.value = _uiState.value.copy(sceneImagePath = sceneImagePath, sceneMotionPath = sceneMotionPath, saveError = null) }
@@ -282,10 +290,58 @@ class TextGameViewModel @Inject constructor(
             persistent = codec.decodeFromString<TextGamePersistentState>(save.persistentStateJson),
             run = codec.decodeFromString<TextGameRunState>(save.runStateJson),
         ).takeIf { definition.node(it.run.nodeId) != null }
-    }.getOrNull()
+    }.getOrNull()?.let { state ->
+        val board = state.persistent.havenBoard
+        if (board.placed.isEmpty() && board.hand.isEmpty()) {
+            state.copy(persistent = state.persistent.copy(havenBoard = HavenBoardRules.initial()))
+        } else {
+            state
+        }
+    }
 
-    private suspend fun loadSceneImage(nodeId: String, seed: Long): String? {
+    private suspend fun loadSceneImage(state: TextGameState): String? {
+        val nodeId = state.run.nodeId
+        val seed = state.persistent.rngSeed
+        val artOverride = state.run.havenRoomArtPath
+        artOverride?.takeIf { context.assetExists(it) }?.let {
+            return "file:///android_asset/$it"
+        }
+        HavenBoardRules.boardKind(nodeId)?.let { kind ->
+            val backdrop = HavenBoardRules.backdrop(kind)
+            if (context.assetExists(backdrop)) return "file:///android_asset/$backdrop"
+        }
         val node = definition.node(nodeId) ?: return null
+        val dungeon = state.persistent.dungeon
+        val roomKind = state.run.dungeonRoomKind?.let(DungeonKind::fromIndex)
+            ?: dungeon?.currentRoom()?.let { DungeonKind.fromIndex(it.kind) }
+            ?: DungeonKind.Enemy.takeIf { node.type == TextGameNodeType.Battle }
+        if (roomKind != null) {
+            val x = dungeon?.atX ?: 0
+            val y = dungeon?.atY ?: 0
+            val candidates = AdamsHavenBattleScenes.categories(roomKind)
+                .flatMap { category -> db.mediaDao().getImagesByTag("arena:$category") }
+                .mapNotNull { media ->
+                    resolveSceneMediaPath(media.relativePath, context.filesDir)?.let { media.id to it }
+                }
+                .distinctBy { it.first }
+                .sortedBy { it.first }
+            if (candidates.isNotEmpty()) {
+                return candidates[AdamsHavenBattleScenes.stableIndex(seed, x, y, candidates.size)].second
+            }
+            AdamsHavenBattleScenes.bundledFor(roomKind, seed, x, y)
+                ?.takeIf { context.assetExists(it) }
+                ?.let { return "file:///android_asset/$it" }
+        }
+        // Prefer the node’s declared still so farm/town hubs keep their landscape
+        // art instead of rolling a random barn portrait or old ground tile.
+        node.sceneMediaId?.let { mediaId ->
+            db.mediaDao().getById(mediaId)?.let { media ->
+                resolveSceneMediaPath(media.relativePath, context.filesDir)?.let { return it }
+            }
+        }
+        node.bundledSceneAssetPath?.takeIf { context.assetExists(it) }?.let {
+            return "file:///android_asset/$it"
+        }
         val typedAssets = node.sceneAssetType?.let { type ->
             definition.sceneAssets.filter { type in it.sceneTypes }
         }.orEmpty()
@@ -306,9 +362,7 @@ class TextGameViewModel @Inject constructor(
             }
             return selected.artAssetPath.takeIf { context.assetExists(it) }?.let { "file:///android_asset/$it" }
         }
-        val mediaId = node.sceneMediaId ?: return null
-        val media = db.mediaDao().getById(mediaId) ?: return null
-        return resolveSceneMediaPath(media.relativePath, context.filesDir)
+        return null
     }
 
     private suspend fun loadSceneMotion(nodeId: String, seed: Long): String? {
@@ -364,6 +418,52 @@ class TextGameViewModel @Inject constructor(
         installBundledDungeonImageLibrary()
     }
 
+    private suspend fun installBundledCardMotionLibrary(): Map<String, String> = buildMap {
+        definition.collectibleCards.forEach { card ->
+            val motionPath = card.motionAssetPath ?: return@forEach
+            val motionId = card.motionMediaId ?: return@forEach
+            if (!context.assetExists(motionPath)) return@forEach
+            val media = mediaRepository.registerBundledVideo(
+                assetPath = motionPath,
+                id = motionId,
+                relativePath = motionPath,
+                displayName = "${card.title} (motion)",
+                category = "Adams Haven / Cards / Motion / " + card.category.replaceFirstChar(Char::uppercase),
+                tags = listOf(
+                    "adams-haven",
+                    "text-game",
+                    "card",
+                    "card-motion",
+                    "card:${card.category.removeSuffix("s")}",
+                    "video",
+                ).joinToString(","),
+            ) ?: return@forEach
+            put(card.id, mediaRepository.resolveFile(media).absolutePath)
+        }
+    }
+
+    private suspend fun installBundledGkomMonsterLibrary(): Map<String, String> = buildMap {
+        adamsHavenGkomMonsters().forEach { monster ->
+            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            runCatching {
+                context.assets.open(monster.artAssetPath).use { input ->
+                    BitmapFactory.decodeStream(input, null, options)
+                }
+            }
+            val media = mediaRepository.registerBundledImage(
+                assetPath = monster.artAssetPath,
+                id = monster.mediaId,
+                relativePath = monster.artAssetPath,
+                width = options.outWidth.takeIf { it > 0 } ?: monster.width,
+                height = options.outHeight.takeIf { it > 0 } ?: monster.height,
+                displayName = monster.displayName,
+                category = adamsHavenGkomMediaCategory(),
+                tags = adamsHavenGkomMediaTags(monster),
+            )
+            put(monster.id, mediaRepository.resolveFile(media).absolutePath)
+        }
+    }
+
     private suspend fun installBundledDungeonImageLibrary() {
         val root = "images/adams_haven/maps/dungeon"
         context.assetFilesRecursively(root)
@@ -385,6 +485,34 @@ class TextGameViewModel @Inject constructor(
                     displayName = metadata.displayName,
                     category = metadata.category,
                     tags = metadata.tags.joinToString(","),
+                )
+            }
+
+        val battleRoot = "images/adams_haven/battle"
+        context.assetFilesRecursively(battleRoot)
+            .filter { it.endsWith(".webp", ignoreCase = true) }
+            .sorted()
+            .forEach { assetPath ->
+                val category = AdamsHavenBattleScenes.categoryFromAssetPath(assetPath) ?: return@forEach
+                val stem = assetPath.substringAfterLast('/').substringBeforeLast('.')
+                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                context.assets.open(assetPath).use { input ->
+                    BitmapFactory.decodeStream(input, null, options)
+                }
+                mediaRepository.registerBundledImage(
+                    assetPath = assetPath,
+                    id = "adams-haven-arena-$stem",
+                    relativePath = assetPath,
+                    width = options.outWidth.coerceAtLeast(1),
+                    height = options.outHeight.coerceAtLeast(1),
+                    displayName = stem.replace('-', ' ').replace('_', ' ')
+                        .split(' ').joinToString(" ") { it.replaceFirstChar(Char::uppercase) },
+                    category = "Adams Haven / Battle / " + category.replace('_', ' ')
+                        .replaceFirstChar(Char::uppercase),
+                    tags = listOf(
+                        "adams-haven", "text-game", "battle", "arena",
+                        "scene:battle", "scene:dungeon", "arena:$category", stem,
+                    ).joinToString(","),
                 )
             }
     }

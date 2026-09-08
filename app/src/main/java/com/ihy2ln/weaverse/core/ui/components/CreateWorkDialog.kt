@@ -39,6 +39,8 @@ data class NewWorkDetails(
     val styleGuide: String = "",
     val mainCharacters: List<WorkCharacterOption> = emptyList(),
     val rulesetId: String = "",
+    /** RPG presentation mode, independent from the underlying rules system. */
+    val gameModeId: String = "",
     val settingId: String = "",
     val narrativePov: String = "",
     val campaignRoleId: String = "",
@@ -58,12 +60,46 @@ data class CampaignRulesetTemplate(
     val id: String,
     val label: String,
     val directive: String,
+    val category: String = "Rule system",
+)
+
+data class CampaignGameModeTemplate(
+    val id: String,
+    val label: String,
+    val description: String,
+    val category: String = "Mode",
+)
+
+val CampaignGameModeTemplates = listOf(
+    CampaignGameModeTemplate("rpg-cards", "Focused Tactical Cards", "Adams Haven Card Game mode with tactical cards, AP/EP, intents, and statuses."),
+    CampaignGameModeTemplate("rpg-d20", "D&D d20", "Pen-and-paper mode using character sheets, d20 checks, AC, HP, and conditions."),
+    CampaignGameModeTemplate("rpg-text", "Text Reactions", "Traditional text-first mode where risky actions preview checks before AI reactions."),
 )
 
 data class CampaignSettingTemplate(
     val id: String,
     val label: String,
     val directive: String,
+)
+
+data class CampaignHouseRuleTemplate(val id: String, val label: String, val directive: String)
+data class CampaignSettingDetailTemplate(val id: String, val label: String, val details: String)
+
+val CampaignSettingDetailTemplates = listOf(
+    CampaignSettingDetailTemplate("frontier", "Frontier settlement", "A remote settlement at the edge of mapped lands, surrounded by old roads, ruins, and competing claims."),
+    CampaignSettingDetailTemplate("city", "Factional city", "A crowded city of guilds, noble houses, undercity networks, and public choices that shift faction power."),
+    CampaignSettingDetailTemplate("wilds", "Wilderness expedition", "A dangerous wilderness expedition where weather, supplies, discovery, and travel routes shape the adventure."),
+    CampaignSettingDetailTemplate("war", "War-torn realm", "A realm divided by active conflict, with scarce resources, shifting borders, refugees, and hard moral decisions."),
+    CampaignSettingDetailTemplate("custom", "Custom setting details", "Describe the kingdom, era, locations, factions, tone, and boundaries in your own words."),
+)
+
+/** Curated defaults used by both campaign creation and the RPG options sheet. */
+val CampaignHouseRuleTemplates = listOf(
+    CampaignHouseRuleTemplate("cinematic", "Cinematic and forgiving", "Favor momentum and character drama; use failures to create complications rather than stop the story."),
+    CampaignHouseRuleTemplate("gritty", "Gritty survival", "Track scarcity, injuries, travel pressure, and lasting consequences; victories should cost something."),
+    CampaignHouseRuleTemplate("heroic", "Heroic fantasy", "Let capable heroes attempt bold plans; reward teamwork, cleverness, and decisive risks."),
+    CampaignHouseRuleTemplate("political", "Factions and consequences", "Make faction reputation, promises, and public choices materially change later scenes."),
+    CampaignHouseRuleTemplate("custom", "Custom house rules", "Use the player's additional house rules as authoritative campaign guidance."),
 )
 
 data class CampaignPerspectiveTemplate(
@@ -354,6 +390,8 @@ fun CreateWorkDialog(
     val tokens = inkTokens()
     var title by remember { mutableStateOf("") }
     var genre by remember { mutableStateOf("") }
+    var settingDetailId by remember { mutableStateOf("frontier") }
+    var settingDetailMenuOpen by remember { mutableStateOf(false) }
     var pov by remember { mutableStateOf(if (vocabulary.storyboardSpecific) "Right to left" else "") }
     var tense by remember {
         mutableStateOf(
@@ -365,9 +403,13 @@ fun CreateWorkDialog(
         )
     }
     var styleGuide by remember { mutableStateOf("") }
+    var houseRuleId by remember { mutableStateOf("cinematic") }
+    var houseRuleMenuOpen by remember { mutableStateOf(false) }
     var selectedCharacterIds by remember { mutableStateOf(setOf<String>()) }
     var rulesetId by remember { mutableStateOf(if (vocabulary.textGameSpecific) "adams-haven-card-rpg" else "dnd-5e") }
     var rulesetMenuOpen by remember { mutableStateOf(false) }
+    var gameModeId by remember { mutableStateOf("rpg-d20") }
+    var gameModeMenuOpen by remember { mutableStateOf(false) }
     var settingId by remember { mutableStateOf(if (vocabulary.textGameSpecific) "adams-haven" else "high-fantasy") }
     var settingMenuOpen by remember { mutableStateOf(false) }
     var narrativePovId by remember { mutableStateOf(if (vocabulary.textGameSpecific) "first-summoner" else "third-multiple") }
@@ -508,6 +550,15 @@ fun CreateWorkDialog(
                                         settingMenuOpen = false
                                     },
                                 )
+                            }
+                        }
+                    }
+                    Text("Setting Details preset", style = MaterialTheme.typography.labelMedium)
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        InkOutlinedButton(label = CampaignSettingDetailTemplates.first { it.id == settingDetailId }.label + " ▾", onClick = { settingDetailMenuOpen = true }, modifier = Modifier.fillMaxWidth())
+                        DropdownMenu(expanded = settingDetailMenuOpen, onDismissRequest = { settingDetailMenuOpen = false }) {
+                            CampaignSettingDetailTemplates.forEach { preset ->
+                                DropdownMenuItem(text = { Column { Text(preset.label); Text(preset.details, style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText, maxLines = 3) } }, onClick = { settingDetailId = preset.id; if (genre.isBlank()) genre = preset.details; settingDetailMenuOpen = false })
                             }
                         }
                     }
@@ -691,7 +742,24 @@ fun CreateWorkDialog(
                             compact = true,
                         )
                     }
-                    Text("Rules system", style = MaterialTheme.typography.labelMedium)
+                    Text("Mode", style = MaterialTheme.typography.labelMedium)
+                    Text("Choose how this RPG is played. This is separate from the rules system below.", style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        InkOutlinedButton(
+                            label = CampaignGameModeTemplates.first { it.id == gameModeId }.label + " ▾",
+                            onClick = { gameModeMenuOpen = true },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        DropdownMenu(expanded = gameModeMenuOpen, onDismissRequest = { gameModeMenuOpen = false }) {
+                            CampaignGameModeTemplates.forEach { mode ->
+                                DropdownMenuItem(
+                                    text = { Column { Text(mode.label); Text(mode.description, style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText, maxLines = 3) } },
+                                    onClick = { gameModeId = mode.id; gameModeMenuOpen = false },
+                                )
+                            }
+                        }
+                    }
+                    Text("Rule system", style = MaterialTheme.typography.labelMedium)
                     Box(modifier = Modifier.fillMaxWidth()) {
                         InkOutlinedButton(
                             label = CampaignRulesetTemplates.first { it.id == rulesetId }.label + " ▾",
@@ -751,6 +819,24 @@ fun CreateWorkDialog(
                     maxLines = 4,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                if (isCampaign) {
+                    Text("Additional House Rules preset", style = MaterialTheme.typography.labelMedium)
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        InkOutlinedButton(
+                            label = CampaignHouseRuleTemplates.first { it.id == houseRuleId }.label + " ▾",
+                            onClick = { houseRuleMenuOpen = true },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        DropdownMenu(expanded = houseRuleMenuOpen, onDismissRequest = { houseRuleMenuOpen = false }) {
+                            CampaignHouseRuleTemplates.forEach { preset ->
+                                DropdownMenuItem(
+                                    text = { Column { Text(preset.label); Text(preset.directive, style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText, maxLines = 3) } },
+                                    onClick = { houseRuleId = preset.id; houseRuleMenuOpen = false },
+                                )
+                            }
+                        }
+                    }
+                }
                 Text(
                     vocabulary.styleHint,
                     style = MaterialTheme.typography.labelSmall,
@@ -785,7 +871,9 @@ fun CreateWorkDialog(
                         styleGuide = if (isCampaign) {
                             listOf(
                                 "Setting guidance: ${CampaignSettingTemplates.first { it.id == settingId }.directive}",
-                                "Rules guidance: ${CampaignRulesetTemplates.first { it.id == rulesetId }.directive}",
+                                "Setting details preset: ${CampaignSettingDetailTemplates.first { it.id == settingDetailId }.details}",
+                                "Game mode: ${CampaignGameModeTemplates.first { it.id == gameModeId }.label}. ${CampaignGameModeTemplates.first { it.id == gameModeId }.description}",
+                                "Rule system guidance: ${CampaignRulesetTemplates.first { it.id == rulesetId }.directive}",
                                 if (isTextGame) {
                                     "Perspective guidance: Always narrate in first person from the Summoner/MC's point of view and always use present tense. Never switch tense or viewpoint."
                                 } else {
@@ -802,10 +890,12 @@ fun CreateWorkDialog(
                                     "Difficulty: ${TextGameDifficultyTemplates.first { it.id == difficultyId }.label}. ${TextGameDifficultyTemplates.first { it.id == difficultyId }.description}"
                                 } else "",
                                 styleGuide.trim().takeIf { it.isNotBlank() }?.let { "House rules: $it" }.orEmpty(),
+                                if (isCampaign) "House rules preset: ${CampaignHouseRuleTemplates.first { it.id == houseRuleId }.directive}" else "",
                             ).filter { it.isNotBlank() }.joinToString("\n\n")
                         } else styleGuide.trim(),
                         mainCharacters = characterOptions.filter { it.id in selectedCharacterIds },
                         rulesetId = if (isCampaign) rulesetId else "",
+                        gameModeId = if (isCampaign) gameModeId else "",
                         settingId = if (isCampaign) settingId else "",
                         narrativePov = if (isTextGame) {
                             "First-person Summoner"

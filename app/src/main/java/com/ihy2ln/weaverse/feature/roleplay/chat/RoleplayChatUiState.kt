@@ -7,6 +7,7 @@ import com.ihy2ln.weaverse.core.text.TextOverlay
 import com.ihy2ln.weaverse.core.ui.components.NewWorkDetails
 import com.ihy2ln.weaverse.core.ui.components.WorkCharacterOption
 import com.ihy2ln.weaverse.data.db.entities.RpPageMeta
+import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatRuleset
 
 data class RpMediaRef(
     val messageId: String,
@@ -176,4 +177,11 @@ data class RoleplayChatUiState(
     val imageGenStatus: String = "",
     val imageGenModels: List<ModelInfo> = emptyList(),
     val imageGenModelRef: String = "",
+    /** Three deterministic-looking DM proposals for the current RPG scene. */
+    val rpgActionChoices: List<RpgActionChoice> = emptyList(),
+    /** AI-selected local art metadata for the current scene. */
+    val rpgSceneArt: RpgSceneArtChoice? = null,
+    /** Persistent campaign battle mode (encounter overrides never replace it). */
+    val rpgCombatMode: RpgCombatRuleset = RpgCombatRuleset.DndD20,
+    val rpgChapterRecap: String = "",
 )

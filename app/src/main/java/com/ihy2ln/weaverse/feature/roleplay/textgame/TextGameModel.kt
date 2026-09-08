@@ -54,13 +54,24 @@ val TextGameDifficulty.description: String
 enum class TextGameNodeType { Narrative, MissionBoard, Battle, Reward, Gacha, Hub, Ending }
 
 @Serializable
+enum class TextGameHotspotKind { Location, Plot, Building, Npc, Exit }
+
+@Serializable
 data class TextGameHotspot(
     val id: String,
     val label: String,
-    val choiceId: String,
+    val choiceId: String = "",
     /** Normalized position within the scene picture. */
     val x: Float = .5f,
     val y: Float = .5f,
+    /** Farmville-style plot tap; till / plant / water / harvest this bed. */
+    val farmPlotId: Int? = null,
+    val kind: TextGameHotspotKind = TextGameHotspotKind.Location,
+    /** Town / farm building id used for collect, build, and enter sheets. */
+    val buildingId: String? = null,
+    /** Visual-novel talk target. */
+    val npcName: String = "",
+    val talkProse: String = "",
 )
 
 @Serializable
@@ -211,6 +222,13 @@ data class TextGameCollectibleCard(
     /** Stable ID registered in WeaverVerse's shared Pictures database. */
     val mediaId: String,
     val artAssetPath: String,
+    /**
+     * Optional muted looping MP4 for the card face (Ken Burns / FMV).
+     * When present, battle and library UIs prefer it over [artAssetPath].
+     */
+    val motionAssetPath: String? = null,
+    /** Stable media ID for the motion file in the shared library. */
+    val motionMediaId: String? = null,
 )
 
 @Serializable
@@ -299,6 +317,14 @@ data class TextGamePersistentState(
     val ultimate: Int = 0,
     /** The persistent dungeon — floors, rooms, fog. Null until first entered. */
     val dungeon: DungeonState? = null,
+    /** Godot FarmSim — plots grow by battles fought; pantry feeds the next run. */
+    val farm: FarmState = FarmState(),
+    /** Mafia-town businesses — tap lots to collect, build, or enter. */
+    val town: TownState = TownState(),
+    /** Haven card board — building cards on Town/Farm plot pictures. */
+    val havenBoard: HavenBoardState = HavenBoardState(),
+    /** GKOM portraits revealed in the bestiary after defeating their enemy instance. */
+    val defeatedMonsters: Set<String> = emptySet(),
     /** Persisted mission-board history shown in the Mission Log after a run. */
     val missionLog: List<TextGameMissionLogEntry> = emptyList(),
 )
@@ -333,8 +359,15 @@ data class TextGameRunState(
     val missionBoardIntro: String = "",
     /** True while the current battle belongs to a dungeon room. */
     val dungeonFight: Boolean = false,
+    /** DungeonKind ordinal for the active fight; null for authored encounters. */
+    val dungeonRoomKind: Int? = null,
     /** Spoils of the fight that just ended, shown on the reward/ending screen. */
     val lastBattleGains: TextGameBattleGains? = null,
+    /** Flat bonus damage from a packed farm dish (AttackUp), spends down each turn. */
+    val farmAttackBonus: Int = 0,
+    val farmBuffRounds: Int = 0,
+    /** When entering a room from the haven board, overrides the interior still from the card stack. */
+    val havenRoomArtPath: String? = null,
 )
 
 @Serializable
@@ -387,9 +420,33 @@ sealed interface TextGameAction {
     data class BeginMission(val mission: TextGameMission) : TextGameAction
     data object EnterDungeon : TextGameAction
     data class DungeonStep(val x: Int, val y: Int) : TextGameAction
+    /** Walk the stairs to the next floor when the current floor boss is beaten. */
+    data object DescendDungeon : TextGameAction
     data object LeaveDungeon : TextGameAction
     data object CastUltimate : TextGameAction
     data object Reset : TextGameAction
+
+    /** Till a wild farm plot (no minigame). */
+    data class FarmTill(val plotId: Int) : TextGameAction
+    /** Resolve planting after the timing minigame (score 0 = skipped). */
+    data class FarmPlant(val plotId: Int, val score01: Float, val cropId: String = "") : TextGameAction
+    data class FarmWater(val plotId: Int) : TextGameAction
+    /** Resolve harvest after the timing minigame. */
+    data class FarmHarvest(val plotId: Int, val score01: Float) : TextGameAction
+    /** Pack a pantry dish for the next battle. */
+    data class FarmPackDish(val dish: String) : TextGameAction
+    /** Collect floating income from a Town business. */
+    data class TownCollect(val buildingId: String) : TextGameAction
+    /** Drag or tap-place a built Town building onto another yard plot. */
+    data class TownMove(val buildingId: String, val plotId: String) : TextGameAction
+    /** Drop a haven building card onto the Town or Farm plot board. */
+    data class PlaceHavenCard(val cardId: String, val board: String, val x: Float, val y: Float) : TextGameAction
+    /** Stack a room-upgrade card onto a placed building. */
+    data class StackHavenUpgrade(val buildingCardId: String, val upgradeCardId: String) : TextGameAction
+    /** Reposition a placed building card on the plot. */
+    data class MoveHavenCard(val cardId: String, val x: Float, val y: Float) : TextGameAction
+    /** Open the visual-novel room for a placed building stack. */
+    data class EnterHavenRoom(val buildingCardId: String) : TextGameAction
 }
 
 data class TextGameResolution(

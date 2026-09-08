@@ -3,6 +3,7 @@ package com.ihy2ln.weaverse.data.export
 import android.content.Context
 import android.net.Uri
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
+import com.ihy2ln.weaverse.core.media.MediaPackImporter
 import com.ihy2ln.weaverse.data.db.entities.ActEntity
 import com.ihy2ln.weaverse.data.db.entities.BookEntity
 import com.ihy2ln.weaverse.data.db.entities.ChapterEntity
@@ -47,6 +48,7 @@ class ProjectExportManager @Inject constructor(
     private val novelcrafterImporter: NovelcrafterImporter,
     private val manuscriptFormatImporter: ManuscriptFormatImporter,
     private val sillyTavernImporter: SillyTavernImporter,
+    private val mediaPackImporter: MediaPackImporter,
 ) {
     private val json = Json {
         prettyPrint = true
@@ -277,6 +279,13 @@ class ProjectExportManager @Inject constructor(
     }
 
     private suspend fun importZipBytes(bytes: ByteArray): ImportOutcome {
+        if (mediaPackImporter.looksLikePack(bytes)) {
+            val result = mediaPackImporter.installFromBytes(bytes)
+            return ImportOutcome(
+                "Installed media pack ${result.name} v${result.version} — ${result.installed} pictures" +
+                    if (result.failed > 0) ", ${result.failed} skipped" else "",
+            )
+        }
         if (NovelcrafterZipParser.looksLikeNovelcrafterZipBytes(bytes)) {
             val parsed = NovelcrafterZipParser.parse(bytes)
             val result = novelcrafterImporter.import(parsed)

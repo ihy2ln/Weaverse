@@ -75,6 +75,8 @@ import com.ihy2ln.weaverse.data.db.entities.decodePages
 import com.ihy2ln.weaverse.data.db.entities.encodePages
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
 import com.ihy2ln.weaverse.feature.roleplay.presets.defaultPresets
+import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatRuleset
+import com.ihy2ln.weaverse.feature.roleplay.combat.rpgCombatRulesetFromSetup
 import com.ihy2ln.weaverse.feature.roleplay.characters.abilityModifier
 import com.ihy2ln.weaverse.feature.roleplay.characters.decodeRpgSheet
 import com.ihy2ln.weaverse.feature.roleplay.characters.encodeRpgSheet
@@ -370,7 +372,7 @@ class RoleplayChatViewModel @Inject constructor(
             val rollResult = adventureRollFrom(storedCaption)
             val actionResult = rollResult?.outcome?.takeIf { it.isNotBlank() }
                 ?: adventureOutcomeFrom(storedCaption)
-            val caption = adventureStartupProseFrom(adventureProseFrom(storedCaption))
+            val caption = stripRpgMetadata(adventureStartupProseFrom(adventureProseFrom(storedCaption)))
             val isUser = m.role == "user"
             // Real names read like a messenger; fall back only when nothing is bound.
             val speaker = if (isUser) {
@@ -507,6 +509,10 @@ class RoleplayChatViewModel @Inject constructor(
                 isAdventureSetup = isAdventureSetup,
             )
         }
+        val latestAssistantText = ui.lastOrNull { it.role != "user" }?.text.orEmpty()
+        val actionChoices = parseRpgActionChoices(latestAssistantText)
+        val sceneArt = parseRpgSceneArtChoice(latestAssistantText)
+        val combatMode = rpgCombatRulesetFromSetup(boundChat?.authorsNote.orEmpty())
         _uiState.update {
             it.copy(
                 messages = ui,
@@ -518,6 +524,9 @@ class RoleplayChatViewModel @Inject constructor(
                 canGoToPreviousScene = targetScene > 1,
                 viewingCurrentScene = targetScene == totalScenes,
                 canUndoSceneAdvance = targetScene == totalScenes && sceneMarkers.isNotEmpty(),
+                rpgActionChoices = actionChoices,
+                rpgSceneArt = sceneArt,
+                rpgCombatMode = combatMode,
             )
         }
     }
@@ -2706,6 +2715,9 @@ class RoleplayChatViewModel @Inject constructor(
                 appendLine("Narrative point of view: ${details.narrativePov.ifBlank { "Third-person multiple" }}")
                 appendLine("Player role: ${if (userIsDungeonMaster) "Dungeon Master" else "Adventurer"}")
                 appendLine("Rules system: ${ruleset.label}")
+                appendLine("Game mode: ${RpgCombatRuleset.fromId(details.gameModeId.ifBlank { details.rulesetId }).id}")
+                // Kept as a compatibility alias for older saves and prompt parsers.
+                appendLine("Combat style: ${RpgCombatRuleset.fromId(details.gameModeId.ifBlank { details.rulesetId }).id}")
                 if (guidance.isNotBlank()) append(guidance)
             }.trim()
             val updated = chat.copy(
@@ -3326,6 +3338,7 @@ class RoleplayChatViewModel @Inject constructor(
         } else {
             null
         },
+        if (mode == "dungeonMaster") rpgActionDirective() else null,
         if (mode == "dungeonMaster") adventureWorldUpdateDirective() else null,
         if (mode == "dungeonMaster" && rpgSceneBeatDirective.value.isNotBlank()) {
             "Campaign scene engine (Prompt Collection → RPG → Adventure Scene Beat):\n${rpgSceneBeatDirective.value}"

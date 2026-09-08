@@ -138,3 +138,22 @@ private fun singularSceneToken(value: String): String = when (value) {
     "houses" -> "house"
     else -> value
 }
+
+/**
+ * Tag prefix marking a media row as supplied by a downloadable media pack.
+ *
+ * Pack art replaces the small core art that ships inside the APK, so bundled-asset
+ * registration must leave these rows alone or every launch would undo the download.
+ */
+internal const val MEDIA_PACK_TAG_PREFIX = "pack:"
+
+internal fun MediaEntity.isPackManaged(): Boolean =
+    parseMediaTags(tags).any { it.startsWith(MEDIA_PACK_TAG_PREFIX) }
+
+internal fun imageMimeForPath(path: String): String = when {
+    path.endsWith(".webp", ignoreCase = true) -> "image/webp"
+    path.endsWith(".gif", ignoreCase = true) -> "image/gif"
+    path.endsWith(".jpg", ignoreCase = true) ||
+        path.endsWith(".jpeg", ignoreCase = true) -> "image/jpeg"
+    else -> "image/png"
+}

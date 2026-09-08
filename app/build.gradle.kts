@@ -9,6 +9,21 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+tasks.register<Exec>("stageMediaPacks") {
+    group = "distribution"
+    description = "Builds the debug APK and reproducible Adams Haven optional media packs."
+    dependsOn("assembleDebug")
+    workingDir(rootProject.projectDir)
+    commandLine(
+        "powershell.exe",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        rootProject.file("tools/build-media-packs.ps1").absolutePath,
+    )
+}
+
 android {
     namespace = "com.ihy2ln.weaverse"
     compileSdk = 35
@@ -17,8 +32,8 @@ android {
         applicationId = "com.ihy2ln.weaverse"
         minSdk = 26
         targetSdk = 34
-        versionCode = 112
-        versionName = "1.3.70-beta"
+        versionCode = 128
+        versionName = "1.3.87-beta"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -60,7 +75,7 @@ android {
             versionNameSuffix = "-debug"
             // Keep locally installable test builds visually distinct from the
             // production app so testers cannot accidentally reopen an older release.
-            resValue("string", "app_name", "Weaverse Test 1.3.67")
+            resValue("string", "app_name", "Weaverse Test 1.3.87")
         }
     }
 

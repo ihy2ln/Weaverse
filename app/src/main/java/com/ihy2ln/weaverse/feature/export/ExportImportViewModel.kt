@@ -3,6 +3,8 @@ package com.ihy2ln.weaverse.feature.export
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ihy2ln.weaverse.core.media.InstalledMediaPack
+import com.ihy2ln.weaverse.core.media.MediaPackImporter
 import com.ihy2ln.weaverse.data.export.ExportFormat
 import com.ihy2ln.weaverse.data.export.ExportOptions
 import com.ihy2ln.weaverse.data.export.ExportSceneNode
@@ -28,6 +30,8 @@ data class ExportImportUiState(
     val status: String = "",
     val busy: Boolean = false,
     val tab: ExportTab = ExportTab.Novel,
+    val installedPacks: List<InstalledMediaPack> = emptyList(),
+    val packStatus: String = "",
 )
 
 enum class ExportTab { Novel, Roleplay, Notes }
@@ -37,11 +41,13 @@ class ExportImportViewModel @Inject constructor(
     private val exportManager: ProjectExportManager,
     private val bookRepository: BookRepository,
     private val settings: SettingsRepository,
+    private val mediaPackImporter: MediaPackImporter,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ExportImportUiState())
     val uiState: StateFlow<ExportImportUiState> = _uiState.asStateFlow()
 
     init {
+        viewModelScope.launch { refreshInstalledPacks() }
         viewModelScope.launch {
             settings.preferences.collect { prefs ->
                 val bookId = prefs.selectedBookId
@@ -137,6 +143,40 @@ class ExportImportViewModel @Inject constructor(
             }.onFailure { err ->
                 _uiState.update { it.copy(busy = false, status = "Export failed: ${err.message}") }
             }
+        }
+    }
+
+    private suspend fun refreshInstalledPacks() {
+        val packs = mediaPackImporter.installed()
+        _uiState.update { it.copy(installedPacks = packs) }
+    }
+
+    /**
+     * Installs an optional art pack downloaded separately from the APK.
+     *
+     * Pack art replaces the small core art in place, so the same screens light up at full
+     * resolution without any change to how they resolve their pictures.
+     */
+    fun installMediaPack(uri: Uri) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(busy = true, packStatus = "Installing media pack…") }
+            runCatching { mediaPackImporter.installFromUri(uri) }
+                .onSuccess { result ->
+                    refreshInstalledPacks()
+                    val failed = if (result.failed > 0) ", ${result.failed} skipped" else ""
+                    _uiState.update {
+                        it.copy(
+                            busy = false,
+                            packStatus = "${result.name} v${result.version} installed — " +
+                                "${result.installed} pictures$failed.",
+                        )
+                    }
+                }
+                .onFailure { err ->
+                    _uiState.update {
+                        it.copy(busy = false, packStatus = "Media pack failed: ${err.message}")
+                    }
+                }
         }
     }
 

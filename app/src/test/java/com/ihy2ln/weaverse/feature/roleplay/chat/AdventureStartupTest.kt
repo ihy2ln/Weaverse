@@ -26,34 +26,34 @@ class AdventureStartupTest {
         val stored = adventureStartupPrompt(userIsDungeonMaster = false)
         assertEquals(AdventureStartupPhase.Choose, adventureStartupPhase(stored))
         val visible = adventureStartupProseFrom(stored)
-        assertTrue("1 · Classic D&D opening" in visible)
-        assertTrue("2 · Build it together" in visible)
-        assertTrue("3 · Random start" in visible)
+        assertTrue("1 · AI Startup" in visible)
+        assertTrue("2 · Character Selector" in visible)
+        assertTrue("3 · Quick random start" in visible)
         assertTrue("AI Dungeon Master" in visible)
         assertFalse("[[ADVENTURE_STARTUP" in visible)
     }
 
     @Test
-    fun interviewRemainsInSetupUntilAnswersAreSubmitted() {
-        assertEquals(AdventureStartupChoice.Interview, adventureStartupChoice("2"))
+    fun aiStartupRemainsInSetupUntilAnswersAreSubmitted() {
+        assertEquals(AdventureStartupChoice.Ai, adventureStartupChoice("1"))
         assertEquals(
             AdventureStartupPhase.Questions,
-            nextAdventureStartupPhase(AdventureStartupPhase.Choose, "2"),
+            nextAdventureStartupPhase(AdventureStartupPhase.Choose, "1"),
         )
         assertEquals(
             AdventureStartupPhase.Complete,
             nextAdventureStartupPhase(AdventureStartupPhase.Questions, "At sunset in Waterdeep"),
         )
-        val directive = adventureStartupDirective(AdventureStartupPhase.Choose, "2", Random(1))
-        listOf("where", "when", "who", "what is happening", "main goal").forEach {
+        val directive = adventureStartupDirective(AdventureStartupPhase.Choose, "1", Random(1))
+        listOf("Character backstory", "Current situation", "Future goals").forEach {
             assertTrue(it in directive)
         }
-        assertTrue("Do not begin the adventure yet" in directive)
+        assertTrue("Do not roll dice during setup" in directive)
     }
 
     @Test
     fun classicAndRandomBothMakeAiDmFrameTheQuest() {
-        val classic = adventureStartupDirective(AdventureStartupPhase.Choose, "1", Random(2))
+        val classic = adventureStartupDirective(AdventureStartupPhase.Choose, "classic", Random(2))
         val random = adventureStartupDirective(AdventureStartupPhase.Choose, "3", Random(2))
         assertTrue("AI DM—not the player—must begin the quest chain" in classic)
         assertTrue("AI DM—not the player—must begin the quest chain" in random)

@@ -1,14 +1,13 @@
-Adams Haven Text Game motion-scene slots
+# Adams Haven playing-card motion faces
 
-Place muted, seamlessly looping game captures or FMV exports here using:
+Muted looping MP4 card faces used by the Text Game hand, rewards, and card
+library. Each file pairs with the still PNG at:
 
-- farm.mp4
-- town.mp4
-- home.mp4
+  assets/images/adams_haven/<category>/<slug>.png
 
-The Text Game player prefers these motion scenes when present. If a file is
-missing, it automatically uses the matching still image from
-assets/images/adams_haven/locations, then the built-in placeholder.
+Naming:
 
-MP4 (H.264) is the preferred Android-compatible export. Keep important visual
-content inside the frame because the player preserves the video's aspect ratio.
+  videos/adams_haven/<category>/<slug>.mp4
+
+Preferred export: H.264, yuv420p, even dimensions, no audio, seamless loop.
+If a motion file is missing, the UI falls back to the PNG still.

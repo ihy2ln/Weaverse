@@ -1,0 +1,92 @@
+{
+  "schema": 1,
+  "_note": "Declares how Adams Haven Godot art is re-encoded into the Weaverse APK core set and into downloadable media packs. The source tree is READ-ONLY; nothing is ever written back to it.",
+  "sourceRoot": "S:/AI/Game Engine/Godot/AdamsHavenCardGame/art",
+  "assetRoot": "app/src/main/assets",
+  "packOut": "build/media-packs",
+  "packs": {
+    "adams-haven-hires": {
+      "name": "Adams Haven — High Resolution Art",
+      "version": 1,
+      "description": "Full-resolution monster portraits and the complete dungeon arena set. Optional; the app ships playable without it."
+    }
+  },
+  "groups": [
+    {
+      "id": "monsters",
+      "source": "monster",
+      "dest": "images/adams_haven/monsters/gkom",
+      "maxEdge": 900,
+      "quality": 82,
+      "mediaId": "adams-haven-gkom-{stem}",
+      "category": "Adams Haven / Monsters / GKOM",
+      "tags": ["adams-haven", "text-game", "gkom", "monster", "enemy", "battle", "{stem}"],
+      "hiresPack": "adams-haven-hires",
+      "hiresMaxEdge": 0
+    },
+    {
+      "id": "buildings",
+      "source": "build",
+      "dest": "images/adams_haven/haven/build",
+      "maxEdge": 512,
+      "quality": 84,
+      "mediaId": "adams-haven-build-{stem}",
+      "category": "Adams Haven / Haven / Buildings",
+      "tags": ["adams-haven", "text-game", "haven", "building", "card", "{stem}"]
+    },
+    {
+      "id": "rooms",
+      "source": "room",
+      "dest": "images/adams_haven/haven/room",
+      "maxEdge": 512,
+      "quality": 84,
+      "mediaId": "adams-haven-room-{stem}",
+      "category": "Adams Haven / Haven / Rooms",
+      "tags": ["adams-haven", "text-game", "haven", "room", "interior", "{stem}"]
+    },
+    {
+      "id": "crops",
+      "source": "crop",
+      "dest": "images/adams_haven/haven/crop",
+      "maxEdge": 384,
+      "quality": 84,
+      "mediaId": "adams-haven-crop-{stem}",
+      "category": "Adams Haven / Haven / Crops",
+      "tags": ["adams-haven", "text-game", "haven", "farm", "crop", "{stem}"]
+    },
+    {
+      "id": "tables",
+      "source": "boards",
+      "dest": "images/adams_haven/haven/tables",
+      "maxEdge": 1024,
+      "quality": 84,
+      "mediaId": "adams-haven-table-{stem}",
+      "category": "Adams Haven / Haven / Tables",
+      "tags": ["adams-haven", "text-game", "haven", "board", "table", "{stem}"]
+    },
+    {
+      "id": "roomicons",
+      "source": "ui",
+      "dest": "images/adams_haven/ui",
+      "maxEdge": 0,
+      "copyAs": "png",
+      "mediaId": "adams-haven-ui-{stem}",
+      "category": "Adams Haven / UI / Room Icons",
+      "tags": ["adams-haven", "text-game", "ui", "icon", "dungeon", "{stem}"]
+    },
+    {
+      "id": "arenas",
+      "source": "battle",
+      "dest": "images/adams_haven/battle",
+      "recursive": true,
+      "maxEdge": 1100,
+      "quality": 82,
+      "coreVariantsPerCategory": 1,
+      "mediaId": "adams-haven-arena-{stem}",
+      "category": "Adams Haven / Battle / {category}",
+      "tags": ["adams-haven", "text-game", "battle", "arena", "scene:battle", "scene:dungeon", "arena:{category}", "{stem}"],
+      "hiresPack": "adams-haven-hires",
+      "hiresMaxEdge": 1100
+    }
+  ]
+}

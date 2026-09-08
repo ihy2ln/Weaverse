@@ -5,7 +5,11 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
@@ -13,6 +17,8 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,6 +28,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -45,22 +52,34 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import kotlin.math.min
+import kotlin.math.roundToInt
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
@@ -68,6 +87,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.util.fastAny
+import androidx.compose.ui.util.fastAll
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
@@ -75,9 +96,11 @@ import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import com.ihy2ln.weaverse.core.ui.components.LoopingVideoBackground
 import java.io.File
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 @Composable
 fun TextGamesScreen(
@@ -102,6 +125,9 @@ fun TextGamesScreen(
             definition = ui.definition,
             collectedIds = ui.game.persistent.collection,
             imagePaths = ui.cardImagePaths,
+            motionPaths = ui.cardMotionPaths,
+            defeatedMonsterIds = ui.game.persistent.defeatedMonsters,
+            gkomImagePaths = ui.gkomImagePaths,
             onBack = { showingCards = false },
         )
     } else if (!playing) {
@@ -223,10 +249,46 @@ private fun TextGamePlayer(
     val node = ui.definition.node(ui.game.run.nodeId)
     val tokens = inkTokens()
     val battleFocus = node?.type == TextGameNodeType.Battle
-    LaunchedEffect(node?.id, battleFocus) { onBattleFocus(battleFocus) }
+    val tapWorld = node != null && isTapWorldNode(node.id)
+    val compactChrome = battleFocus || tapWorld
+    LaunchedEffect(node?.id, compactChrome) { onBattleFocus(compactChrome) }
     if (node == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Button(onClick = { dispatch(TextGameAction.Reset) }) { Text("Repair save and restart") }
+        }
+        return
+    }
+
+    if (tapWorld) {
+        Column(
+            Modifier.fillMaxSize().padding(InkSpacing.sm),
+            verticalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+            ) {
+                Text(
+                    node.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Text("✦", modifier = Modifier.clickable(onClick = onOpenPrompt).padding(horizontal = InkSpacing.xs))
+                Text("Cards", modifier = Modifier.clickable(onClick = onCards).padding(horizontal = InkSpacing.xs))
+                Text("Modes", modifier = Modifier.clickable(onClick = onShelf).padding(horizontal = InkSpacing.xs))
+            }
+            TapWorldPlay(
+                ui = ui,
+                node = node,
+                isChoiceEnabled = isChoiceEnabled,
+                dispatch = dispatch,
+                modifier = Modifier.weight(1f),
+            )
+            ui.saveError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
         return
     }
@@ -295,29 +357,70 @@ private fun TextGamePlayer(
         } else if (node.type == TextGameNodeType.Battle) {
             BattleGameBoard(ui, node, canPlay, canSelectCard, dispatch)
         } else {
+            var farmMinigame by remember { mutableStateOf<FarmMinigameRequest?>(null) }
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val wide = maxWidth >= 840.dp
+                val onPlotTap: (Int) -> Unit = { plotId ->
+                    handleFarmPlotTap(ui, plotId, isChoiceEnabled, dispatch) { farmMinigame = it }
+                }
                 if (wide) {
                     Row(horizontalArrangement = Arrangement.spacedBy(InkSpacing.md)) {
                         Column(Modifier.weight(1.35f), verticalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
-                            ScenePicture(node, ui.sceneImagePath, ui.sceneMotionPath, ui.game, isChoiceEnabled) { choiceId ->
-                                dispatch(TextGameAction.Choose(choiceId))
-                            }
+                            ScenePicture(
+                                node = node,
+                                imagePath = ui.sceneImagePath,
+                                motionPath = ui.sceneMotionPath,
+                                state = ui.game,
+                                isChoiceEnabled = isChoiceEnabled,
+                                onHotspot = { choiceId -> dispatch(TextGameAction.Choose(choiceId)) },
+                                onPlotTap = onPlotTap,
+                                dispatch = dispatch,
+                            )
                             StatusStrip(ui.game)
                         }
                         Column(Modifier.weight(.85f), verticalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
-                            StoryAndControls(ui, node, isChoiceEnabled, canPlay, dispatch, onGenerateMissions, onOpenPrompt)
+                            StoryAndControls(ui, node, isChoiceEnabled, canPlay, dispatch, onGenerateMissions, onOpenPrompt) {
+                                farmMinigame = it
+                            }
                         }
                     }
                 } else {
                     Column(verticalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
-                        ScenePicture(node, ui.sceneImagePath, ui.sceneMotionPath, ui.game, isChoiceEnabled) { choiceId ->
-                            dispatch(TextGameAction.Choose(choiceId))
-                        }
+                        ScenePicture(
+                            node = node,
+                            imagePath = ui.sceneImagePath,
+                            motionPath = ui.sceneMotionPath,
+                            state = ui.game,
+                            isChoiceEnabled = isChoiceEnabled,
+                            onHotspot = { choiceId -> dispatch(TextGameAction.Choose(choiceId)) },
+                            onPlotTap = onPlotTap,
+                            dispatch = dispatch,
+                        )
                         StatusStrip(ui.game)
-                        StoryAndControls(ui, node, isChoiceEnabled, canPlay, dispatch, onGenerateMissions, onOpenPrompt)
+                        StoryAndControls(ui, node, isChoiceEnabled, canPlay, dispatch, onGenerateMissions, onOpenPrompt) {
+                            farmMinigame = it
+                        }
                     }
                 }
+            }
+            farmMinigame?.let { request ->
+                FarmTimingMinigame(
+                    label = request.label,
+                    onSkip = {
+                        when (request) {
+                            is FarmMinigameRequest.Plant -> dispatch(TextGameAction.FarmPlant(request.plotId, 0f))
+                            is FarmMinigameRequest.Harvest -> dispatch(TextGameAction.FarmHarvest(request.plotId, 0f))
+                        }
+                        farmMinigame = null
+                    },
+                    onStrike = { score ->
+                        when (request) {
+                            is FarmMinigameRequest.Plant -> dispatch(TextGameAction.FarmPlant(request.plotId, score))
+                            is FarmMinigameRequest.Harvest -> dispatch(TextGameAction.FarmHarvest(request.plotId, score))
+                        }
+                        farmMinigame = null
+                    },
+                )
             }
         }
         ui.saveError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -340,6 +443,7 @@ private fun StoryAndControls(
     dispatch: (TextGameAction) -> Unit,
     onGenerateMissions: () -> Unit,
     onOpenPrompt: () -> Unit,
+    onFarmMinigame: (FarmMinigameRequest) -> Unit = {},
 ) {
     val tokens = inkTokens()
     Text(node.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
@@ -387,7 +491,12 @@ private fun StoryAndControls(
             TextGameNodeType.Reward -> RewardControls(ui, dispatch)
             TextGameNodeType.Gacha -> GachaControls(ui, node, isChoiceEnabled, dispatch)
             TextGameNodeType.Ending -> EndingSummary(ui, dispatch)
-            else -> ChoiceControls(ui.game, node, isChoiceEnabled, dispatch, onOpenPrompt)
+            else -> {
+                if (node.id == "kitchen") {
+                    FarmBoard(ui, dispatch, onFarmMinigame)
+                }
+                ChoiceControls(ui.game, node, isChoiceEnabled, dispatch, onOpenPrompt)
+            }
         }
     }
 }
@@ -576,6 +685,8 @@ private fun ScenePicture(
     state: TextGameState,
     isChoiceEnabled: (TextGameState, TextGameChoice) -> Boolean,
     onHotspot: (String) -> Unit,
+    onPlotTap: (Int) -> Unit = {},
+    dispatch: (TextGameAction) -> Unit = {},
 ) {
     val colors = when (node.type) {
         TextGameNodeType.Battle -> listOf(Color(0xFF201A39), Color(0xFF7B3D50))
@@ -584,15 +695,25 @@ private fun ScenePicture(
         TextGameNodeType.Ending -> listOf(Color(0xFF182A2C), Color(0xFFB58C5D))
         else -> listOf(Color(0xFF111A2A), Color(0xFF9B5C5B))
     }
+    val boardKind = HavenBoardRules.boardKind(node.id)
+    val havenBoardScene = boardKind != null
+    val farm = remember(state.persistent) { liveFarm(state.persistent) }
     BoxWithConstraints(
-        // Half the full-card aspect: the scene picture takes half the vertical
-        // space it used to, while ContentScale.Fit keeps the art fully visible.
-        Modifier.fillMaxWidth().aspectRatio((941f / 1672f) * 2f).clip(RoundedCornerShape(18.dp))
+        Modifier.fillMaxWidth()
+            .aspectRatio(
+                when (boardKind) {
+                    HavenBoardKind.Town -> 2f / 3f
+                    HavenBoardKind.Farm -> 3f / 2f
+                    null -> if (node.id in setOf("farm", "return_farm", "town", "return_town")) 3f / 2f else (941f / 1672f) * 2f
+                },
+            )
+            .clip(RoundedCornerShape(18.dp))
             .background(Brush.verticalGradient(colors)),
         contentAlignment = Alignment.Center,
     ) {
         val model = imagePath?.let(::textGameImageModel) ?: node.bundledSceneAssetPath?.let { "file:///android_asset/$it" }
-        if (motionPath != null) {
+        val showMotion = motionPath != null && !havenBoardScene
+        if (showMotion) {
             LoopingVideoBackground(path = motionPath, modifier = Modifier.fillMaxSize(), fitInside = true)
             Text(
                 "MOTION SCENE",
@@ -617,19 +738,137 @@ private fun ScenePicture(
                 Text("Picture slot: ${node.sceneMediaId ?: "none"}", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = .7f))
             }
         }
+        if (boardKind != null) {
+            HavenBoardOverlay(
+                boardKind = boardKind,
+                havenBoard = state.persistent.havenBoard,
+                dispatch = dispatch,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
         node.hotspots.forEach { hotspot ->
-            val choice = node.choices.firstOrNull { it.id == hotspot.choiceId } ?: return@forEach
-            Button(
-                onClick = { onHotspot(hotspot.choiceId) },
-                enabled = isChoiceEnabled(state, choice),
+            val plotId = hotspot.farmPlotId
+            val choice = node.choices.firstOrNull { it.id == hotspot.choiceId }
+            val enabled = when {
+                plotId != null && !havenBoardScene -> plotChipEnabled(farm, plotId, node, state, isChoiceEnabled)
+                choice != null -> isChoiceEnabled(state, choice)
+                hotspot.talkProse.isNotBlank() || hotspot.npcName.isNotBlank() -> true
+                else -> false
+            }
+            if (plotId != null && havenBoardScene) return@forEach
+            if (plotId == null && choice == null && hotspot.talkProse.isBlank() && hotspot.npcName.isBlank()) return@forEach
+            val label = if (plotId != null) plotChipLabel(farm, plotId) else hotspot.label
+            val fill = if (plotId != null) plotChipFill(farm, plotId) else Color(0xE6281C12)
+            MapHotspotChip(
+                label = label,
+                enabled = enabled,
+                fill = fill,
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .offset(
-                        x = (maxWidth * hotspot.x.coerceIn(0f, 1f) - 48.dp).coerceAtLeast(0.dp),
-                        y = (maxHeight * hotspot.y.coerceIn(0f, 1f) - 20.dp).coerceAtLeast(0.dp),
+                        x = (maxWidth * hotspot.x.coerceIn(0f, 1f) - 44.dp).coerceAtLeast(0.dp),
+                        y = (maxHeight * hotspot.y.coerceIn(0f, 1f) - 16.dp).coerceAtLeast(0.dp),
                     ),
-            ) { Text(hotspot.label) }
+                onClick = {
+                    if (plotId != null) onPlotTap(plotId) else if (choice != null) onHotspot(hotspot.choiceId) else Unit
+                },
+            )
         }
+    }
+}
+
+@Composable
+private fun MapHotspotChip(
+    label: String,
+    enabled: Boolean,
+    fill: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Text(
+        text = label,
+        color = if (enabled) Color(0xFFFFF4DC) else Color(0x99E8D8B0),
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.Bold,
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (enabled) fill else fill.copy(alpha = 0.45f))
+            .border(1.dp, Color(0xFFFFD86A).copy(alpha = if (enabled) 0.9f else 0.3f), RoundedCornerShape(14.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+    )
+}
+
+private fun liveFarm(persistent: TextGamePersistentState): FarmState {
+    val cleared = "farm_cleared" in persistent.flags || persistent.farm.plots.isNotEmpty()
+    val capacity = FarmRules.plotCapacity(persistent.farmLevel, cleared)
+    return FarmRules.refreshReady(
+        FarmRules.syncBattlesFought(
+            FarmRules.ensureCapacity(persistent.farm, capacity),
+            persistent.battlesWon,
+        ),
+    )
+}
+
+private fun plotChipLabel(farm: FarmState, plotId: Int): String {
+    val plot = farm.plots.firstOrNull { it.id == plotId }
+    return when {
+        plot == null -> if (plotId == 0) "Clear plot" else "Locked"
+        plot.soil == FarmSoil.Wild -> "Till"
+        plot.soil == FarmSoil.Tilled -> "Plant"
+        plot.soil == FarmSoil.Planted && !plot.watered -> "Water"
+        plot.soil == FarmSoil.Planted -> "Growing"
+        plot.soil == FarmSoil.Ready -> "Harvest"
+        else -> "Plot"
+    }
+}
+
+private fun plotChipFill(farm: FarmState, plotId: Int): Color {
+    val plot = farm.plots.firstOrNull { it.id == plotId }
+    return when (plot?.soil) {
+        FarmSoil.Wild -> Color(0xE65C3A1E)
+        FarmSoil.Tilled -> Color(0xE67A4E24)
+        FarmSoil.Planted -> Color(0xE82E6A32)
+        FarmSoil.Ready -> Color(0xF0C49218)
+        null -> Color(0xE6281C12)
+    }
+}
+
+private fun plotChipEnabled(
+    farm: FarmState,
+    plotId: Int,
+    node: TextGameNode,
+    state: TextGameState,
+    isChoiceEnabled: (TextGameState, TextGameChoice) -> Boolean,
+): Boolean {
+    val plot = farm.plots.firstOrNull { it.id == plotId }
+    if (plot != null) return plot.soil != FarmSoil.Planted || !plot.watered
+    val clear = node.choices.firstOrNull { it.id == "clear_plot" }
+    return plotId == 0 && clear != null && isChoiceEnabled(state, clear)
+}
+
+private fun handleFarmPlotTap(
+    ui: TextGameUiState,
+    plotId: Int,
+    isChoiceEnabled: (TextGameState, TextGameChoice) -> Boolean,
+    dispatch: (TextGameAction) -> Unit,
+    onMinigame: (FarmMinigameRequest) -> Unit,
+) {
+    val node = ui.definition.node(ui.game.run.nodeId) ?: return
+    val farm = liveFarm(ui.game.persistent)
+    val plot = farm.plots.firstOrNull { it.id == plotId }
+    if (plot == null) {
+        val clear = node.choices.firstOrNull { it.id == "clear_plot" }
+        if (plotId == 0 && clear != null && isChoiceEnabled(ui.game, clear)) {
+            dispatch(TextGameAction.Choose("clear_plot"))
+        }
+        return
+    }
+    when (plot.soil) {
+        FarmSoil.Wild -> dispatch(TextGameAction.FarmTill(plot.id))
+        FarmSoil.Tilled -> if (ui.game.persistent.seeds > 0) onMinigame(FarmMinigameRequest.Plant(plot.id))
+        FarmSoil.Planted -> if (!plot.watered) dispatch(TextGameAction.FarmWater(plot.id))
+        FarmSoil.Ready -> onMinigame(FarmMinigameRequest.Harvest(plot.id))
     }
 }
 
@@ -645,10 +884,12 @@ private fun DungeonExploreView(
 ) {
     val floor = dungeon.currentFloor()
     val exits = DungeonRules.exits(dungeon)
+    val here = dungeon.currentRoom()
+    val hereKind = here?.let { DungeonKind.fromIndex(it.kind) }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
             Text(
-                dungeon.floorName(),
+                "SILVERWOOD — ${dungeon.floorName().uppercase()}",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFFE8C87A),
@@ -658,11 +899,29 @@ private fun DungeonExploreView(
             OutlinedButton(onClick = onCards) { Text("Cards") }
             OutlinedButton(onClick = onShelf) { Text("Modes") }
         }
-        DungeonMapPanel(dungeon, Modifier.fillMaxWidth())
-        StatusStrip(ui.game)
-        if (ui.game.run.lastLog.isNotBlank()) {
-            Text(ui.game.run.lastLog, color = Color(0xFFFFD479), style = MaterialTheme.typography.bodySmall)
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val wide = maxWidth >= 720.dp
+            if (wide) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.md)) {
+                    DungeonMapPanel(
+                        dungeon = dungeon,
+                        onCellTap = { x, y -> dispatch(TextGameAction.DungeonStep(x, y)) },
+                        modifier = Modifier.weight(1.7f),
+                    )
+                    DungeonSidePanel(ui, dungeon, hereKind, Modifier.weight(1f))
+                }
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
+                    DungeonMapPanel(
+                        dungeon = dungeon,
+                        onCellTap = { x, y -> dispatch(TextGameAction.DungeonStep(x, y)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    DungeonSidePanel(ui, dungeon, hereKind, Modifier.fillMaxWidth())
+                }
+            }
         }
+        StatusStrip(ui.game)
         Text("DOORS", style = MaterialTheme.typography.labelSmall, color = inkTokens().secondaryText)
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
             exits.forEach { exit ->
@@ -694,7 +953,7 @@ private fun DungeonExploreView(
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
             if (DungeonRules.canDescend(dungeon)) {
-                Button(onClick = { dispatch(TextGameAction.DungeonStep(dungeon.atX, dungeon.atY)) }) {
+                Button(onClick = { dispatch(TextGameAction.DescendDungeon) }) {
                     Text("▼ Take the stairs down")
                 }
             }
@@ -705,60 +964,156 @@ private fun DungeonExploreView(
     }
 }
 
-/** The battle map grid: parchment floor, visible grid, fog of war over rooms. */
 @Composable
-private fun DungeonMapPanel(dungeon: DungeonState, modifier: Modifier = Modifier) {
+private fun DungeonSidePanel(
+    ui: TextGameUiState,
+    dungeon: DungeonState,
+    hereKind: DungeonKind?,
+    modifier: Modifier = Modifier,
+) {
     val floor = dungeon.currentFloor()
-    Canvas(
+    val fights = floor?.fights() ?: 0
+    val cleared = floor?.fightsCleared() ?: 0
+    Column(
+        modifier
+            .clip(RoundedCornerShape(10.dp))
+            .border(1.dp, Color(0xFF6B5326))
+            .background(Color(0xFF1A140C))
+            .padding(InkSpacing.md),
+        verticalArrangement = Arrangement.spacedBy(InkSpacing.sm),
+    ) {
+        Text(
+            hereKind?.let { "${it.glyph} ${it.label}" } ?: "Dungeon",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFFE8C87A),
+        )
+        if (ui.game.persistent.missionTitle.isNotBlank()) {
+            Text(
+                "Contract: ${ui.game.persistent.missionTitle}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFFC9A0F0),
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                "Clear the floor boss to complete the contract.",
+                style = MaterialTheme.typography.bodySmall,
+                color = inkTokens().secondaryText,
+            )
+        }
+        Text(
+            "Floor progress · $cleared / $fights fights cleared",
+            style = MaterialTheme.typography.labelMedium,
+            color = Color(0xFFB8A078),
+        )
+        if (ui.game.run.lastLog.isNotBlank()) {
+            Text(ui.game.run.lastLog, color = Color(0xFFFFD479), style = MaterialTheme.typography.bodySmall)
+        }
+        Text(
+            "Tap an adjacent door on the map, or a cleared room further in.",
+            style = MaterialTheme.typography.labelSmall,
+            color = inkTokens().secondaryText,
+        )
+    }
+}
+
+/** Godot-style battlemat: full grid fog, walls, door gaps, reach marks, tap-to-move. */
+@Composable
+private fun DungeonMapPanel(
+    dungeon: DungeonState,
+    onCellTap: (Int, Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val floor = dungeon.currentFloor()
+    val exits = remember(dungeon) { DungeonRules.exits(dungeon) }
+    val cols = floor?.sizeX ?: 6
+    val rows = floor?.sizeY ?: 5
+    Box(
         modifier
             .fillMaxWidth()
-            .height(250.dp)
+            .height(280.dp)
             .clip(RoundedCornerShape(10.dp))
-            .border(1.dp, Color(0xFF6B5326)),
+            .border(1.dp, Color(0xFF6B5326))
+            .pointerInput(dungeon.atX, dungeon.atY, cols, rows, exits) {
+                detectTapGestures { offset ->
+                    val fl = dungeon.currentFloor() ?: return@detectTapGestures
+                    val cell = min(size.width / fl.sizeX, size.height / fl.sizeY)
+                    val ox = (size.width - cell * fl.sizeX) / 2f
+                    val oy = (size.height - cell * fl.sizeY) / 2f
+                    val gx = ((offset.x - ox) / cell).toInt()
+                    val gy = ((offset.y - oy) / cell).toInt()
+                    if (gx !in 0 until fl.sizeX || gy !in 0 until fl.sizeY) return@detectTapGestures
+                    if (fl.room(gx, gy) == null) return@detectTapGestures
+                    onCellTap(gx, gy)
+                }
+            },
     ) {
-        drawRect(Brush.verticalGradient(listOf(Color(0xFF241C10), Color(0xFF54421F), Color(0xFF241C10))))
-        val cols = floor?.sizeX ?: 6
-        val rows = floor?.sizeY ?: 5
-        val cell = min(size.width / cols, size.height / rows)
-        val ox = (size.width - cell * cols) / 2f
-        val oy = (size.height - cell * rows) / 2f
-        val gridColor = Color(0xFF171208).copy(alpha = 0.85f)
-        for (i in 0..cols) {
-            drawLine(gridColor, Offset(ox + i * cell, oy), Offset(ox + i * cell, oy + rows * cell), 1f)
-        }
-        for (j in 0..rows) {
-            drawLine(gridColor, Offset(ox, oy + j * cell), Offset(ox + cols * cell, oy + j * cell), 1f)
-        }
-        floor?.rooms?.forEach { room ->
-            val x = ox + room.x * cell
-            val y = oy + room.y * cell
-            val rect = Rect(Offset(x + 1.5f, y + 1.5f), Size(cell - 3f, cell - 3f))
-            val sight = DungeonRules.sight(dungeon, room.x, room.y)
-            when (sight) {
-                DungeonSight.Known -> drawRect(
-                    color = Color(0xFF8A6E3A).copy(alpha = 0.9f),
-                    topLeft = rect.topLeft,
-                    size = rect.size,
-                )
-                DungeonSight.Peeked -> drawRect(
-                    color = Color(0xFF5C4A28).copy(alpha = 0.85f),
-                    topLeft = rect.topLeft,
-                    size = rect.size,
-                )
-                DungeonSight.Hidden -> drawRect(
-                    color = Color(0xFF100C07).copy(alpha = 0.88f),
-                    topLeft = rect.topLeft,
-                    size = rect.size,
-                )
+        Canvas(Modifier.fillMaxSize()) {
+            drawRect(Brush.verticalGradient(listOf(Color(0xFF241C10), Color(0xFF54421F), Color(0xFF241C10))))
+            val cell = min(size.width / cols, size.height / rows)
+            val ox = (size.width - cell * cols) / 2f
+            val oy = (size.height - cell * rows) / 2f
+            val wallColor = Color(0xFF120E08).copy(alpha = 0.92f)
+            val wallW = cell * 0.055f
+            val doorGap = 0.44f
+
+            // Fog every grid cell so unexplored shape is not readable.
+            for (gx in 0 until cols) {
+                for (gy in 0 until rows) {
+                    val x = ox + gx * cell
+                    val y = oy + gy * cell
+                    val room = floor?.room(gx, gy)
+                    val sight = if (room == null) DungeonSight.Hidden else DungeonRules.sight(dungeon, gx, gy)
+                    val fill = when {
+                        room == null || sight == DungeonSight.Hidden -> Color(0xFF100C07).copy(alpha = 0.92f)
+                        sight == DungeonSight.Peeked -> Color(0xFF5C4A28).copy(alpha = 0.85f)
+                        else -> Color(0xFF8A6E3A).copy(alpha = 0.9f)
+                    }
+                    drawRect(fill, topLeft = Offset(x + 1f, y + 1f), size = Size(cell - 2f, cell - 2f))
+                }
             }
-            val isHere = room.x == dungeon.atX && room.y == dungeon.atY
-            if (sight != DungeonSight.Hidden) {
+
+            floor?.rooms?.forEach { room ->
+                val sight = DungeonRules.sight(dungeon, room.x, room.y)
+                if (sight == DungeonSight.Hidden) return@forEach
+                val x = ox + room.x * cell
+                val y = oy + room.y * cell
+                val rect = Rect(Offset(x, y), Size(cell, cell))
+                val isHere = room.x == dungeon.atX && room.y == dungeon.atY
+                val isReach = exits.any { it.x == room.x && it.y == room.y }
+
+                // Walls + door gaps on each edge.
+                DOOR_OFFSETS.forEach { (door, _) ->
+                    drawDoorEdge(rect, door, room.hasDoor(door), wallColor, wallW, doorGap)
+                }
+
+                if (isHere) {
+                    drawRect(
+                        Color(0xFF4CCFE0).copy(alpha = 0.35f),
+                        topLeft = Offset(x + cell * 0.12f, y + cell * 0.12f),
+                        size = Size(cell * 0.76f, cell * 0.76f),
+                    )
+                } else if (isReach) {
+                    drawRect(
+                        Color(0xFFFFD14F).copy(alpha = 0.22f),
+                        topLeft = Offset(x + cell * 0.12f, y + cell * 0.12f),
+                        size = Size(cell * 0.76f, cell * 0.76f),
+                    )
+                }
+
                 val kind = DungeonKind.fromIndex(room.kind)
                 if (room.cleared && kind.isFightKind) {
                     drawRect(
-                        color = Color(0xFF2E3A2A).copy(alpha = 0.7f),
-                        topLeft = rect.topLeft,
-                        size = rect.size,
+                        Color(0xFF2E3A2A).copy(alpha = 0.55f),
+                        topLeft = Offset(x + 2f, y + 2f),
+                        size = Size(cell - 4f, cell - 4f),
+                    )
+                }
+                if (kind.isFightKind && !room.cleared) {
+                    drawCircle(
+                        Color(0xFFEB4D48),
+                        radius = cell * 0.055f,
+                        center = Offset(x + cell - cell * 0.14f, y + cell * 0.14f),
                     )
                 }
                 val glyph = when {
@@ -766,8 +1121,8 @@ private fun DungeonMapPanel(dungeon: DungeonState, modifier: Modifier = Modifier
                     else -> kind.glyph
                 }
                 val paint = android.graphics.Paint().apply {
-                    color = if (isHere) 0xFFFFE8B0.toInt() else 0xFFE8D8B0.toInt()
-                    textSize = cell * 0.5f
+                    color = if (isHere) 0xFFFFE8B0.toInt() else if (sight == DungeonSight.Peeked) 0xFFB8A078.toInt() else 0xFFE8D8B0.toInt()
+                    textSize = cell * 0.42f
                     textAlign = android.graphics.Paint.Align.CENTER
                     isAntiAlias = true
                 }
@@ -779,15 +1134,55 @@ private fun DungeonMapPanel(dungeon: DungeonState, modifier: Modifier = Modifier
                 )
                 if (isHere) {
                     drawCircle(
-                        Color(0xFFFFE8B0),
-                        radius = cell * 0.46f,
+                        Color(0xFF4CCFE0),
+                        radius = cell * 0.42f,
                         center = Offset(x + cell / 2f, y + cell / 2f),
-                        style = Stroke(width = 2f),
+                        style = Stroke(width = 2.5f),
                     )
                 }
             }
         }
     }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawDoorEdge(
+    rect: Rect,
+    door: Int,
+    hasDoor: Boolean,
+    color: Color,
+    wallW: Float,
+    doorGap: Float,
+) {
+    val a: Offset
+    val b: Offset
+    when (door) {
+        DOOR_N -> {
+            a = rect.topLeft
+            b = Offset(rect.right, rect.top)
+        }
+        DOOR_S -> {
+            a = Offset(rect.left, rect.bottom)
+            b = Offset(rect.right, rect.bottom)
+        }
+        DOOR_E -> {
+            a = Offset(rect.right, rect.top)
+            b = Offset(rect.right, rect.bottom)
+        }
+        else -> {
+            a = rect.topLeft
+            b = Offset(rect.left, rect.bottom)
+        }
+    }
+    if (!hasDoor) {
+        drawLine(color, a, b, wallW, StrokeCap.Butt)
+        return
+    }
+    val gap = doorGap.coerceIn(0.1f, 0.8f)
+    val along = Offset(b.x - a.x, b.y - a.y)
+    val g0 = Offset(a.x + along.x * ((1f - gap) / 2f), a.y + along.y * ((1f - gap) / 2f))
+    val g1 = Offset(a.x + along.x * ((1f + gap) / 2f), a.y + along.y * ((1f + gap) / 2f))
+    drawLine(color, a, g0, wallW, StrokeCap.Butt)
+    drawLine(color, g1, b, wallW, StrokeCap.Butt)
 }
 
 @Composable
@@ -801,8 +1196,13 @@ private fun StatusStrip(state: TextGameState) {
         state.run.resources.forEach { StatusChip("⚔ ${it.actorName.uppercase()}", "${it.ap} AP · ${it.ep} EP", Color(0xFF76CFC0)) }
         StatusChip("✦ SUMMONER", "${state.persistent.summonerSp} SP", Color(0xFFD5A85A))
         StatusChip("● POUCH", "${state.persistent.coins} coin · ${state.persistent.seeds} seed · ${state.persistent.materials} material", Color(0xFF86BEEA))
-        if (state.persistent.harvest > 0 || state.persistent.dishes > 0) {
-            StatusChip("♣ FARM", "${state.persistent.harvest} produce · ${state.persistent.dishes} dish", Color(0xFF77B982))
+        if (state.persistent.harvest > 0 || state.persistent.dishes > 0 || state.persistent.farm.pantry.isNotEmpty()) {
+            val packed = state.persistent.farm.packedDish?.let { " · packed $it" } ?: ""
+            StatusChip(
+                "♣ FARM",
+                "${state.persistent.harvest} produce · ${state.persistent.dishes} dish$packed",
+                Color(0xFF77B982),
+            )
         }
         if (state.persistent.farmLevel > 1 || state.persistent.townLevel > 0 || state.persistent.homeLevel > 1) {
             StatusChip(
@@ -855,6 +1255,16 @@ private enum class BattleViewMode(val label: String) {
     Classic("Classic"),
 }
 
+/** Live drag of a hand card across the battle board toward an enemy drop target. */
+private data class BattleCardDrag(
+    val cardId: String,
+    val pointerRoot: Offset,
+    val grabInCard: Offset,
+    val cardSize: Size,
+)
+
+private fun TextGameCard.needsEnemyTarget(): Boolean = damage > 0 || markBonus > 0
+
 private fun acronymOf(name: String): String = name
     .split(Regex("[^A-Za-z0-9]+"))
     .filter(String::isNotBlank)
@@ -876,6 +1286,28 @@ private fun BattleGameBoard(
     val pale = Color(0xFFF4EBDD)
     val secondary = Color(0xFFC8B9A5)
     val encounter = node.encounterId?.let(ui.definition::encounter) ?: return
+    val enemyDropBounds = remember { mutableStateMapOf<String, Rect>() }
+    var drag by remember { mutableStateOf<BattleCardDrag?>(null) }
+    var boardOrigin by remember { mutableStateOf(Offset.Zero) }
+    val hoverEnemyId = drag?.let { current ->
+        enemyDropBounds.entries.firstOrNull { (_, bounds) ->
+            bounds.contains(current.pointerRoot)
+        }?.key
+    }
+
+    fun playDraggedCard(cardId: String, targetId: String?) {
+        val card = ui.definition.card(cardId) ?: return
+        if (!canSelectCard(card)) return
+        if (card.needsEnemyTarget()) {
+            val living = targetId?.takeIf { id -> ui.game.run.enemies.any { it.id == id && it.health > 0 } }
+                ?: ui.game.run.selectedTargetId?.takeIf { id -> ui.game.run.enemies.any { it.id == id && it.health > 0 } }
+                ?: return
+            dispatch(TextGameAction.SelectTarget(living))
+            dispatch(TextGameAction.PlayCard(cardId))
+        } else {
+            dispatch(TextGameAction.PlayCard(cardId))
+        }
+    }
 
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         var viewMode by rememberSaveable {
@@ -886,7 +1318,11 @@ private fun BattleGameBoard(
             colors = CardDefaults.cardColors(containerColor = battleBackground),
             shape = RoundedCornerShape(18.dp),
         ) {
-            Box {
+            Box(
+                Modifier.onGloballyPositioned { coords ->
+                    boardOrigin = coords.boundsInRoot().topLeft
+                },
+            ) {
                 ui.sceneImagePath?.let { imagePath ->
                     AsyncImage(
                         model = textGameImageModel(imagePath),
@@ -911,8 +1347,6 @@ private fun BattleGameBoard(
                             style = MaterialTheme.typography.labelMedium,
                         )
                     }
-                    // View switcher, stacked: one control, press-and-hold (or tap)
-                    // pops the choice menu. Cards sits on top as the default.
                     var viewMenuOpen by remember { mutableStateOf(false) }
                     Box {
                         Text(
@@ -934,7 +1368,6 @@ private fun BattleGameBoard(
                             expanded = viewMenuOpen,
                             onDismissRequest = { viewMenuOpen = false },
                         ) {
-                            // Cards first: the portrait default.
                             listOf(BattleViewMode.Card, BattleViewMode.Standard, BattleViewMode.Classic).forEach { mode ->
                                 DropdownMenuItem(
                                     text = {
@@ -951,6 +1384,15 @@ private fun BattleGameBoard(
                             }
                         }
                     }
+                    Text(
+                        when {
+                            drag != null && hoverEnemyId != null -> "Drop on the GKOM to strike."
+                            drag != null -> "Drag onto a living enemy — or release to cancel."
+                            else -> "Drag an attack card onto an enemy to play it."
+                        },
+                        color = if (drag != null) Color(0xFFFFD479) else secondary,
+                        style = MaterialTheme.typography.labelSmall,
+                    )
                     when (viewMode) {
                         BattleViewMode.Standard -> {
                             Row(
@@ -959,29 +1401,103 @@ private fun BattleGameBoard(
                             ) {
                                 BattlePartyPanel(ui, panel, line, pale, secondary, Modifier.weight(.28f).fillMaxSize())
                                 BattleLogPanel(ui, node, panel, line, pale, secondary, Modifier.weight(.44f).fillMaxSize())
-                                BattleEnemyPanel(ui, encounter, dispatch, panel, line, pale, secondary, Modifier.weight(.28f).fillMaxSize())
+                                BattleEnemyPanel(
+                                    ui, encounter, dispatch, panel, line, pale, secondary,
+                                    Modifier.weight(.28f).fillMaxSize(),
+                                    hoverEnemyId = hoverEnemyId,
+                                    onEnemyBounds = { id, bounds ->
+                                        if (bounds == Rect.Zero) enemyDropBounds.remove(id) else enemyDropBounds[id] = bounds
+                                    },
+                                )
                             }
-                            BattleHand(ui, canPlay, canSelectCard, dispatch, panel, line, pale, secondary)
+                            BattleHand(
+                                ui, canPlay, canSelectCard, dispatch, panel, line, pale, secondary,
+                                drag = drag,
+                                onDragChanged = { drag = it },
+                                onDragPlay = { cardId, pointer ->
+                                    val target = enemyDropBounds.entries.firstOrNull { it.value.contains(pointer) }?.key
+                                    playDraggedCard(cardId, target)
+                                },
+                            )
                         }
                         BattleViewMode.Card -> {
-                            BattleCompactEnemyPanel(ui, encounter, dispatch, panel, line, pale, secondary)
-                            BattleCompactPartyPanel(ui, panel, line, pale, secondary)
-                            BattleHandCompact(ui, canPlay, canSelectCard, dispatch, panel, line, pale, secondary)
+                            BattleCompactEnemyPanel(
+                                ui, encounter, dispatch, panel, line, pale, secondary,
+                                hoverEnemyId = hoverEnemyId,
+                                onEnemyBounds = { id, bounds ->
+                                    if (bounds == Rect.Zero) enemyDropBounds.remove(id) else enemyDropBounds[id] = bounds
+                                },
+                            )
+                            BattleHandCompact(
+                                ui, canPlay, canSelectCard, dispatch, panel, line, pale, secondary,
+                                drag = drag,
+                                onDragChanged = { drag = it },
+                                onDragPlay = { cardId, pointer ->
+                                    val target = enemyDropBounds.entries.firstOrNull { it.value.contains(pointer) }?.key
+                                    playDraggedCard(cardId, target)
+                                },
+                                // Summoner strip sits under the hand cards to free enemy space.
+                                belowHand = {
+                                    BattleCompactPartyPanel(ui, panel, line, pale, secondary)
+                                },
+                            )
                         }
                         BattleViewMode.Classic -> {
-                            // Enemies → allies → action cards, each capped at half
-                            // the screen so the whole fight fits with minimal scroll.
                             BattleEnemyPanel(
                                 ui, encounter, dispatch, panel, line, pale, secondary,
                                 Modifier.fillMaxWidth().heightIn(max = 190.dp).verticalScroll(rememberScrollState()),
+                                hoverEnemyId = hoverEnemyId,
+                                onEnemyBounds = { id, bounds ->
+                                    if (bounds == Rect.Zero) enemyDropBounds.remove(id) else enemyDropBounds[id] = bounds
+                                },
                             )
                             BattlePartyPanel(
                                 ui, panel, line, pale, secondary,
                                 Modifier.fillMaxWidth().heightIn(max = 170.dp).verticalScroll(rememberScrollState()),
                             )
                             BattleLogCondensed(ui, node, pale, secondary)
-                            BattleHandCompact(ui, canPlay, canSelectCard, dispatch, panel, line, pale, secondary)
+                            BattleHandCompact(
+                                ui, canPlay, canSelectCard, dispatch, panel, line, pale, secondary,
+                                drag = drag,
+                                onDragChanged = { drag = it },
+                                onDragPlay = { cardId, pointer ->
+                                    val target = enemyDropBounds.entries.firstOrNull { it.value.contains(pointer) }?.key
+                                    playDraggedCard(cardId, target)
+                                },
+                            )
                         }
+                    }
+                }
+
+                // Floating ghost of the dragged attack card.
+                drag?.let { current ->
+                    val card = ui.definition.card(current.cardId) ?: return@let
+                    val density = LocalDensity.current
+                    val widthDp = with(density) { current.cardSize.width.toDp() }
+                    Box(
+                        Modifier
+                            .zIndex(8f)
+                            .offset {
+                                IntOffset(
+                                    (current.pointerRoot.x - current.grabInCard.x - boardOrigin.x).roundToInt(),
+                                    (current.pointerRoot.y - current.grabInCard.y - boardOrigin.y).roundToInt(),
+                                )
+                            }
+                            .width(widthDp)
+                            .alpha(0.92f),
+                    ) {
+                        BattleActionCard(
+                            ui = ui,
+                            card = card,
+                            selected = true,
+                            played = false,
+                            available = true,
+                            compact = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            onSelect = {},
+                            onToggleExpanded = {},
+                            draggable = false,
+                        )
                     }
                 }
             }
@@ -989,7 +1505,8 @@ private fun BattleGameBoard(
     }
 }
 
-/** Enemies as a tight two-per-row tile grid: acronym, numbers, intent damage. */
+/** Compact monster-card wall; five or more enemies keep the dense fallback sizing. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun BattleCompactEnemyPanel(
     ui: TextGameUiState,
@@ -999,64 +1516,48 @@ private fun BattleCompactEnemyPanel(
     line: Color,
     pale: Color,
     secondary: Color,
+    hoverEnemyId: String? = null,
+    onEnemyBounds: (String, Rect) -> Unit = { _, _ -> },
 ) {
     Text("GKOM CORRUPTED", color = Color(0xFFFF6F78), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-    // The wall condenses as more monsters join: 2 per row, then 3, then 4 with
-    // bars dropped for raw numbers.
     val enemyCount = encounter.enemies.size
-    val perRow = when {
-        enemyCount <= 2 -> 2
-        enemyCount <= 4 -> 3
-        else -> 4
+    val cardWidth = when {
+        enemyCount <= 2 -> 132.dp
+        enemyCount <= 4 -> 96.dp
+        else -> 78.dp
     }
-    val showBars = enemyCount <= 4
-    val showIntent = enemyCount <= 6
-    encounter.enemies.chunked(perRow).forEach { rowEnemies ->
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
-            rowEnemies.forEach { enemy ->
-                val enemyState = ui.game.run.enemies.firstOrNull { it.id == enemy.id }
-                val health = enemyState?.health ?: 0
-                val maxHealth = enemyState?.maxHealth ?: enemy.maxHealth
-                val selected = ui.game.run.selectedTargetId == enemy.id
-                Column(
-                    Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(4.dp))
-                        .clickable(enabled = health > 0) { dispatch(TextGameAction.SelectTarget(enemy.id)) }
-                        .border(1.dp, if (selected) Color(0xFFFFC857) else line)
-                        .background(if (selected) Color(0xFF342D20) else panel)
-                        .padding(horizontal = InkSpacing.xs, vertical = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(1.dp),
-                ) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(acronymOf(enemy.name), color = pale, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                        Text("$health/$maxHealth", color = secondary, style = MaterialTheme.typography.labelSmall)
-                    }
-                    if (showBars) {
-                        LinearProgressIndicator(
-                            progress = { health.toFloat() / maxHealth.coerceAtLeast(1) },
-                            modifier = Modifier.fillMaxWidth().height(4.dp),
-                            color = if (health > 0) Color(0xFFB5B8BE) else Color(0xFF5D626B),
-                            trackColor = Color(0xFF343A45),
-                        )
-                    }
-                    if (showIntent) {
-                        Text("~${enemy.intentDamage} dmg", color = Color(0xFFFFC857), style = MaterialTheme.typography.labelSmall)
-                    }
-                }
-            }
-            repeat(perRow - rowEnemies.size) { Spacer(Modifier.weight(1f)) }
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+        verticalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+        maxItemsInEachRow = if (enemyCount <= 2) 2 else if (enemyCount <= 4) 4 else 5,
+    ) {
+        encounter.enemies.forEach { enemy ->
+            MonsterCard(
+                ui = ui,
+                enemy = enemy,
+                selected = ui.game.run.selectedTargetId == enemy.id,
+                dropHover = hoverEnemyId == enemy.id,
+                compact = enemyCount >= 5,
+                panel = panel,
+                line = line,
+                pale = pale,
+                secondary = secondary,
+                modifier = Modifier.width(cardWidth),
+                onClick = { dispatch(TextGameAction.SelectTarget(enemy.id)) },
+                onBounds = { rect -> onEnemyBounds(enemy.id, rect) },
+            )
         }
     }
 }
 
-/** Allies as a single strip of compact chips: acronym plus AP/EP numbers. */
+/** Slim summoner strip: HP / guard / SP + ultimate gauge only (no ally chips). */
 @Composable
 private fun BattleCompactPartyPanel(
     ui: TextGameUiState,
     panel: Color,
     line: Color,
-    pale: Color,
+    @Suppress("UNUSED_PARAMETER") pale: Color,
     secondary: Color,
 ) {
     Column(
@@ -1071,7 +1572,6 @@ private fun BattleCompactPartyPanel(
                 style = MaterialTheme.typography.labelSmall,
             )
         }
-        // Summoner ultimate gauge.
         val ult = ui.game.persistent.ultimate
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
             Text("ULT", color = if (ult >= 100) Color(0xFFFFE8B0) else secondary, style = MaterialTheme.typography.labelSmall)
@@ -1082,18 +1582,6 @@ private fun BattleCompactPartyPanel(
                 trackColor = Color(0xFF343A45),
             )
             Text("$ult%", color = secondary, style = MaterialTheme.typography.labelSmall)
-        }
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
-            ui.game.run.resources.forEach { resource ->
-                Column(
-                    Modifier.clip(RoundedCornerShape(4.dp)).border(1.dp, line).padding(horizontal = 6.dp, vertical = 3.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text(acronymOf(resource.actorName), color = pale, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                    Text("${resource.ap}/${resource.maxAp}AP", color = Color(0xFF8ED9F7), style = MaterialTheme.typography.labelSmall)
-                    Text("${resource.ep}/${resource.maxEp}EP", color = secondary, style = MaterialTheme.typography.labelSmall)
-                }
-            }
         }
     }
 }
@@ -1109,15 +1597,21 @@ private fun BattleHandCompact(
     line: Color,
     pale: Color,
     secondary: Color,
+    drag: BattleCardDrag? = null,
+    onDragChanged: (BattleCardDrag?) -> Unit = {},
+    onDragPlay: (String, Offset) -> Unit = { _, _ -> },
+    belowHand: (@Composable () -> Unit)? = null,
 ) {
     val cards = ui.game.run.hand.mapNotNull(ui.definition::card)
     val selected = ui.game.run.selectedCardId?.let(ui.definition::card)
     var expandedCardId by rememberSaveable { mutableStateOf<String?>(null) }
+    val handScroll = rememberScrollState()
     Text(
         when {
-            selected == null -> "Select a card."
+            drag != null -> "Dragging — drop on a GKOM to attack."
+            selected == null -> "Select or drag a card."
             (selected.damage > 0 || selected.markBonus > 0) && ui.game.run.selectedTargetId == null ->
-                "${acronymOf(selected.title)} — pick target."
+                "${acronymOf(selected.title)} — pick target or drag onto it."
             else -> "${acronymOf(selected.title)} — ready."
         },
         color = pale,
@@ -1125,21 +1619,28 @@ private fun BattleHandCompact(
         maxLines = 1,
     )
     Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        Modifier.fillMaxWidth().horizontalScroll(handScroll, enabled = drag == null),
         horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
     ) {
         cards.forEach { card ->
             val played = card.id in ui.game.run.playedCards
             val active = ui.game.run.selectedCardId == card.id
             val available = canSelectCard(card) && !played
+            val lifted = drag?.cardId == card.id
             BattleActionCard(
                 ui, card, active, played, available, compact = true,
-                modifier = Modifier.width(104.dp),
+                modifier = Modifier
+                    .width(104.dp)
+                    // Hide the home-slot art entirely while the floating card moves.
+                    .alpha(if (lifted) 0f else 1f),
                 onSelect = { dispatch(TextGameAction.SelectCard(card.id)) },
                 onToggleExpanded = { expandedCardId = if (expandedCardId == card.id) null else card.id },
+                onDragChanged = onDragChanged,
+                onDragPlay = onDragPlay,
             )
         }
     }
+    belowHand?.invoke()
     // Tight action bar — End round on the left (bare white text), commit on the
     // right, with the ultimate unleash appearing once the gauge is full.
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
@@ -1248,10 +1749,11 @@ private fun BattlePartyPanel(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 characterCard?.let { card ->
-                    AsyncImage(
-                        model = cardImageModel(card, ui.cardImagePaths),
-                        contentDescription = card.title,
-                        contentScale = ContentScale.Crop,
+                    CollectibleCardFace(
+                        card = card,
+                        imagePaths = ui.cardImagePaths,
+                        motionPaths = ui.cardMotionPaths,
+                        preferMotion = false,
                         modifier = Modifier.width(44.dp).height(68.dp).clip(RoundedCornerShape(3.dp)),
                     )
                 }
@@ -1316,6 +1818,7 @@ private fun BattleLogPanel(
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun BattleEnemyPanel(
     ui: TextGameUiState,
     encounter: TextGameEncounter,
@@ -1325,37 +1828,138 @@ private fun BattleEnemyPanel(
     pale: Color,
     secondary: Color,
     modifier: Modifier,
+    hoverEnemyId: String? = null,
+    onEnemyBounds: (String, Rect) -> Unit = { _, _ -> },
 ) {
     Column(
         modifier.background(panel).border(1.dp, line).padding(InkSpacing.sm),
         verticalArrangement = Arrangement.spacedBy(InkSpacing.xs),
     ) {
         Text("GKOM CORRUPTED", color = Color(0xFFFF6F78), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-        encounter.enemies.forEach { enemy ->
-            val enemyState = ui.game.run.enemies.firstOrNull { it.id == enemy.id }
-            val health = enemyState?.health ?: 0
-            val maxHealth = enemyState?.maxHealth ?: enemy.maxHealth
-            val selected = ui.game.run.selectedTargetId == enemy.id
-            Column(
-                Modifier.fillMaxWidth()
-                    .clickable(enabled = health > 0) { dispatch(TextGameAction.SelectTarget(enemy.id)) }
-                    .border(2.dp, if (selected) Color(0xFFFFC857) else line)
-                    .background(if (selected) Color(0xFF342D20) else panel)
-                    .padding(InkSpacing.xs),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Text(enemy.name, color = pale, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                LinearProgressIndicator(
-                    progress = { health.toFloat() / maxHealth.coerceAtLeast(1) },
-                    modifier = Modifier.fillMaxWidth(),
-                    color = if (health > 0) Color(0xFFB5B8BE) else Color(0xFF5D626B),
-                    trackColor = Color(0xFF343A45),
+        val count = encounter.enemies.size
+        val cardWidth = if (count <= 2) 132.dp else if (count <= 4) 96.dp else 78.dp
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+            verticalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+            maxItemsInEachRow = if (count <= 2) 2 else if (count <= 4) 4 else 5,
+        ) {
+            encounter.enemies.forEach { enemy ->
+                MonsterCard(
+                    ui = ui,
+                    enemy = enemy,
+                    selected = ui.game.run.selectedTargetId == enemy.id,
+                    dropHover = hoverEnemyId == enemy.id,
+                    compact = count >= 5,
+                    panel = panel,
+                    line = line,
+                    pale = pale,
+                    secondary = secondary,
+                    modifier = Modifier.width(cardWidth),
+                    onClick = { dispatch(TextGameAction.SelectTarget(enemy.id)) },
+                    onBounds = { rect -> onEnemyBounds(enemy.id, rect) },
                 )
-                Text("HP $health/$maxHealth", color = secondary, style = MaterialTheme.typography.labelSmall)
-                Text("▶ ${enemy.intent} · ~${enemy.intentDamage} dmg", color = Color(0xFFFFC857), style = MaterialTheme.typography.labelSmall)
             }
         }
     }
+}
+
+@Composable
+private fun MonsterCard(
+    ui: TextGameUiState,
+    enemy: TextGameEnemy,
+    selected: Boolean,
+    dropHover: Boolean,
+    compact: Boolean,
+    panel: Color,
+    line: Color,
+    pale: Color,
+    secondary: Color,
+    modifier: Modifier,
+    onClick: () -> Unit,
+    onBounds: (Rect) -> Unit,
+) {
+    val enemyState = ui.game.run.enemies.firstOrNull { it.id == enemy.id }
+    val health = enemyState?.health ?: 0
+    val maxHealth = enemyState?.maxHealth ?: enemy.maxHealth
+    val alive = health > 0
+    val variant = gkomVariant(ui, enemy.id)
+    val portrait = variant?.let { ui.gkomImagePaths[it.id] }
+    val borderColor = when {
+        dropHover && alive -> Color(0xFFFF6F78)
+        selected -> Color(0xFFFFC857)
+        else -> Color(0xCCB89A62)
+    }
+    val tierIcon = when (variant?.tier) {
+        GkomTier.Elite -> "elite"
+        GkomTier.Boss -> "boss"
+        else -> "enemy"
+    }
+    Box(
+        modifier
+            .aspectRatio(0.68f)
+            .onGloballyPositioned { coords -> onBounds(if (alive) coords.boundsInRoot() else Rect.Zero) }
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(enabled = alive, onClick = onClick)
+            .background(panel)
+            .border(if (selected || dropHover) 3.dp else 2.dp, borderColor, RoundedCornerShape(8.dp))
+            .alpha(if (alive) 1f else 0.45f),
+    ) {
+        if (portrait != null) {
+            val deadFilter = remember(alive) {
+                if (alive) null else ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) })
+            }
+            AsyncImage(
+                model = textGameImageModel(portrait),
+                contentDescription = variant.displayName,
+                contentScale = ContentScale.Crop,
+                colorFilter = deadFilter,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        Text(
+            "▶ ${enemy.intent} · ~${enemy.intentDamage} dmg",
+            color = Color(0xFFFFE39A),
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth().background(Color(0xCC21151A)).padding(horizontal = 4.dp, vertical = 2.dp),
+        )
+        AsyncImage(
+            model = "file:///android_asset/images/adams_haven/ui/$tierIcon.png",
+            contentDescription = variant?.tier?.name ?: "Enemy",
+            modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(if (compact) 18.dp else 24.dp),
+        )
+        Column(
+            Modifier.align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xEE120D10))))
+                .padding(horizontal = 5.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(enemy.name, color = pale, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, maxLines = 1)
+            if (!compact && variant != null) {
+                Text(variant.displayName, color = Color(0xFFFF9D9D), style = MaterialTheme.typography.labelSmall, maxLines = 1)
+            }
+            LinearProgressIndicator(
+                progress = { health.toFloat() / maxHealth.coerceAtLeast(1) },
+                modifier = Modifier.fillMaxWidth().height(4.dp),
+                color = if (alive) Color(0xFFFF6F78) else Color(0xFF5D626B),
+                trackColor = Color(0x99343A45),
+            )
+            Text("HP $health/$maxHealth", color = secondary, style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+private fun gkomVariant(ui: TextGameUiState, enemyId: String): AdamsHavenGkomMonster? {
+    val kind = ui.game.run.dungeonRoomKind?.let(DungeonKind::fromIndex)
+    return pickGkomVariant(enemyId, ui.game.persistent.rngSeed, gkomTierFor(kind))
+}
+
+private fun gkomPortraitPath(ui: TextGameUiState, enemyId: String): String? {
+    val variant = gkomVariant(ui, enemyId) ?: return null
+    return ui.gkomImagePaths[variant.id]
 }
 
 @Composable
@@ -1374,9 +1978,10 @@ private fun ResourceGem(symbol: String, value: Int, color: Color, compact: Boole
 }
 
 /**
- * Adams Haven's tactile battle card. Artwork owns the front; holding reveals
- * rules on the back, and double-tapping delegates expansion to the hand.
+ * Adams Haven's tactile battle card. Artwork owns the front; long-press flips
+ * rules; dragging plays an attack onto an enemy; double-tap expands.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun BattleActionCard(
     ui: TextGameUiState,
@@ -1388,34 +1993,87 @@ private fun BattleActionCard(
     modifier: Modifier,
     onSelect: () -> Unit,
     onToggleExpanded: () -> Unit,
+    draggable: Boolean = true,
+    onDragChanged: (BattleCardDrag?) -> Unit = {},
+    onDragPlay: (cardId: String, pointerRoot: Offset) -> Unit = { _, _ -> },
 ) {
     var showingBack by remember(card.id) { mutableStateOf(false) }
+    var cardOrigin by remember { mutableStateOf(Offset.Zero) }
+    var cardSize by remember { mutableStateOf(Size.Zero) }
+    var grabInCard by remember { mutableStateOf(Offset.Zero) }
+    var dragPointerRoot by remember { mutableStateOf(Offset.Zero) }
+    var dragging by remember { mutableStateOf(false) }
     val gold = if (selected) Color(0xFFFFD55F) else Color(0xFF9B6A31)
     val art = ui.definition.roster.firstOrNull { it.id == card.ownerId }
         ?.collectibleCardId
         ?.let(ui.definition::collectible)
-    val gestureModifier = Modifier.pointerInput(card.id, available) {
-        detectTapGestures(
-            onTap = { if (available) onSelect() },
-            onDoubleTap = { onToggleExpanded() },
-            onPress = {
-                coroutineScope {
-                    var revealed = false
-                    val reveal = launch {
-                        delay(430)
-                        revealed = true
-                        showingBack = true
-                    }
-                    tryAwaitRelease()
-                    reveal.cancel()
-                    if (revealed) showingBack = false
-                }
-            },
-        )
+    val gestureModifier = if (!draggable) {
+        Modifier
+    } else {
+        Modifier
+            .combinedClickable(
+                onClick = { if (available && !played) onSelect() },
+                onDoubleClick = onToggleExpanded,
+                onLongClick = { showingBack = !showingBack },
+                onLongClickLabel = "Flip card",
+            )
+            .pointerInput(card.id, available, played) {
+                if (!available || played) return@pointerInput
+                detectDragGestures(
+                    onDragStart = { startInCard ->
+                        showingBack = false
+                        dragging = true
+                        // Freeze grab so only the floating ghost follows the finger;
+                        // the hand slot stays where it was.
+                        grabInCard = startInCard
+                        dragPointerRoot = cardOrigin + startInCard
+                        onSelect()
+                        onDragChanged(
+                            BattleCardDrag(
+                                cardId = card.id,
+                                pointerRoot = dragPointerRoot,
+                                grabInCard = startInCard,
+                                cardSize = cardSize,
+                            ),
+                        )
+                    },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        dragPointerRoot += dragAmount
+                        onDragChanged(
+                            BattleCardDrag(
+                                cardId = card.id,
+                                pointerRoot = dragPointerRoot,
+                                grabInCard = grabInCard,
+                                cardSize = cardSize,
+                            ),
+                        )
+                    },
+                    onDragEnd = {
+                        val dropAt = dragPointerRoot
+                        dragging = false
+                        onDragChanged(null)
+                        onDragPlay(card.id, dropAt)
+                    },
+                    onDragCancel = {
+                        dragging = false
+                        onDragChanged(null)
+                    },
+                )
+            }
     }
     Box(
         modifier
             .aspectRatio(.68f)
+            .onGloballyPositioned { coords ->
+                val bounds = coords.boundsInRoot()
+                cardSize = Size(bounds.width, bounds.height)
+                // Keep the home-slot origin frozen for the whole drag so scroll
+                // jitter cannot yank the stationary card.
+                if (!dragging) {
+                    cardOrigin = bounds.topLeft
+                }
+            }
             .then(gestureModifier)
             .alpha(if (played) .48f else 1f)
             .clip(RoundedCornerShape(if (compact) 12.dp else 18.dp))
@@ -1444,10 +2102,12 @@ private fun BattleActionCard(
             }
         } else {
             if (art != null) {
-                AsyncImage(
-                    model = cardImageModel(art, ui.cardImagePaths),
+                CollectibleCardFace(
+                    card = art,
+                    imagePaths = ui.cardImagePaths,
+                    motionPaths = ui.cardMotionPaths,
+                    preferMotion = selected || !compact,
                     contentDescription = card.title,
-                    contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize().padding(if (compact) 4.dp else 6.dp).clip(RoundedCornerShape(if (compact) 9.dp else 14.dp)),
                 )
             } else {
@@ -1510,7 +2170,7 @@ private fun ExpandedBattleCard(
                 onSelect = onSelect,
                 onToggleExpanded = onDismiss,
             )
-            Text("Double-tap to shrink · Hold to read the back", color = Color.White, style = MaterialTheme.typography.labelMedium)
+            Text("Double-tap to shrink · Long-press to flip · Drag onto an enemy to play", color = Color.White, style = MaterialTheme.typography.labelMedium)
         }
     }
 }
@@ -1525,32 +2185,43 @@ private fun BattleHand(
     line: Color,
     pale: Color,
     secondary: Color,
+    drag: BattleCardDrag? = null,
+    onDragChanged: (BattleCardDrag?) -> Unit = {},
+    onDragPlay: (String, Offset) -> Unit = { _, _ -> },
 ) {
     val cards = ui.game.run.hand.mapNotNull(ui.definition::card)
     val selected = ui.game.run.selectedCardId?.let(ui.definition::card)
     var expandedCardId by rememberSaveable { mutableStateOf<String?>(null) }
+    val handScroll = rememberScrollState()
     Text(
         when {
-            selected == null -> "Select a card."
-            (selected.damage > 0 || selected.markBonus > 0) && ui.game.run.selectedTargetId == null -> "${selected.title} — choose a target."
+            drag != null -> "Dragging — drop on a living enemy to commit the attack."
+            selected == null -> "Select or drag a card."
+            (selected.damage > 0 || selected.markBonus > 0) && ui.game.run.selectedTargetId == null ->
+                "${selected.title} — choose a target, or drag onto one."
             else -> "${selected.title} — ready to commit."
         },
         color = pale,
         style = MaterialTheme.typography.labelMedium,
     )
     Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        Modifier.fillMaxWidth().horizontalScroll(handScroll, enabled = drag == null),
         horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
     ) {
         cards.forEach { card ->
             val played = card.id in ui.game.run.playedCards
             val active = ui.game.run.selectedCardId == card.id
             val available = canSelectCard(card) && !played
+            val lifted = drag?.cardId == card.id
             BattleActionCard(
                 ui, card, active, played, available, compact = false,
-                modifier = Modifier.width(154.dp),
+                modifier = Modifier
+                    .width(154.dp)
+                    .alpha(if (lifted) 0f else 1f),
                 onSelect = { dispatch(TextGameAction.SelectCard(card.id)) },
                 onToggleExpanded = { expandedCardId = if (expandedCardId == card.id) null else card.id },
+                onDragChanged = onDragChanged,
+                onDragPlay = onDragPlay,
             )
         }
     }
@@ -1660,10 +2331,11 @@ private fun RewardControls(ui: TextGameUiState, dispatch: (TextGameAction) -> Un
                 colors = CardDefaults.cardColors(containerColor = inkTokens().panel),
             ) {
                 Column {
-                    AsyncImage(
-                        model = cardImageModel(card, ui.cardImagePaths),
-                        contentDescription = card.title,
-                        contentScale = ContentScale.Crop,
+                    CollectibleCardFace(
+                        card = card,
+                        imagePaths = ui.cardImagePaths,
+                        motionPaths = ui.cardMotionPaths,
+                        preferMotion = true,
                         modifier = Modifier.fillMaxWidth().aspectRatio(941f / 1672f),
                     )
                     Column(Modifier.padding(InkSpacing.sm)) {
@@ -1713,50 +2385,84 @@ private fun TextGameCardLibrary(
     definition: TextGameDefinition,
     collectedIds: List<String>,
     imagePaths: Map<String, String>,
+    motionPaths: Map<String, String> = emptyMap(),
+    defeatedMonsterIds: Set<String> = emptySet(),
+    gkomImagePaths: Map<String, String> = emptyMap(),
     onBack: () -> Unit,
 ) {
     var category by rememberSaveable { mutableStateOf("all") }
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedMonsterId by rememberSaveable { mutableStateOf<String?>(null) }
     val cards = definition.collectibleCards.filter { category == "all" || it.category == category }
     Column(Modifier.fillMaxSize().padding(InkSpacing.md), verticalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("CARD LIBRARY", style = MaterialTheme.typography.labelSmall, color = inkTokens().activePill)
-                Text("Adams Haven V2 · ${definition.collectibleCards.size} cards", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("Adams Haven V2 · ${definition.collectibleCards.size} cards · ${adamsHavenGkomMonsters().size} monsters", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             }
             OutlinedButton(onClick = onBack) { Text("Back") }
         }
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
-            listOf("all" to "All", "characters" to "Characters", "locations" to "Locations", "objects" to "Objects").forEach { (id, label) ->
+            listOf("all" to "All", "characters" to "Characters", "locations" to "Locations", "objects" to "Objects", "monsters" to "Monsters").forEach { (id, label) ->
                 FilterChip(selected = category == id, onClick = { category = id }, label = { Text(label) })
             }
         }
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(145.dp),
-            modifier = Modifier.weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
-            verticalArrangement = Arrangement.spacedBy(InkSpacing.sm),
-        ) {
-            items(cards, key = { it.id }) { card ->
-                val collected = card.id in collectedIds
-                Card(
-                    modifier = Modifier.fillMaxWidth().clickable { selectedId = card.id },
-                    colors = CardDefaults.cardColors(containerColor = inkTokens().panel),
-                ) {
-                    Column {
+        if (category == "monsters") {
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(145.dp),
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
+                verticalArrangement = Arrangement.spacedBy(InkSpacing.sm),
+            ) {
+                items(adamsHavenGkomMonsters(), key = { it.id }) { monster ->
+                    val revealed = monster.id in defeatedMonsterIds
+                    Card(
+                        modifier = Modifier.fillMaxWidth().clickable { selectedMonsterId = monster.id },
+                        colors = CardDefaults.cardColors(containerColor = inkTokens().panel),
+                    ) {
                         AsyncImage(
-                            model = cardImageModel(card, imagePaths),
-                            contentDescription = card.title,
+                            model = gkomImagePaths[monster.id]?.let(::File) ?: "file:///android_asset/${monster.artAssetPath}",
+                            contentDescription = if (revealed) monster.displayName else "Unknown monster",
                             contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxWidth().aspectRatio(941f / 1672f),
+                            colorFilter = if (revealed) null else ColorFilter.tint(Color.Black),
+                            modifier = Modifier.fillMaxWidth().aspectRatio(0.68f),
                         )
                         Column(Modifier.padding(InkSpacing.xs)) {
-                            Text(card.title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                            Text(
-                                if (collected) "COLLECTED" else card.category.dropLast(1).uppercase(),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (collected) inkTokens().activePill else inkTokens().secondaryText,
+                            Text(if (revealed) monster.displayName else "Unknown GKOM", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                            Text(monster.tier.name.uppercase(), style = MaterialTheme.typography.labelSmall, color = if (revealed) inkTokens().activePill else inkTokens().secondaryText)
+                        }
+                    }
+                }
+            }
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(145.dp),
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
+                verticalArrangement = Arrangement.spacedBy(InkSpacing.sm),
+            ) {
+                items(cards, key = { it.id }) { card ->
+                    val collected = card.id in collectedIds
+                    Card(
+                        modifier = Modifier.fillMaxWidth().clickable { selectedId = card.id },
+                        colors = CardDefaults.cardColors(containerColor = inkTokens().panel),
+                    ) {
+                        Column {
+                            CollectibleCardFace(
+                                card = card,
+                                imagePaths = imagePaths,
+                                motionPaths = motionPaths,
+                                preferMotion = false,
+                                modifier = Modifier.fillMaxWidth().aspectRatio(941f / 1672f),
                             )
+                            Column(Modifier.padding(InkSpacing.xs)) {
+                                Text(card.title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                                Text(
+                                    if (collected) "COLLECTED" else card.category.dropLast(1).uppercase(),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (collected) inkTokens().activePill else inkTokens().secondaryText,
+                                )
+                            }
                         }
                     }
                 }
@@ -1768,9 +2474,11 @@ private fun TextGameCardLibrary(
             Dialog(onDismissRequest = { selectedId = null }) {
                 Card(colors = CardDefaults.cardColors(containerColor = inkTokens().panel)) {
                     Column(Modifier.padding(InkSpacing.sm), horizontalAlignment = Alignment.CenterHorizontally) {
-                        AsyncImage(
-                            model = cardImageModel(card, imagePaths),
-                            contentDescription = card.title,
+                        CollectibleCardFace(
+                            card = card,
+                            imagePaths = imagePaths,
+                            motionPaths = motionPaths,
+                            preferMotion = true,
                             contentScale = ContentScale.Fit,
                             modifier = Modifier.fillMaxWidth().height(520.dp),
                         )
@@ -1782,6 +2490,66 @@ private fun TextGameCardLibrary(
             }
         }
     }
+    selectedMonsterId?.let { id ->
+        adamsHavenGkomMonsters().firstOrNull { it.id == id }?.let { monster ->
+            val revealed = monster.id in defeatedMonsterIds
+            val authoredIds = authoredEnemyIdsForGkom(monster.id)
+            val enemy = definition.encounters.asSequence().flatMap { it.enemies.asSequence() }
+                .firstOrNull { it.id in authoredIds }
+            Dialog(onDismissRequest = { selectedMonsterId = null }) {
+                Card(colors = CardDefaults.cardColors(containerColor = inkTokens().panel)) {
+                    Column(Modifier.padding(InkSpacing.sm), horizontalAlignment = Alignment.CenterHorizontally) {
+                        AsyncImage(
+                            model = gkomImagePaths[monster.id]?.let(::File) ?: "file:///android_asset/${monster.artAssetPath}",
+                            contentDescription = if (revealed) monster.displayName else "Unknown monster",
+                            contentScale = ContentScale.Fit,
+                            colorFilter = if (revealed) null else ColorFilter.tint(Color.Black),
+                            modifier = Modifier.fillMaxWidth().height(480.dp),
+                        )
+                        Text(if (revealed) monster.displayName else "Unknown GKOM", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text(monster.tier.name.uppercase(), color = inkTokens().secondaryText)
+                        if (revealed && enemy != null) {
+                            Text("${enemy.name} · HP ${enemy.maxHealth} · ${enemy.intent}", color = inkTokens().secondaryText)
+                        }
+                        Button(onClick = { selectedMonsterId = null }, modifier = Modifier.fillMaxWidth()) { Text("Close") }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Card face: looping motion MP4 when [preferMotion] and a motion path exist,
+ * otherwise the still PNG (asset or installed library file).
+ */
+@Composable
+private fun CollectibleCardFace(
+    card: TextGameCollectibleCard,
+    imagePaths: Map<String, String>,
+    motionPaths: Map<String, String>,
+    preferMotion: Boolean,
+    modifier: Modifier = Modifier,
+    contentDescription: String? = card.title,
+    contentScale: ContentScale = ContentScale.Crop,
+) {
+    val motion = motionPaths[card.id]?.takeIf { preferMotion && File(it).isFile }
+    if (motion != null) {
+        Box(modifier) {
+            LoopingVideoBackground(
+                path = motion,
+                modifier = Modifier.fillMaxSize(),
+                fitInside = contentScale == ContentScale.Fit,
+            )
+        }
+    } else {
+        AsyncImage(
+            model = cardImageModel(card, imagePaths),
+            contentDescription = contentDescription,
+            contentScale = contentScale,
+            modifier = modifier,
+        )
+    }
 }
 
 private fun cardImageModel(card: TextGameCollectibleCard, imagePaths: Map<String, String>): Any =
@@ -1789,3 +2557,274 @@ private fun cardImageModel(card: TextGameCollectibleCard, imagePaths: Map<String
 
 private fun textGameImageModel(path: String): Any =
     if (path.startsWith("file:") || path.startsWith("content:") || path.startsWith("asset:")) path else File(path)
+
+private sealed class FarmMinigameRequest {
+    abstract val plotId: Int
+    abstract val label: String
+    data class Plant(override val plotId: Int) : FarmMinigameRequest() {
+        override val label: String get() = "Planting"
+    }
+    data class Harvest(override val plotId: Int) : FarmMinigameRequest() {
+        override val label: String get() = "Harvest"
+    }
+}
+
+/** Godot Farm.tscn plot strip + kitchen pantry — crops grow by battles fought. */
+@Composable
+private fun FarmBoard(
+    ui: TextGameUiState,
+    dispatch: (TextGameAction) -> Unit,
+    onMinigame: (FarmMinigameRequest) -> Unit,
+) {
+    val tokens = inkTokens()
+    val persistent = ui.game.persistent
+    val cleared = "farm_cleared" in persistent.flags || persistent.farm.plots.isNotEmpty()
+    val capacity = FarmRules.plotCapacity(persistent.farmLevel, cleared)
+    val farm = remember(persistent.farm, persistent.battlesWon, capacity) {
+        FarmRules.refreshReady(
+            FarmRules.syncBattlesFought(
+                FarmRules.ensureCapacity(persistent.farm, capacity),
+                persistent.battlesWon,
+            ),
+        )
+    }
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color(0xFF1C2418))
+            .border(1.dp, Color(0xFF6A8F4E), RoundedCornerShape(12.dp))
+            .padding(InkSpacing.sm),
+        verticalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+    ) {
+        Text("THE CLEARING", color = Color(0xFFB7E08A), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+        Text(
+            "Crops grow by battles fought, not real time.",
+            color = tokens.secondaryText,
+            style = MaterialTheme.typography.labelSmall,
+        )
+        Text(FarmRules.summaryLine(farm), color = Color(0xFFD7E6C8), style = MaterialTheme.typography.labelSmall)
+        Text("Seeds ${persistent.seeds} · Produce ${persistent.harvest}", color = tokens.secondaryText, style = MaterialTheme.typography.labelSmall)
+
+        if (farm.plots.isEmpty()) {
+            Text(
+                "Clear a plot to open the first bed.",
+                color = tokens.secondaryText,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        } else {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+            ) {
+                farm.plots.forEach { plot ->
+                    FarmPlotCard(
+                        farm = farm,
+                        plot = plot,
+                        seeds = persistent.seeds,
+                        onTill = { dispatch(TextGameAction.FarmTill(plot.id)) },
+                        onPlant = { onMinigame(FarmMinigameRequest.Plant(plot.id)) },
+                        onWater = { dispatch(TextGameAction.FarmWater(plot.id)) },
+                        onHarvest = { onMinigame(FarmMinigameRequest.Harvest(plot.id)) },
+                    )
+                }
+            }
+        }
+
+        if (farm.pantry.isNotEmpty() || farm.packedDish != null) {
+            Text("PANTRY", color = Color(0xFFFFD86A), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+            farm.packedDish?.let {
+                Text("Packed for next run: $it", color = Color(0xFF9FE6A0), style = MaterialTheme.typography.labelSmall)
+            }
+            farm.pantry.forEach { (dish, count) ->
+                val def = FarmRules.DISHES[dish]
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "$dish ×$count" + (def?.let { " · ${it.status}" } ?: ""),
+                        color = Color(0xFFF1E5D1),
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = { dispatch(TextGameAction.FarmPackDish(dish)) }) {
+                        Text("Pack", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FarmPlotCard(
+    farm: FarmState,
+    plot: FarmPlot,
+    seeds: Int,
+    onTill: () -> Unit,
+    onPlant: () -> Unit,
+    onWater: () -> Unit,
+    onHarvest: () -> Unit,
+) {
+    val fill = when (plot.soil) {
+        FarmSoil.Wild -> Color(0x8C332B21)
+        FarmSoil.Tilled -> Color(0xCC755230)
+        FarmSoil.Planted -> Color(0xD9386633)
+        FarmSoil.Ready -> Color(0xEBE0B83D)
+    }
+    val rim = when (plot.soil) {
+        FarmSoil.Wild -> Color(0xFF5C4F3D)
+        FarmSoil.Tilled -> Color(0xFFA87A4A)
+        FarmSoil.Planted -> Color(0xFF70B861)
+        FarmSoil.Ready -> Color(0xFFFFE06B)
+    }
+    val crop = FarmRules.crop(plot.cropId)
+    Column(
+        Modifier
+            .width(118.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(fill)
+            .border(2.dp, rim, RoundedCornerShape(8.dp))
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text("Plot ${plot.id + 1}", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+        if (crop != null && (plot.soil == FarmSoil.Planted || plot.soil == FarmSoil.Ready)) {
+            val elapsed = (farm.battlesFought - plot.plantedAtBattles).coerceAtLeast(0)
+            val needed = FarmRules.battlesNeeded(plot).coerceAtLeast(1)
+            val stage = if (plot.soil == FarmSoil.Ready) 3 else ((elapsed * 3) / needed).coerceIn(0, 2)
+            AsyncImage(
+                model = "file:///android_asset/images/adams_haven/haven/crop/${crop.id}_stage_$stage.webp",
+                contentDescription = "${crop.name} growth stage ${stage + 1}",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxWidth().aspectRatio(1f),
+            )
+        }
+        Text(
+            when (plot.soil) {
+                FarmSoil.Wild -> "Wild ground"
+                FarmSoil.Tilled -> "Tilled"
+                FarmSoil.Planted -> "${crop?.name ?: "Crop"} · ${FarmRules.battlesRemaining(farm, plot)} left" +
+                    if (plot.watered) " · watered" else ""
+                FarmSoil.Ready -> "${crop?.name ?: "Crop"} READY"
+            },
+            color = Color(0xFFF4EBDD),
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 3,
+        )
+        when (plot.soil) {
+            FarmSoil.Wild -> TextButton(onClick = onTill, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                Text("Till", style = MaterialTheme.typography.labelSmall)
+            }
+            FarmSoil.Tilled -> TextButton(
+                onClick = onPlant,
+                enabled = seeds > 0,
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+            ) {
+                Text("Plant", style = MaterialTheme.typography.labelSmall)
+            }
+            FarmSoil.Planted -> if (!plot.watered) {
+                TextButton(onClick = onWater, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                    Text("Water", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+            FarmSoil.Ready -> TextButton(onClick = onHarvest, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                Text("Harvest", style = MaterialTheme.typography.labelSmall)
+            }
+        }
+    }
+}
+
+/**
+ * Godot Minigame.gd — bouncing marker, tap the sweet band, ESC/Skip = score 0.
+ */
+@Composable
+private fun FarmTimingMinigame(
+    label: String,
+    onSkip: () -> Unit,
+    onStrike: (Float) -> Unit,
+) {
+    var marker by remember { mutableStateOf(0f) }
+    var dir by remember { mutableStateOf(1f) }
+    val speed = 1.35f
+    val sweetCentre = remember { 0.3f + kotlin.random.Random.nextFloat() * 0.4f }
+    val sweetWidth = 0.16f
+
+    LaunchedEffect(Unit) {
+        var last = 0L
+        while (true) {
+            withFrameMillis { frame ->
+                if (last != 0L) {
+                    val dt = ((frame - last) / 1000f).coerceIn(0f, 0.05f)
+                    var next = marker + dir * speed * dt
+                    var nextDir = dir
+                    if (next >= 1f) {
+                        next = 1f
+                        nextDir = -1f
+                    } else if (next <= 0f) {
+                        next = 0f
+                        nextDir = 1f
+                    }
+                    marker = next
+                    dir = nextDir
+                }
+                last = frame
+            }
+        }
+    }
+
+    fun scoreAt(pos: Float): Float {
+        val dist = kotlin.math.abs(pos - sweetCentre)
+        val half = sweetWidth * 0.5f
+        return when {
+            dist <= half -> (1f - (dist / half) * 0.35f).coerceIn(0f, 1f)
+            else -> (0.45f - (dist - half)).coerceAtLeast(0f)
+        }
+    }
+
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color(0xEE12141A))
+            .border(1.dp, Color(0xFF6A8F4E), RoundedCornerShape(12.dp))
+            .padding(InkSpacing.sm),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+            Text("$label — tap in the band", color = Color(0xFFB7E08A), fontWeight = FontWeight.Bold)
+            Text("Tap to strike · Skip for base roll only", color = Color(0xFF9AA3B2), style = MaterialTheme.typography.labelSmall)
+            Canvas(
+                Modifier
+                    .fillMaxWidth()
+                    .height(36.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable { onStrike(scoreAt(marker)) },
+            ) {
+                drawRect(Color(0xFF24272F))
+                val sx = (sweetCentre - sweetWidth * 0.5f) * size.width
+                drawRect(Color(0xD94CBF73), topLeft = Offset(sx, 0f), size = Size(sweetWidth * size.width, size.height))
+                drawRect(
+                    Color(0xFFB3FFCC),
+                    topLeft = Offset(sweetCentre * size.width - 2f, 0f),
+                    size = Size(4f, size.height),
+                )
+                drawRect(
+                    Color(0xFFFFE66B),
+                    topLeft = Offset(marker * size.width - 3f, -4f),
+                    size = Size(6f, size.height + 8f),
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                Button(onClick = { onStrike(scoreAt(marker)) }, modifier = Modifier.weight(1f)) {
+                    Text("Strike")
+                }
+                OutlinedButton(onClick = onSkip, modifier = Modifier.weight(1f)) {
+                    Text("Skip")
+                }
+            }
+        }
+    }
+}

@@ -3,6 +3,70 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.3.87-beta — Town/Farm card board on plot pictures (VN)
+
+- Town and Farm are visual-novel plot pictures again — not tycoon tap maps.
+  The fenced lot / farm landscape is the board; building cards drag from hand
+  onto the picture; room-upgrade cards stack on a building; tap a card to enter
+  its room still.
+- Shack starts placed on Town. Haven cards are earned from battle rewards and
+  story build flags still auto-place matching cards.
+- Version `1.3.87-beta` (`versionCode 128`). Debug label `Weaverse Test 1.3.87`.
+  APK: `Beta.Test.Build/weaverse-v1.3.87-beta-haven-card-board-local.apk`.
+
+## v1.3.86-beta — Town Lot plots, painterly shack, tycoon move
+
+- Town Lot plots are their own isometric earth pads (10 sections inside the
+  fence), not overlays dropped on painted dirt. Backdrop is an empty yard;
+  the shack is a painterly sprite you can tap, drag, or Move onto another plot.
+- Occupied pads swap; collecting tribute keeps the building on its moved plot.
+- Version `1.3.86-beta` (`versionCode 127`). Debug label `Weaverse Test 1.3.86`.
+  APK: `Beta.Test.Build/weaverse-v1.3.86-beta-town-lot-plots-local.apk`.
+
+## v1.3.85-beta — Town Lot: Village Tycoon play, Brown Dust 2 look
+
+- Town Lot is a fenced painterly homestead. Gameplay follows Village Tycoon /
+  Farmville (tap earth to raise a building, tap a roof spark for tribute) but
+  chrome is RPG parchment — no tool tray, balloons, or gold + pads.
+- Backdrop: `locations/town-lot-painterly.png`. Version `1.3.85-beta`
+  (`versionCode 126`). Debug label `Weaverse Test 1.3.85`.
+  APK: `Beta.Test.Build/weaverse-v1.3.85-beta-town-lot-painterly-local.apk`.
+
+## v1.3.84-beta — Town street + Farm iso boards
+
+- Farm is an isometric diamond-plot field (Farmville/Township). Town is a
+  receding Mafia City street with curb pads. Empty gold + pads build on tap;
+  rooftop bags collect; built businesses enter. Crossroads uses the four-way
+  road tile instead of the gothic city painting.
+- Version `1.3.84-beta` (`versionCode 125`). Debug label `Weaverse Test 1.3.84`.
+  APK: `Beta.Test.Build/weaverse-v1.3.84-beta-town-farm-boards-local.apk`.
+
+## v1.3.83-beta — tycoon lots: shack on dirt, buildings appear when raised
+
+- Town and Farm no longer sit on finished landscape paintings. Both start as a
+  grass/dirt lot. Town begins with only the shack plus one empty + lot (Deck
+  Hall). Market, inn, guild, workshop, and well appear as empty lots after the
+  previous building, and their sprites pop in when paid for.
+- Farm starts as wild grass with one clearable patch. Kitchen and barn are
+  empty lots you raise, not labels on a finished farm. People still talk in
+  the visual novel; plots and lots stay on the map.
+- Version `1.3.83-beta` (`versionCode 124`). Debug label `Weaverse Test 1.3.83`.
+  APK: `Beta.Test.Build/weaverse-v1.3.83-beta-tycoon-lots-local.apk`.
+
+## v1.3.82-beta — Farmville farm + Mafia Town tap maps
+
+- Farm and Town are full-screen tap worlds. Visual-novel dialogue only opens
+  when a person is tapped (Kaela on the farm; Helda, vendor, clerk, runner in
+  town). Interiors stay conversation rooms.
+- Farm: Farmville tool tray (Hand / Till / Plant / Water / Harvest / Expand),
+  seed picker, bouncing harvest marks. Tilling the first plot clears the field
+  without the old choice list.
+- Town: tap coin bags to collect, empty lots to build, buildings to enter.
+  Plaza pays on the first visit; lots pay again after a fight. Building the
+  Deck Hall stays on the town map.
+- Version `1.3.82-beta` (`versionCode 123`). Debug label `Weaverse Test 1.3.82`.
+  APK: `Beta.Test.Build/weaverse-v1.3.82-beta-farm-town-tap-local.apk`.
+
 ## v1.3.48-beta — ! commands write the entry and the prose at once
 
 - Typing `!character`, `!location`, `!object`, `!lore` or `!other` (plus the

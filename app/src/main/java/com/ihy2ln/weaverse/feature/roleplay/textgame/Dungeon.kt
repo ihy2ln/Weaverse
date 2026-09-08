@@ -453,6 +453,49 @@ object DungeonRules {
     fun canStepTo(dungeon: DungeonState, x: Int, y: Int): Boolean =
         exits(dungeon).any { it.x == x && it.y == y }
 
+    /**
+     * Shortest door-path from [fromX],[fromY] to [toX],[toY] (exclusive of start,
+     * inclusive of destination). Empty when unreachable. Used for tap-to-walk
+     * across already-cleared known rooms, matching Godot `scenes/Dungeon.gd`.
+     */
+    fun route(
+        dungeon: DungeonState,
+        fromX: Int,
+        fromY: Int,
+        toX: Int,
+        toY: Int,
+    ): List<Pair<Int, Int>> {
+        val floor = dungeon.currentFloor() ?: return emptyList()
+        if (floor.room(fromX, fromY) == null || floor.room(toX, toY) == null) return emptyList()
+        if (fromX == toX && fromY == toY) return emptyList()
+        val start = fromX to fromY
+        val goal = toX to toY
+        val parent = mutableMapOf<Pair<Int, Int>, Pair<Int, Int>?>()
+        parent[start] = null
+        val queue = ArrayDeque<Pair<Int, Int>>()
+        queue.add(start)
+        while (queue.isNotEmpty()) {
+            val cell = queue.removeFirst()
+            if (cell == goal) break
+            val room = floor.room(cell.first, cell.second) ?: continue
+            DOOR_OFFSETS.forEach { (d, off) ->
+                if (!room.hasDoor(d)) return@forEach
+                val next = (cell.first + off.first) to (cell.second + off.second)
+                if (floor.room(next.first, next.second) == null || parent.containsKey(next)) return@forEach
+                parent[next] = cell
+                queue.add(next)
+            }
+        }
+        if (!parent.containsKey(goal)) return emptyList()
+        val path = ArrayDeque<Pair<Int, Int>>()
+        var cursor: Pair<Int, Int>? = goal
+        while (cursor != null && cursor != start) {
+            path.addFirst(cursor)
+            cursor = parent[cursor]
+        }
+        return path.toList()
+    }
+
     fun stepTo(dungeon: DungeonState, x: Int, y: Int): DungeonState? {
         if (!canStepTo(dungeon, x, y)) return null
         val floor = dungeon.currentFloor() ?: return dungeon

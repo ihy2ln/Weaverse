@@ -161,7 +161,9 @@ class MediaRepository @Inject constructor(
      * Makes an APK-bundled image a first-class Pictures-library item.
      *
      * Files keep their collection/category hierarchy in app storage and stable IDs make
-     * installation upgrades idempotent. Existing non-empty files are never recopied.
+     * installation upgrades idempotent. Existing non-empty files are never recopied, and
+     * anything a media pack already supplied is left untouched so the downloaded
+     * high-resolution art is not overwritten by the core art on the next launch.
      */
     suspend fun registerBundledImage(
         assetPath: String,
@@ -173,6 +175,99 @@ class MediaRepository @Inject constructor(
         category: String = "",
         tags: String = "",
     ): MediaEntity = withContext(Dispatchers.IO) {
+        val existing = db.mediaDao().getById(id)
+        if (existing != null && existing.isPackManaged() &&
+            File(context.filesDir, existing.relativePath).length() > 0L
+        ) {
+            return@withContext existing
+        }
+        val file = File(context.filesDir, relativePath)
+        file.parentFile?.mkdirs()
+        val bundledLength = runCatching {
+            context.assets.openFd(assetPath).use { it.length }
+        }.getOrDefault(-1L)
+        val stale = bundledLength > 0L && file.isFile && file.length() != bundledLength
+        val forceLandscape = id.contains("landscape", ignoreCase = true)
+        if (!file.isFile || file.length() == 0L || stale || forceLandscape) {
+            context.assets.open(assetPath).use { input ->
+                file.outputStream().use { output -> input.copyTo(output) }
+            }
+        }
+        require(file.length() > 0L) { "Bundled image could not be installed: $assetPath" }
+        upsertImage(
+            id = id,
+            relativePath = relativePath,
+            file = file,
+            width = width,
+            height = height,
+            displayName = displayName,
+            category = category,
+            tags = tags,
+            existing = existing,
+        )
+    }
+
+    /**
+     * Writes the library row for an image that is already on disk.
+     *
+     * Shared by bundled-asset registration and media-pack installation so both paths agree
+     * on MIME detection and on treating user-managed metadata as authoritative.
+     */
+    internal suspend fun upsertImage(
+        id: String,
+        relativePath: String,
+        file: File,
+        width: Int,
+        height: Int,
+        displayName: String,
+        category: String,
+        tags: String,
+        existing: MediaEntity? = null,
+    ): MediaEntity {
+        val resolvedExisting = existing ?: db.mediaDao().getById(id)
+        // Once an item has metadata, treat it as user-managed. This keeps a Pictures-library
+        // category move from being undone the next time Text Games opens.
+        val hasManagedMetadata = resolvedExisting != null &&
+            (resolvedExisting.category.isNotBlank() || resolvedExisting.tags.isNotBlank())
+        val effectiveCategory = if (hasManagedMetadata) resolvedExisting!!.category else category
+        val effectiveTags = tagsAfterCategoryMove(
+            listOfNotNull(resolvedExisting?.tags, tags).filter(String::isNotBlank).joinToString(","),
+            effectiveCategory,
+        )
+        val entity = MediaEntity(
+            id = id,
+            type = "image",
+            relativePath = relativePath,
+            mimeType = imageMimeForPath(relativePath),
+            byteSize = file.length(),
+            width = width,
+            height = height,
+            thumbnailPath = relativePath,
+            displayName = displayName,
+            category = effectiveCategory,
+            tags = effectiveTags,
+            createdAt = resolvedExisting?.createdAt ?: System.currentTimeMillis(),
+        )
+        db.mediaDao().upsert(entity)
+        return entity
+    }
+
+    /**
+     * Installs an APK-bundled video into app storage and the media library.
+     * Existing non-empty files are never recopied (idempotent upgrades).
+     */
+    suspend fun registerBundledVideo(
+        assetPath: String,
+        id: String,
+        relativePath: String,
+        displayName: String = "",
+        category: String = "",
+        tags: String = "",
+    ): MediaEntity? = withContext(Dispatchers.IO) {
+        val existsInApk = runCatching {
+            context.assets.open(assetPath).use { true }
+        }.getOrDefault(false)
+        if (!existsInApk) return@withContext null
         val file = File(context.filesDir, relativePath)
         file.parentFile?.mkdirs()
         if (!file.isFile || file.length() == 0L) {
@@ -180,10 +275,8 @@ class MediaRepository @Inject constructor(
                 file.outputStream().use { output -> input.copyTo(output) }
             }
         }
-        require(file.length() > 0L) { "Bundled image could not be installed: $assetPath" }
+        if (file.length() == 0L) return@withContext null
         val existing = db.mediaDao().getById(id)
-        // Once a bundled item has metadata, treat it as user-managed. This keeps a
-        // Pictures-library category move from being undone the next time Text Games opens.
         val hasManagedMetadata = existing != null &&
             (existing.category.isNotBlank() || existing.tags.isNotBlank())
         val effectiveCategory = if (hasManagedMetadata) existing!!.category else category
@@ -191,14 +284,18 @@ class MediaRepository @Inject constructor(
             listOfNotNull(existing?.tags, tags).filter(String::isNotBlank).joinToString(","),
             effectiveCategory,
         )
+        val mimeType = when {
+            relativePath.endsWith(".webm", ignoreCase = true) -> "video/webm"
+            else -> "video/mp4"
+        }
         val entity = MediaEntity(
             id = id,
-            type = "image",
+            type = "video",
             relativePath = relativePath,
-            mimeType = "image/png",
+            mimeType = mimeType,
             byteSize = file.length(),
-            width = width,
-            height = height,
+            width = 0,
+            height = 0,
             thumbnailPath = relativePath,
             displayName = displayName,
             category = effectiveCategory,

@@ -34,12 +34,13 @@ class TextGameEngineTest {
         assertFalse(forged.accepted)
         state = offerMission(state, mission)
         state = engine.reduce(state, TextGameAction.BeginMission(mission)).state
-        assertEquals("summoning", state.run.nodeId)
+        assertEquals("shack", state.run.nodeId)
+        assertTrue(state.persistent.dungeon?.inDelve() == true)
         assertEquals(mission.id, state.persistent.missionId)
         assertEquals(TextGameMissionStatus.Active, state.persistent.missionLog.single().status)
         val invalid = engine.reduce(state, TextGameAction.Choose("to_town"))
         assertFalse(invalid.accepted)
-        assertEquals("summoning", invalid.state.run.nodeId)
+        assertEquals("shack", invalid.state.run.nodeId)
     }
 
     @Test
@@ -86,8 +87,8 @@ class TextGameEngineTest {
 
     @Test
     fun victoryProducesSeededRewardThenLocalGachaAddsTwoAllies() {
-        val first = winBattle(battleState())
-        val second = winBattle(battleState())
+        val first = winBattle(authoredBattleState())
+        val second = winBattle(authoredBattleState())
         assertEquals("reward", first.run.nodeId)
         assertEquals(first.run.rewardOptions, second.run.rewardOptions)
         assertEquals(3, first.run.rewardOptions.size)
@@ -96,8 +97,6 @@ class TextGameEngineTest {
         assertEquals(2, first.persistent.materials)
         assertEquals(2, first.persistent.seeds)
         assertEquals(1, first.persistent.battlesWon)
-        assertNull(first.persistent.missionId)
-        assertEquals(TextGameMissionStatus.Completed, first.persistent.missionLog.single().status)
         val claimed = engine.reduce(first, TextGameAction.ClaimReward(first.run.rewardOptions.first())).state
         assertEquals("gacha", claimed.run.nodeId)
         val summoned = engine.reduce(claimed, TextGameAction.RunGachaTutorial)
@@ -108,6 +107,28 @@ class TextGameEngineTest {
         assertEquals(2, summoned.state.persistent.recentGachaIds.size)
         assertEquals(2, summoned.state.persistent.seeds)
         assertEquals("crossroads", engine.reduce(summoned.state, TextGameAction.Choose("continue_after_gacha")).state.run.nodeId)
+    }
+
+    @Test
+    fun acceptMissionEntersMapDelveAndKeepsContractUntilBoss() {
+        var state = engine.reduce(engine.initialState(), TextGameAction.Choose("to_dungeon")).state
+        val mission = testMission(state.persistent.rngSeed)
+        state = offerMission(state, mission)
+        state = engine.reduce(state, TextGameAction.BeginMission(mission)).state
+        assertTrue(state.persistent.dungeon?.inDelve() == true)
+        assertEquals(mission.id, state.persistent.missionId)
+        state = walkIntoDungeonFight(state)
+        assertTrue(state.run.dungeonFight)
+        val roomKind = state.persistent.dungeon?.currentRoom()?.let { DungeonKind.fromIndex(it.kind) }
+        assertTrue(roomKind?.isFightKind == true)
+        // Non-boss room wins return to the map with the contract still active.
+        if (roomKind != DungeonKind.Boss) {
+            state = winDungeonFight(state)
+            assertFalse(state.run.dungeonFight)
+            assertTrue(state.persistent.dungeon?.inDelve() == true)
+            assertEquals(mission.id, state.persistent.missionId)
+            assertEquals(TextGameMissionStatus.Active, state.persistent.missionLog.single().status)
+        }
     }
 
     @Test
@@ -122,6 +143,7 @@ class TextGameEngineTest {
         assertFalse(engine.reduce(state, TextGameAction.Choose("harvest")).accepted)
         state = engine.reduce(state, TextGameAction.Choose("to_town")).state
         state = engine.reduce(state, TextGameAction.Choose("build_deck_hall")).state
+        state = engine.reduce(state, TextGameAction.Choose("town_house")).state
         state = engine.reduce(state, TextGameAction.Choose("prepare_home")).state
         state = engine.reduce(state, TextGameAction.Choose("take_contract")).state
         state = engine.reduce(state, TextGameAction.Choose("protect_the_road")).state
@@ -141,6 +163,9 @@ class TextGameEngineTest {
         val home = definition.node("home")!!
         assertTrue(town.choices.any { it.id == "build_deck_hall" })
         assertTrue((3..5).all { level -> town.choices.any { it.id == "town_l$level" } })
+        val returnTown = definition.node("return_town")!!
+        assertTrue(returnTown.choices.any { it.id == "build_deck_hall" })
+        assertTrue((3..5).all { level -> returnTown.choices.any { it.id == "town_l$level" } })
         assertTrue((2..5).all { level -> home.choices.any { it.id == "upgrade_house_l$level" } })
         var state = afterGacha()
         state = engine.reduce(state, TextGameAction.Choose("to_farm")).state
@@ -152,15 +177,115 @@ class TextGameEngineTest {
         assertEquals(before - 5, state.persistent.coins)
         assertTrue(state.persistent.townLevel > 1)
         assertTrue("deck_hall_built" in state.persistent.flags)
+        assertEquals("town", state.run.nodeId)
+        state = engine.reduce(state, TextGameAction.Choose("town_house")).state
         state = state.copy(persistent = state.persistent.copy(coins = 10, materials = 2))
         state = engine.reduce(state, TextGameAction.Choose("upgrade_house_l2")).state
         assertTrue(state.persistent.homeLevel > 1)
     }
 
     @Test
+    fun tillingTheFirstPlotClearsTheFarmFromTheMap() {
+        var state = afterGacha()
+        state = engine.reduce(state, TextGameAction.Choose("to_farm")).state
+        val tilled = engine.reduce(state, TextGameAction.FarmTill(0))
+        assertTrue(tilled.accepted)
+        assertTrue("farm_cleared" in tilled.state.persistent.flags)
+        assertEquals(FarmSoil.Tilled, tilled.state.persistent.farm.plots.first().soil)
+        state = engine.reduce(tilled.state, TextGameAction.FarmPlant(0, 1f, "frostcap")).state
+        assertEquals("frostcap", state.persistent.farm.plots.first().cropId)
+        assertTrue("crop_planted" in state.persistent.flags)
+    }
+
+    @Test
+    fun townCollectsIncomeFromABuiltLotThenWaitsForABattle() {
+        var state = afterGacha()
+        state = engine.reduce(state, TextGameAction.Choose("to_farm")).state
+        state = engine.reduce(state, TextGameAction.Choose("clear_plot")).state
+        state = engine.reduce(state, TextGameAction.Choose("plant")).state
+        state = engine.reduce(state, TextGameAction.Choose("to_town")).state
+        assertFalse(engine.reduce(state, TextGameAction.TownCollect("plaza")).accepted)
+        assertFalse(engine.reduce(state, TextGameAction.TownCollect("deck_hall")).accepted)
+        state = engine.reduce(state, TextGameAction.Choose("build_deck_hall")).state
+        val before = state.persistent.coins
+        val collect = engine.reduce(state, TextGameAction.TownCollect("deck_hall"))
+        assertTrue(collect.accepted)
+        assertTrue(collect.state.persistent.coins > before)
+        assertFalse(engine.reduce(collect.state, TextGameAction.TownCollect("deck_hall")).accepted)
+    }
+
+    @Test
+    fun placeHavenCardOnTownPlot() {
+        var state = engine.initialState()
+        state = engine.reduce(state, TextGameAction.Choose("to_town")).state
+        val withCard = state.copy(
+            persistent = state.persistent.copy(
+                havenBoard = state.persistent.havenBoard.copy(hand = listOf("haven/deck_hall")),
+            ),
+        )
+        val placed = engine.reduce(withCard, TextGameAction.PlaceHavenCard("haven/deck_hall", "town", 0.3f, 0.5f))
+        assertTrue(placed.accepted)
+        assertTrue(placed.state.persistent.havenBoard.placed.any { it.cardId == "haven/deck_hall" })
+    }
+
+    @Test
+    fun enterHavenRoomOpensInterior() {
+        var state = engine.initialState()
+        state = engine.reduce(state, TextGameAction.Choose("to_town")).state
+        val entered = engine.reduce(state, TextGameAction.EnterHavenRoom("haven/shack"))
+        assertTrue(entered.accepted)
+        assertEquals("home", entered.state.run.nodeId)
+    }
+
+    @Test
+    fun moveHavenCardOnTownPlot() {
+        var state = engine.initialState()
+        state = engine.reduce(state, TextGameAction.Choose("to_town")).state
+        val moved = engine.reduce(state, TextGameAction.MoveHavenCard("haven/shack", 0.2f, 0.3f))
+        assertTrue(moved.accepted)
+        val shack = moved.state.persistent.havenBoard.placed.first { it.cardId == "haven/shack" }
+        assertEquals(0.2f, shack.x)
+        assertEquals(0.3f, shack.y)
+    }
+
+    @Test
+    fun enterHavenRoomUsesUpgradeStackArt() {
+        var state = engine.initialState()
+        state = engine.reduce(state, TextGameAction.Choose("to_town")).state
+        val board = state.persistent.havenBoard.copy(
+            placed = listOf(
+                PlacedHavenCard(
+                    cardId = "haven/shack",
+                    board = "town",
+                    x = 0.5f,
+                    y = 0.5f,
+                    upgradeIds = listOf("haven/upgrade-house-workshop"),
+                ),
+            ),
+        )
+        state = state.copy(persistent = state.persistent.copy(havenBoard = board))
+        val entered = engine.reduce(state, TextGameAction.EnterHavenRoom("haven/shack"))
+        assertTrue(entered.accepted)
+        assertEquals("images/adams_haven/haven/room/rm_anvil.webp", entered.state.run.havenRoomArtPath)
+    }
+
+    @Test
+    fun townMovePlacesTheShackOnAnotherPlot() {
+        var state = afterGacha()
+        state = engine.reduce(state, TextGameAction.Choose("to_town")).state
+        val house = TownRules.def("house")!!
+        val start = TownRules.plotId(state.persistent.town, house)
+        val moved = engine.reduce(state, TextGameAction.TownMove("house", "p_w"))
+        assertTrue(moved.accepted)
+        assertEquals("p_w", TownRules.plotId(moved.state.persistent.town, house))
+        assertTrue(start != "p_w")
+        assertFalse(engine.reduce(state, TextGameAction.TownMove("house", "nope")).accepted)
+    }
+
+    @Test
     fun completeCampaignLinksFarmTownHouseAndFinalBattle() {
         var state = afterGacha()
-        listOf("to_farm", "clear_plot", "plant", "to_town", "build_deck_hall", "prepare_home", "take_contract", "protect_the_road").forEach {
+        listOf("to_farm", "clear_plot", "plant", "to_town", "build_deck_hall", "town_house", "prepare_home", "take_contract", "protect_the_road").forEach {
             state = engine.reduce(state, TextGameAction.Choose(it)).state
         }
         state = winContract(state)
@@ -268,11 +393,16 @@ class TextGameEngineTest {
         assertEquals(69, definition.collectibleCards.size)
         assertEquals(69, definition.collectibleCards.map { it.id }.distinct().size)
         assertTrue(definition.collectibleCards.all { it.artAssetPath.endsWith(".png") })
-        listOf("farm", "town", "home").forEach { nodeId ->
+        listOf("home").forEach { nodeId ->
             val node = definition.node(nodeId)!!
             assertNotNull(node.sceneMotionMediaId)
             assertTrue(node.bundledSceneMotionAssetPath!!.endsWith(".mp4"))
             assertNotNull(node.bundledSceneAssetPath)
+        }
+        listOf("farm", "town").forEach { nodeId ->
+            val node = definition.node(nodeId)!!
+            assertNotNull(node.bundledSceneAssetPath)
+            assertTrue(node.bundledSceneAssetPath!!.contains("haven/boards/"))
         }
     }
 
@@ -284,6 +414,19 @@ class TextGameEngineTest {
         assertTrue(crossroads.all { it.category == "Adams Haven / Scene / Crossroads" })
         assertTrue(crossroads.all { "scene:crossroads" in it.tags })
         assertTrue(definition.sceneAssets.filter { "town" in it.sceneTypes }.none { "four-way" in it.artAssetPath })
+        assertEquals("adams-haven-map-farm-board", definition.node("farm")?.sceneMediaId)
+        assertEquals("adams-haven-map-town-board", definition.node("town")?.sceneMediaId)
+        assertEquals("adams-haven-map-crossroads-four-way-textured", definition.node("crossroads")?.sceneMediaId)
+        assertEquals(4, FarmLayout.PLOT_CELLS.size)
+        assertEquals(TownLotStatus.Built, TownRules.status(TownRules.def("house")!!, emptyList(), 1))
+        assertEquals(TownLotStatus.Empty, TownRules.status(TownRules.def("deck_hall")!!, emptyList(), 1))
+        assertFalse(TownRules.isVisible(TownRules.def("market")!!, emptyList(), 1))
+        assertTrue(definition.node("farm")!!.hotspots.any { it.kind == TextGameHotspotKind.Npc && it.talkProse.isNotBlank() })
+        assertTrue(definition.node("town")!!.hotspots.any { it.kind == TextGameHotspotKind.Npc })
+        assertTrue(definition.node("town")!!.hotspots.any { it.buildingId == "deck_hall" })
+        assertTrue(definition.sceneAssets.filter { "farm-tile" in it.sceneTypes }.any { "unmaintained" in it.artAssetPath })
+        assertTrue(definition.sceneAssets.filter { "town" in it.sceneTypes }.any { it.id == "town-board" })
+        assertTrue(definition.node("crossroads")!!.bundledSceneAssetPath!!.contains("four-way-road"))
         assertEquals("crossroads", definition.node("crossroads")?.sceneAssetType)
         assertEquals("battle", definition.node("battle")?.sceneAssetType)
         definition.roster.forEach { member ->
@@ -333,14 +476,98 @@ class TextGameEngineTest {
         ).id)
     }
 
+    @Test
+    fun gkomMonsterCatalogRegistersSixteenVariantsForBattles() {
+        val pool = adamsHavenGkomMonsters()
+        assertEquals(16, pool.size)
+        assertTrue(pool.all { it.artAssetPath.startsWith("images/adams_haven/monsters/gkom/") })
+        assertTrue(pool.all { it.artAssetPath.endsWith(".webp") })
+        assertEquals("Adams Haven / Monsters / GKOM", adamsHavenGkomMediaCategory())
+        val tags = adamsHavenGkomMediaTags(pool.first())
+        assertTrue("gkom" in tags)
+        assertTrue("monster" in tags)
+        assertTrue("battle" in tags)
+        assertTrue("gkom-variant" in tags)
+        val a = pickGkomVariant("warden", 42L, pool)
+        val b = pickGkomVariant("warden", 42L, pool)
+        assertEquals(a?.id, b?.id)
+        assertNotNull(a)
+    }
+
+    @Test
+    fun collectibleCardsCarryMotionVideoPathsAlongsideStills() {
+        val cards = adamsHavenCardCatalog()
+        assertTrue(cards.isNotEmpty())
+        assertTrue(cards.all { it.motionAssetPath != null && it.motionMediaId != null })
+        assertTrue(cards.all { it.motionAssetPath!!.startsWith("videos/adams_haven/") })
+        assertTrue(cards.all { it.motionAssetPath!!.endsWith(".mp4") })
+        assertTrue(cards.all { it.artAssetPath.endsWith(".png") })
+        val sample = cards.first()
+        assertEquals(
+            "videos/adams_haven/${sample.category}/${sample.id.substringAfter('/')}.mp4",
+            sample.motionAssetPath,
+        )
+    }
+
     private fun battleState(difficulty: TextGameDifficulty = TextGameDifficulty.Standard): TextGameState {
         var state = engine.initialState(difficulty)
         state = engine.reduce(state, TextGameAction.Choose("to_dungeon")).state
         val mission = testMission(state.persistent.rngSeed)
         state = offerMission(state, mission)
         state = engine.reduce(state, TextGameAction.BeginMission(mission)).state
+        return walkIntoDungeonFight(state)
+    }
+
+    /** Authored prologue battle (summoning → road → battle) for reward/gacha coverage. */
+    private fun authoredBattleState(difficulty: TextGameDifficulty = TextGameDifficulty.Standard): TextGameState {
+        var state = engine.initialState(difficulty)
+        state = state.copy(run = state.run.copy(nodeId = "summoning"))
         listOf("choose_kestrel", "burst_plan").forEach { choiceId ->
             state = engine.reduce(state, TextGameAction.Choose(choiceId)).state
+        }
+        return state
+    }
+
+    private fun walkIntoDungeonFight(start: TextGameState): TextGameState {
+        var state = start
+        repeat(48) {
+            if (state.run.dungeonFight) return state
+            val dungeon = state.persistent.dungeon ?: return state
+            val exits = DungeonRules.exits(dungeon)
+            if (exits.isEmpty()) return state
+            val fight = exits.firstOrNull { room ->
+                val kind = DungeonKind.fromIndex(room.kind)
+                kind.isFightKind && !room.cleared
+            }
+            val target = fight ?: exits.first()
+            state = engine.reduce(state, TextGameAction.DungeonStep(target.x, target.y)).state
+        }
+        return state
+    }
+
+    private fun winDungeonFight(start: TextGameState): TextGameState {
+        // Prefer the deterministic authored opening sequence when fighting the
+        // first-encounter board reused by dungeon fights.
+        if (start.run.nodeId == "battle" && start.run.enemies.any { it.id == "warden" }) {
+            return winBattle(start)
+        }
+        var state = start
+        val living = state.run.enemies.filter { it.health > 0 }.map { it.id }
+        living.forEach { enemyId ->
+            state = engine.reduce(state, TextGameAction.SelectTarget(enemyId)).state
+            var guard = 0
+            while (state.run.enemies.firstOrNull { it.id == enemyId }?.health?.let { it > 0 } == true && guard < 16) {
+                guard += 1
+                if (state.run.dungeonFight.not() && state.run.nodeId != "battle") break
+                val playable = state.run.hand.mapNotNull { id -> definition.card(id) }.firstOrNull { card ->
+                    card.damage > 0 && engine.canPlay(state, card)
+                }
+                if (playable == null) {
+                    state = engine.reduce(state, TextGameAction.EndTurn).state
+                    continue
+                }
+                state = engine.reduce(state, TextGameAction.PlayCard(playable.id)).state
+            }
         }
         return state
     }
@@ -363,7 +590,7 @@ class TextGameEngineTest {
     )
 
     private fun afterGacha(): TextGameState {
-        var state = winBattle(battleState())
+        var state = winBattle(authoredBattleState())
         state = engine.reduce(state, TextGameAction.ClaimReward(state.run.rewardOptions.first())).state
         state = engine.reduce(state, TextGameAction.RunGachaTutorial).state
         return engine.reduce(state, TextGameAction.Choose("continue_after_gacha")).state

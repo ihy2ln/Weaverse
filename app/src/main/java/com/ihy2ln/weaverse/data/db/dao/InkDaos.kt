@@ -19,6 +19,7 @@ import com.ihy2ln.weaverse.data.db.entities.RpCharacterEntity
 import com.ihy2ln.weaverse.data.db.entities.RpChatEntity
 import com.ihy2ln.weaverse.data.db.entities.RpMessageEntity
 import com.ihy2ln.weaverse.data.db.entities.RpPersonaEntity
+import com.ihy2ln.weaverse.data.db.entities.RpgCampaignSaveEntity
 import com.ihy2ln.weaverse.data.db.entities.SceneEntity
 import com.ihy2ln.weaverse.data.db.entities.SceneRevisionEntity
 import com.ihy2ln.weaverse.data.db.entities.SeriesEntity
@@ -307,6 +308,12 @@ interface WorkshopChatDao {
 
 @Dao
 interface RoleplayDao {
+    @Query("SELECT * FROM rpg_campaign_saves WHERE campaignId = :campaignId LIMIT 1")
+    suspend fun getRpgCampaignSave(campaignId: String): RpgCampaignSaveEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertRpgCampaignSave(entity: RpgCampaignSaveEntity)
+
     @Query("SELECT * FROM rp_characters ORDER BY name")
     fun observeCharacters(): Flow<List<RpCharacterEntity>>
 

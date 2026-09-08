@@ -1,13 +1,18 @@
 package com.ihy2ln.weaverse.feature.roleplay.textgame
 
 import kotlin.math.roundToInt
+import kotlin.random.Random
 
 class TextGameEngine(private val definition: TextGameDefinition) {
     fun initialState(
         difficulty: TextGameDifficulty = TextGameDifficulty.Standard,
         rngSeed: Long = TextGamePersistentState().rngSeed,
     ): TextGameState = TextGameState(
-        persistent = TextGamePersistentState(difficulty = difficulty, rngSeed = rngSeed),
+        persistent = TextGamePersistentState(
+            difficulty = difficulty,
+            rngSeed = rngSeed,
+            havenBoard = HavenBoardRules.initial(),
+        ),
         run = TextGameRunState(
             nodeId = definition.startNodeId,
             playerHealth = TextGamePersistentState().maxHealth,
@@ -33,12 +38,24 @@ class TextGameEngine(private val definition: TextGameDefinition) {
         is TextGameAction.BeginMission -> beginMission(state, action.mission)
         TextGameAction.EnterDungeon -> enterDungeon(state)
         is TextGameAction.DungeonStep -> dungeonStep(state, action.x, action.y)
+        TextGameAction.DescendDungeon -> descendDungeon(state)
         TextGameAction.LeaveDungeon -> leaveDungeon(state)
         TextGameAction.CastUltimate -> castUltimate(state)
         TextGameAction.DismissStoryProposal -> accepted(
             state.copy(run = state.run.copy(pendingStoryProposal = null)),
             "I dismiss the unconfirmed story proposal.",
         )
+        is TextGameAction.FarmTill -> farmTill(state, action.plotId)
+        is TextGameAction.FarmPlant -> farmPlant(state, action.plotId, action.score01, action.cropId)
+        is TextGameAction.FarmWater -> farmWater(state, action.plotId)
+        is TextGameAction.FarmHarvest -> farmHarvest(state, action.plotId, action.score01)
+        is TextGameAction.FarmPackDish -> farmPackDish(state, action.dish)
+        is TextGameAction.TownCollect -> townCollect(state, action.buildingId)
+        is TextGameAction.TownMove -> townMove(state, action.buildingId, action.plotId)
+        is TextGameAction.PlaceHavenCard -> placeHavenCard(state, action.cardId, action.board, action.x, action.y)
+        is TextGameAction.StackHavenUpgrade -> stackHavenUpgrade(state, action.buildingCardId, action.upgradeCardId)
+        is TextGameAction.MoveHavenCard -> moveHavenCard(state, action.cardId, action.x, action.y)
+        is TextGameAction.EnterHavenRoom -> enterHavenRoom(state, action.buildingCardId)
     }
 
     fun isChoiceEnabled(state: TextGameState, choice: TextGameChoice): Boolean {
@@ -81,7 +98,11 @@ class TextGameEngine(private val definition: TextGameDefinition) {
         val applied = applyEffects(state.persistent, state.run.playerHealth, choice.effects)
         val moved = state.copy(
             persistent = applied.first,
-            run = state.run.copy(nodeId = choice.destinationNodeId, playerHealth = applied.second),
+            run = state.run.copy(
+                nodeId = choice.destinationNodeId,
+                playerHealth = applied.second,
+                havenRoomArtPath = null,
+            ),
         )
         return accepted(enterNode(moved), choice.label)
     }
@@ -117,7 +138,9 @@ class TextGameEngine(private val definition: TextGameDefinition) {
             }
         }
         val targetId = state.run.selectedTargetId
-        val bonus = if (targetId != null && targetId == state.run.markedTargetId) state.run.markedBonus else 0
+        val markBonus = if (targetId != null && targetId == state.run.markedTargetId) state.run.markedBonus else 0
+        val farmBonus = if (card.damage > 0 && state.run.farmAttackBonus > 0) state.run.farmAttackBonus else 0
+        val bonus = markBonus + farmBonus
         val enemies = state.run.enemies.map {
             if (it.id == targetId && card.damage > 0) it.copy(health = (it.health - card.damage - bonus).coerceAtLeast(0)) else it
         }
@@ -176,7 +199,11 @@ class TextGameEngine(private val definition: TextGameDefinition) {
         val applied = applyEffects(state.persistent, state.run.playerHealth, victoryEffects)
         val next = state.copy(
             persistent = resolveActiveMission(
-                applied.first.copy(rngSeed = applied.first.rngSeed + 1),
+                applied.first.copy(
+                    rngSeed = applied.first.rngSeed + 1,
+                    havenBoard = HavenBoardRules.grantReward(applied.first.havenBoard),
+                    defeatedMonsters = applied.first.defeatedMonsters + defeatedMonsterIds(state),
+                ),
                 TextGameMissionStatus.Completed,
             ),
             run = state.run.copy(
@@ -218,10 +245,21 @@ class TextGameEngine(private val definition: TextGameDefinition) {
             TextGameEffect(coinsDelta = bonusCoins, battlesWonDelta = 1, ultimateDelta = ULT_PER_VICTORY),
         )
         val applied = applyEffects(state.persistent.copy(dungeon = cleared), state.run.playerHealth, effects)
+        val room = cleared.currentRoom()
+        val bossCleared = room != null && DungeonKind.fromIndex(room.kind) == DungeonKind.Boss
+        val withBestiary = applied.first.copy(
+            defeatedMonsters = applied.first.defeatedMonsters + defeatedMonsterIds(state),
+        )
+        val persistent = if (bossCleared) {
+            resolveActiveMission(withBestiary, TextGameMissionStatus.Completed)
+        } else {
+            withBestiary
+        }
         val next = state.copy(
-            persistent = resolveActiveMission(applied.first, TextGameMissionStatus.Completed),
+            persistent = persistent,
             run = state.run.copy(
                 dungeonFight = false,
+                dungeonRoomKind = null,
                 enemies = emptyList(),
                 hand = emptyList(),
                 playedCards = emptyList(),
@@ -230,9 +268,14 @@ class TextGameEngine(private val definition: TextGameDefinition) {
                 lastBattleGains = gainsOf(effects),
             ),
         )
+        val missionBit = if (bossCleared && state.persistent.missionId != null) {
+            " Contract complete — the floor boss is down."
+        } else {
+            ""
+        }
         return accepted(
             next,
-            "$sourceText The room is cleared — I pocket $bonusCoins coins and return to the map.",
+            "$sourceText The room is cleared — I pocket $bonusCoins coins and return to the map.$missionBit",
         )
     }
 
@@ -281,6 +324,7 @@ class TextGameEngine(private val definition: TextGameDefinition) {
             )
         }
         val refreshed = state.run.resources.map { it.copy(ap = it.maxAp, ep = (it.ep + 2).coerceAtMost(it.maxEp)) }
+        val buffRounds = (state.run.farmBuffRounds - 1).coerceAtLeast(0)
         return accepted(
             state.copy(
                 persistent = state.persistent.copy(
@@ -293,6 +337,8 @@ class TextGameEngine(private val definition: TextGameDefinition) {
                     playedCards = emptyList(),
                     selectedCardId = null,
                     turn = state.run.turn + 1,
+                    farmBuffRounds = buffRounds,
+                    farmAttackBonus = if (buffRounds > 0) state.run.farmAttackBonus else 0,
                 ),
             ),
             "Enemy intents deal $damage damage${guardText(absorbed)}. AP refreshes and each ally recovers 2 EP.",
@@ -307,13 +353,20 @@ class TextGameEngine(private val definition: TextGameDefinition) {
         val destination = definition.node(state.run.nodeId)?.rewardDestinationNodeId
             ?: return rejected(state, "The reward scene has no destination.")
         val next = state.copy(
-            persistent = state.persistent.copy(collection = addUnique(state.persistent.collection, cardId)),
+            persistent = state.persistent.copy(
+                collection = addUnique(state.persistent.collection, cardId),
+                havenBoard = HavenBoardRules.grantReward(state.persistent.havenBoard),
+            ),
             run = state.run.copy(nodeId = destination, rewardOptions = emptyList()),
         )
         return accepted(enterNode(next), "I add ${card.title} to my permanent collection.")
     }
 
-    /** Commits one validated board offer and advances into its authored dungeon route. */
+    /**
+     * Commits one validated board offer and descends onto the grid dungeon map
+     * (Godot AdamsHavenCardGame `scenes/Dungeon.tscn` flow) — authored road
+     * nodes are no longer the Accept-mission route.
+     */
     private fun beginMission(state: TextGameState, mission: TextGameMission): TextGameResolution {
         val board = definition.node(state.run.nodeId)
         if (board?.type != TextGameNodeType.MissionBoard) {
@@ -328,26 +381,28 @@ class TextGameEngine(private val definition: TextGameDefinition) {
         val log = applied.first.missionLog.map { entry ->
             if (entry.mission.id == offered.id) entry.copy(status = TextGameMissionStatus.Active) else entry
         }
-        val repeatDestination = board.missionRepeatDestinationNodeId
-            ?.takeIf { board.missionRepeatRequiredFlag?.let { flag -> flag in applied.first.flags } == true }
-        val destination = repeatDestination ?: board.missionDestinationNodeId
-            ?: return rejected(state, "The mission board has no dungeon route.")
+        val withMission = applied.first.copy(
+            missionId = offered.id,
+            missionTitle = offered.title,
+            missionLog = log,
+        )
+        val dungeon = withMission.dungeon ?: DungeonGenerator.generate(withMission.rngSeed * 31L + 7L)
+        val started = DungeonRules.startDelve(dungeon, 0)
+            ?: return rejected(state, "That floor is still sealed — beat the boss above it first.")
         val next = state.copy(
-            persistent = applied.first.copy(
-                missionId = offered.id,
-                missionTitle = offered.title,
-                missionLog = log,
-            ),
+            persistent = withMission.copy(dungeon = started),
             run = state.run.copy(
-                nodeId = destination,
                 missionOffer = emptyList(),
                 missionBoardIntro = "",
                 playerHealth = applied.second,
+                dungeonFight = false,
             ),
         )
         return accepted(
-            enterNode(next),
-            "Mission accepted — ${offered.title}. ${offered.description}".trim(),
+            next,
+            "Mission accepted — ${offered.title}. I descend into the dungeon. " +
+                "${DungeonRules.exits(started).size} doorways lead out of the entrance. " +
+                offered.description,
         )
     }
 
@@ -376,14 +431,44 @@ class TextGameEngine(private val definition: TextGameDefinition) {
     private fun dungeonStep(state: TextGameState, x: Int, y: Int): TextGameResolution {
         val dungeon = state.persistent.dungeon
             ?: return rejected(state, "I am not inside the dungeon.")
+        if (DungeonRules.canStepTo(dungeon, x, y)) {
+            return resolveEnteredRoom(state, dungeon, x, y)
+        }
+        // Tap a known cleared room further off: walk the door-path when every
+        // cell on it is already cleared (Godot scenes/Dungeon.gd).
+        val path = DungeonRules.route(dungeon, dungeon.atX, dungeon.atY, x, y)
+        if (path.isEmpty()) return rejected(state, "No door leads there from where I stand.")
+        val floor = dungeon.currentFloor() ?: return rejected(state, "The floor is missing.")
+        if (path.any { cell -> floor.room(cell.first, cell.second)?.cleared != true }) {
+            return rejected(state, "I can only walk a cleared path — fight or explore the rooms between.")
+        }
+        var walked = dungeon
+        for (cell in path) {
+            walked = DungeonRules.stepTo(walked, cell.first, cell.second) ?: break
+        }
+        val room = walked.currentRoom()
+        val kind = room?.let { DungeonKind.fromIndex(it.kind) }
+        return accepted(
+            state.copy(persistent = state.persistent.copy(dungeon = walked)),
+            "I cross the cleared halls to the ${kind?.label ?: "room"}.",
+        )
+    }
+
+    private fun resolveEnteredRoom(
+        state: TextGameState,
+        dungeon: DungeonState,
+        x: Int,
+        y: Int,
+    ): TextGameResolution {
         val moved = DungeonRules.stepTo(dungeon, x, y)
             ?: return rejected(state, "No door leads there from where I stand.")
         val room = moved.currentRoom() ?: return rejected(state, "The room is missing.")
         val kind = DungeonKind.fromIndex(room.kind)
         return when {
             kind.isFightKind && !room.cleared -> startDungeonFight(state.copy(persistent = state.persistent.copy(dungeon = moved)), kind)
-            kind == DungeonKind.Treasure -> {
-                val applied = applyEffects(state.persistent.copy(dungeon = moved), state.run.playerHealth, listOf(TextGameEffect(coinsDelta = 3)))
+            kind == DungeonKind.Treasure && !room.cleared -> {
+                val looted = DungeonRules.clearCurrent(moved)
+                val applied = applyEffects(state.persistent.copy(dungeon = looted), state.run.playerHealth, listOf(TextGameEffect(coinsDelta = 3)))
                 val gained = applied.first.coins - state.persistent.coins
                 accepted(
                     state.copy(
@@ -393,8 +478,9 @@ class TextGameEngine(private val definition: TextGameDefinition) {
                     "A hidden cache — I pocket $gained coins.",
                 )
             }
-            kind == DungeonKind.Rest -> {
-                val applied = applyEffects(state.persistent.copy(dungeon = moved), state.run.playerHealth, listOf(TextGameEffect(healthDelta = 99)))
+            kind == DungeonKind.Rest && !room.cleared -> {
+                val rested = DungeonRules.clearCurrent(moved)
+                val applied = applyEffects(state.persistent.copy(dungeon = rested), state.run.playerHealth, listOf(TextGameEffect(healthDelta = 99)))
                 accepted(
                     state.copy(
                         persistent = applied.first,
@@ -403,8 +489,9 @@ class TextGameEngine(private val definition: TextGameDefinition) {
                     "A safe camp. I rest until my strength returns.",
                 )
             }
-            kind == DungeonKind.Merchant -> {
-                val applied = applyEffects(state.persistent.copy(dungeon = moved), state.run.playerHealth, listOf(TextGameEffect(materialsDelta = 1)))
+            kind == DungeonKind.Merchant && !room.cleared -> {
+                val traded = DungeonRules.clearCurrent(moved)
+                val applied = applyEffects(state.persistent.copy(dungeon = traded), state.run.playerHealth, listOf(TextGameEffect(materialsDelta = 1)))
                 accepted(
                     state.copy(
                         persistent = applied.first,
@@ -432,8 +519,25 @@ class TextGameEngine(private val definition: TextGameDefinition) {
         val battleNodes = definition.nodes.filter { it.type == TextGameNodeType.Battle && it.encounterId != null }
         if (battleNodes.isEmpty()) return rejected(state, "No battle routes are defined for this dungeon.")
         val node = battleNodes[((floor.index + floor.fightsCleared()).mod(battleNodes.size))]
-        val entered = enterNode(state.copy(run = state.run.copy(nodeId = node.id, dungeonFight = true)))
+        val entered = enterNode(
+            state.copy(
+                run = state.run.copy(
+                    nodeId = node.id,
+                    dungeonFight = true,
+                    dungeonRoomKind = kind.ordinal,
+                ),
+            ),
+        )
         return accepted(entered, "${kind.label}: ${node.title}. The room seals behind me.")
+    }
+
+    private fun defeatedMonsterIds(state: TextGameState): Set<String> {
+        val kind = state.run.dungeonRoomKind?.let(DungeonKind::fromIndex)
+        val tier = gkomTierFor(kind)
+        return state.run.enemies.asSequence()
+            .filter { it.health <= 0 }
+            .mapNotNull { pickGkomVariant(it.id, state.persistent.rngSeed, tier)?.id }
+            .toSet()
     }
 
     private fun leaveDungeon(state: TextGameState): TextGameResolution {
@@ -441,9 +545,33 @@ class TextGameEngine(private val definition: TextGameDefinition) {
         if (!DungeonRules.canRetreat(dungeon)) {
             return rejected(state, "I cannot retreat from here — only camps and the entrance let you walk out.")
         }
+        val floor = dungeon.currentFloor()
+        val bossBeaten = floor?.beaten() == true
+        val persistentBase = state.persistent.copy(dungeon = DungeonRules.endDelve(dungeon))
+        val persistent = if (bossBeaten && state.persistent.missionId != null) {
+            resolveActiveMission(persistentBase, TextGameMissionStatus.Completed)
+        } else {
+            persistentBase
+        }
+        val doneBit = if (bossBeaten && state.persistent.missionId != null) {
+            " The contract is fulfilled."
+        } else {
+            ""
+        }
         return accepted(
-            state.copy(persistent = state.persistent.copy(dungeon = DungeonRules.endDelve(dungeon))),
-            "I climb back to the Haven road. The dungeon keeps everything I learned.",
+            state.copy(persistent = persistent, run = state.run.copy(dungeonFight = false)),
+            "I climb back to the Haven road. The dungeon keeps everything I learned.$doneBit",
+        )
+    }
+
+    private fun descendDungeon(state: TextGameState): TextGameResolution {
+        val dungeon = state.persistent.dungeon
+            ?: return rejected(state, "I am not inside the dungeon.")
+        val descended = DungeonRules.descend(dungeon)
+            ?: return rejected(state, "The stairs are sealed — the floor's boss still stands.")
+        return accepted(
+            state.copy(persistent = state.persistent.copy(dungeon = descended)),
+            "I take the stairs down to ${descended.floorName()}.",
         )
     }
 
@@ -553,10 +681,13 @@ class TextGameEngine(private val definition: TextGameDefinition) {
     private fun enterNode(state: TextGameState): TextGameState {
         val node = definition.node(state.run.nodeId) ?: return state
         if (node.type == TextGameNodeType.MissionBoard && state.persistent.missionId != null) {
-            val repeatDestination = node.missionRepeatDestinationNodeId
-                ?.takeIf { node.missionRepeatRequiredFlag?.let { flag -> flag in state.persistent.flags } == true }
-            val destination = repeatDestination ?: node.missionDestinationNodeId ?: return state
-            return enterNode(state.copy(run = state.run.copy(nodeId = destination)))
+            // Active contract: stay on the board node and put the player on the
+            // grid map rather than bouncing into the old authored road scenes.
+            if (state.persistent.dungeon?.inDelve() == true) return state
+            val dungeon = state.persistent.dungeon
+                ?: DungeonGenerator.generate(state.persistent.rngSeed * 31L + 7L)
+            val started = DungeonRules.startDelve(dungeon, 0) ?: return state
+            return state.copy(persistent = state.persistent.copy(dungeon = started))
         }
         val encounter = node.encounterId?.let(definition::encounter) ?: return state
         val healthMultiplier = when (state.persistent.difficulty) {
@@ -566,14 +697,25 @@ class TextGameEngine(private val definition: TextGameDefinition) {
             TextGameDifficulty.Nightmare -> 1.4
         }
         val openingGuard = state.persistent.preparedGuard
+        val dish = state.persistent.farm.packedDish?.let { FarmRules.DISHES[it] }
+        val dishGuard = (dish?.openingGuard ?: 0) + (dish?.openingHeal ?: 0)
+        val dishAttack = dish?.attackBonus ?: 0
+        val dishRounds = dish?.duration ?: 0
         // Roguelite variance: each entry into an encounter rolls enemy health
         // off this run's seed, so no two runs (or visits) fight identical foes.
         var varianceSeed = state.persistent.rngSeed * 31L + (state.run.nodeId.hashCode().toLong() and 0xFFFFL)
+        val farmAfterDish = state.persistent.farm.copy(packedDish = null)
         return state.copy(
-            persistent = state.persistent.copy(preparedGuard = 0, rngSeed = state.persistent.rngSeed + 3),
+            persistent = state.persistent.copy(
+                preparedGuard = 0,
+                farm = farmAfterDish,
+                rngSeed = state.persistent.rngSeed + 3,
+            ),
             run = state.run.copy(
             playerHealth = state.persistent.maxHealth,
-            guard = openingGuard,
+            guard = openingGuard + dishGuard,
+            farmAttackBonus = dishAttack,
+            farmBuffRounds = if (dishAttack > 0) dishRounds else 0,
             resources = encounter.actorResources,
             enemies = encounter.enemies.map {
                 varianceSeed = varianceSeed * 6_364_136_223_846_793_005L + 1_442_695_040_888_963_407L
@@ -619,6 +761,45 @@ class TextGameEngine(private val definition: TextGameDefinition) {
         var persistent = startingPersistent
         var health = startingHealth
         effects.forEach { effect ->
+            val nextBattles = (persistent.battlesWon + effect.battlesWonDelta).coerceAtLeast(0)
+            val nextFarmLevel = (persistent.farmLevel + effect.farmLevelDelta).coerceAtLeast(1)
+            val nextTownLevel = (persistent.townLevel + effect.townLevelDelta).coerceAtLeast(1)
+            var farm = persistent.farm
+            if (nextBattles > farm.battlesFought) {
+                farm = FarmRules.syncBattlesFought(farm, nextBattles)
+            }
+            val flags = effect.setFlag?.let { addUnique(persistent.flags, it) } ?: persistent.flags
+            if (effect.setFlag == "farm_cleared" || effect.farmLevelDelta != 0) {
+                val capacity = FarmRules.plotCapacity(nextFarmLevel, cleared = "farm_cleared" in flags || farm.plots.isNotEmpty())
+                farm = FarmRules.ensureCapacity(farm, capacity)
+            }
+            if (effect.setFlag == "farm_cleared" && farm.plots.isNotEmpty()) {
+                farm = FarmRules.till(farm, farm.plots.first().id) ?: farm
+            }
+            if (effect.setFlag == "crop_planted") {
+                val tilled = farm.plots.firstOrNull { it.soil == FarmSoil.Tilled }
+                if (tilled != null) {
+                    val crop = FarmRules.CROPS.first()
+                    farm = FarmRules.plant(farm, tilled.id, crop.id, quality = 3) ?: farm
+                }
+            }
+            if (effect.setFlag == "crop_harvested") {
+                val ready = farm.plots.firstOrNull { it.soil == FarmSoil.Ready }
+                    ?: farm.plots.firstOrNull { it.soil == FarmSoil.Planted }?.let { planted ->
+                        // Tutorial harvest can fire via cropGrowth without waiting — force ready.
+                        farm = farm.copy(
+                            plots = farm.plots.map {
+                                if (it.id == planted.id) it.copy(soil = FarmSoil.Ready) else it
+                            },
+                        )
+                        farm.plots.firstOrNull { it.id == planted.id }
+                    }
+                if (ready != null) {
+                    FarmRules.harvest(farm, ready.id)?.let { (cleared, result) ->
+                        farm = FarmRules.addDish(cleared, result.dish, maxOf(1, result.amount / 2))
+                    }
+                }
+            }
             persistent = persistent.copy(
                 coins = (persistent.coins + effect.coinsDelta).coerceAtLeast(0),
                 seeds = (persistent.seeds + effect.seedsDelta).coerceAtLeast(0),
@@ -628,20 +809,234 @@ class TextGameEngine(private val definition: TextGameDefinition) {
                 summonerSp = (persistent.summonerSp + effect.summonerSpDelta).coerceAtLeast(0),
                 cropGrowth = (persistent.cropGrowth + effect.cropGrowthDelta).coerceAtLeast(0),
                 preparedGuard = (persistent.preparedGuard + effect.preparedGuardDelta).coerceAtLeast(0),
-                farmLevel = (persistent.farmLevel + effect.farmLevelDelta).coerceAtLeast(1),
-                townLevel = (persistent.townLevel + effect.townLevelDelta).coerceAtLeast(1),
+                farmLevel = nextFarmLevel,
+                townLevel = nextTownLevel,
                 homeLevel = (persistent.homeLevel + effect.houseLevelDelta + effect.homeLevelDelta).coerceAtLeast(1),
-                battlesWon = (persistent.battlesWon + effect.battlesWonDelta).coerceAtLeast(0),
+                battlesWon = nextBattles,
                 maxHealth = (persistent.maxHealth + effect.maxHealthDelta).coerceAtLeast(1),
                 ultimate = (persistent.ultimate + effect.ultimateDelta).coerceIn(0, ULT_MAX),
-                flags = effect.setFlag?.let { addUnique(persistent.flags, it) } ?: persistent.flags,
+                flags = flags,
                 companionId = effect.companionId ?: persistent.companionId,
                 collection = effect.addCardId?.let { addUnique(persistent.collection, it) } ?: persistent.collection,
+                farm = farm,
+                town = TownRules.sync(persistent.town, flags, nextTownLevel),
+                havenBoard = HavenBoardRules.autoPlaceFromFlags(persistent.havenBoard, flags),
             )
             health = (health + effect.healthDelta + effect.maxHealthDelta).coerceIn(0, persistent.maxHealth)
         }
         return persistent to health
     }
+
+    private fun syncedFarm(state: TextGameState): FarmState {
+        val cleared = "farm_cleared" in state.persistent.flags || state.persistent.farm.plots.isNotEmpty()
+        val capacity = FarmRules.plotCapacity(state.persistent.farmLevel, cleared)
+        var farm = FarmRules.ensureCapacity(state.persistent.farm, capacity)
+        farm = FarmRules.syncBattlesFought(farm, state.persistent.battlesWon)
+        return farm
+    }
+
+    private fun farmTill(state: TextGameState, plotId: Int): TextGameResolution {
+        if (!isFarmNode(state)) return rejected(state, "I can only till plots at the Farm.")
+        var persistent = state.persistent
+        if ("farm_cleared" !in persistent.flags && persistent.farm.plots.isEmpty()) {
+            persistent = persistent.copy(flags = addUnique(persistent.flags, "farm_cleared"))
+        }
+        val farm = syncedFarm(state.copy(persistent = persistent))
+        val next = FarmRules.till(farm, plotId) ?: return rejected(state, "That plot is not wild ground.")
+        return accepted(
+            state.copy(
+                persistent = persistent.copy(
+                    farm = next,
+                    flags = addUnique(persistent.flags, "farm_cleared"),
+                ),
+            ),
+            "I till the plot.",
+        )
+    }
+
+    private fun farmPlant(state: TextGameState, plotId: Int, score01: Float, cropId: String): TextGameResolution {
+        if (!isFarmNode(state)) return rejected(state, "I can only plant at the Farm.")
+        if (state.persistent.seeds < 1) return rejected(state, "I need a seed to plant.")
+        val farm = syncedFarm(state)
+        val plot = farm.plots.firstOrNull { it.id == plotId }
+            ?: return rejected(state, "That plot is missing.")
+        if (plot.soil != FarmSoil.Tilled) return rejected(state, "I need tilled soil before planting.")
+        val rng = Random(state.persistent.rngSeed xor (plotId * 31L) xor farm.battlesFought.toLong())
+        val roll = FarmRules.roll(score01, base = 2, rng = rng)
+        val quality = FarmRules.qualityForTier(roll.tier)
+        val crop = if (cropId.isNotBlank()) {
+            FarmRules.crop(cropId) ?: return rejected(state, "I do not have that seed.")
+        } else {
+            FarmRules.pickCrop(rng)
+        }
+        val planted = FarmRules.plant(farm, plotId, crop.id, quality)
+            ?: return rejected(state, "I cannot plant there.")
+        return accepted(
+            state.copy(
+                persistent = state.persistent.copy(
+                    farm = planted,
+                    seeds = state.persistent.seeds - 1,
+                    flags = addUnique(state.persistent.flags, "crop_planted"),
+                    rngSeed = state.persistent.rngSeed + 11,
+                ),
+            ),
+            "I plant ${crop.name} at quality $quality.",
+        )
+    }
+
+    private fun farmWater(state: TextGameState, plotId: Int): TextGameResolution {
+        if (!isFarmNode(state)) return rejected(state, "I can only water plots at the Farm.")
+        val farm = syncedFarm(state)
+        val next = FarmRules.water(farm, plotId) ?: return rejected(state, "That crop is not waiting for water.")
+        return accepted(
+            state.copy(persistent = state.persistent.copy(farm = next)),
+            "I water the plot — one battle sooner.",
+        )
+    }
+
+    private fun farmHarvest(state: TextGameState, plotId: Int, score01: Float): TextGameResolution {
+        if (!isFarmNode(state)) return rejected(state, "I can only harvest at the Farm.")
+        val farm = syncedFarm(state)
+        val roll = FarmRules.roll(
+            score01,
+            base = 2,
+            rng = Random(state.persistent.rngSeed xor (plotId * 97L)),
+        )
+        val harvested = FarmRules.harvest(farm, plotId)
+            ?: return rejected(state, "Nothing is ready to harvest there.")
+        val (cleared, result) = harvested
+        val bonus = maxOf(0, roll.tier - 2)
+        val total = result.amount + bonus
+        val dishesGained = maxOf(1, total / 2)
+        val withDish = FarmRules.addDish(cleared, result.dish, dishesGained)
+        return accepted(
+            state.copy(
+                persistent = state.persistent.copy(
+                    farm = withDish,
+                    harvest = state.persistent.harvest + total,
+                    dishes = state.persistent.dishes + dishesGained,
+                    flags = addUnique(state.persistent.flags, "crop_harvested"),
+                    rngSeed = state.persistent.rngSeed + 17,
+                ),
+            ),
+            "Harvest  ${roll.text}  →  ${roll.tierName}. I pull $total× ${result.cropName} → pantry ${result.dish} x$dishesGained.",
+        )
+    }
+
+    private fun farmPackDish(state: TextGameState, dish: String): TextGameResolution {
+        if (state.run.nodeId !in setOf("farm", "return_farm", "kitchen")) {
+            return rejected(state, "I pack dishes from the kitchen or Clearing.")
+        }
+        val farm = syncedFarm(state)
+        val packed = FarmRules.packDish(farm, dish) ?: return rejected(state, "I do not have that dish.")
+        val def = FarmRules.DISHES[dish]
+        return accepted(
+            state.copy(persistent = state.persistent.copy(farm = packed)),
+            "${dish} is packed for the next run${def?.let { " — ${it.status}" } ?: ""}.",
+        )
+    }
+
+    private fun townCollect(state: TextGameState, buildingId: String): TextGameResolution {
+        if (!isTownNode(state)) return rejected(state, "I collect from businesses in Town.")
+        val def = TownRules.def(buildingId) ?: return rejected(state, "That lot is not on the square.")
+        val persistent = state.persistent
+        val town = TownRules.sync(persistent.town, persistent.flags, persistent.townLevel)
+        val collected = TownRules.collect(
+            town,
+            def,
+            persistent.flags,
+            persistent.townLevel,
+            persistent.battlesWon,
+        ) ?: return rejected(state, "Nothing is ready to collect there.")
+        val (nextTown, result) = collected
+        return accepted(
+            state.copy(
+                persistent = persistent.copy(
+                    town = nextTown,
+                    coins = persistent.coins + result.coins,
+                    materials = persistent.materials + result.materials,
+                ),
+            ),
+            if (result.materials > 0) {
+                "I collect ${result.coins} coin and ${result.materials} material from ${result.name}."
+            } else {
+                "I collect ${result.coins} coin from ${result.name}."
+            },
+        )
+    }
+
+    private fun townMove(state: TextGameState, buildingId: String, plotId: String): TextGameResolution {
+        if (!isTownNode(state)) return rejected(state, "I rearrange buildings in Town.")
+        val persistent = state.persistent
+        val def = TownRules.def(buildingId) ?: return rejected(state, "That lot is not on the square.")
+        val synced = TownRules.sync(persistent.town, persistent.flags, persistent.townLevel)
+        val from = TownRules.plotId(synced, def)
+        val next = TownRules.move(synced, buildingId, plotId, persistent.flags, persistent.townLevel)
+            ?: return rejected(state, "That plot cannot hold this building.")
+        val name = TownRules.displayName(def, persistent.homeLevel)
+        val after = TownRules.plotId(next, def)
+        return accepted(
+            state.copy(persistent = persistent.copy(town = next)),
+            if (from == after) "The $name stays on its plot." else "I move the $name onto a new plot.",
+        )
+    }
+
+    private fun placeHavenCard(state: TextGameState, cardId: String, board: String, x: Float, y: Float): TextGameResolution {
+        val kind = HavenBoardKind.fromId(board) ?: return rejected(state, "That board is not part of the Haven.")
+        if (HavenBoardRules.boardKind(state.run.nodeId) != kind) {
+            return rejected(state, "I can only place cards on the plot I am standing on.")
+        }
+        val next = HavenBoardRules.place(state.persistent.havenBoard, cardId, kind, x, y)
+            ?: return rejected(state, "That card cannot be placed here.")
+        val name = HavenBoardRules.def(cardId)?.name ?: cardId
+        return accepted(
+            state.copy(persistent = state.persistent.copy(havenBoard = next)),
+            "I lay the $name card on the plot.",
+        )
+    }
+
+    private fun stackHavenUpgrade(state: TextGameState, buildingCardId: String, upgradeCardId: String): TextGameResolution {
+        if (!isHavenBoardNode(state.run.nodeId)) return rejected(state, "I stack upgrades on the Town or Farm plot.")
+        val next = HavenBoardRules.stack(state.persistent.havenBoard, buildingCardId, upgradeCardId)
+            ?: return rejected(state, "That upgrade does not fit this building.")
+        val name = HavenBoardRules.def(upgradeCardId)?.name ?: upgradeCardId
+        return accepted(
+            state.copy(persistent = state.persistent.copy(havenBoard = next)),
+            "I stack $name onto the building.",
+        )
+    }
+
+    private fun moveHavenCard(state: TextGameState, cardId: String, x: Float, y: Float): TextGameResolution {
+        if (!isHavenBoardNode(state.run.nodeId)) return rejected(state, "I rearrange cards on the Town or Farm plot.")
+        val next = HavenBoardRules.move(state.persistent.havenBoard, cardId, x, y)
+            ?: return rejected(state, "That card is not on the plot.")
+        return accepted(
+            state.copy(persistent = state.persistent.copy(havenBoard = next)),
+            "I slide the card to a new spot on the plot.",
+        )
+    }
+
+    private fun enterHavenRoom(state: TextGameState, buildingCardId: String): TextGameResolution {
+        if (!isHavenBoardNode(state.run.nodeId)) return rejected(state, "I enter rooms from the Town or Farm plot.")
+        val placed = state.persistent.havenBoard.placed.firstOrNull { it.cardId == buildingCardId }
+            ?: return rejected(state, "That building is not on the plot.")
+        val visit = HavenBoardRules.visitNode(placed) ?: return rejected(state, "That building has no interior yet.")
+        val node = definition.node(visit) ?: return rejected(state, "That room is not wired yet.")
+        return accepted(
+            state.copy(
+                run = state.run.copy(
+                    nodeId = node.id,
+                    havenRoomArtPath = HavenBoardRules.roomArt(placed),
+                ),
+            ),
+            "I step inside ${HavenBoardRules.def(buildingCardId)?.name ?: "the building"}.",
+        )
+    }
+
+    private fun isFarmNode(state: TextGameState): Boolean =
+        state.run.nodeId in setOf("farm", "return_farm", "kitchen", "barn")
+
+    private fun isTownNode(state: TextGameState): Boolean = isTownWorldNode(state.run.nodeId)
 
     private fun guardText(absorbed: Int): String = if (absorbed > 0) "; Home preparation blocks $absorbed" else ""
 

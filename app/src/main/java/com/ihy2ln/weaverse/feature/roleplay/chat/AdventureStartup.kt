@@ -14,6 +14,8 @@ enum class AdventureStartupChoice {
     Classic,
     Interview,
     Random,
+    Ai,
+    CharacterSelector,
 }
 
 private val StartupMarker = Regex(
@@ -66,9 +68,9 @@ fun adventureStartupPrompt(userIsDungeonMaster: Boolean, needsCharacter: Boolean
             appendLine(perspective)
             appendLine()
             appendLine("Choose how we begin:")
-            appendLine("1 · Classic D&D opening — tavern meeting, shipwreck, isekai arrival, caravan trouble, or dungeon escape.")
-            appendLine("2 · Build it together — I’ll ask a few short questions about where, when, who, what is happening, and the main goal.")
-            appendLine("3 · Random start — I’ll surprise you and immediately frame the party’s first problem and objective.")
+            appendLine("1 · AI Startup — provide character backstory, current situation, and future goals.")
+            appendLine("2 · Character Selector — choose the protagonist, then pick one of three random opening scenes.")
+            appendLine("3 · Quick random start — I’ll surprise you with the party’s first problem and objective.")
             append("Reply with 1, 2, or 3. This is campaign setup, so no action roll is needed.")
         },
         AdventureStartupPhase.Choose,
@@ -94,8 +96,10 @@ fun withAdventureStartupMarker(text: String, phase: AdventureStartupPhase): Stri
 fun adventureStartupChoice(input: String): AdventureStartupChoice {
     val normalized = input.trim().lowercase()
     return when {
-        normalized == "2" || "question" in normalized || "together" in normalized || "build" in normalized ->
-            AdventureStartupChoice.Interview
+        normalized == "1" || "ai" in normalized || "backstory" in normalized || "goals" in normalized ->
+            AdventureStartupChoice.Ai
+        normalized == "2" || "character" in normalized || "selector" in normalized ->
+            AdventureStartupChoice.CharacterSelector
         normalized == "3" || "random" in normalized || "surprise" in normalized ->
             AdventureStartupChoice.Random
         else -> AdventureStartupChoice.Classic
@@ -107,7 +111,7 @@ fun nextAdventureStartupPhase(
     input: String,
 ): AdventureStartupPhase = when (current) {
     AdventureStartupPhase.Character -> AdventureStartupPhase.Choose
-    AdventureStartupPhase.Choose -> if (adventureStartupChoice(input) == AdventureStartupChoice.Interview) {
+    AdventureStartupPhase.Choose -> if (adventureStartupChoice(input) == AdventureStartupChoice.Ai) {
         AdventureStartupPhase.Questions
     } else {
         AdventureStartupPhase.Complete
@@ -131,17 +135,13 @@ fun adventureStartupDirective(
             "introduce the finished editable character and present the three opening choices: 1 classic D&D, " +
             "2 build it together, or 3 random. Do not begin the adventure and do not roll dice."
     AdventureStartupPhase.Choose -> when (adventureStartupChoice(input)) {
+        AdventureStartupChoice.Ai -> adventureAiStartupFieldsPrompt()
+        AdventureStartupChoice.CharacterSelector -> characterSelectorStartupPrompt()
         AdventureStartupChoice.Classic ->
             openingDirective("Classic tabletop opening selected: ${ClassicOpenings.random(random)}.")
         AdventureStartupChoice.Random ->
             openingDirective("Random opening selected: ${RandomOpenings.random(random)}.")
-        AdventureStartupChoice.Interview ->
-            "Adventure setup interview is selected. Do not begin the adventure yet. Ask one compact, " +
-                "numbered set of 3–5 probing questions that collectively establish: (1) where the first " +
-                "scene takes place, (2) when it occurs or the era, (3) who the protagonists and important " +
-                "people are, (4) what is happening right now, and (5) the party's main goal. Offer a few " +
-                "quick suggestions and allow 'surprise me' for any answer. Do not ask the player to narrate " +
-                "the first action and do not roll dice."
+        AdventureStartupChoice.Interview -> adventureAiStartupFieldsPrompt()
     }
     AdventureStartupPhase.Questions ->
         openingDirective(

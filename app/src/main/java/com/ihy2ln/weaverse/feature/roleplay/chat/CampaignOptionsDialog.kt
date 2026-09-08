@@ -28,6 +28,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ihy2ln.weaverse.core.ui.components.CampaignPerspectiveTemplates
 import com.ihy2ln.weaverse.core.ui.components.CampaignRulesetTemplates
+import com.ihy2ln.weaverse.core.ui.components.CampaignSettingDetailTemplates
+import com.ihy2ln.weaverse.core.ui.components.CampaignHouseRuleTemplates
 import com.ihy2ln.weaverse.core.ui.components.CampaignSettingTemplate
 import com.ihy2ln.weaverse.core.ui.components.CampaignSettingTemplates
 import com.ihy2ln.weaverse.core.ui.components.InkChip
@@ -38,6 +40,7 @@ import com.ihy2ln.weaverse.core.ui.components.SegmentedOption
 import com.ihy2ln.weaverse.core.ui.components.WorkCharacterOption
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
+import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatRuleset
 
 /**
  * The campaign setup sheet from the new-campaign menu, reopened for an existing
@@ -60,6 +63,8 @@ fun CampaignOptionsDialog(
     var settingId by remember { mutableStateOf(initial.settingId.ifBlank { "high-fantasy" }) }
     var settingMenuOpen by remember { mutableStateOf(false) }
     var genre by remember { mutableStateOf(initial.genre) }
+    var settingDetailId by remember { mutableStateOf("custom") }
+    var settingDetailMenuOpen by remember { mutableStateOf(false) }
     var selectedCharacterIds by remember {
         mutableStateOf(initial.mainCharacters.map { it.id }.toSet())
     }
@@ -72,9 +77,15 @@ fun CampaignOptionsDialog(
     }
     var perspectiveMenuOpen by remember { mutableStateOf(false) }
     var tense by remember { mutableStateOf(initial.tense.ifBlank { "Past tense" }) }
-    var rulesetId by remember { mutableStateOf(initial.rulesetId.ifBlank { "dnd-5e" }) }
+    // RPG campaigns use these as persistent play modes. Legacy campaign ruleset
+    // ids are intentionally mapped to the safe d20 default during migration.
+    var gameModeId by remember { mutableStateOf(initial.gameModeId.ifBlank { RpgCombatRuleset.fromId(initial.rulesetId).id }) }
+    var rulesetId by remember { mutableStateOf(initial.rulesetId.takeUnless { it.startsWith("rpg-") }.orEmpty().ifBlank { "dnd-5e" }) }
     var rulesetMenuOpen by remember { mutableStateOf(false) }
+    var gameModeMenuOpen by remember { mutableStateOf(false) }
     var styleGuide by remember { mutableStateOf(initial.styleGuide) }
+    var houseRuleId by remember { mutableStateOf("custom") }
+    var houseRuleMenuOpen by remember { mutableStateOf(false) }
     var showAddSetting by remember { mutableStateOf(false) }
     var newSettingLabel by remember { mutableStateOf("") }
     var newSettingDirective by remember { mutableStateOf("") }
@@ -193,6 +204,15 @@ fun CampaignOptionsDialog(
                             TextButton(onClick = { showAddSetting = false }) { Text("Cancel") }
                         },
                     )
+                }
+                Text("Setting Details preset", style = MaterialTheme.typography.labelMedium)
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    InkOutlinedButton(label = CampaignSettingDetailTemplates.first { it.id == settingDetailId }.label + " ▾", onClick = { settingDetailMenuOpen = true }, modifier = Modifier.fillMaxWidth())
+                    DropdownMenu(expanded = settingDetailMenuOpen, onDismissRequest = { settingDetailMenuOpen = false }) {
+                        CampaignSettingDetailTemplates.forEach { preset ->
+                            DropdownMenuItem(text = { Column { Text(preset.label); Text(preset.details, style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText, maxLines = 3) } }, onClick = { settingDetailId = preset.id; if (genre.isBlank()) genre = preset.details; settingDetailMenuOpen = false })
+                        }
+                    }
                 }
                 OutlinedTextField(
                     value = genre,
@@ -336,24 +356,33 @@ fun CampaignOptionsDialog(
                     onSelect = { tense = it },
                     compact = true,
                 )
-                Text("Rules system", style = MaterialTheme.typography.labelMedium)
+                Text("Mode", style = MaterialTheme.typography.labelMedium)
+                Text(
+                    "This campaign's default battle mode. You can override a single encounter without changing this choice.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.secondaryText,
+                )
                 Box(modifier = Modifier.fillMaxWidth()) {
                     InkOutlinedButton(
-                        label = CampaignRulesetTemplates.first { it.id == rulesetId }.label + " ▾",
-                        onClick = { rulesetMenuOpen = true },
+                        label = RpgCombatRuleset.fromId(gameModeId).label + " ▾",
+                        onClick = { gameModeMenuOpen = true },
                         modifier = Modifier.fillMaxWidth(),
                     )
                     DropdownMenu(
-                        expanded = rulesetMenuOpen,
-                        onDismissRequest = { rulesetMenuOpen = false },
+                        expanded = gameModeMenuOpen,
+                        onDismissRequest = { gameModeMenuOpen = false },
                     ) {
-                        CampaignRulesetTemplates.forEach { template ->
+                        RpgCombatRuleset.entries.forEach { mode ->
                             DropdownMenuItem(
                                 text = {
                                     Column {
-                                        Text(template.label)
+                                        Text(mode.label)
                                         Text(
-                                            template.directive,
+                                            when (mode) {
+                                                RpgCombatRuleset.CardBattle -> "Play with AP/EP tactical cards, visible intents, and statuses."
+                                                RpgCombatRuleset.DndD20 -> "Use the character sheet, deterministic d20 checks, AC, HP, and conditions."
+                                                RpgCombatRuleset.TextReactions -> "Describe actions in text; risky actions show a check before AI narration."
+                                            },
                                             style = MaterialTheme.typography.labelSmall,
                                             color = tokens.secondaryText,
                                             maxLines = 3,
@@ -361,9 +390,25 @@ fun CampaignOptionsDialog(
                                     }
                                 },
                                 onClick = {
-                                    rulesetId = template.id
-                                    rulesetMenuOpen = false
+                                    gameModeId = mode.id
+                                    gameModeMenuOpen = false
                                 },
+                            )
+                        }
+                    }
+                }
+                Text("Rule system", style = MaterialTheme.typography.labelMedium)
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    InkOutlinedButton(
+                        label = (CampaignRulesetTemplates.firstOrNull { it.id == rulesetId } ?: CampaignRulesetTemplates.first()).label + " ▾",
+                        onClick = { rulesetMenuOpen = true },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    DropdownMenu(expanded = rulesetMenuOpen, onDismissRequest = { rulesetMenuOpen = false }) {
+                        CampaignRulesetTemplates.forEach { template ->
+                            DropdownMenuItem(
+                                text = { Column { Text(template.label); Text(template.directive, style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText, maxLines = 3) } },
+                                onClick = { rulesetId = template.id; rulesetMenuOpen = false },
                             )
                         }
                     }
@@ -376,6 +421,15 @@ fun CampaignOptionsDialog(
                     maxLines = 4,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                Text("Additional House Rules preset", style = MaterialTheme.typography.labelMedium)
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    InkOutlinedButton(label = CampaignHouseRuleTemplates.first { it.id == houseRuleId }.label + " ▾", onClick = { houseRuleMenuOpen = true }, modifier = Modifier.fillMaxWidth())
+                    DropdownMenu(expanded = houseRuleMenuOpen, onDismissRequest = { houseRuleMenuOpen = false }) {
+                        CampaignHouseRuleTemplates.forEach { preset ->
+                            DropdownMenuItem(text = { Column { Text(preset.label); Text(preset.directive, style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText, maxLines = 3) } }, onClick = { houseRuleId = preset.id; houseRuleMenuOpen = false })
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -394,8 +448,11 @@ fun CampaignOptionsDialog(
                         styleGuide = listOf(
                             "Setting guidance: " +
                                 (effectiveSettings.firstOrNull { it.id == settingId }?.directive ?: ""),
-                            "Rules guidance: " +
-                                CampaignRulesetTemplates.first { it.id == rulesetId }.directive,
+                            "Setting details preset: ${CampaignSettingDetailTemplates.first { it.id == settingDetailId }.details}",
+                            "Game mode: ${RpgCombatRuleset.fromId(gameModeId).label}. " +
+                                "Resolve encounters only through the RPG combat mode selected above.",
+                            "Rule system guidance: " + (CampaignRulesetTemplates.firstOrNull { it.id == rulesetId } ?: CampaignRulesetTemplates.first()).directive,
+                            "House rules preset: ${CampaignHouseRuleTemplates.first { it.id == houseRuleId }.directive}",
                             "Perspective guidance: " +
                                 CampaignPerspectiveTemplates.first { it.id == narrativePovId }.directive,
                             if (campaignRoleId == "dm") {
@@ -406,7 +463,8 @@ fun CampaignOptionsDialog(
                             styleGuide.trim().takeIf { it.isNotBlank() }?.let { "House rules: $it" }.orEmpty(),
                         ).filter { it.isNotBlank() }.joinToString("\n\n"),
                         mainCharacters = characterOptions.filter { it.id in selectedCharacterIds },
-                        rulesetId = rulesetId,
+         rulesetId = rulesetId,
+         gameModeId = gameModeId,
                         settingId = settingId,
                         narrativePov = CampaignPerspectiveTemplates.first { it.id == narrativePovId }.label,
                         campaignRoleId = campaignRoleId,

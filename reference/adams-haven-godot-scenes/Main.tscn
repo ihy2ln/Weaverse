@@ -1,0 +1,64 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scenes/Main.gd" id="1"]
+
+[node name="Main" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("1")
+
+[node name="BG" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.07, 0.08, 0.11, 1)
+
+[node name="Root" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 40.0
+offset_top = 30.0
+offset_right = -40.0
+offset_bottom = -30.0
+theme_override_constants/separation = 12
+
+[node name="Info" type="RichTextLabel" parent="Root"]
+layout_mode = 2
+size_flags_vertical = 3
+bbcode_enabled = true
+
+[node name="Battle" type="Button" parent="Root"]
+layout_mode = 2
+text = "⚔  DUNGEON — Silverwood Forest (roguelite run)"
+
+[node name="Town" type="Button" parent="Root"]
+layout_mode = 2
+text = "🏘  TOWN — Silverbrook Settlement"
+
+[node name="Home" type="Button" parent="Root"]
+layout_mode = 2
+text = "🏠  HOME — the Fixer-Upper"
+
+[node name="Farm" type="Button" parent="Root"]
+layout_mode = 2
+text = "🌾  FARM  (deferred — foundation only)"
+
+[node name="Settings" type="Button" parent="Root"]
+layout_mode = 2
+text = "⚙  SETTINGS — toggle minigames / rhythm"
+
+[node name="Quit" type="Button" parent="Root"]
+layout_mode = 2
+text = "Quit"
+
+[connection signal="pressed" from="Root/Battle" to="." method="_on_battle_pressed"]
+[connection signal="pressed" from="Root/Town" to="." method="_on_town_pressed"]
+[connection signal="pressed" from="Root/Home" to="." method="_on_home_pressed"]
+[connection signal="pressed" from="Root/Farm" to="." method="_on_farm_pressed"]
+[connection signal="pressed" from="Root/Settings" to="." method="_on_settings_pressed"]
+[connection signal="pressed" from="Root/Quit" to="." method="_on_quit_pressed"]
