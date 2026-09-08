@@ -98,9 +98,9 @@ val CampaignSettingDetailTemplates = listOf(
     CampaignSettingDetailTemplate("fae", "Fey borderlands", "A mortal village borders a beautiful, dangerous fey realm where names, promises, seasons, and bargains have literal power."),
     CampaignSettingDetailTemplate("clockwork", "Clockwork metropolis", "A soot-dark metropolis runs on gears, contracts, and living engines while inventors, labor guilds, and old houses fight for control."),
     CampaignSettingDetailTemplate("cosmic", "Stars beyond the veil", "Strange lights and impossible visitors appear in a familiar world, drawing the party into a mystery that reaches beyond the sky."),
-    CampaignSettingDetailTemplate("adult-plot", "Adult romance with plot · 18+", "An adult-only romance campaign where all characters are consenting adults and intimate content supports character arcs, mystery, and story stakes."),
+    CampaignSettingDetailTemplate("adult-plot", "Porn with plot · 18+", "An adult-only erotic romance campaign where all characters are consenting adults and intimate content supports character arcs, mystery, and story stakes."),
     CampaignSettingDetailTemplate("adult-smut", "Smut romance · 18+", "An adult-only, consent-forward romance campaign focused on emotional chemistry, relationship choices, and fade-to-black intimate scenes."),
-    CampaignSettingDetailTemplate("adult-hentai", "Adult anime fantasy · 18+", "An adult-only anime-inspired fantasy with exaggerated magic, romance, and sensual themes; every character is an adult and consent is explicit."),
+    CampaignSettingDetailTemplate("adult-hentai", "Hentai fantasy · 18+", "An adult-only anime-inspired erotic fantasy with exaggerated magic and romance; every character is an adult and consent is explicit."),
     CampaignSettingDetailTemplate("adult-ecchi", "Ecchi comedy · 18+", "An adult-only playful romantic comedy with suggestive misunderstandings, ensemble chemistry, and non-explicit fan-service; no minors or coercion."),
     CampaignSettingDetailTemplate("custom", "Custom setting details", "Describe the kingdom, era, locations, factions, tone, and boundaries in your own words."),
 )
