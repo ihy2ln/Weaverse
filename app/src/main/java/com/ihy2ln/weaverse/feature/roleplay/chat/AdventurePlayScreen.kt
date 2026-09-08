@@ -65,6 +65,7 @@ import com.ihy2ln.weaverse.core.text.CodexMentionTag
 import com.ihy2ln.weaverse.core.text.CodexMentionTarget
 import com.ihy2ln.weaverse.core.text.findCodexMentions
 import com.ihy2ln.weaverse.core.ui.components.CollapsibleUsageStrip
+import com.ihy2ln.weaverse.core.ui.components.InkOutlinedButton
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
 import com.ihy2ln.weaverse.core.ui.components.mergeSpokenText
 import com.ihy2ln.weaverse.core.ui.components.rememberSpeechToText

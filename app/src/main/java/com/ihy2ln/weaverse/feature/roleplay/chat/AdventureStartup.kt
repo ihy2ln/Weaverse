@@ -43,7 +43,7 @@ data class AdventurePlanQuestion(
 
 private val AdventurePlanQuestions = listOf(
     AdventurePlanQuestion("spotlight", "Which character, bond, or goal should be in the spotlight?", listOf("My character's past", "A companion bond", "The party's main goal")),
-    AdventurePlanQuestion("situation", "What is the current situation when the story opens?", listOf("A normal day breaks", "We arrive somewhere new", "We are already in danger")),
+    AdventurePlanQuestion("situation", "What is the Current situation when the story opens?", listOf("A normal day breaks", "We arrive somewhere new", "We are already in danger")),
     AdventurePlanQuestion("goal", "What should the party hope to accomplish first?", listOf("Find answers", "Protect someone", "Find a way home")),
     AdventurePlanQuestion("tone", "What tone should guide the opening?", listOf("Hopeful adventure", "Tense survival", "Mystery and wonder")),
     AdventurePlanQuestion("complication", "What complication should make the opening memorable?", listOf("A hidden betrayal", "A time limit", "An unexpected ally")),
