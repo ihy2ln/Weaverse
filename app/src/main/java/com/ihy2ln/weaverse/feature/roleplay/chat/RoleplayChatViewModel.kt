@@ -1469,6 +1469,7 @@ class RoleplayChatViewModel @Inject constructor(
             AdventureStartupPhase.Choose,
             AdventureStartupPhase.Questions,
             AdventureStartupPhase.CuratedQuestions,
+            AdventureStartupPhase.Review,
         )
         if (_uiState.value.entryMode == "nai" && !startupPending) addManualEntry() else generate()
     }
@@ -1859,6 +1860,8 @@ class RoleplayChatViewModel @Inject constructor(
             AdventureStartupPhase.Character,
             AdventureStartupPhase.Choose,
             AdventureStartupPhase.Questions,
+            AdventureStartupPhase.CuratedQuestions,
+            AdventureStartupPhase.Review,
         )
         if (state.entryMode == "nai" && !startupPending && !forceAdventureRoll) {
             addManualEntry()
@@ -1887,6 +1890,7 @@ class RoleplayChatViewModel @Inject constructor(
                     AdventureStartupPhase.Choose,
                     AdventureStartupPhase.Questions,
                     AdventureStartupPhase.CuratedQuestions,
+                    AdventureStartupPhase.Review,
                 )
             val startupDirective = if (startupActive) {
                 adventureStartupDirective(startupPhase, userText)

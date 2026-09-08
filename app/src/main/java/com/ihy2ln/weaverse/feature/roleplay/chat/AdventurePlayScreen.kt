@@ -22,7 +22,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.AlertDialog
@@ -39,6 +42,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -79,6 +83,36 @@ import com.ihy2ln.weaverse.feature.prompt.PromptModelSelection
 import com.ihy2ln.weaverse.feature.prompt.PromptWordLimit
 import com.ihy2ln.weaverse.feature.prompt.UnifiedPromptBar
 import java.io.File
+import kotlinx.coroutines.launch
+
+@Composable
+private fun AdventurePlanQuestionEditor(
+    number: Int,
+    question: AdventurePlanQuestion,
+    value: String,
+    onValueChange: (String) -> Unit,
+    onPreset: (String) -> Unit,
+    onSkip: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("$number. ${question.prompt}") },
+            singleLine = false,
+        )
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+        ) {
+            items(question.presets) { preset ->
+                InkTextButton(label = preset, onClick = { onPreset(preset) }, compact = true)
+            }
+            item { InkTextButton(label = "Skip", onClick = onSkip, compact = true) }
+        }
+    }
+}
 
 /**
  * The RPG session reads as an illustrated adventure page rather than a chat.
@@ -103,6 +137,8 @@ fun AdventurePlayScreen(
     val clipboard = LocalClipboardManager.current
     var captureMenuFor by remember { mutableStateOf<RpMessageUi?>(null) }
     val storyState = rememberLazyListState()
+    val planScrollState = rememberScrollState()
+    val planScope = rememberCoroutineScope()
     var promptCollapsed by rememberSaveable { mutableStateOf(false) }
     var modelsOpen by remember { mutableStateOf(false) }
     var showAddText by remember { mutableStateOf(false) }
@@ -113,6 +149,10 @@ fun AdventurePlayScreen(
     var modelSearch by rememberSaveable { mutableStateOf("") }
     var setupSpotlight by rememberSaveable { mutableStateOf("") }
     var setupSituation by rememberSaveable { mutableStateOf("") }
+    var setupPlot by rememberSaveable { mutableStateOf("") }
+    var setupFirstGoal by rememberSaveable { mutableStateOf("") }
+    var setupFirstScene by rememberSaveable { mutableStateOf("") }
+    var setupParty by rememberSaveable { mutableStateOf("") }
     var setupGoal by rememberSaveable { mutableStateOf("") }
     var setupTone by rememberSaveable { mutableStateOf("") }
     var setupComplication by rememberSaveable { mutableStateOf("") }
@@ -173,6 +213,7 @@ fun AdventurePlayScreen(
         AdventureStartupPhase.Choose,
         AdventureStartupPhase.Questions,
         AdventureStartupPhase.CuratedQuestions,
+        AdventureStartupPhase.Review,
     )
 
     Box(
@@ -606,84 +647,26 @@ fun AdventurePlayScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = InkSpacing.lg),
+                    .padding(horizontal = InkSpacing.lg)
+                    .verticalScroll(planScrollState),
                 verticalArrangement = Arrangement.spacedBy(InkSpacing.xs),
             ) {
                 Text("Adventure plan", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                 Text("Answer each open-ended question, tap a preset, or skip it. The prompt writer below remains available for your own wording.", style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
-                OutlinedTextField(
-                    value = setupSpotlight,
-                    onValueChange = { setupSpotlight = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("1. Character, bond, or goal in the spotlight") },
-                    singleLine = false,
-                )
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
-                    adventurePlanQuestions()[0].presets.forEach { preset ->
-                        InkTextButton(label = preset, onClick = { setupSpotlight = preset }, compact = true)
-                    }
-                    InkTextButton(label = "Skip", onClick = { setupSpotlight = "" }, compact = true)
-                }
-                OutlinedTextField(
-                    value = setupSituation,
-                    onValueChange = { setupSituation = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("2. Current situation at the opening") },
-                    singleLine = false,
-                )
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
-                    adventurePlanQuestions()[1].presets.forEach { preset ->
-                        InkTextButton(label = preset, onClick = { setupSituation = preset }, compact = true)
-                    }
-                    InkTextButton(label = "Skip", onClick = { setupSituation = "" }, compact = true)
-                }
-                OutlinedTextField(
-                    value = setupGoal,
-                    onValueChange = { setupGoal = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("3. The party's first goal") },
-                    singleLine = false,
-                )
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
-                    adventurePlanQuestions()[2].presets.forEach { preset ->
-                        InkTextButton(label = preset, onClick = { setupGoal = preset }, compact = true)
-                    }
-                    InkTextButton(label = "Skip", onClick = { setupGoal = "" }, compact = true)
-                }
-                OutlinedTextField(
-                    value = setupTone,
-                    onValueChange = { setupTone = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("4. Tone and presentation") },
-                    placeholder = { Text("Hopeful, grim, romantic, comedic…") },
-                    singleLine = true,
-                )
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
-                    adventurePlanQuestions()[3].presets.forEach { preset ->
-                        InkTextButton(label = preset, onClick = { setupTone = preset }, compact = true)
-                    }
-                    InkTextButton(label = "Skip", onClick = { setupTone = "" }, compact = true)
-                }
-                OutlinedTextField(
-                    value = setupComplication,
-                    onValueChange = { setupComplication = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("5. Opening complication") },
-                    singleLine = false,
-                )
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
-                    adventurePlanQuestions()[4].presets.forEach { preset ->
-                        InkTextButton(label = preset, onClick = { setupComplication = preset }, compact = true)
-                    }
-                    InkTextButton(label = "Skip", onClick = { setupComplication = "" }, compact = true)
-                }
+                AdventurePlanQuestionEditor(1, adventurePlanQuestions()[0], setupPlot, { setupPlot = it }, { setupPlot = it }, { setupPlot = "" })
+                AdventurePlanQuestionEditor(2, adventurePlanQuestions()[1], setupFirstGoal, { setupFirstGoal = it }, { setupFirstGoal = it }, { setupFirstGoal = "" })
+                AdventurePlanQuestionEditor(3, adventurePlanQuestions()[2], setupFirstScene, { setupFirstScene = it }, { setupFirstScene = it }, { setupFirstScene = "" })
+                AdventurePlanQuestionEditor(4, adventurePlanQuestions()[3], setupParty, { setupParty = it }, { setupParty = it }, { setupParty = "" })
+                AdventurePlanQuestionEditor(5, adventurePlanQuestions()[4], setupTone, { setupTone = it }, { setupTone = it }, { setupTone = "" })
+                AdventurePlanQuestionEditor(6, adventurePlanQuestions()[5], setupComplication, { setupComplication = it }, { setupComplication = it }, { setupComplication = "" })
                 Text("Random plan options", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                 adventureSetupQuickResponses().filter { it.isRandom }.forEach { response ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
                         InkOutlinedButton(label = response.title, onClick = {
-                            setupSpotlight = "Randomize"
-                            setupSituation = "Randomize"
-                            setupGoal = "Randomize"
+                            setupPlot = "Randomize"
+                            setupFirstGoal = "Randomize"
+                            setupFirstScene = "Randomize"
+                            setupParty = "Randomize"
                             setupTone = "Randomize"
                             setupComplication = "Randomize"
                         }, modifier = Modifier.fillMaxWidth(), enabled = !state.isStreaming)
@@ -693,11 +676,12 @@ fun AdventurePlayScreen(
                     label = "Use these details",
                     onClick = {
                         val answer = listOf(
-                            "1. Spotlight: ${setupSpotlight.trim().ifBlank { "[SKIPPED]" }}",
-                            "2. Situation: ${setupSituation.trim().ifBlank { "[SKIPPED]" }}",
-                            "3. Goal: ${setupGoal.trim().ifBlank { "[SKIPPED]" }}",
-                            "4. Tone: ${setupTone.trim().ifBlank { "[SKIPPED]" }}",
-                            "5. Complication: ${setupComplication.trim().ifBlank { "[SKIPPED]" }}",
+                            "1. Plot: ${setupPlot.trim().ifBlank { "[SKIPPED]" }}",
+                            "2. First goal: ${setupFirstGoal.trim().ifBlank { "[SKIPPED]" }}",
+                            "3. First scene: ${setupFirstScene.trim().ifBlank { "[SKIPPED]" }}",
+                            "4. Party: ${setupParty.trim().ifBlank { "[SKIPPED]" }}",
+                            "5. Tone: ${setupTone.trim().ifBlank { "[SKIPPED]" }}",
+                            "6. Complication: ${setupComplication.trim().ifBlank { "[SKIPPED]" }}",
                         ).joinToString("\n")
                         viewModel.onInputChange(answer)
                         viewModel.send()
@@ -705,6 +689,20 @@ fun AdventurePlayScreen(
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !state.isStreaming,
                 )
+            }
+        }
+
+        if (state.adventureStartupPhase == AdventureStartupPhase.Review) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = InkSpacing.lg),
+                verticalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+            ) {
+                Text("Campaign outline review", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                Text("The AI has drafted a rough plot outline from your New Campaign setup and Adventure Plan. Review it above, then start the first scene or edit the plan.", style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                    InkOutlinedButton(label = "Start adventure", onClick = { viewModel.onInputChange("Accept outline and start adventure") ; viewModel.send() }, modifier = Modifier.weight(1f), enabled = !state.isStreaming)
+                    InkTextButton(label = "Edit plan", onClick = { planScope.launch { planScrollState.animateScrollTo(0) } }, compact = true)
+                }
             }
         }
 
@@ -755,6 +753,8 @@ fun AdventurePlayScreen(
                 "Answer the AI DM's setup questions…"
             } else if (state.adventureStartupPhase == AdventureStartupPhase.CuratedQuestions) {
                 "Add details or say randomize…"
+            } else if (state.adventureStartupPhase == AdventureStartupPhase.Review) {
+                "Accept the outline or describe an edit…"
             } else if (state.userIsDungeonMaster) {
                 "What happens next? · Describe the scene, NPC response, or ruling…"
             } else {

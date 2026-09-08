@@ -1,6 +1,33 @@
 package com.ihy2ln.weaverse.feature.roleplay.chat
 
 import kotlin.random.Random
+import kotlinx.serialization.Serializable
+
+@Serializable
+enum class RpgPlanStatus { Editing, Generating, Review, Started }
+
+@Serializable
+data class RpgPlanAnswer(val questionId: String, val value: String = "[SKIPPED]", val presetId: String? = null)
+
+@Serializable
+data class RpgAdventurePlan(
+    val status: RpgPlanStatus = RpgPlanStatus.Editing,
+    val answers: List<RpgPlanAnswer> = emptyList(),
+)
+
+@Serializable
+data class RpgCampaignOutline(
+    val workingTitle: String = "",
+    val premise: String = "",
+    val firstGoal: String = "",
+    val openingScene: String = "",
+    val startingParty: String = "",
+    val tone: String = "",
+    val complication: String = "",
+    val storyBeats: List<String> = emptyList(),
+    val firstHook: String = "",
+    val sceneArtTags: List<String> = emptyList(),
+)
 
 enum class AdventureStartupPhase(val storageName: String) {
     None(""),
@@ -8,6 +35,7 @@ enum class AdventureStartupPhase(val storageName: String) {
     Choose("choose"),
     Questions("questions"),
     CuratedQuestions("curated_questions"),
+    Review("review"),
     Complete("complete"),
 }
 
@@ -41,12 +69,15 @@ data class AdventurePlanQuestion(
     val presets: List<String>,
 )
 
+typealias RpgPlanQuestion = AdventurePlanQuestion
+
 private val AdventurePlanQuestions = listOf(
-    AdventurePlanQuestion("spotlight", "Which character, bond, or goal should be in the spotlight?", listOf("My character's past", "A companion bond", "The party's main goal")),
-    AdventurePlanQuestion("situation", "What is the Current situation when the story opens?", listOf("A normal day breaks", "We arrive somewhere new", "We are already in danger")),
-    AdventurePlanQuestion("goal", "What should the party hope to accomplish first?", listOf("Find answers", "Protect someone", "Find a way home")),
-    AdventurePlanQuestion("tone", "What tone should guide the opening?", listOf("Hopeful adventure", "Tense survival", "Mystery and wonder")),
-    AdventurePlanQuestion("complication", "What complication should make the opening memorable?", listOf("A hidden betrayal", "A time limit", "An unexpected ally")),
+    AdventurePlanQuestion("plot", "What plot premise or central conflict should drive the campaign?", listOf("A hidden mystery", "A survival crisis", "A political struggle")),
+    AdventurePlanQuestion("goal", "What should the party's first goal be?", listOf("Investigate a clue", "Protect someone", "Find a way home")),
+    AdventurePlanQuestion("scene", "Where and how should the first scene begin?", listOf("A crowded tavern", "A roadside ambush", "A ruined shrine")),
+    AdventurePlanQuestion("party", "Who starts with the protagonist?", listOf("Solo protagonist", "Saved party members", "AI-created companions")),
+    AdventurePlanQuestion("tone", "What tone and presentation should guide the opening?", listOf("Hopeful adventure", "Tense survival", "Mystery and wonder")),
+    AdventurePlanQuestion("complication", "What opening complication or threat should appear?", listOf("A hidden betrayal", "A time limit", "An unexpected ally")),
 )
 
 fun adventurePlanQuestions(): List<AdventurePlanQuestion> = AdventurePlanQuestions
@@ -107,7 +138,7 @@ fun adventureStartupPreset(input: String): AdventureStartupPreset? {
 }
 
 private val StartupMarker = Regex(
-    "\\[\\[ADVENTURE_STARTUP:\\s*(character|choose|questions|curated_questions|complete)]]",
+    "\\[\\[ADVENTURE_STARTUP:\\s*(character|choose|questions|curated_questions|review|complete)]]",
     RegexOption.IGNORE_CASE,
 )
 
@@ -172,6 +203,7 @@ fun adventureStartupPhase(text: String): AdventureStartupPhase = when (
     "choose" -> AdventureStartupPhase.Choose
     "questions" -> AdventureStartupPhase.Questions
     "curated_questions" -> AdventureStartupPhase.CuratedQuestions
+    "review" -> AdventureStartupPhase.Review
     "complete" -> AdventureStartupPhase.Complete
     else -> AdventureStartupPhase.None
 }
@@ -206,8 +238,9 @@ fun nextAdventureStartupPhase(
         AdventureStartupChoice.Curated -> AdventureStartupPhase.CuratedQuestions
         else -> AdventureStartupPhase.Complete
     }
-    AdventureStartupPhase.Questions -> AdventureStartupPhase.Complete
-    AdventureStartupPhase.CuratedQuestions -> AdventureStartupPhase.Complete
+    AdventureStartupPhase.Questions -> AdventureStartupPhase.Review
+    AdventureStartupPhase.CuratedQuestions -> AdventureStartupPhase.Review
+    AdventureStartupPhase.Review -> AdventureStartupPhase.Complete
     else -> AdventureStartupPhase.None
 }
 
@@ -237,16 +270,13 @@ fun adventureStartupDirective(
             openingDirective("Random opening selected: ${RandomOpenings.random(random)}.")
         AdventureStartupChoice.Interview -> adventureAiStartupFieldsPrompt()
     }
-    AdventureStartupPhase.Questions ->
-        openingDirective(
-            "Use the player's interview answers as authoritative setup. Fill only harmless missing details yourself.",
-        )
-    AdventureStartupPhase.CuratedQuestions ->
-        openingDirective(
-            "Use the selected curated opening and the player's answers as authoritative setup. " +
-                "If the player asks for randomness or says surprise me, invent fitting details from the saved " +
-                "campaign context; otherwise honor their character anchor, tone, and desired complication.",
-        )
+    AdventureStartupPhase.Questions -> campaignOutlineDirective("Use the player's Adventure Plan answers as authoritative setup.")
+    AdventureStartupPhase.CuratedQuestions -> campaignOutlineDirective("Use the selected curated opening and the player's Adventure Plan answers as authoritative setup.")
+    AdventureStartupPhase.Review -> if (input.contains("start", ignoreCase = true) || input.contains("accept", ignoreCase = true)) {
+        openingDirective("The player accepted the reviewed campaign outline. Begin the first scene using the outline as canon.")
+    } else {
+        "Review the rough campaign outline you just created. Do not begin the opening scene yet. Offer concise Edit plan and Regenerate options."
+    }
     else -> ""
 }
 
@@ -254,8 +284,8 @@ private fun curatedStartupQuestions(preset: AdventureStartupPreset?): String {
     val selected = preset?.let { "${it.title} selected. ${it.description}" }
         ?: "A curated campaign opening was selected."
     return selected + " Use the saved campaign setting details, mode, rule system, and house rules as authoritative context. " +
-        "Before writing the opening scene, present the five-question Adventure Plan: spotlight character/bond/goal, " +
-        "current situation, first party goal, tone, and opening complication. For each question offer concise preset " +
+        "Before writing the opening scene, present the six-question Adventure Plan: plot premise, first party goal, " +
+        "first scene/location, starting party, tone, and opening complication. For each question offer concise preset " +
         "answers, accept the player's own wording, and allow Skip. Do not begin the adventure yet, do not roll dice, " +
         "and end by inviting the plan answers."
 }
@@ -266,6 +296,13 @@ private fun openingDirective(seed: String): String =
         "a concrete main goal or urgent lead. Start in motion with sensory detail, NPC/world initiative, and " +
         "a meaningful problem. The AI DM—not the player—must begin the quest chain. End only after the scene " +
         "is fully framed, with a clear invitation for the party's first decision. Do not roll dice for setup."
+
+private fun campaignOutlineDirective(context: String): String =
+    "$context Create a rough campaign outline before writing prose. Include a working title, premise, first goal, " +
+        "opening scene and location, starting party, tone, first antagonist or complication, three initial story beats, " +
+        "a first decision or encounter hook, and suggested local scene-art tags. Clearly label it CAMPAIGN OUTLINE. " +
+        "Honor [SKIPPED] answers by filling only harmless details from the saved New Campaign setup. Do not roll dice " +
+        "and do not begin the opening scene until the player accepts the outline."
 
 fun isLegacyPassiveAdventureOpening(text: String): Boolean =
     (text.contains("stand at the threshold of the first scene", ignoreCase = true) &&

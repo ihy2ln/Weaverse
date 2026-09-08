@@ -43,7 +43,7 @@ class AdventureStartupTest {
             nextAdventureStartupPhase(AdventureStartupPhase.Choose, "1"),
         )
         assertEquals(
-            AdventureStartupPhase.Complete,
+            AdventureStartupPhase.Review,
             nextAdventureStartupPhase(AdventureStartupPhase.Questions, "At sunset in Waterdeep"),
         )
         val directive = adventureStartupDirective(AdventureStartupPhase.Choose, "1", Random(1))
@@ -81,15 +81,15 @@ class AdventureStartupTest {
         )
         val directive = adventureStartupDirective(AdventureStartupPhase.Choose, selected.command, Random(4))
         assertTrue("saved campaign setting details" in directive)
-        assertTrue("five-question Adventure Plan" in directive)
+        assertTrue("six-question Adventure Plan" in directive)
         assertTrue("Do not begin the adventure yet" in directive)
         assertEquals(
-            AdventureStartupPhase.Complete,
+            AdventureStartupPhase.Review,
             nextAdventureStartupPhase(AdventureStartupPhase.CuratedQuestions, "randomize"),
         )
         val opening = adventureStartupDirective(AdventureStartupPhase.CuratedQuestions, "randomize", Random(4))
-        assertTrue("AI DM—not the player—must begin the quest chain" in opening)
-        assertTrue("invent fitting details" in opening)
+        assertTrue("CAMPAIGN OUTLINE" in opening)
+        assertTrue("[SKIPPED]" in opening)
     }
 
     @Test
@@ -130,11 +130,11 @@ class AdventureStartupTest {
     }
 
     @Test
-    fun adventurePlanOffersFiveQuestionsWithPresets() {
+    fun adventurePlanOffersSixQuestionsWithPresets() {
         val questions = adventurePlanQuestions()
-        assertEquals(5, questions.size)
+        assertEquals(6, questions.size)
         assertTrue(questions.all { it.prompt.isNotBlank() && it.presets.size >= 3 })
-        assertTrue(questions.any { "Current situation" in it.prompt })
+        assertTrue(questions.any { "plot premise" in it.prompt.lowercase() })
         assertTrue(questions.any { "complication" in it.prompt.lowercase() })
     }
 }

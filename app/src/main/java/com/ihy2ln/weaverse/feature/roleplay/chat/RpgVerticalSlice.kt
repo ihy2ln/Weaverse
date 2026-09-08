@@ -51,13 +51,14 @@ The player may always reject these choices and write a custom action; custom act
 """.trimIndent()
 
 fun adventureAiStartupFieldsPrompt(): String = """
-AI STARTUP PLAN MODE. Ask the player to complete this five-question setup plan before beginning:
-1. Character, bond, or goal in the spotlight
-2. Current situation at the opening
-3. The party's first goal
-4. Tone and presentation
-5. Opening complication
-The older labels Character backstory, Current situation, and Future goals are covered by questions 1, 2, and 3.
+AI STARTUP PLAN MODE. Ask the player to complete this six-question setup plan before beginning:
+1. Plot premise or central conflict
+2. First party goal
+3. First scene or location
+4. Starting party (saved characters, solo, or a custom companion concept)
+5. Tone and presentation
+6. Opening complication or threat
+The older labels Character backstory, Current situation, and Future goals are covered by the plan answers.
 Each answer may be open-ended, selected from a preset, or skipped. Treat [SKIPPED] as permission to
 invent a fitting detail from campaign context. Use the answers as campaign canon. Summarize them into a
 starting objective, a personal complication, and a suggested opening location. Do not roll dice during setup.
