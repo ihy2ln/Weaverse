@@ -28,6 +28,24 @@ data class AdventureStartupPreset(
     val command: String,
 )
 
+data class AdventureSetupQuickResponse(
+    val id: String,
+    val title: String,
+    val answer: String,
+    val isRandom: Boolean = false,
+)
+
+private val SetupQuickResponses = listOf(
+    AdventureSetupQuickResponse("spotlight-character", "Spotlight my character", "Spotlight: center the opening on my main character's history and immediate personal stake."),
+    AdventureSetupQuickResponse("spotlight-bond", "Test a companion bond", "Spotlight: center the opening on a companion bond and a choice that tests our trust."),
+    AdventureSetupQuickResponse("pursue-goal", "Pursue the main goal", "Spotlight: center the opening on the party's stated goal and give us a concrete first lead."),
+    AdventureSetupQuickResponse("start-mystery", "Start with a mystery", "Spotlight: center the opening on a strange clue that connects to the campaign's main mystery."),
+    AdventureSetupQuickResponse("rng-spotlight", "RNG spotlight", "Spotlight: randomize the character, bond, or goal in focus. Tone: randomize. Complication: randomize.", true),
+    AdventureSetupQuickResponse("rng-chaos", "RNG chaos start", "Spotlight: randomize. Tone: randomize. Complication: introduce a surprising problem that fits the saved campaign.", true),
+)
+
+fun adventureSetupQuickResponses(): List<AdventureSetupQuickResponse> = SetupQuickResponses
+
 private val CuratedStartupPresets = listOf(
     AdventureStartupPreset(
         id = "campaign-hook",

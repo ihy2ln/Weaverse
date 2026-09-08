@@ -630,6 +630,32 @@ fun AdventurePlayScreen(
                     label = { Text("Opening complication or randomize") },
                     singleLine = false,
                 )
+                Text("Quick responses", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                Text("Choose one of four curated answers or let the RNG decide. You can still use the prompt writer below.", style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
+                adventureSetupQuickResponses().chunked(2).forEach { pair ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                        pair.forEach { response ->
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(inkRadiusSm()))
+                                    .background(if (response.isRandom) tokens.activePill.copy(alpha = 0.16f) else tokens.panel)
+                                    .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f), RoundedCornerShape(inkRadiusSm()))
+                                    .clickable(
+                                        enabled = !state.isStreaming,
+                                        onClickLabel = "Use ${response.title}",
+                                    ) {
+                                        viewModel.onInputChange(response.answer)
+                                        viewModel.send()
+                                    }
+                                    .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
+                            ) {
+                                Text(response.title, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        if (pair.size == 1) Box(Modifier.weight(1f))
+                    }
+                }
                 InkOutlinedButton(
                     label = "Use these details",
                     onClick = {

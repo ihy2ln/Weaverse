@@ -118,4 +118,14 @@ class AdventureStartupTest {
         )
         assertFalse(isLegacyPassiveAdventureOpening("The party attacks the gate."))
     }
+
+    @Test
+    fun setupQuickResponsesOfferFourCuratedAndTwoRandomChoices() {
+        val options = adventureSetupQuickResponses()
+        assertEquals(6, options.size)
+        assertEquals(4, options.count { !it.isRandom })
+        assertEquals(2, options.count { it.isRandom })
+        assertTrue(options.all { it.title.isNotBlank() && it.answer.isNotBlank() })
+        assertTrue(options.filter { it.isRandom }.all { "randomize" in it.answer.lowercase() })
+    }
 }
