@@ -76,12 +76,20 @@ class AdventureStartupTest {
         assertEquals(selected, adventureStartupPreset(selected.command))
         assertEquals(AdventureStartupChoice.Curated, adventureStartupChoice(selected.command))
         assertEquals(
-            AdventureStartupPhase.Complete,
+            AdventureStartupPhase.CuratedQuestions,
             nextAdventureStartupPhase(AdventureStartupPhase.Choose, selected.command),
         )
         val directive = adventureStartupDirective(AdventureStartupPhase.Choose, selected.command, Random(4))
         assertTrue("saved campaign setting details" in directive)
-        assertTrue("AI DM—not the player—must begin the quest chain" in directive)
+        assertTrue("ask for two short setup details" in directive)
+        assertTrue("Do not begin the adventure yet" in directive)
+        assertEquals(
+            AdventureStartupPhase.Complete,
+            nextAdventureStartupPhase(AdventureStartupPhase.CuratedQuestions, "randomize"),
+        )
+        val opening = adventureStartupDirective(AdventureStartupPhase.CuratedQuestions, "randomize", Random(4))
+        assertTrue("AI DM—not the player—must begin the quest chain" in opening)
+        assertTrue("invent fitting details" in opening)
     }
 
     @Test

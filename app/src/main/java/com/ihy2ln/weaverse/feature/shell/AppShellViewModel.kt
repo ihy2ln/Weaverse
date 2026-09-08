@@ -24,6 +24,7 @@ import com.ihy2ln.weaverse.data.settings.SettingsRepository
 import com.ihy2ln.weaverse.feature.prompt.PromptEntryBus
 import com.ihy2ln.weaverse.feature.prompt.PromptEntryKind
 import com.ihy2ln.weaverse.feature.roleplay.chat.adventureStartupPrompt
+import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatRuleset
 import com.ihy2ln.weaverse.feature.roleplay.characters.RpgCharacterSheet
 import com.ihy2ln.weaverse.feature.roleplay.characters.encodeRpgSheet
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -269,6 +270,14 @@ class AppShellViewModel @Inject constructor(
                 ?.label
                 ?: "Custom / systemless"
             appendLine("Rules system: $rulesetLabel")
+            if (!textGame) {
+                // Persist the stable mode id separately from the human-readable
+                // style-guide text so reopening Adventure never falls back to d20.
+                appendLine("Game mode: ${RpgCombatRuleset.fromId(details.gameModeId).id}")
+                appendLine("Combat style: ${RpgCombatRuleset.fromId(details.gameModeId).id}")
+                appendLine("Setting details preset: ${details.settingDetailId.ifBlank { "custom" }}")
+                appendLine("House rules preset: ${details.houseRuleId.ifBlank { "custom" }}")
+            }
             if (details.styleGuide.isNotBlank()) append(details.styleGuide)
         }.trim()
         db.roleplayDao().upsertChat(

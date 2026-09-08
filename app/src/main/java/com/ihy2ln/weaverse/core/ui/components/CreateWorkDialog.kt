@@ -42,6 +42,8 @@ data class NewWorkDetails(
     /** RPG presentation mode, independent from the underlying rules system. */
     val gameModeId: String = "",
     val settingId: String = "",
+    val settingDetailId: String = "",
+    val houseRuleId: String = "",
     val narrativePov: String = "",
     val campaignRoleId: String = "",
     val difficultyId: String = "standard",
@@ -929,6 +931,8 @@ fun CreateWorkDialog(
                         rulesetId = if (isCampaign) rulesetId else "",
                         gameModeId = if (isCampaign) gameModeId else "",
                         settingId = if (isCampaign) settingId else "",
+                        settingDetailId = if (isCampaign) settingDetailId else "",
+                        houseRuleId = if (isCampaign) houseRuleId else "",
                         narrativePov = if (isTextGame) {
                             "First-person Summoner"
                         } else if (isCampaign) {

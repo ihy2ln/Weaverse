@@ -165,6 +165,7 @@ fun AdventurePlayScreen(
         AdventureStartupPhase.Character,
         AdventureStartupPhase.Choose,
         AdventureStartupPhase.Questions,
+        AdventureStartupPhase.CuratedQuestions,
     )
 
     Box(
@@ -638,6 +639,8 @@ fun AdventurePlayScreen(
                 "Choose 1, 2, 3, or a curated start…"
             } else if (state.adventureStartupPhase == AdventureStartupPhase.Questions) {
                 "Answer the AI DM's setup questions…"
+            } else if (state.adventureStartupPhase == AdventureStartupPhase.CuratedQuestions) {
+                "Add details or say randomize…"
             } else if (state.userIsDungeonMaster) {
                 "What happens next? · Describe the scene, NPC response, or ruling…"
             } else {

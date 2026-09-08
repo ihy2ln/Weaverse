@@ -26,8 +26,10 @@ import com.ihy2ln.weaverse.core.roleplay.avatarColorHexFor
 import com.ihy2ln.weaverse.core.ui.components.MediaEditAction
 import com.ihy2ln.weaverse.core.ui.components.CampaignPerspectiveTemplates
 import com.ihy2ln.weaverse.core.ui.components.CampaignRulesetTemplates
+import com.ihy2ln.weaverse.core.ui.components.CampaignSettingDetailTemplates
 import com.ihy2ln.weaverse.core.ui.components.CampaignSettingTemplate
 import com.ihy2ln.weaverse.core.ui.components.CampaignSettingTemplates
+import com.ihy2ln.weaverse.core.ui.components.CampaignHouseRuleTemplates
 import com.ihy2ln.weaverse.core.ui.components.NewWorkDetails
 import com.ihy2ln.weaverse.core.ui.components.WorkCharacterOption
 import com.ihy2ln.weaverse.ai.context.ContextBuilder
@@ -1466,6 +1468,7 @@ class RoleplayChatViewModel @Inject constructor(
             AdventureStartupPhase.Character,
             AdventureStartupPhase.Choose,
             AdventureStartupPhase.Questions,
+            AdventureStartupPhase.CuratedQuestions,
         )
         if (_uiState.value.entryMode == "nai" && !startupPending) addManualEntry() else generate()
     }
@@ -1883,6 +1886,7 @@ class RoleplayChatViewModel @Inject constructor(
                     AdventureStartupPhase.Character,
                     AdventureStartupPhase.Choose,
                     AdventureStartupPhase.Questions,
+                    AdventureStartupPhase.CuratedQuestions,
                 )
             val startupDirective = if (startupActive) {
                 adventureStartupDirective(startupPhase, userText)
@@ -2597,6 +2601,13 @@ class RoleplayChatViewModel @Inject constructor(
         val rulesLabel = line("Rules system")
         val rulesId = CampaignRulesetTemplates.firstOrNull { it.label.equals(rulesLabel, ignoreCase = true) }
             ?.id ?: "dnd-5e"
+        val gameModeId = rpgCombatRulesetFromSetup(note).id
+        val settingDetailId = line("Setting details preset")
+            .takeIf { id -> CampaignSettingDetailTemplates.any { it.id.equals(id, ignoreCase = true) } }
+            ?: "custom"
+        val houseRuleId = line("House rules preset")
+            .takeIf { id -> CampaignHouseRuleTemplates.any { it.id.equals(id, ignoreCase = true) } }
+            ?: "custom"
         val campaignRoleId = if (line("Player role").contains("Dungeon Master", ignoreCase = true)) "dm" else "player"
         val houseRules = Regex("(?im)^House rules:\\s*([\\s\\S]*?)(?=\\n\\n|\\z)").find(note)
             ?.groupValues?.getOrNull(1)?.trim().orEmpty()
@@ -2610,7 +2621,10 @@ class RoleplayChatViewModel @Inject constructor(
                     styleGuide = houseRules,
                     mainCharacters = options.filter { option -> option.id in selectedIds },
                     rulesetId = rulesId,
+                    gameModeId = gameModeId,
                     settingId = settingTemplate?.id ?: "high-fantasy",
+                    settingDetailId = settingDetailId,
+                    houseRuleId = houseRuleId,
                     narrativePov = povLabel,
                     campaignRoleId = campaignRoleId,
                 ),
@@ -2727,6 +2741,8 @@ class RoleplayChatViewModel @Inject constructor(
                 appendLine("Game mode: ${RpgCombatRuleset.fromId(details.gameModeId.ifBlank { details.rulesetId }).id}")
                 // Kept as a compatibility alias for older saves and prompt parsers.
                 appendLine("Combat style: ${RpgCombatRuleset.fromId(details.gameModeId.ifBlank { details.rulesetId }).id}")
+                appendLine("Setting details preset: ${details.settingDetailId.ifBlank { "custom" }}")
+                appendLine("House rules preset: ${details.houseRuleId.ifBlank { "custom" }}")
                 if (guidance.isNotBlank()) append(guidance)
             }.trim()
             val updated = chat.copy(

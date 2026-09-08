@@ -46,5 +46,10 @@ class RpgCombatTest {
     fun setupParserDefaultsOldCampaignsToD20() {
         assertEquals(RpgCombatRuleset.DndD20, rpgCombatRulesetFromSetup("Campaign: Old save"))
         assertEquals(RpgCombatRuleset.CardBattle, rpgCombatRulesetFromSetup("Combat style: rpg-cards"))
+        assertEquals(RpgCombatRuleset.TextReactions, rpgCombatRulesetFromSetup("Game mode: Text Reactions. Resolve text actions."))
+        assertEquals(
+            RpgCombatRuleset.CardBattle,
+            rpgCombatRulesetFromSetup("Game mode: rpg-cards\nCombat style: rpg-d20"),
+        )
     }
 }

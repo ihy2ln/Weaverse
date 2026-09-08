@@ -216,6 +216,17 @@ fun resolveRpgCombatAction(state: RpgCombatState, action: RpgCombatAction, seed:
 }
 
 fun rpgCombatRulesetFromSetup(setup: String): RpgCombatRuleset {
-    val id = Regex("(?im)^(?:Game mode|Combat style):\\s*([^\\s]+)").find(setup)?.groupValues?.getOrNull(1)
-    return RpgCombatRuleset.fromId(id)
+    val raw = Regex("(?im)^(?:Game mode|Combat style):\\s*([^\\r\\n]+)")
+        .find(setup)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.trim()
+        .orEmpty()
+    RpgCombatRuleset.fromId(raw).let { parsed ->
+        if (raw.equals(parsed.id, ignoreCase = true)) return parsed
+    }
+    return RpgCombatRuleset.entries.firstOrNull { mode ->
+        raw.equals(mode.label, ignoreCase = true) ||
+            raw.startsWith(mode.label + ".", ignoreCase = true)
+    } ?: RpgCombatRuleset.DndD20
 }

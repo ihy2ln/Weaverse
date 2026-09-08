@@ -63,7 +63,7 @@ fun CampaignOptionsDialog(
     var settingId by remember { mutableStateOf(initial.settingId.ifBlank { "high-fantasy" }) }
     var settingMenuOpen by remember { mutableStateOf(false) }
     var genre by remember { mutableStateOf(initial.genre) }
-    var settingDetailId by remember { mutableStateOf("custom") }
+    var settingDetailId by remember { mutableStateOf(initial.settingDetailId.ifBlank { "custom" }) }
     var settingDetailMenuOpen by remember { mutableStateOf(false) }
     var selectedCharacterIds by remember {
         mutableStateOf(initial.mainCharacters.map { it.id }.toSet())
@@ -84,7 +84,7 @@ fun CampaignOptionsDialog(
     var rulesetMenuOpen by remember { mutableStateOf(false) }
     var gameModeMenuOpen by remember { mutableStateOf(false) }
     var styleGuide by remember { mutableStateOf(initial.styleGuide) }
-    var houseRuleId by remember { mutableStateOf("custom") }
+    var houseRuleId by remember { mutableStateOf(initial.houseRuleId.ifBlank { "custom" }) }
     var houseRuleMenuOpen by remember { mutableStateOf(false) }
     var showAddSetting by remember { mutableStateOf(false) }
     var newSettingLabel by remember { mutableStateOf("") }
@@ -466,6 +466,8 @@ fun CampaignOptionsDialog(
          rulesetId = rulesetId,
          gameModeId = gameModeId,
                         settingId = settingId,
+                        settingDetailId = settingDetailId,
+                        houseRuleId = houseRuleId,
                         narrativePov = CampaignPerspectiveTemplates.first { it.id == narrativePovId }.label,
                         campaignRoleId = campaignRoleId,
                     ),

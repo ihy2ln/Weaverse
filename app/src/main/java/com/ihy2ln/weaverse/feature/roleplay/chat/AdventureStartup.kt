@@ -7,6 +7,7 @@ enum class AdventureStartupPhase(val storageName: String) {
     Character("character"),
     Choose("choose"),
     Questions("questions"),
+    CuratedQuestions("curated_questions"),
     Complete("complete"),
 }
 
@@ -72,7 +73,7 @@ fun adventureStartupPreset(input: String): AdventureStartupPreset? {
 }
 
 private val StartupMarker = Regex(
-    "\\[\\[ADVENTURE_STARTUP:\\s*(character|choose|questions|complete)]]",
+    "\\[\\[ADVENTURE_STARTUP:\\s*(character|choose|questions|curated_questions|complete)]]",
     RegexOption.IGNORE_CASE,
 )
 
@@ -136,6 +137,7 @@ fun adventureStartupPhase(text: String): AdventureStartupPhase = when (
     "character" -> AdventureStartupPhase.Character
     "choose" -> AdventureStartupPhase.Choose
     "questions" -> AdventureStartupPhase.Questions
+    "curated_questions" -> AdventureStartupPhase.CuratedQuestions
     "complete" -> AdventureStartupPhase.Complete
     else -> AdventureStartupPhase.None
 }
@@ -165,12 +167,13 @@ fun nextAdventureStartupPhase(
     input: String,
 ): AdventureStartupPhase = when (current) {
     AdventureStartupPhase.Character -> AdventureStartupPhase.Choose
-    AdventureStartupPhase.Choose -> if (adventureStartupChoice(input) == AdventureStartupChoice.Ai) {
-        AdventureStartupPhase.Questions
-    } else {
-        AdventureStartupPhase.Complete
+    AdventureStartupPhase.Choose -> when (adventureStartupChoice(input)) {
+        AdventureStartupChoice.Ai -> AdventureStartupPhase.Questions
+        AdventureStartupChoice.Curated -> AdventureStartupPhase.CuratedQuestions
+        else -> AdventureStartupPhase.Complete
     }
     AdventureStartupPhase.Questions -> AdventureStartupPhase.Complete
+    AdventureStartupPhase.CuratedQuestions -> AdventureStartupPhase.Complete
     else -> AdventureStartupPhase.None
 }
 
@@ -190,11 +193,8 @@ fun adventureStartupDirective(
             "2 build it together, or 3 random. Do not begin the adventure and do not roll dice."
     AdventureStartupPhase.Choose -> when (adventureStartupChoice(input)) {
         AdventureStartupChoice.Curated -> adventureStartupPreset(input)?.let { preset ->
-            openingDirective(
-                "${preset.title} selected. ${preset.description} " +
-                    "Use the saved campaign setting details, mode, rule system, and house rules as authoritative context.",
-            )
-        } ?: openingDirective("Curated campaign opening selected.")
+            curatedStartupQuestions(preset)
+        } ?: curatedStartupQuestions(null)
         AdventureStartupChoice.Ai -> adventureAiStartupFieldsPrompt()
         AdventureStartupChoice.CharacterSelector -> characterSelectorStartupPrompt()
         AdventureStartupChoice.Classic ->
@@ -207,7 +207,22 @@ fun adventureStartupDirective(
         openingDirective(
             "Use the player's interview answers as authoritative setup. Fill only harmless missing details yourself.",
         )
+    AdventureStartupPhase.CuratedQuestions ->
+        openingDirective(
+            "Use the selected curated opening and the player's answers as authoritative setup. " +
+                "If the player asks for randomness or says surprise me, invent fitting details from the saved " +
+                "campaign context; otherwise honor their character anchor, tone, and desired complication.",
+        )
     else -> ""
+}
+
+private fun curatedStartupQuestions(preset: AdventureStartupPreset?): String {
+    val selected = preset?.let { "${it.title} selected. ${it.description}" }
+        ?: "A curated campaign opening was selected."
+    return selected + " Use the saved campaign setting details, mode, rule system, and house rules as authoritative context. " +
+        "Before writing the opening scene, ask for two short setup details: (1) which character, bond, or goal " +
+        "should be in the spotlight, and (2) whether the player wants a specific tone or should say 'randomize' " +
+        "for a surprise complication. Do not begin the adventure yet, do not roll dice, and end by inviting the answer."
 }
 
 private fun openingDirective(seed: String): String =
