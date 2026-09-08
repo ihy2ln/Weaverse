@@ -98,6 +98,10 @@ val CampaignSettingDetailTemplates = listOf(
     CampaignSettingDetailTemplate("fae", "Fey borderlands", "A mortal village borders a beautiful, dangerous fey realm where names, promises, seasons, and bargains have literal power."),
     CampaignSettingDetailTemplate("clockwork", "Clockwork metropolis", "A soot-dark metropolis runs on gears, contracts, and living engines while inventors, labor guilds, and old houses fight for control."),
     CampaignSettingDetailTemplate("cosmic", "Stars beyond the veil", "Strange lights and impossible visitors appear in a familiar world, drawing the party into a mystery that reaches beyond the sky."),
+    CampaignSettingDetailTemplate("adult-plot", "Adult romance with plot · 18+", "An adult-only romance campaign where all characters are consenting adults and intimate content supports character arcs, mystery, and story stakes."),
+    CampaignSettingDetailTemplate("adult-smut", "Smut romance · 18+", "An adult-only, consent-forward romance campaign focused on emotional chemistry, relationship choices, and fade-to-black intimate scenes."),
+    CampaignSettingDetailTemplate("adult-hentai", "Adult anime fantasy · 18+", "An adult-only anime-inspired fantasy with exaggerated magic, romance, and sensual themes; every character is an adult and consent is explicit."),
+    CampaignSettingDetailTemplate("adult-ecchi", "Ecchi comedy · 18+", "An adult-only playful romantic comedy with suggestive misunderstandings, ensemble chemistry, and non-explicit fan-service; no minors or coercion."),
     CampaignSettingDetailTemplate("custom", "Custom setting details", "Describe the kingdom, era, locations, factions, tone, and boundaries in your own words."),
 )
 
@@ -177,6 +181,26 @@ val CampaignSettingTemplates = listOf(
         "dark-fantasy",
         "Dark fantasy",
         "Run a morally difficult fantasy world shaped by curses, corruption, scarce safety, frightening magic, compromised factions, and costly victories. Keep danger serious without removing player agency or fair warning.",
+    ),
+    CampaignSettingTemplate(
+        "highschool-of-the-dead",
+        "Highschool of the Dead-inspired",
+        "Run an age-appropriate zombie survival horror campaign centered on a school evacuation, improvised defenses, dwindling supplies, and hard choices during a fast-moving outbreak. Keep the tone tense and pulpy; do not sexualize minors or include explicit sexual content involving students.",
+    ),
+    CampaignSettingTemplate(
+        "walking-dead",
+        "The Walking Dead-inspired",
+        "Run a grounded survivor drama after society collapses: scarce food, fortified shelters, roaming dead, rival communities, difficult moral choices, and relationships tested by every loss. Keep violence consequential and hope earned.",
+    ),
+    CampaignSettingTemplate(
+        "world-war-z",
+        "World War Z-inspired",
+        "Run a global outbreak thriller with rapid infection, mass evacuations, desperate logistics, shifting fronts, and survivor stories across cities and continents. Emphasize coordinated action, credible public response, and human resilience.",
+    ),
+    CampaignSettingTemplate(
+        "zombie-apocalypse",
+        "Original zombie apocalypse",
+        "Run an original zombie setting with your choice of outbreak cause, infection rules, survivor communities, safe zones, factions, and rebuilding goals. Define the threat clearly and let preparation, trust, and resource choices shape survival.",
     ),
     CampaignSettingTemplate(
         "sword-sorcery",

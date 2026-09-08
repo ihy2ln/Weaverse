@@ -2,6 +2,7 @@ package com.ihy2ln.weaverse.feature.roleplay.chat
 
 import kotlin.random.Random
 import com.ihy2ln.weaverse.core.ui.components.CampaignSettingDetailTemplates
+import com.ihy2ln.weaverse.core.ui.components.CampaignSettingTemplates
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -68,8 +69,9 @@ class AdventureStartupTest {
     @Test
     fun curatedStartsAreOneTapCommandsThatUseCampaignContext() {
         val presets = adventureStartupPresets()
-        assertEquals(4, presets.size)
+        assertTrue(presets.size >= 5)
         assertTrue(presets.all { it.title.isNotBlank() && it.description.isNotBlank() })
+        assertTrue(presets.any { it.id == "isekai-arrival" })
         val selected = presets.first()
         assertEquals(selected, adventureStartupPreset(selected.command))
         assertEquals(AdventureStartupChoice.Curated, adventureStartupChoice(selected.command))
@@ -88,7 +90,14 @@ class AdventureStartupTest {
         assertTrue(CampaignSettingDetailTemplates.any { it.id == "coastal" })
         assertTrue(CampaignSettingDetailTemplates.any { it.id == "fae" })
         assertTrue(CampaignSettingDetailTemplates.any { it.id == "clockwork" })
+        assertTrue(CampaignSettingDetailTemplates.any { it.id == "adult-plot" && "18+" in it.label })
+        assertTrue(CampaignSettingDetailTemplates.any { it.id == "adult-smut" && "consent" in it.details.lowercase() })
+        assertTrue(CampaignSettingDetailTemplates.any { it.id == "adult-hentai" && "adult" in it.details.lowercase() })
+        assertTrue(CampaignSettingDetailTemplates.any { it.id == "adult-ecchi" && "no minors" in it.details.lowercase() })
         assertTrue(CampaignSettingDetailTemplates.any { it.id == "custom" })
+        assertTrue(CampaignSettingTemplates.any { it.id == "highschool-of-the-dead" })
+        assertTrue(CampaignSettingTemplates.any { it.id == "walking-dead" })
+        assertTrue(CampaignSettingTemplates.any { it.id == "world-war-z" })
     }
 
     @Test

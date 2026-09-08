@@ -52,6 +52,12 @@ private val CuratedStartupPresets = listOf(
         description = "Begin in immediate danger with a clear objective and a meaningful first decision.",
         command = "Start with an urgent crisis",
     ),
+    AdventureStartupPreset(
+        id = "isekai-arrival",
+        title = "Isekai arrival",
+        description = "Cross into a new world with unfamiliar rules, a first ally, and a problem that only this party can solve.",
+        command = "Start with an isekai arrival",
+    ),
 )
 
 fun adventureStartupPresets(): List<AdventureStartupPreset> = CuratedStartupPresets
