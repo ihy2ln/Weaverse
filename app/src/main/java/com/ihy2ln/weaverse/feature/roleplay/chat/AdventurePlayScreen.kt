@@ -30,6 +30,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -109,6 +110,9 @@ fun AdventurePlayScreen(
     // 0 normal, 1 collapsed (thin strip), 2 enlarged.
     var sceneArtSize by rememberSaveable { mutableStateOf(0) }
     var modelSearch by rememberSaveable { mutableStateOf("") }
+    var setupSpotlight by rememberSaveable { mutableStateOf("") }
+    var setupTone by rememberSaveable { mutableStateOf("") }
+    var setupComplication by rememberSaveable { mutableStateOf("") }
     var minimumWordsText by rememberSaveable { mutableStateOf(state.minimumOutputWords.toString()) }
     var maximumWordsText by rememberSaveable { mutableStateOf(state.outputWords.toString()) }
     LaunchedEffect(state.minimumOutputWords) {
@@ -591,6 +595,55 @@ fun AdventurePlayScreen(
                         }
                     }
                 }
+            }
+        }
+
+        if (state.adventureStartupPhase == AdventureStartupPhase.Questions ||
+            state.adventureStartupPhase == AdventureStartupPhase.CuratedQuestions) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = InkSpacing.lg),
+                verticalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+            ) {
+                Text("Adventure details", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                Text("Use these fields instead of a freeform setup reply. You can leave any field blank.", style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
+                OutlinedTextField(
+                    value = setupSpotlight,
+                    onValueChange = { setupSpotlight = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Character, bond, or goal in the spotlight") },
+                    singleLine = false,
+                )
+                OutlinedTextField(
+                    value = setupTone,
+                    onValueChange = { setupTone = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Tone and presentation") },
+                    placeholder = { Text("Hopeful, grim, romantic, comedic…") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = setupComplication,
+                    onValueChange = { setupComplication = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Opening complication or randomize") },
+                    singleLine = false,
+                )
+                InkOutlinedButton(
+                    label = "Use these details",
+                    onClick = {
+                        val answer = listOf(
+                            "Spotlight: ${setupSpotlight.trim().ifBlank { "Surprise me" }}",
+                            "Tone: ${setupTone.trim().ifBlank { "Use the campaign preset" }}",
+                            "Complication: ${setupComplication.trim().ifBlank { "Randomize" }}",
+                        ).joinToString("\n")
+                        viewModel.onInputChange(answer)
+                        viewModel.send()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !state.isStreaming,
+                )
             }
         }
 
