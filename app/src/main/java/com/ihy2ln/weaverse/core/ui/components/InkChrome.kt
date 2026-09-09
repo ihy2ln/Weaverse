@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DropdownMenu
@@ -155,6 +156,8 @@ fun WorkspaceChrome(
     onSettings: () -> Unit,
     onImport: () -> Unit,
     onExport: () -> Unit,
+    canGoBack: Boolean = false,
+    onBack: () -> Unit = {},
     canUndo: Boolean = false,
     canRedo: Boolean = false,
     onUndo: () -> Unit = {},
@@ -205,6 +208,9 @@ fun WorkspaceChrome(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(InkSpacing.xxs),
         ) {
+            IconButton(onClick = onBack, enabled = canGoBack, modifier = Modifier.size(34.dp)) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", modifier = Modifier.size(20.dp))
+            }
             IconButton(onClick = onLibrary, modifier = Modifier.size(34.dp)) {
                 Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = "Library", modifier = Modifier.size(20.dp))
             }

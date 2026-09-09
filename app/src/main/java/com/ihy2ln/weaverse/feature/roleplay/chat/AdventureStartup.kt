@@ -286,7 +286,7 @@ private fun curatedStartupQuestions(preset: AdventureStartupPreset?): String {
     return selected + " Use the saved campaign setting details, mode, rule system, and house rules as authoritative context. " +
         "Before writing the opening scene, present the six-question Adventure Plan: plot premise, first party goal, " +
         "first scene/location, starting party, tone, and opening complication. For each question offer concise preset " +
-        "answers, accept the player's own wording, and allow Skip. Do not begin the adventure yet, do not roll dice, " +
+        "answers tailored to this campaign's saved template and setting details, accept the player's own wording, and allow Skip. Do not begin the adventure yet, do not roll dice, " +
         "and end by inviting the plan answers."
 }
 

@@ -494,6 +494,32 @@ fun AppShell(
                     "Shared · ${codexState.entries.size} entries · every book & mode"
                 else -> toolbarSubtitle
             }
+            val canGoBack = showSettings || showExport || showSearch || showLibrary ||
+                selectedCodexEntryId != null || selectedCharacterId != null || selectedPersonaId != null ||
+                selectedInventoryCarrierId != null || chromeTool != null || selectedRpChatId != null ||
+                selectedGameSessionId != null || storyboardChatId != null ||
+                mode != AppMode.Novel.name || novelDest != NovelDestination.Bookshelf.name
+            fun goBackOneScreen() {
+                when {
+                    showSettings -> showSettings = false
+                    showExport -> showExport = false
+                    showSearch -> showSearch = false
+                    showLibrary -> showLibrary = false
+                    selectedCodexEntryId != null -> selectedCodexEntryId = null
+                    selectedCharacterId != null -> selectedCharacterId = null
+                    selectedPersonaId != null -> selectedPersonaId = null
+                    selectedInventoryCarrierId != null -> selectedInventoryCarrierId = null
+                    chromeTool != null -> chromeTool = null
+                    selectedRpChatId != null -> { selectedRpChatId = null; rpDest = RoleplayDestination.Chats.name }
+                    selectedGameSessionId != null -> selectedGameSessionId = null
+                    storyboardChatId != null -> storyboardChatId = null
+                    currentMode == AppMode.Novel && novelDest != NovelDestination.Bookshelf.name -> novelDest = NovelDestination.Bookshelf.name
+                    currentMode == AppMode.Roleplay && rpDest != RoleplayDestination.Campaign.name -> rpDest = RoleplayDestination.Campaign.name
+                    currentMode == AppMode.Chatting && chatDest != ChattingDestination.Chats.name -> chatDest = ChattingDestination.Chats.name
+                    currentMode == AppMode.Storyboard && storyboardDest != StoryboardDestination.Window.name -> storyboardDest = StoryboardDestination.Window.name
+                    else -> mode = AppMode.Novel.name
+                }
+            }
             WorkspaceChrome(
                 bookTitle = chromeTitle,
                 seriesTitle = chromeSubtitle,
@@ -522,6 +548,8 @@ fun AppShell(
                 onSettings = { showSettings = !showSettings },
                 onImport = { showExport = true },
                 onExport = { showExport = true },
+                canGoBack = canGoBack,
+                onBack = ::goBackOneScreen,
                 canUndo = historyState.canUndo,
                 canRedo = historyState.canRedo,
                 onUndo = shellViewModel::undo,
