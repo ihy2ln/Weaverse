@@ -19,6 +19,8 @@ import com.ihy2ln.weaverse.core.media.OfflinePanelDetectionKind
 import com.ihy2ln.weaverse.core.text.TextOverlayStyle
 import com.ihy2ln.weaverse.core.media.TopicMediaLibrary
 import com.ihy2ln.weaverse.core.media.TopicMediaSnapshot
+import com.ihy2ln.weaverse.core.media.SceneMediaLibrary
+import com.ihy2ln.weaverse.core.media.SceneMediaRequest
 import com.ihy2ln.weaverse.core.media.parseTopicMediaReply
 import com.ihy2ln.weaverse.core.media.topicMediaRequestsFor
 import com.ihy2ln.weaverse.core.media.topicMediaVisibleText
@@ -79,6 +81,28 @@ import com.ihy2ln.weaverse.data.settings.SettingsRepository
 import com.ihy2ln.weaverse.feature.roleplay.presets.defaultPresets
 import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatRuleset
 import com.ihy2ln.weaverse.feature.roleplay.combat.rpgCombatRulesetFromSetup
+import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgAdventurePlan
+import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgCampaignRepository
+import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgCampaignSetupSnapshot
+import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgCampaignState
+import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgChapterOutline
+import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgGenerationStatus
+import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgOpeningSceneGuideline
+import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgPlanAnswer
+import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgStartupState
+import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgStartupStep
+import com.ihy2ln.weaverse.feature.roleplay.campaign.chapterPlanPrompt
+import com.ihy2ln.weaverse.feature.roleplay.campaign.completeChapterPlan
+import com.ihy2ln.weaverse.feature.roleplay.campaign.completeSceneDraft
+import com.ihy2ln.weaverse.feature.roleplay.campaign.createRpgCampaign
+import com.ihy2ln.weaverse.feature.roleplay.campaign.cyoaSuggestionPrompt
+import com.ihy2ln.weaverse.feature.roleplay.campaign.fallbackChapterPlan
+import com.ihy2ln.weaverse.feature.roleplay.campaign.fallbackCyoaSuggestions
+import com.ihy2ln.weaverse.feature.roleplay.campaign.fallbackSceneDraft
+import com.ihy2ln.weaverse.feature.roleplay.campaign.openingScenePrompt
+import com.ihy2ln.weaverse.feature.roleplay.campaign.parseChapterPlan
+import com.ihy2ln.weaverse.feature.roleplay.campaign.parseCyoaSuggestions
+import com.ihy2ln.weaverse.feature.roleplay.campaign.parseSceneDraft
 import com.ihy2ln.weaverse.feature.roleplay.characters.abilityModifier
 import com.ihy2ln.weaverse.feature.roleplay.characters.decodeRpgSheet
 import com.ihy2ln.weaverse.feature.roleplay.characters.encodeRpgSheet
@@ -130,6 +154,7 @@ class RoleplayChatViewModel @Inject constructor(
     private val mangaFileImporter: MangaFileImporter,
     private val mediaRepository: MediaRepository,
     private val topicMediaLibrary: TopicMediaLibrary,
+    private val sceneMediaLibrary: SceneMediaLibrary,
     private val settings: SettingsRepository,
     private val tts: com.ihy2ln.weaverse.core.tts.TtsService,
     private val mediaClipboard: MediaClipboard,
@@ -144,6 +169,8 @@ class RoleplayChatViewModel @Inject constructor(
     val uiState: StateFlow<RoleplayChatUiState> = _uiState.asStateFlow()
     private var bindJob: Job? = null
     private var generateJob: Job? = null
+    private var cyoaSuggestionJob: Job? = null
+    private var rpgDraftSaveJob: Job? = null
     private var composerStatusJob: Job? = null
     /** Live instructions from the Prompt Collection's RPG → Adventure Scene Beat prompt. */
     private val rpgSceneBeatDirective = MutableStateFlow("")
@@ -152,6 +179,9 @@ class RoleplayChatViewModel @Inject constructor(
     private val contextBuilder = ContextBuilder()
     private var rawMessages: List<RpMessageEntity> = emptyList()
     private var boundChat: RpChatEntity? = null
+    private val rpgCampaignRepository by lazy { RpgCampaignRepository(db.roleplayDao()) }
+    private var rpgCampaignState: RpgCampaignState? = null
+    private var loadedRpgCampaignId: String? = null
     private var customBangCommands: Map<String, String> = emptyMap()
     private var removedBangKeywords: Set<String> = emptySet()
     private var starCommands: List<RpgTurnCommand> = RpgTurnCommands.all
@@ -270,6 +300,9 @@ class RoleplayChatViewModel @Inject constructor(
                 db.roleplayDao().observeChats().collect { chats ->
                     chats.find { it.id == chatId }?.let { chat ->
                         boundChat = chat
+                        if (chat.displayMode == "dungeonMaster" && loadedRpgCampaignId != chat.id) {
+                            restoreRpgStartup(chat)
+                        }
                         val selectedRosterId = Regex("Main character IDs:\\s*([^\\n]+)", RegexOption.IGNORE_CASE)
                             .find(chat.authorsNote)?.groupValues?.getOrNull(1)
                             ?.split(',')?.map { it.trim() }
@@ -338,11 +371,16 @@ class RoleplayChatViewModel @Inject constructor(
 
     private suspend fun publishMessages() {
         val allActive = rawMessages.filter { it.isActiveSwipe }
-        val startupPhase = allActive.asSequence()
+        val persistedStartupPhase = allActive.asSequence()
             .sortedByDescending { it.createdAt }
             .map { adventureStartupPhase(documentFromJson(it.contentJson).plainText()) }
             .firstOrNull { it != AdventureStartupPhase.None }
             ?: AdventureStartupPhase.None
+        val startupPhase = effectiveAdventureStartupPhase(
+            persistedPhase = persistedStartupPhase,
+            adventurePlanProgress = _uiState.value.adventurePlanProgress,
+            isStreaming = _uiState.value.isStreaming,
+        )
         val sceneMarkers = allActive
             .filter { it.role == ADVENTURE_SCENE_ROLE }
             .sortedBy { it.createdAt }
@@ -511,10 +549,14 @@ class RoleplayChatViewModel @Inject constructor(
                 isAdventureSetup = isAdventureSetup,
             )
         }
-        val latestAssistantText = ui.lastOrNull { it.role != "user" }?.text.orEmpty()
+        // Choice and art markers are hidden from RpMessageUi text, so parse them from
+        // the stored document before stripRpgMetadata removes them for display.
+        val latestAssistantText = active.lastOrNull { it.role != "user" }
+            ?.let { message -> documentFromJson(message.contentJson).plainText() }
+            .orEmpty()
         val actionChoices = parseRpgActionChoices(latestAssistantText)
         val sceneArt = parseRpgSceneArtChoice(latestAssistantText)
-        val combatMode = rpgCombatRulesetFromSetup(boundChat?.authorsNote.orEmpty())
+        val combatMode = authoritativeRpgMode()
         _uiState.update {
             it.copy(
                 messages = ui,
@@ -1478,7 +1520,7 @@ class RoleplayChatViewModel @Inject constructor(
     fun submitAdventurePlan(plan: String) {
         val normalized = plan.trim()
         if (normalized.isBlank() || _uiState.value.isStreaming) return
-        _uiState.update { it.copy(input = normalized, errorMessage = "") }
+        _uiState.update { it.copy(input = normalized, errorMessage = "", adventurePlanProgress = 1) }
         generate(inputOverride = normalized)
     }
 
@@ -1884,7 +1926,7 @@ class RoleplayChatViewModel @Inject constructor(
                 state.defaultModelRef,
             )
             if (!aiGeneration.hasApiKey(activeModelRef)) {
-                _uiState.update { it.copy(errorMessage = AIError.NoApiKey().message.orEmpty()) }
+                _uiState.update { it.copy(errorMessage = AIError.NoApiKey().message.orEmpty(), adventurePlanProgress = 0) }
                 return@launch
             }
             val now = System.currentTimeMillis()
@@ -1910,6 +1952,9 @@ class RoleplayChatViewModel @Inject constructor(
                 nextAdventureStartupPhase(startupPhase, userText)
             } else {
                 AdventureStartupPhase.None
+            }
+            if (startupActive) {
+                _uiState.update { it.copy(adventurePlanProgress = 10) }
             }
             val playerAdvancedScene = mode == "dungeonMaster" && ExplicitSceneAdvance.containsMatchIn(userText)
             val playerStayedInScene = mode == "dungeonMaster" && ExplicitStayInScene.containsMatchIn(userText)
@@ -1981,7 +2026,13 @@ class RoleplayChatViewModel @Inject constructor(
                 }
             }
             _uiState.update {
-                it.copy(input = "", isStreaming = true, streamingText = "", errorMessage = "")
+                it.copy(
+                    input = "",
+                    isStreaming = true,
+                    streamingText = "",
+                    errorMessage = "",
+                    adventurePlanProgress = if (startupActive) 25 else it.adventurePlanProgress,
+                )
             }
             // History is already mode-filtered via observeMessages(chatId, displayMode).
             val history = rawMessages
@@ -2053,6 +2104,9 @@ class RoleplayChatViewModel @Inject constructor(
                                             ).trimStart(),
                                         ),
                                     )),
+                                    adventurePlanProgress = if (startupActive) {
+                                        (35 + (builder.length * 55 / (state.outputWords * 6).coerceAtLeast(1))).coerceAtMost(90)
+                                    } else it.adventurePlanProgress,
                                 )
                             }
                         }
@@ -2081,7 +2135,7 @@ class RoleplayChatViewModel @Inject constructor(
                     redo = { db.roleplayDao().upsertMessage(userMessage) },
                 )
                 _uiState.update {
-                    it.copy(isStreaming = false, streamingText = "", errorMessage = formatError(err))
+                    it.copy(isStreaming = false, streamingText = "", errorMessage = formatError(err), adventurePlanProgress = 0)
                 }
                 return@launch
             }
@@ -2099,6 +2153,7 @@ class RoleplayChatViewModel @Inject constructor(
                         isStreaming = false,
                         streamingText = "",
                         errorMessage = "The selected model returned no visible DM response. Your action was restored; tap ✓ to retry or choose another model.",
+                        adventurePlanProgress = 0,
                     )
                 }
                 return@launch
@@ -2138,6 +2193,19 @@ class RoleplayChatViewModel @Inject constructor(
                 topicMediaReply.copy(visibleText = visibleReply),
                 topicMedia.topics,
             )
+            val topicDocument = documentWithTopicMedia(storedReply, topicMedia, mediaRequests)
+            val artChoice = parseRpgSceneArtChoice(rawReply)
+            val finalDocument = if (mode == "dungeonMaster") {
+                documentWithBestSceneMedia(
+                    document = topicDocument,
+                    sceneText = visibleReply,
+                    sceneTags = listOfNotNull(artChoice?.category, artChoice?.mood)
+                        .filter { it.isNotBlank() }
+                        .joinToString(", "),
+                )
+            } else {
+                topicDocument
+            }
             val reply = RpMessageEntity(
                 id = "rpm-${now + 1}",
                 chatId = state.chatId,
@@ -2145,7 +2213,7 @@ class RoleplayChatViewModel @Inject constructor(
                 swipeIndex = 0,
                 isActiveSwipe = true,
                 role = "char",
-                contentJson = documentWithTopicMedia(storedReply, topicMedia, mediaRequests).toJson(),
+                contentJson = finalDocument.toJson(),
                 createdAt = now + if (aiAdvancedScene) 2 else 1,
                 displayMode = mode,
                 promptTokens = promptTokens,
@@ -2153,6 +2221,16 @@ class RoleplayChatViewModel @Inject constructor(
                 costUsd = costUsd,
             )
             db.roleplayDao().upsertMessage(reply)
+            // Do not wait for the Room observer to infer the phase from message ordering.
+            // The opening scene is durably stored above, so leave setup immediately.
+            if (startupActive) {
+                _uiState.update {
+                    it.copy(
+                        adventureStartupPhase = nextStartupPhase,
+                        adventurePlanProgress = 100,
+                    )
+                }
+            }
             if (mode == "dungeonMaster") {
                 upsertCurrentSceneLore(
                     summaryOverride = worldUpdates.sceneSynopsis,
@@ -2165,7 +2243,13 @@ class RoleplayChatViewModel @Inject constructor(
                 redo = { added.forEach { db.roleplayDao().upsertMessage(it) } },
             )
             _uiState.update {
-                it.copy(isStreaming = false, streamingText = "", lastUsage = usageText)
+                it.copy(
+                    isStreaming = false,
+                    streamingText = "",
+                    lastUsage = usageText,
+                    adventureStartupPhase = if (startupActive) nextStartupPhase else it.adventureStartupPhase,
+                    adventurePlanProgress = if (startupActive) 100 else it.adventurePlanProgress,
+                )
             }
         }
     }
@@ -2173,7 +2257,7 @@ class RoleplayChatViewModel @Inject constructor(
     fun cancelGeneration() {
         generateJob?.cancel()
         generateJob = null
-        _uiState.update { it.copy(isStreaming = false, streamingText = "", errorMessage = "Cancelled") }
+        _uiState.update { it.copy(isStreaming = false, streamingText = "", errorMessage = "Cancelled", adventurePlanProgress = 0) }
     }
 
     fun swipe(messageId: String, direction: Int) {
@@ -2246,6 +2330,19 @@ class RoleplayChatViewModel @Inject constructor(
                     topicMediaReply.copy(visibleText = trimmedReply),
                     topicMedia.topics,
                 )
+                val topicDocument = documentWithTopicMedia(trimmedReply, topicMedia, mediaRequests)
+                val artChoice = parseRpgSceneArtChoice(reply.text)
+                val finalDocument = if (current.displayMode.ifBlank { currentDisplayMode() } == "dungeonMaster") {
+                    documentWithBestSceneMedia(
+                        document = topicDocument,
+                        sceneText = trimmedReply,
+                        sceneTags = listOfNotNull(artChoice?.category, artChoice?.mood)
+                            .filter { it.isNotBlank() }
+                            .joinToString(", "),
+                    )
+                } else {
+                    topicDocument
+                }
                 val deactivated = siblings.map { it.copy(isActiveSwipe = false) }
                 val generated = RpMessageEntity(
                     id = "rpm-$now",
@@ -2254,7 +2351,7 @@ class RoleplayChatViewModel @Inject constructor(
                     swipeIndex = siblings.size,
                     isActiveSwipe = true,
                     role = "char",
-                    contentJson = documentWithTopicMedia(trimmedReply, topicMedia, mediaRequests).toJson(),
+                    contentJson = finalDocument.toJson(),
                     createdAt = now,
                     displayMode = current.displayMode.ifBlank { currentDisplayMode() },
                 )
@@ -2581,6 +2678,418 @@ class RoleplayChatViewModel @Inject constructor(
         )
     }
 
+    // ------------------------------------------------- structured RPG startup wizard
+
+    private fun setupSnapshot(chat: RpChatEntity): RpgCampaignSetupSnapshot {
+        fun line(label: String): String = Regex("(?im)^" + Regex.escape(label) + ":\\s*(.*)$")
+            .find(chat.authorsNote)?.groupValues?.getOrNull(1)?.trim().orEmpty()
+        return RpgCampaignSetupSnapshot(
+            title = chat.title,
+            setting = line("Setting").ifBlank { "Open fantasy setting" },
+            modeId = rpgCombatRulesetFromSetup(chat.authorsNote).id,
+            ruleSystem = line("Rules system").ifBlank { "D&D d20" },
+            houseRules = Regex("(?im)^House rules:\\s*([\\s\\S]*?)(?=\\n\\n|\\z)")
+                .find(chat.authorsNote)?.groupValues?.getOrNull(1)?.trim().orEmpty(),
+            characters = line("Main character(s)"),
+            pointOfView = line("Narrative point of view").ifBlank { "Third-person multiple" },
+            tense = line("Narrative tense").ifBlank { "Past tense" },
+            playerRole = line("Player role").ifBlank { "Adventurer" },
+        )
+    }
+
+    private suspend fun restoreRpgStartup(chat: RpChatEntity) {
+        val existed = db.roleplayDao().getRpgCampaignSave(chat.id) != null
+        var restored = rpgCampaignRepository.restoreRpgCampaign(
+            chat.id,
+            rpgCombatRulesetFromSetup(chat.authorsNote).id,
+            setupSnapshot(chat).ruleSystem,
+        )
+        if (!existed) {
+            val legacyMessages = db.roleplayDao().getMessagesForMode(chat.id, "dungeonMaster")
+            val legacyPhase = legacyMessages.asReversed().asSequence()
+                .map { adventureStartupPhase(documentFromJson(it.contentJson).plainText()) }
+                .firstOrNull { it != AdventureStartupPhase.None } ?: AdventureStartupPhase.None
+            val step = when (legacyPhase) {
+                AdventureStartupPhase.Complete -> RpgStartupStep.Started
+                AdventureStartupPhase.Review -> RpgStartupStep.Verification
+                AdventureStartupPhase.None -> if (legacyMessages.any { message ->
+                    documentFromJson(message.contentJson).plainText().isNotBlank()
+                }) RpgStartupStep.Started else RpgStartupStep.Cyoa
+                else -> RpgStartupStep.Cyoa
+            }
+            restored = restored.copy(startup = restored.startup.copy(step = step))
+        }
+        restored = restored.copy(
+            modeId = rpgCombatRulesetFromSetup(chat.authorsNote).id,
+            startup = restored.startup.copy(
+                setup = setupSnapshot(chat),
+                generationStatus = if (restored.startup.generationStatus == RpgGenerationStatus.Generating) {
+                    RpgGenerationStatus.Failed
+                } else restored.startup.generationStatus,
+                generationError = if (restored.startup.generationStatus == RpgGenerationStatus.Generating) {
+                    "Generation was interrupted. Tap Retry to continue."
+                } else restored.startup.generationError,
+            ),
+        )
+        loadedRpgCampaignId = chat.id
+        persistRpgCampaign(restored)
+    }
+
+    private fun authoritativeRpgMode(): RpgCombatRuleset {
+        val campaign = rpgCampaignState
+        val savedModeId = campaign?.startup?.setup?.modeId?.takeIf { it.isNotBlank() }
+            ?: campaign?.modeId?.takeIf { it.isNotBlank() }
+        return savedModeId?.let(RpgCombatRuleset::fromId)
+            ?: rpgCombatRulesetFromSetup(boundChat?.authorsNote.orEmpty())
+    }
+
+    private suspend fun persistRpgCampaign(state: RpgCampaignState) {
+        rpgCampaignState = state
+        rpgCampaignRepository.saveRpgCampaign(state)
+        _uiState.update {
+            it.copy(
+                rpgStartup = state.startup,
+                adventurePlanProgress = state.startup.generationProgress,
+            )
+        }
+    }
+
+    private suspend fun updateRpgStartup(transform: (RpgStartupState) -> RpgStartupState) {
+        val campaign = rpgCampaignState ?: return
+        persistRpgCampaign(campaign.copy(startup = transform(campaign.startup)))
+    }
+
+    private fun updateRpgStartupDraft(transform: (RpgStartupState) -> RpgStartupState) {
+        val campaign = rpgCampaignState ?: return
+        val updated = campaign.copy(startup = transform(campaign.startup))
+        rpgCampaignState = updated
+        _uiState.update { it.copy(rpgStartup = updated.startup) }
+        rpgDraftSaveJob?.cancel()
+        rpgDraftSaveJob = viewModelScope.launch {
+            delay(200)
+            rpgCampaignState?.let { latest -> rpgCampaignRepository.saveRpgCampaign(latest) }
+        }
+    }
+
+    fun saveCyoaAnswer(questionId: String, value: String, presetId: String? = null) {
+        updateRpgStartupDraft { startup ->
+            val answer = RpgPlanAnswer(questionId, value, presetId, skipped = false)
+            startup.copy(
+                plan = startup.plan.copy(answers = startup.plan.answers.filterNot { it.questionId == questionId } + answer),
+                generationStatus = RpgGenerationStatus.Idle,
+                generationError = "",
+            )
+        }
+    }
+
+    fun selectCyoaPreset(questionId: String, value: String) = saveCyoaAnswer(questionId, value, value)
+
+    fun skipCyoaQuestion(questionId: String) {
+        viewModelScope.launch {
+            updateRpgStartup { startup ->
+                val answer = RpgPlanAnswer(questionId, value = "", skipped = true)
+                startup.copy(plan = startup.plan.copy(answers = startup.plan.answers.filterNot { it.questionId == questionId } + answer))
+            }
+        }
+    }
+
+    fun randomizeUnansweredCyoa() {
+        viewModelScope.launch {
+            updateRpgStartup { startup ->
+                val answers = adventurePlanQuestions().map { question ->
+                    startup.plan.answers.firstOrNull { it.questionId == question.id }
+                        ?.takeIf { it.value.isNotBlank() || it.skipped }
+                        ?: RpgPlanAnswer(question.id, question.presets.random(), presetId = "random")
+                }
+                startup.copy(plan = RpgAdventurePlan(answers))
+            }
+        }
+    }
+
+    fun generateCyoaSuggestions() {
+        val campaign = rpgCampaignState ?: return
+        if (campaign.startup.cyoaSuggestionStatus == RpgGenerationStatus.Generating) return
+        cyoaSuggestionJob?.cancel()
+        cyoaSuggestionJob = viewModelScope.launch {
+            updateRpgStartup { it.copy(
+                cyoaSuggestionStatus = RpgGenerationStatus.Generating,
+                cyoaSuggestionProgress = 1,
+                cyoaSuggestionError = "",
+            ) }
+            val activeModel = PromptModelSelection.effectiveModelRef(_uiState.value.selectedModelRef, _uiState.value.defaultModelRef)
+            if (!aiGeneration.hasApiKey(activeModel)) {
+                updateRpgStartup { it.copy(
+                    cyoaSuggestions = fallbackCyoaSuggestions(it.setup),
+                    cyoaSuggestionStatus = RpgGenerationStatus.Failed,
+                    cyoaSuggestionProgress = 100,
+                    cyoaSuggestionError = "AI suggestions are unavailable, so campaign-aware local suggestions are shown.",
+                ) }
+                return@launch
+            }
+            val builder = StringBuilder()
+            runCatching {
+                aiGeneration.stream(
+                    userMessage = cyoaSuggestionPrompt(campaign.startup.setup),
+                    modelRef = activeModel,
+                    maxTokens = 700,
+                    temperature = 0.8,
+                ).collect { chunk ->
+                    if (chunk is AIChunk.Delta) {
+                        builder.append(chunk.text)
+                        updateRpgStartup { it.copy(cyoaSuggestionProgress = (10 + builder.length / 8).coerceAtMost(90)) }
+                    }
+                }
+                parseCyoaSuggestions(builder.toString()) ?: error("AI suggestions were not valid.")
+            }.onSuccess { suggestions ->
+                updateRpgStartup { it.copy(
+                    cyoaSuggestions = suggestions,
+                    cyoaSuggestionStatus = RpgGenerationStatus.Complete,
+                    cyoaSuggestionProgress = 100,
+                    cyoaSuggestionError = "",
+                ) }
+            }.onFailure {
+                updateRpgStartup { current -> current.copy(
+                    cyoaSuggestions = fallbackCyoaSuggestions(current.setup),
+                    cyoaSuggestionStatus = RpgGenerationStatus.Failed,
+                    cyoaSuggestionProgress = 100,
+                    cyoaSuggestionError = "AI suggestions could not be loaded, so campaign-aware local suggestions are shown.",
+                ) }
+            }
+        }
+    }
+
+    fun saveAdventurePlan() {
+        val state = rpgCampaignState ?: return
+        rpgDraftSaveJob?.cancel()
+        viewModelScope.launch { persistRpgCampaign(state) }
+    }
+
+    fun generateChapterPlan() {
+        val campaign = rpgCampaignState ?: return
+        if (_uiState.value.isStreaming) return
+        val requestId = campaign.startup.generationRequestId.takeIf {
+            campaign.startup.step == RpgStartupStep.GeneratingChapterPlan && it.isNotBlank()
+        } ?: UUID.randomUUID().toString()
+        generateJob = viewModelScope.launch {
+            updateRpgStartup {
+                it.copy(
+                    step = RpgStartupStep.GeneratingChapterPlan,
+                    generationStatus = RpgGenerationStatus.Generating,
+                    generationProgress = 1,
+                    generationError = "",
+                    generationRequestId = requestId,
+                )
+            }
+            _uiState.update { it.copy(isStreaming = true, errorMessage = "") }
+            val builder = StringBuilder()
+            val activeModel = PromptModelSelection.effectiveModelRef(_uiState.value.selectedModelRef, _uiState.value.defaultModelRef)
+            if (!aiGeneration.hasApiKey(activeModel)) {
+                updateRpgStartup { it.copy(generationStatus = RpgGenerationStatus.Failed, generationProgress = 1, generationError = AIError.NoApiKey().message.orEmpty()) }
+                _uiState.update { it.copy(isStreaming = false) }
+                return@launch
+            }
+            runCatching {
+                aiGeneration.stream(
+                    userMessage = chapterPlanPrompt(campaign.startup.setup, campaign.startup.plan),
+                    modelRef = activeModel,
+                    maxTokens = 1800,
+                    temperature = 0.7,
+                ).collect { chunk ->
+                    if (chunk is AIChunk.Delta) {
+                        builder.append(chunk.text)
+                        updateRpgStartup { current ->
+                            if (current.generationRequestId != requestId) current else current.copy(
+                                generationProgress = (10 + builder.length / 25).coerceAtMost(90),
+                            )
+                        }
+                    }
+                }
+                val generated = parseChapterPlan(builder.toString())
+                completeChapterPlan(generated, fallbackChapterPlan(campaign.startup.setup, campaign.startup.plan)) to (generated == null)
+            }.onSuccess { (payload, usedFallback) ->
+                updateRpgStartup { current ->
+                    if (current.generationRequestId != requestId) current else current.copy(
+                        step = RpgStartupStep.ChapterPlan,
+                        chapterOutline = payload.outline,
+                        openingScene = payload.openingScene,
+                        generationStatus = RpgGenerationStatus.Complete,
+                        generationProgress = 100,
+                        generationError = if (usedFallback) {
+                            "The AI returned an unusual format. Missing plan fields were completed locally so you can continue."
+                        } else "",
+                    )
+                }
+            }.onFailure { error ->
+                updateRpgStartup { current -> current.copy(
+                    generationStatus = RpgGenerationStatus.Failed,
+                    generationError = formatError(error),
+                ) }
+            }
+            _uiState.update { it.copy(isStreaming = false) }
+        }
+    }
+
+    fun useAuthoredChapterPlan() {
+        viewModelScope.launch {
+            updateRpgStartup { startup ->
+                val payload = fallbackChapterPlan(startup.setup, startup.plan)
+                startup.copy(
+                    step = RpgStartupStep.ChapterPlan,
+                    chapterOutline = payload.outline,
+                    openingScene = payload.openingScene,
+                    generationStatus = RpgGenerationStatus.Complete,
+                    generationProgress = 100,
+                    generationError = "",
+                )
+            }
+            _uiState.update { it.copy(isStreaming = false) }
+        }
+    }
+
+    fun updateChapterOutline(outline: RpgChapterOutline) {
+        updateRpgStartupDraft { it.copy(chapterOutline = outline) }
+    }
+
+    fun updateOpeningSceneGuideline(scene: RpgOpeningSceneGuideline) {
+        updateRpgStartupDraft { it.copy(openingScene = scene) }
+    }
+
+    fun openAdventureVerification() {
+        viewModelScope.launch { updateRpgStartup { it.copy(step = RpgStartupStep.Verification, generationStatus = RpgGenerationStatus.Idle, generationProgress = 0) } }
+    }
+
+    fun editCyoaPlan() {
+        viewModelScope.launch { updateRpgStartup { it.copy(step = RpgStartupStep.Cyoa, generationStatus = RpgGenerationStatus.Idle, generationProgress = 0) } }
+    }
+
+    fun editChapterPlan() {
+        viewModelScope.launch { updateRpgStartup { it.copy(step = RpgStartupStep.ChapterPlan, generationStatus = RpgGenerationStatus.Idle, generationProgress = 100) } }
+    }
+
+    fun reviseRemainingChapterOutline(revisedBeats: List<com.ihy2ln.weaverse.feature.roleplay.campaign.RpgChapterBeat>) {
+        viewModelScope.launch {
+            updateRpgStartup { startup ->
+                val completedById = startup.chapterOutline.beats.filter { it.completed }.associateBy { it.id }
+                val upcoming = revisedBeats.filterNot { it.id in completedById }.map { it.copy(completed = false) }
+                startup.copy(
+                    chapterOutline = startup.chapterOutline.copy(
+                        beats = completedById.values.toList() + upcoming,
+                    ),
+                )
+            }
+        }
+    }
+
+    fun verifyAndGenerateOpeningScene() {
+        val campaign = rpgCampaignState ?: return
+        if (_uiState.value.isStreaming) return
+        val requestId = campaign.startup.generationRequestId.takeIf {
+            campaign.startup.step == RpgStartupStep.GeneratingScene && it.isNotBlank()
+        } ?: UUID.randomUUID().toString()
+        generateJob = viewModelScope.launch {
+            updateRpgStartup { it.copy(
+                step = RpgStartupStep.GeneratingScene,
+                generationStatus = RpgGenerationStatus.Generating,
+                generationProgress = 1,
+                generationError = "",
+                generationRequestId = requestId,
+            ) }
+            _uiState.update { it.copy(isStreaming = true, errorMessage = "") }
+            val builder = StringBuilder()
+            val activeModel = PromptModelSelection.effectiveModelRef(_uiState.value.selectedModelRef, _uiState.value.defaultModelRef)
+            if (!aiGeneration.hasApiKey(activeModel)) {
+                updateRpgStartup { it.copy(generationStatus = RpgGenerationStatus.Failed, generationProgress = 1, generationError = AIError.NoApiKey().message.orEmpty()) }
+                _uiState.update { it.copy(isStreaming = false) }
+                return@launch
+            }
+            runCatching {
+                aiGeneration.stream(
+                    userMessage = openingScenePrompt(campaign.startup.setup, campaign.startup.plan, campaign.startup.chapterOutline, campaign.startup.openingScene),
+                    modelRef = activeModel,
+                    maxTokens = 1800,
+                    temperature = 0.85,
+                ).collect { chunk ->
+                    if (chunk is AIChunk.Delta) {
+                        builder.append(chunk.text)
+                        updateRpgStartup { current -> if (current.generationRequestId != requestId) current else current.copy(
+                            generationProgress = (10 + builder.length / 25).coerceAtMost(90),
+                        ) }
+                    }
+                }
+                completeSceneDraft(
+                    parseSceneDraft(builder.toString()),
+                    fallbackSceneDraft(campaign.startup.plan, campaign.startup.openingScene),
+                )
+            }.onSuccess { draft -> finishOpeningScene(requestId, draft) }
+                .onFailure { error -> updateRpgStartup { it.copy(
+                    generationStatus = RpgGenerationStatus.Failed,
+                    generationError = formatError(error),
+                ) } }
+            _uiState.update { it.copy(isStreaming = false) }
+        }
+    }
+
+    fun useAuthoredOpeningScene() {
+        val startup = rpgCampaignState?.startup ?: return
+        val requestId = startup.generationRequestId.ifBlank { UUID.randomUUID().toString() }
+        viewModelScope.launch { finishOpeningScene(requestId, fallbackSceneDraft(startup.plan, startup.openingScene)) }
+    }
+
+    private suspend fun finishOpeningScene(requestId: String, draft: com.ihy2ln.weaverse.feature.roleplay.campaign.RpgSceneDraft) {
+        val chat = boundChat ?: return
+        rpgCampaignState?.let { campaign ->
+            val selectedMode = RpgCombatRuleset.fromId(campaign.startup.setup.modeId)
+            if (campaign.modeId != selectedMode.id) {
+                persistRpgCampaign(campaign.copy(modeId = selectedMode.id))
+            }
+            _uiState.update { it.copy(rpgCombatMode = selectedMode) }
+        }
+        val choiceMarkers = draft.choices.take(3).mapIndexed { index, choice ->
+            "[[RPG_CHOICE|id=${index + 1}|title=${choice.replace("|", "/").replace("]", ")")}|description=]]"
+        }.joinToString("\n")
+        val text = buildString {
+            appendLine(draft.prose.trim())
+            appendLine(choiceMarkers)
+            append("[[SCENE_ART:scene-auto|category=scene|mood=${draft.sceneArtTags.replace("|", ",")}]]")
+        }
+        val topicMedia = currentTopicMediaSnapshot()
+        val mediaRequests = topicMediaRequestsFor(
+            parseTopicMediaReply("${draft.prose}\n${draft.sceneArtTags}"),
+            topicMedia.topics,
+        )
+        val topicDocument = documentWithTopicMedia(text, topicMedia, mediaRequests)
+        val sceneDocument = documentWithBestSceneMedia(topicDocument, draft.prose, draft.sceneArtTags)
+        db.roleplayDao().upsertMessage(
+            RpMessageEntity(
+                id = "rpm-opening-$requestId",
+                chatId = chat.id,
+                swipeGroupId = "sw-opening-$requestId",
+                swipeIndex = 0,
+                isActiveSwipe = true,
+                role = "char",
+                contentJson = sceneDocument.toJson(),
+                createdAt = System.currentTimeMillis(),
+                displayMode = "dungeonMaster",
+            ),
+        )
+        updateRpgStartup { it.copy(
+            step = RpgStartupStep.Started,
+            sceneDraft = draft,
+            generationStatus = RpgGenerationStatus.Complete,
+            generationProgress = 100,
+            generationError = "",
+            generationRequestId = requestId,
+        ) }
+    }
+
+    fun retryStartupGeneration() {
+        when (rpgCampaignState?.startup?.step) {
+            RpgStartupStep.GeneratingChapterPlan -> generateChapterPlan()
+            RpgStartupStep.GeneratingScene -> verifyAndGenerateOpeningScene()
+            else -> Unit
+        }
+    }
+
     // ------------------------------------------------- campaign options sheet
 
     /** Opens the campaign options dialog, pre-filled from the stored setup note. */
@@ -2670,24 +3179,8 @@ class RoleplayChatViewModel @Inject constructor(
             db.roleplayDao().deleteMessagesForChat(chat.id)
             viewedSceneNumber = null
             generateJob?.cancel()
-            val now = System.currentTimeMillis()
-            val opening = RpMessageEntity(
-                id = "rpm-$now",
-                chatId = chat.id,
-                swipeGroupId = "sw-$now",
-                swipeIndex = 0,
-                isActiveSwipe = true,
-                role = "char",
-                contentJson = Document.fromPlainText(
-                    adventureStartupPrompt(
-                        userIsDungeonMaster = userIsDungeonMaster(chat.authorsNote),
-                        needsCharacter = true,
-                    ),
-                ).toJson(),
-                createdAt = now,
-                displayMode = "dungeonMaster",
-            )
-            db.roleplayDao().upsertMessage(opening)
+            val base = rpgCampaignState ?: createRpgCampaign(chat.id, rpgCombatRulesetFromSetup(chat.authorsNote).id)
+            persistRpgCampaign(base.copy(startup = RpgStartupState(setup = setupSnapshot(chat))))
             _uiState.update {
                 it.copy(
                     showCampaignOptions = false,
@@ -2766,6 +3259,19 @@ class RoleplayChatViewModel @Inject constructor(
             )
             db.roleplayDao().upsertChat(updated)
             boundChat = updated
+            rpgCampaignState?.let { campaign ->
+                persistRpgCampaign(campaign.copy(
+                    modeId = RpgCombatRuleset.fromId(details.gameModeId.ifBlank { details.rulesetId }).id,
+                    ruleSystemId = details.rulesetId,
+                    startup = campaign.startup.copy(
+                        setup = setupSnapshot(updated),
+                        cyoaSuggestions = emptyMap(),
+                        cyoaSuggestionStatus = RpgGenerationStatus.Idle,
+                        cyoaSuggestionProgress = 0,
+                        cyoaSuggestionError = "",
+                    ),
+                ))
+            }
             chat.bookId?.let { bookId ->
                 db.bookDao().getById(bookId)?.let { book ->
                     db.bookDao().upsert(
@@ -3377,6 +3883,28 @@ class RoleplayChatViewModel @Inject constructor(
             null
         },
         if (mode == "dungeonMaster") rpgActionDirective() else null,
+        if (mode == "dungeonMaster") {
+            when (authoritativeRpgMode()) {
+                RpgCombatRuleset.CardBattle -> "ACTIVE RPG MODE: Focused Tactical Cards. Treat this as the campaign's authoritative mode. Use Adams Haven card-combat language, AP/EP, card actions, visible enemy intent, and statuses. Do not switch to D&D d20 unless the player explicitly chooses a one-encounter override."
+                RpgCombatRuleset.DndD20 -> "ACTIVE RPG MODE: D&D d20. Treat this as the campaign's authoritative mode and use character-sheet modifiers and deterministic d20 checks."
+                RpgCombatRuleset.TextReactions -> "ACTIVE RPG MODE: Text Reactions. Treat this as the campaign's authoritative mode; resolve narrative and risky written actions without silently switching to d20 or card combat."
+            }
+        } else null,
+        if (mode == "dungeonMaster") rpgCampaignState?.startup?.chapterOutline?.takeIf { it.premise.isNotBlank() }?.let { outline ->
+            buildString {
+                appendLine("Private Chapter One guidance. Never print this plan in narration.")
+                appendLine("Title: ${outline.workingTitle}")
+                appendLine("Premise: ${outline.premise}")
+                appendLine("Objective: ${outline.primaryObjective}")
+                appendLine("Threat: ${outline.antagonist}")
+                appendLine("Locations: ${outline.importantLocations}")
+                appendLine("Planned beats:")
+                outline.beats.forEach { beat ->
+                    appendLine("- [${if (beat.completed) "COMPLETED—IMMUTABLE" else "UPCOMING—FLEXIBLE"}] ${beat.title}: ${beat.summary}")
+                }
+                appendLine("Completed history and player choices are authoritative. Adapt upcoming beats when the story diverges; never rewrite completed beats.")
+            }.trim()
+        } else null,
         if (mode == "dungeonMaster") adventureWorldUpdateDirective() else null,
         if (mode == "dungeonMaster" && rpgSceneBeatDirective.value.isNotBlank()) {
             "Campaign scene engine (Prompt Collection → RPG → Adventure Scene Beat):\n${rpgSceneBeatDirective.value}"
@@ -3418,6 +3946,33 @@ class RoleplayChatViewModel @Inject constructor(
                     muted = true,
                 )
             },
+        )
+    }
+
+    private suspend fun documentWithBestSceneMedia(
+        document: Document,
+        sceneText: String,
+        sceneTags: String,
+    ): Document {
+        if (document.blocks.any { block -> block is MediaBlock && block.kind == MediaKind.Image }) return document
+        val tags = sceneTags.split(',').map(String::trim).filter(String::isNotBlank)
+        val candidate = runCatching {
+            sceneMediaLibrary.find(
+                SceneMediaRequest(
+                    scene = "$sceneText $sceneTags ${rpgCampaignState?.startup?.setup?.setting.orEmpty()}",
+                    kind = "image",
+                    tags = tags,
+                    limit = 1,
+                ),
+            ).firstOrNull()
+        }.getOrNull() ?: return document
+        return Document(
+            blocks = document.blocks + MediaBlock(
+                id = "scene-media-${UUID.randomUUID()}",
+                mediaId = candidate.id,
+                kind = MediaKind.Image,
+                caption = listOf(Span(candidate.displayName)),
+            ),
         )
     }
 

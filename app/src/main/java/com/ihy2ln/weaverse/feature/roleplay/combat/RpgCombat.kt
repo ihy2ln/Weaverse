@@ -11,7 +11,17 @@ enum class RpgCombatRuleset(val id: String, val label: String) {
     ;
 
     companion object {
-        fun fromId(id: String?): RpgCombatRuleset = entries.firstOrNull { it.id == id } ?: DndD20
+        fun fromId(id: String?): RpgCombatRuleset {
+            val value = id.orEmpty().trim()
+            return entries.firstOrNull { mode ->
+                value.equals(mode.id, ignoreCase = true) ||
+                    value.equals(mode.label, ignoreCase = true)
+            } ?: when {
+                value.contains("card", ignoreCase = true) -> CardBattle
+                value.contains("text", ignoreCase = true) || value.contains("reaction", ignoreCase = true) -> TextReactions
+                else -> DndD20
+            }
+        }
     }
 }
 

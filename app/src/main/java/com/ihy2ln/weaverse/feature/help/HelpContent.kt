@@ -83,6 +83,46 @@ object HelpContent {
                         "guidance is supplied to the game master during play.",
                 ),
                 HelpEntry(
+                    "Mode and rule system",
+                    "Campaign setup keeps Mode and Rule system separate. Focused Tactical Cards " +
+                        "uses the Adams Haven card loop; D&D d20 uses the saved character sheet " +
+                        "and deterministic checks; Text Reactions keeps written actions primary. " +
+                        "A one-battle override never changes the saved campaign mode, and the " +
+                        "next encounter returns to that mode.",
+                ),
+                HelpEntry(
+                    "Create Your Own Adventure",
+                    "After Campaign Setup, answer six editable cards: plot, first goal, first " +
+                        "scene, starting party, tone, and opening complication. Tap a campaign-aware " +
+                        "preset to fill a card, write your own answer, or Skip. Skipped answers are " +
+                        "saved as explicit blanks and can be completed by the chapter fallback. " +
+                        "The page scrolls; presets scroll horizontally; the prompt writer is only " +
+                        "a fallback.",
+                ),
+                HelpEntry(
+                    "Chapter plan and verification",
+                    "The AI turns Campaign Setup and the six CYOA answers into an editable Chapter " +
+                        "One Plan with a separate opening-scene guideline. Progress is saved from " +
+                        "1–100%. Then Verify Your Adventure reviews setup, answers, outline, and " +
+                        "scene plan together. Retry or Use authored fallback if generation fails. " +
+                        "Scene One is not created until verification is accepted.",
+                ),
+                HelpEntry(
+                    "Scene choices and action bubbles",
+                    "Scene One and later scenes show three AI choice cards plus a fourth custom " +
+                        "action. Just above the prompt are Actions (observe, move, use, help), " +
+                        "Thoughts (recall, study, consider), and Other RPG actions (speak, ask, " +
+                        "persuade, search, or prepare for the selected mode). These are shortcuts, " +
+                        "not a replacement for freeform play.",
+                ),
+                HelpEntry(
+                    "Text selection and scene art",
+                    "Select any part of story text to reveal Add text to… and open the existing " +
+                        "capture popup. Scene art is chosen from eligible local library pictures " +
+                        "by matching the scene, setting, category, mood, and tags. If no image fits, " +
+                        "the scene still loads normally.",
+                ),
+                HelpEntry(
                     "Dungeon Master mode",
                     "You control scene framing, the world, NPCs, and rulings. The AI plays the " +
                         "selected character party and responds to your DM prompts with its " +

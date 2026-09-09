@@ -16,7 +16,9 @@ class RpgCampaignRepository(private val roleplayDao: RoleplayDao) {
 
     suspend fun restoreRpgCampaign(campaignId: String, legacyModeId: String? = null, legacyRuleSystemId: String? = null): RpgCampaignState {
         val saved = roleplayDao.getRpgCampaignSave(campaignId)
-        if (saved != null) return runCatching { json.decodeFromString(RpgCampaignState.serializer(), saved.stateJson) }.getOrElse { createRpgCampaign(campaignId, legacyModeId ?: RpgCombatRuleset.DndD20.id, legacyRuleSystemId ?: "dnd-5e") }
+        if (saved != null) return runCatching {
+            json.decodeFromString(RpgCampaignState.serializer(), saved.stateJson).copy(schemaVersion = CURRENT_RPG_SCHEMA)
+        }.getOrElse { createRpgCampaign(campaignId, legacyModeId ?: RpgCombatRuleset.DndD20.id, legacyRuleSystemId ?: "dnd-5e") }
         return createRpgCampaign(campaignId, legacyModeId ?: RpgCombatRuleset.DndD20.id, legacyRuleSystemId ?: "dnd-5e")
     }
 }

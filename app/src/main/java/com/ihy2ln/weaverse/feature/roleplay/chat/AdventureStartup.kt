@@ -1,33 +1,6 @@
 package com.ihy2ln.weaverse.feature.roleplay.chat
 
 import kotlin.random.Random
-import kotlinx.serialization.Serializable
-
-@Serializable
-enum class RpgPlanStatus { Editing, Generating, Review, Started }
-
-@Serializable
-data class RpgPlanAnswer(val questionId: String, val value: String = "[SKIPPED]", val presetId: String? = null)
-
-@Serializable
-data class RpgAdventurePlan(
-    val status: RpgPlanStatus = RpgPlanStatus.Editing,
-    val answers: List<RpgPlanAnswer> = emptyList(),
-)
-
-@Serializable
-data class RpgCampaignOutline(
-    val workingTitle: String = "",
-    val premise: String = "",
-    val firstGoal: String = "",
-    val openingScene: String = "",
-    val startingParty: String = "",
-    val tone: String = "",
-    val complication: String = "",
-    val storyBeats: List<String> = emptyList(),
-    val firstHook: String = "",
-    val sceneArtTags: List<String> = emptyList(),
-)
 
 enum class AdventureStartupPhase(val storageName: String) {
     None(""),
@@ -72,12 +45,12 @@ data class AdventurePlanQuestion(
 typealias RpgPlanQuestion = AdventurePlanQuestion
 
 private val AdventurePlanQuestions = listOf(
-    AdventurePlanQuestion("plot", "What plot premise or central conflict should drive the campaign?", listOf("A hidden mystery", "A survival crisis", "A political struggle")),
-    AdventurePlanQuestion("goal", "What should the party's first goal be?", listOf("Investigate a clue", "Protect someone", "Find a way home")),
-    AdventurePlanQuestion("scene", "Where and how should the first scene begin?", listOf("A crowded tavern", "A roadside ambush", "A ruined shrine")),
-    AdventurePlanQuestion("party", "Who starts with the protagonist?", listOf("Solo protagonist", "Saved party members", "AI-created companions")),
-    AdventurePlanQuestion("tone", "What tone and presentation should guide the opening?", listOf("Hopeful adventure", "Tense survival", "Mystery and wonder")),
-    AdventurePlanQuestion("complication", "What opening complication or threat should appear?", listOf("A hidden betrayal", "A time limit", "An unexpected ally")),
+    AdventurePlanQuestion("plot", "What plot premise or central conflict should drive the campaign?", listOf("A hidden mystery", "A survival crisis", "An escort mission", "A political struggle", "A treasure hunt", "A difficult homecoming", "An isekai arrival")),
+    AdventurePlanQuestion("goal", "What should the party's first goal be?", listOf("Investigate a clue", "Protect someone", "Escape immediate danger", "Recover a person or artifact", "Negotiate a fragile peace", "Reach a distant location", "Find a way home")),
+    AdventurePlanQuestion("scene", "Where and how should the first scene begin?", listOf("A crowded tavern", "A roadside ambush", "A ruined shrine", "A ship in a storm", "A dungeon cell", "A royal celebration", "A new-world arrival")),
+    AdventurePlanQuestion("party", "Who starts with the protagonist?", listOf("Solo protagonist", "Saved protagonist only", "Saved party members", "A small hireling team", "AI-created companions", "A reluctant rival", "A custom party concept")),
+    AdventurePlanQuestion("tone", "What tone and presentation should guide the opening?", listOf("Hopeful adventure", "Grim survival", "High-action spectacle", "Mystery and wonder", "Character-focused romance", "Light comedy", "Dark fantasy")),
+    AdventurePlanQuestion("complication", "What opening complication or threat should appear?", listOf("A hidden betrayal", "A strict time limit", "A missing person", "A pursuing faction", "A supernatural omen", "An unexpected ally", "A dangerous misunderstanding")),
 )
 
 fun adventurePlanQuestions(): List<AdventurePlanQuestion> = AdventurePlanQuestions
@@ -238,10 +211,29 @@ fun nextAdventureStartupPhase(
         AdventureStartupChoice.Curated -> AdventureStartupPhase.CuratedQuestions
         else -> AdventureStartupPhase.Complete
     }
-    AdventureStartupPhase.Questions -> AdventureStartupPhase.Review
-    AdventureStartupPhase.CuratedQuestions -> AdventureStartupPhase.Review
+    AdventureStartupPhase.Questions -> AdventureStartupPhase.Complete
+    AdventureStartupPhase.CuratedQuestions -> AdventureStartupPhase.Complete
     AdventureStartupPhase.Review -> AdventureStartupPhase.Complete
     else -> AdventureStartupPhase.None
+}
+
+/**
+ * Keeps the UI moving forward when Room delivers an older message snapshot just after
+ * the opening scene has been durably saved. The persisted complete marker remains the
+ * source of truth after a restart; progress is the in-session completion acknowledgement.
+ */
+fun effectiveAdventureStartupPhase(
+    persistedPhase: AdventureStartupPhase,
+    adventurePlanProgress: Int,
+    isStreaming: Boolean,
+): AdventureStartupPhase = if (
+    !isStreaming &&
+    adventurePlanProgress >= 100 &&
+    persistedPhase in setOf(AdventureStartupPhase.Questions, AdventureStartupPhase.CuratedQuestions)
+) {
+    AdventureStartupPhase.Complete
+} else {
+    persistedPhase
 }
 
 fun adventureStartupDirective(
@@ -270,8 +262,16 @@ fun adventureStartupDirective(
             openingDirective("Random opening selected: ${RandomOpenings.random(random)}.")
         AdventureStartupChoice.Interview -> adventureAiStartupFieldsPrompt()
     }
-    AdventureStartupPhase.Questions -> campaignOutlineDirective("Use the player's Adventure Plan answers as authoritative setup.")
-    AdventureStartupPhase.CuratedQuestions -> campaignOutlineDirective("Use the selected curated opening and the player's Adventure Plan answers as authoritative setup.")
+    AdventureStartupPhase.Questions -> openingDirective(
+        "Use the player's Create Your Own Adventure answers as authoritative setup. " +
+            "Use the saved campaign template, setting details, mode, rule system, house rules, and characters. " +
+            "For any [SKIPPED] answer, choose a fitting detail yourself."
+    )
+    AdventureStartupPhase.CuratedQuestions -> openingDirective(
+        "Use the selected curated opening and the player's Create Your Own Adventure answers as authoritative setup. " +
+            "Use the saved campaign template, setting details, mode, rule system, house rules, and characters. " +
+            "For any [SKIPPED] answer, choose a fitting detail yourself."
+    )
     AdventureStartupPhase.Review -> if (input.contains("start", ignoreCase = true) || input.contains("accept", ignoreCase = true)) {
         openingDirective("The player accepted the reviewed campaign outline. Begin the first scene using the outline as canon.")
     } else {

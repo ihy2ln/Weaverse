@@ -5,6 +5,101 @@ import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatRuleset
 import kotlinx.serialization.Serializable
 
 @Serializable
+enum class RpgStartupStep { Cyoa, GeneratingChapterPlan, ChapterPlan, Verification, GeneratingScene, Started }
+
+@Serializable
+enum class RpgGenerationStatus { Idle, Generating, Failed, Complete }
+
+@Serializable
+data class RpgCampaignSetupSnapshot(
+    val title: String = "Untitled Campaign",
+    val setting: String = "Open fantasy setting",
+    val modeId: String = RpgCombatRuleset.DndD20.id,
+    val ruleSystem: String = "D&D d20",
+    val houseRules: String = "",
+    val characters: String = "",
+    val pointOfView: String = "Third-person multiple",
+    val tense: String = "Past tense",
+    val playerRole: String = "Adventurer",
+)
+
+@Serializable
+data class RpgPlanAnswer(
+    val questionId: String,
+    val value: String = "",
+    val presetId: String? = null,
+    val skipped: Boolean = false,
+)
+
+@Serializable
+data class RpgAdventurePlan(val answers: List<RpgPlanAnswer> = emptyList())
+
+@Serializable
+data class RpgChapterBeat(
+    val id: String,
+    val title: String,
+    val summary: String = "",
+    val completed: Boolean = false,
+)
+
+@Serializable
+data class RpgChapterOutline(
+    val workingTitle: String = "Chapter One",
+    val premise: String = "",
+    val primaryObjective: String = "",
+    val antagonist: String = "",
+    val importantLocations: String = "",
+    val beats: List<RpgChapterBeat> = emptyList(),
+    val optionalBeat: String = "",
+    val majorChallenge: String = "",
+    val climax: String = "",
+    val possibleOutcomes: String = "",
+)
+
+@Serializable
+data class RpgOpeningSceneGuideline(
+    val title: String = "Scene One",
+    val locationAndAtmosphere: String = "",
+    val startingCast: String = "",
+    val immediateObjective: String = "",
+    val conflictAndStakes: String = "",
+    val complication: String = "",
+    val firstDecisionHook: String = "",
+    val sceneArtTags: String = "",
+)
+
+@Serializable
+data class RpgChapterPlanPayload(
+    val outline: RpgChapterOutline = RpgChapterOutline(),
+    val openingScene: RpgOpeningSceneGuideline = RpgOpeningSceneGuideline(),
+)
+
+@Serializable
+data class RpgSceneDraft(
+    val prose: String = "",
+    val choices: List<String> = emptyList(),
+    val sceneArtTags: String = "",
+)
+
+@Serializable
+data class RpgStartupState(
+    val step: RpgStartupStep = RpgStartupStep.Cyoa,
+    val setup: RpgCampaignSetupSnapshot = RpgCampaignSetupSnapshot(),
+    val plan: RpgAdventurePlan = RpgAdventurePlan(),
+    val chapterOutline: RpgChapterOutline = RpgChapterOutline(),
+    val openingScene: RpgOpeningSceneGuideline = RpgOpeningSceneGuideline(),
+    val sceneDraft: RpgSceneDraft? = null,
+    val generationStatus: RpgGenerationStatus = RpgGenerationStatus.Idle,
+    val generationProgress: Int = 0,
+    val generationError: String = "",
+    val generationRequestId: String = "",
+    val cyoaSuggestions: Map<String, List<String>> = emptyMap(),
+    val cyoaSuggestionStatus: RpgGenerationStatus = RpgGenerationStatus.Idle,
+    val cyoaSuggestionProgress: Int = 0,
+    val cyoaSuggestionError: String = "",
+)
+
+@Serializable
 data class RpgSceneNode(
     val id: String,
     val title: String,
@@ -74,9 +169,10 @@ data class RpgCampaignState(
     val activeCombatJson: String? = null,
     val lastOutcome: RpgCombatOutcome? = null,
     val chapterRecap: String = "",
+    val startup: RpgStartupState = RpgStartupState(),
 )
 
-const val CURRENT_RPG_SCHEMA = 1
+const val CURRENT_RPG_SCHEMA = 2
 
 fun defaultRpgSceneNodes(): List<RpgSceneNode> = listOf(
     RpgSceneNode("chapter-1-arrival", "The First Sign", "A strange summons pulls the party into the opening mystery.", objective = "Inspect the waystone and identify who sent the summons.", branchIds = listOf("chapter-1-crossroads", "chapter-1-wild-trail"), location = "Whispering Forest", sceneArtAssetId = "scene_forest_waystone"),

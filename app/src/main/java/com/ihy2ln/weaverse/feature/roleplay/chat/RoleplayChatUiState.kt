@@ -8,6 +8,7 @@ import com.ihy2ln.weaverse.core.ui.components.NewWorkDetails
 import com.ihy2ln.weaverse.core.ui.components.WorkCharacterOption
 import com.ihy2ln.weaverse.data.db.entities.RpPageMeta
 import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatRuleset
+import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgStartupState
 
 data class RpMediaRef(
     val messageId: String,
@@ -149,6 +150,9 @@ data class RoleplayChatUiState(
     val contextMeter: ContextMeterReading? = null,
     /** Adventure scene markers are hidden storage records, not chat messages. */
     val adventureStartupPhase: AdventureStartupPhase = AdventureStartupPhase.None,
+    /** Stage-based progress for campaign-outline generation (1..100, 0 when inactive). */
+    val adventurePlanProgress: Int = 0,
+    val rpgStartup: RpgStartupState? = null,
     val sceneNumber: Int = 1,
     val totalScenes: Int = 1,
     val canGoToPreviousScene: Boolean = false,

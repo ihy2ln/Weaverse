@@ -12,6 +12,8 @@ class RpgCampaignStateTest {
         assertEquals(RpgCombatRuleset.DndD20.id, state.modeId)
         assertEquals("chapter-1-arrival", state.map.currentNodeId)
         assertEquals(1, availableRpgSceneNodes(state).size)
+        assertEquals(2, state.schemaVersion)
+        assertEquals(RpgStartupStep.Cyoa, state.startup.step)
     }
 
     @Test fun `freeform exploration returns to chapter node`() {

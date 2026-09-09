@@ -43,7 +43,7 @@ class AdventureStartupTest {
             nextAdventureStartupPhase(AdventureStartupPhase.Choose, "1"),
         )
         assertEquals(
-            AdventureStartupPhase.Review,
+            AdventureStartupPhase.Complete,
             nextAdventureStartupPhase(AdventureStartupPhase.Questions, "At sunset in Waterdeep"),
         )
         val directive = adventureStartupDirective(AdventureStartupPhase.Choose, "1", Random(1))
@@ -84,11 +84,11 @@ class AdventureStartupTest {
         assertTrue("six-question Adventure Plan" in directive)
         assertTrue("Do not begin the adventure yet" in directive)
         assertEquals(
-            AdventureStartupPhase.Review,
+            AdventureStartupPhase.Complete,
             nextAdventureStartupPhase(AdventureStartupPhase.CuratedQuestions, "randomize"),
         )
         val opening = adventureStartupDirective(AdventureStartupPhase.CuratedQuestions, "randomize", Random(4))
-        assertTrue("CAMPAIGN OUTLINE" in opening)
+        assertTrue("actual opening scene" in opening)
         assertTrue("[SKIPPED]" in opening)
     }
 
@@ -133,8 +133,30 @@ class AdventureStartupTest {
     fun adventurePlanOffersSixQuestionsWithPresets() {
         val questions = adventurePlanQuestions()
         assertEquals(6, questions.size)
-        assertTrue(questions.all { it.prompt.isNotBlank() && it.presets.size >= 3 })
+        assertTrue(questions.all { it.prompt.isNotBlank() && it.presets.size >= 7 })
         assertTrue(questions.any { "plot premise" in it.prompt.lowercase() })
         assertTrue(questions.any { "complication" in it.prompt.lowercase() })
+        assertTrue(questions.first { it.id == "plot" }.presets.any { "isekai" in it.lowercase() })
+        assertTrue(questions.first { it.id == "party" }.presets.any { "custom" in it.lowercase() })
+    }
+
+    @Test
+    fun completedFirstScenePushesPastAStalePlannerSnapshot() {
+        assertEquals(
+            AdventureStartupPhase.Complete,
+            effectiveAdventureStartupPhase(
+                persistedPhase = AdventureStartupPhase.Questions,
+                adventurePlanProgress = 100,
+                isStreaming = false,
+            ),
+        )
+        assertEquals(
+            AdventureStartupPhase.Questions,
+            effectiveAdventureStartupPhase(
+                persistedPhase = AdventureStartupPhase.Questions,
+                adventurePlanProgress = 90,
+                isStreaming = true,
+            ),
+        )
     }
 }

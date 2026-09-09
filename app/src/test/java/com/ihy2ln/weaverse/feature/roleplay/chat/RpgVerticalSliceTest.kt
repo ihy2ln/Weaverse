@@ -9,15 +9,27 @@ class RpgVerticalSliceTest {
     fun parsesThreeChoicesAndSceneArtWithoutLeakingMarker() {
         val text = """
             The gate opens.
-            1. Enter the ruins — follow the blue lantern.
-            2. Question the guard — learn who sent him.
-            3. Circle the wall — search for another way.
+            [[RPG_CHOICE|id=1|title=Enter the ruins|description=Follow the blue lantern.]]
+            [[RPG_CHOICE|id=2|title=Question the guard|description=Learn who sent him.]]
+            [[RPG_CHOICE|id=3|title=Circle the wall|description=Search for another way.]]
             [[SCENE_ART:misty_ruins|category=wilderness|mood=tense]]
         """.trimIndent()
         assertEquals(3, parseRpgActionChoices(text).size)
         assertEquals("Enter the ruins", parseRpgActionChoices(text).first().title)
         assertEquals("misty_ruins", parseRpgSceneArtChoice(text)?.assetId)
         assertTrue("SCENE_ART" !in stripRpgMetadata(text))
+        assertTrue("RPG_CHOICE" !in stripRpgMetadata(text))
+    }
+
+    @Test
+    fun numberedPlanningTextNeverBecomesGameplayChoices() {
+        val outline = """
+            1. Establish the party at the ruined shrine.
+            2. Reveal the antagonist's first move.
+            3. Let the party choose which lead to follow.
+        """.trimIndent()
+
+        assertTrue(parseRpgActionChoices(outline).isEmpty())
     }
 
     @Test

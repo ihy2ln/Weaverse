@@ -23,8 +23,11 @@ import com.ihy2ln.weaverse.data.repo.SeriesRepository
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
 import com.ihy2ln.weaverse.feature.prompt.PromptEntryBus
 import com.ihy2ln.weaverse.feature.prompt.PromptEntryKind
-import com.ihy2ln.weaverse.feature.roleplay.chat.adventureStartupPrompt
 import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatRuleset
+import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgCampaignRepository
+import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgCampaignSetupSnapshot
+import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgStartupState
+import com.ihy2ln.weaverse.feature.roleplay.campaign.createRpgCampaign
 import com.ihy2ln.weaverse.feature.roleplay.characters.RpgCharacterSheet
 import com.ihy2ln.weaverse.feature.roleplay.characters.encodeRpgSheet
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -296,21 +299,23 @@ class AppShellViewModel @Inject constructor(
             ),
         )
         if (textGame) return id
-        val opening = adventureStartupPrompt(
-            userIsDungeonMaster = userIsDungeonMaster,
-            needsCharacter = details.mainCharacters.isEmpty() && !userIsDungeonMaster,
-        )
-        db.roleplayDao().upsertMessage(
-            RpMessageEntity(
-                id = "rpm-${java.util.UUID.randomUUID()}",
-                chatId = id,
-                swipeGroupId = "sw-${java.util.UUID.randomUUID()}",
-                swipeIndex = 0,
-                isActiveSwipe = true,
-                role = "char",
-                contentJson = Document.fromPlainText(opening).toJson(),
-                createdAt = now,
-                displayMode = "dungeonMaster",
+        val modeId = RpgCombatRuleset.fromId(details.gameModeId).id
+        val ruleLabel = CampaignRulesetTemplates.firstOrNull { it.id == details.rulesetId }?.label ?: "Custom / systemless"
+        RpgCampaignRepository(db.roleplayDao()).saveRpgCampaign(
+            createRpgCampaign(id, modeId, details.rulesetId).copy(
+                startup = RpgStartupState(
+                    setup = RpgCampaignSetupSnapshot(
+                        title = details.title,
+                        setting = details.genre.ifBlank { "Open fantasy setting" },
+                        modeId = modeId,
+                        ruleSystem = ruleLabel,
+                        houseRules = details.styleGuide,
+                        characters = mainCharacters,
+                        pointOfView = details.narrativePov.ifBlank { "Third-person multiple" },
+                        tense = details.tense.ifBlank { "Past tense" },
+                        playerRole = if (userIsDungeonMaster) "Dungeon Master" else "Adventurer",
+                    ),
+                ),
             ),
         )
         return id

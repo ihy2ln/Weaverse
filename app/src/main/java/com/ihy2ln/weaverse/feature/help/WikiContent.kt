@@ -205,6 +205,53 @@ object WikiContent {
                 Their full guidance is supplied to the game master during
                 play.
 
+                ## Mode and rule system
+
+                Mode controls the player-facing interaction. Rule system
+                controls the underlying conventions, and both are saved
+                independently.
+
+                - **Focused Tactical Cards** — Adams Haven-style hand,
+                  AP/EP, targets, visible intent and statuses.
+                - **D&D d20** — character-sheet modifiers, proficiency, AC,
+                  HP, conditions and deterministic checks.
+                - **Text Reactions** — written or dictated actions with legal
+                  action checks and risky-action previews.
+
+                A battle may use a temporary override. Victory, defeat,
+                retreat or surrender restores the saved campaign mode for the
+                next encounter. Older RPG saves normalize to D&D d20; Text
+                Game saves remain separate.
+
+                ## Four-screen adventure startup
+
+                1. **Create Your Own Adventure** — six editable cards for plot,
+                   first goal, first scene, starting party, tone and opening
+                   complication. Every card supports a multiline answer,
+                   horizontal preset chips, campaign-aware suggestions, and
+                   **Skip**. Presets fill the box but never prevent editing.
+                2. **Chapter One Plan** — a saved, editable rough chapter
+                   outline plus opening-scene guideline. Progress moves from
+                   1–100% and invalid AI fields receive authored fallback data.
+                3. **Verify Your Adventure** — review Campaign Setup, CYOA,
+                   chapter outline and opening guideline before generation.
+                4. **Scene One** — the actual playable opening. Planning text
+                   stays out of the narration.
+
+                ## Scene actions and artwork
+
+                Every scene provides three AI choices and a fourth custom
+                action. Above the prompt, **Actions**, **Thoughts**, and
+                **Other RPG** menus provide common roleplaying shortcuts while
+                preserving freeform input. Select story text to reveal
+                **Add text to…** and open the existing capture popup.
+
+                The AI supplies scene-art tags or an eligible asset ID. The
+                app ranks local library images against the scene prose,
+                campaign setting, category, mood and tags, then attaches the
+                best match to the saved scene. Art is optional and never blocks
+                play.
+
                 ## Setup — changing a campaign later
 
                 The **Setup** button on the adventure page reopens the same

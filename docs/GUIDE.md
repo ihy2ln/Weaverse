@@ -162,6 +162,31 @@ template—D&D 5e, Pathfinder 2e, D&D 3.5e, OSR/B/X, Powered by the Apocalypse,
 Fate Core, or Custom/systemless—and can be extended with campaign-specific
 rulings, tone, and boundaries.
 
+### RPG modes and rule systems
+
+Campaign setup keeps the player-facing **Mode** separate from the underlying
+**Rule system**. Focused Tactical Cards is the Adams Haven card-combat mode;
+D&D d20 uses the saved character sheet and deterministic d20 checks; Text
+Reactions uses written or dictated actions with app-enforced legality and
+risky-action previews. An encounter override applies only to that battle and
+the saved campaign mode returns afterward. Older RPG saves normalize to D&D
+d20; Text Game saves remain isolated.
+
+### Create Your Own Adventure
+
+After Campaign Setup, Adventure opens a scrollable six-card planner: plot
+premise, first party goal, first scene/location, starting party, tone, and
+opening complication. Each card has an editable multiline field, campaign-aware
+suggestions, horizontally scrolling preset chips, and **Skip**. Presets fill a
+field but remain editable; Skip saves an explicit blank. The prompt writer is a
+fallback for custom wording, not a required answer surface.
+
+The planner proceeds to an editable **Chapter One Plan**, then **Verify Your
+Adventure**, where Campaign Setup, CYOA answers, chapter outline, and opening
+guideline are reviewed together. Scene One is generated only after verification.
+Generation reports monotonic 1–100% progress and offers Retry or authored
+fallback when an AI response is unavailable.
+
 ### Campaign and Adventure
 
 Campaign shows every adventure by title and art. Choose one to enter its
@@ -169,9 +194,25 @@ Adventure play session. Adventure is not a messenger: one large scene image
 anchors the top of the page, the session unfolds below as narrative prose with
 player actions clearly marked, and the action entry remains at the bottom.
 Generated game-master responses receive the selected main characters, tense,
-point of view, player/DM role, rules template, house rules, and difficulty as
-session context. In DM mode, Adventure labels the user's entries as DM prompts
-and asks the AI-controlled party to decide and describe its actions.
+point of view, player/DM role, mode, rule system, setting details, house rules,
+chapter outline, and completed scene history as session context. In DM mode,
+Adventure labels the user's entries as DM prompts and asks the AI-controlled
+party to decide and describe its actions.
+
+Scene One and later scenes show three AI-generated choice cards plus a fourth
+custom action. Just above the prompt, **Actions**, **Thoughts**, and **Other
+RPG** menus provide common roleplaying shortcuts. They never disable freeform
+actions, and the active saved mode is shown in the scene header and used for
+subsequent combat.
+
+Select story text to reveal **Add text to…**, which opens the existing capture
+popup for Codex, roster, or inventory bookkeeping. The button stays hidden
+until text is selected so it does not cover the scene controls.
+
+Scene art is selected from the local Pictures library. The app matches scene
+prose, campaign setting, category, mood, and tags, then attaches the best local
+image to the saved scene document. If no image matches, the scene remains fully
+playable.
 
 Every submitted action gets a private, ruleset-aware resolution roll: d20 for
 D&D, Pathfinder, OSR, and systemless campaigns; 2d6 for PbtA; and 4dF for

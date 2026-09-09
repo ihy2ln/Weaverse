@@ -14,17 +14,18 @@ data class RpgSceneArtChoice(
     val mood: String = "",
 )
 
-private val ChoiceLine = Regex("(?m)^\\s*(?:CHOICE\\s*)?([1-3])[.):]\\s*(.+?)\\s*$", RegexOption.IGNORE_CASE)
+private val ChoiceMarker = Regex(
+    "\\[\\[RPG_CHOICE\\|id=([1-3])\\|title=([^]|]+)\\|description=([^]]*)]]",
+    RegexOption.IGNORE_CASE,
+)
 private val ArtMarker = Regex("\\[\\[SCENE_ART\\s*:\\s*([^]|]+)(?:\\|category=([^]|]+))?(?:\\|mood=([^]]+))?]]", RegexOption.IGNORE_CASE)
 
-fun parseRpgActionChoices(text: String): List<RpgActionChoice> = ChoiceLine.findAll(text)
+fun parseRpgActionChoices(text: String): List<RpgActionChoice> = ChoiceMarker.findAll(text)
     .map { match ->
-        val raw = match.groupValues[2].trim()
-        val split = raw.split(" — ", " - ", limit = 2)
         RpgActionChoice(
             id = "choice-${match.groupValues[1]}",
-            title = split.first().trim(),
-            description = split.getOrNull(1)?.trim().orEmpty(),
+            title = match.groupValues[2].trim(),
+            description = match.groupValues[3].trim(),
         )
     }
     .distinctBy { it.id }
@@ -39,11 +40,12 @@ fun parseRpgSceneArtChoice(text: String): RpgSceneArtChoice? = ArtMarker.find(te
     )
 }
 
-fun stripRpgMetadata(text: String): String = ArtMarker.replace(text, "").trim()
+fun stripRpgMetadata(text: String): String = ChoiceMarker.replace(ArtMarker.replace(text, ""), "").trim()
 
 fun rpgActionDirective(): String = """
-For every ordinary adventure scene, end your visible reply with exactly three numbered actionable choices.
-Format them as `1. Short title — one sentence`, `2. Short title — one sentence`, and `3. Short title — one sentence`.
+For every ordinary adventure scene, end with exactly three hidden choice markers on separate lines.
+Use `[[RPG_CHOICE|id=1|title=Short title|description=One sentence]]`, then ids 2 and 3.
+Do not print numbered choices in visible prose and never use the `|` character inside a title or description.
 Then emit one hidden metadata marker on its own line using an available local scene-art asset ID:
 `[[SCENE_ART:asset-id|category=scene-category|mood=scene-mood]]`.
 Choose art that matches the location, time, weather, and emotional tone. Never invent a file path.
