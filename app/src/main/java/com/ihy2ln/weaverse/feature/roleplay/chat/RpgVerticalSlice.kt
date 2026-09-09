@@ -59,6 +59,8 @@ AI STARTUP PLAN MODE. Ask the player to complete this six-question setup plan be
 5. Tone and presentation
 6. Opening complication or threat
 The older labels Character backstory, Current situation, and Future goals are covered by the plan answers.
+Before each question, provide three concise preset suggestions tailored to the saved New Campaign template,
+setting details, mode, rule system, and house rules. The player may tap a suggestion, write a custom answer, or skip.
 Each answer may be open-ended, selected from a preset, or skipped. Treat [SKIPPED] as permission to
 invent a fitting detail from campaign context. Use the answers as campaign canon. Summarize them into a
 starting objective, a personal complication, and a suggested opening location. Do not roll dice during setup.
