@@ -1474,6 +1474,14 @@ class RoleplayChatViewModel @Inject constructor(
         if (_uiState.value.entryMode == "nai" && !startupPending) addManualEntry() else generate()
     }
 
+    /** Submits generated setup text atomically; avoids racing StateFlow updates from setup buttons. */
+    fun submitAdventurePlan(plan: String) {
+        val normalized = plan.trim()
+        if (normalized.isBlank() || _uiState.value.isStreaming) return
+        _uiState.update { it.copy(input = normalized, errorMessage = "") }
+        generate(inputOverride = normalized)
+    }
+
     /** Starts one of the curated Adventure setup openings with a single tap. */
     fun startAdventurePreset(presetId: String) {
         val state = _uiState.value
@@ -1853,9 +1861,10 @@ class RoleplayChatViewModel @Inject constructor(
         }
     }
 
-    fun generate(forceAdventureRoll: Boolean = false) {
+    fun generate(forceAdventureRoll: Boolean = false, inputOverride: String? = null) {
         val state = _uiState.value
-        if (state.input.isBlank() || state.chatId.isBlank() || state.isStreaming) return
+        val submittedInput = inputOverride ?: state.input
+        if (submittedInput.isBlank() || state.chatId.isBlank() || state.isStreaming) return
         val startupPending = state.adventureStartupPhase in setOf(
             AdventureStartupPhase.Character,
             AdventureStartupPhase.Choose,
@@ -1880,7 +1889,7 @@ class RoleplayChatViewModel @Inject constructor(
             }
             val now = System.currentTimeMillis()
             val groupId = "sw-$now"
-            val userText = state.input
+            val userText = submittedInput
             val mode = currentDisplayMode()
             val topicMedia = currentTopicMediaSnapshot()
             val startupPhase = currentAdventureStartupPhase()

@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
@@ -653,6 +654,12 @@ fun AdventurePlayScreen(
             ) {
                 Text("Adventure plan", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                 Text("Answer each open-ended question, tap a preset, or skip it. The prompt writer below remains available for your own wording.", style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
+                if (state.isStreaming) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Text("AI is working on your campaign plan…", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
                 AdventurePlanQuestionEditor(1, adventurePlanQuestions()[0], setupPlot, { setupPlot = it }, { setupPlot = it }, { setupPlot = "" })
                 AdventurePlanQuestionEditor(2, adventurePlanQuestions()[1], setupFirstGoal, { setupFirstGoal = it }, { setupFirstGoal = it }, { setupFirstGoal = "" })
                 AdventurePlanQuestionEditor(3, adventurePlanQuestions()[2], setupFirstScene, { setupFirstScene = it }, { setupFirstScene = it }, { setupFirstScene = "" })
@@ -683,8 +690,7 @@ fun AdventurePlayScreen(
                             "5. Tone: ${setupTone.trim().ifBlank { "[SKIPPED]" }}",
                             "6. Complication: ${setupComplication.trim().ifBlank { "[SKIPPED]" }}",
                         ).joinToString("\n")
-                        viewModel.onInputChange(answer)
-                        viewModel.send()
+                        viewModel.submitAdventurePlan(answer)
                     },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !state.isStreaming,
@@ -700,7 +706,7 @@ fun AdventurePlayScreen(
                 Text("Campaign outline review", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                 Text("The AI has drafted a rough plot outline from your New Campaign setup and Adventure Plan. Review it above, then start the first scene or edit the plan.", style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
-                    InkOutlinedButton(label = "Start adventure", onClick = { viewModel.onInputChange("Accept outline and start adventure") ; viewModel.send() }, modifier = Modifier.weight(1f), enabled = !state.isStreaming)
+                    InkOutlinedButton(label = "Start adventure", onClick = { viewModel.submitAdventurePlan("Accept outline and start adventure") }, modifier = Modifier.weight(1f), enabled = !state.isStreaming)
                     InkTextButton(label = "Edit plan", onClick = { planScope.launch { planScrollState.animateScrollTo(0) } }, compact = true)
                 }
             }
