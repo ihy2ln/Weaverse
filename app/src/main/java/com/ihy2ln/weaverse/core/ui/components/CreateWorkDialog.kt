@@ -536,10 +536,15 @@ fun CreateWorkDialog(
     vocabulary: CreateWorkVocabulary,
     characterOptions: List<WorkCharacterOption> = emptyList(),
     customSettings: List<CampaignSettingTemplate> = emptyList(),
+    customSettingDetails: List<CampaignSettingDetailTemplate> = emptyList(),
     favoriteSettingIds: Set<String> = emptySet(),
     favoriteSettingDetailIds: Set<String> = emptySet(),
     onToggleSettingFavorite: (String) -> Unit = {},
     onToggleSettingDetailFavorite: (String) -> Unit = {},
+    onAddSetting: ((String, String, String, String) -> Unit)? = null,
+    onRemoveSetting: ((String) -> Unit)? = null,
+    onAddSettingDetail: ((String, String, String, String) -> Unit)? = null,
+    onRemoveSettingDetail: ((String) -> Unit)? = null,
     onDismiss: () -> Unit,
     onCreate: (NewWorkDetails) -> Unit,
 ) {
@@ -574,9 +579,12 @@ fun CreateWorkDialog(
     var difficultyId by remember { mutableStateOf("standard") }
     var mangaFileUri by remember { mutableStateOf("") }
     var mangaFileName by remember { mutableStateOf("") }
+    var showAddSetting by remember { mutableStateOf(false) }
+    var showAddSettingDetail by remember { mutableStateOf(false) }
     val isCampaign = vocabulary.campaignSpecific
     val isTextGame = vocabulary.textGameSpecific
     val effectiveSettings = CampaignSettingTemplates + customSettings
+    val effectiveSettingDetails = CampaignSettingDetailTemplates + customSettingDetails
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -706,12 +714,12 @@ fun CreateWorkDialog(
                     if (isTextGame) {
                         Box(modifier = Modifier.fillMaxWidth()) {
                             InkOutlinedButton(
-                                label = (CampaignSettingDetailTemplates.firstOrNull { it.id == settingDetailId }?.label ?: "Choose details") + " ▾",
+                                label = (effectiveSettingDetails.firstOrNull { it.id == settingDetailId }?.label ?: "Choose details") + " ▾",
                                 onClick = { settingDetailMenuOpen = true },
                                 modifier = Modifier.fillMaxWidth(),
                             )
                             DropdownMenu(expanded = settingDetailMenuOpen, onDismissRequest = { settingDetailMenuOpen = false }) {
-                                CampaignSettingDetailTemplates.forEach { preset ->
+                                effectiveSettingDetails.forEach { preset ->
                                     DropdownMenuItem(
                                         text = { Text(preset.label) },
                                         onClick = {
@@ -725,7 +733,7 @@ fun CreateWorkDialog(
                         }
                     } else {
                         InkOutlinedButton(
-                            label = (CampaignSettingDetailTemplates.firstOrNull { it.id == settingDetailId }?.label ?: "Choose details") + " ▸",
+                            label = (effectiveSettingDetails.firstOrNull { it.id == settingDetailId }?.label ?: "Choose details") + " ▸",
                             onClick = { settingDetailMenuOpen = true },
                             modifier = Modifier.fillMaxWidth(),
                         )
@@ -1040,7 +1048,7 @@ fun CreateWorkDialog(
                         styleGuide = if (isCampaign) {
                             listOf(
                                 "Setting guidance: ${effectiveSettings.firstOrNull { it.id == settingId }?.directive.orEmpty()}",
-                                "Setting details preset: ${CampaignSettingDetailTemplates.first { it.id == settingDetailId }.details}",
+                                "Setting details preset: ${effectiveSettingDetails.firstOrNull { it.id == settingDetailId }?.details.orEmpty()}",
                                 "Game mode: ${CampaignGameModeTemplates.first { it.id == gameModeId }.label}. ${CampaignGameModeTemplates.first { it.id == gameModeId }.description}",
                                 "Rule system guidance: ${CampaignRulesetTemplates.first { it.id == rulesetId }.directive}",
                                 if (isTextGame) {
@@ -1099,12 +1107,20 @@ fun CreateWorkDialog(
                 settingMenuOpen = false
             },
             onDismiss = { settingMenuOpen = false },
+            onRemove = onRemoveSetting,
+            onAdd = onAddSetting?.let {
+                {
+                    settingMenuOpen = false
+                    showAddSetting = true
+                }
+            },
+            addLabel = "Add setting template",
         )
     }
     if (isCampaign && !isTextGame && settingDetailMenuOpen) {
         CampaignPresetBrowserDialog(
             title = "Setting details",
-            items = campaignSettingDetailBrowserItems(),
+            items = campaignSettingDetailBrowserItems(customSettingDetails),
             selectedId = settingDetailId,
             favoriteIds = favoriteSettingDetailIds,
             onToggleFavorite = onToggleSettingDetailFavorite,
@@ -1114,6 +1130,34 @@ fun CreateWorkDialog(
                 settingDetailMenuOpen = false
             },
             onDismiss = { settingDetailMenuOpen = false },
+            onRemove = onRemoveSettingDetail,
+            onAdd = onAddSettingDetail?.let {
+                {
+                    settingDetailMenuOpen = false
+                    showAddSettingDetail = true
+                }
+            },
+            addLabel = "Add details preset",
+        )
+    }
+    if (showAddSetting && onAddSetting != null) {
+        CampaignPresetEditorDialog(
+            title = "Add Setting Template",
+            guidanceLabel = "World guidance for the AI",
+            defaultSection = "Custom",
+            defaultTheme = "Saved templates",
+            onDismiss = { showAddSetting = false },
+            onSave = onAddSetting,
+        )
+    }
+    if (showAddSettingDetail && onAddSettingDetail != null) {
+        CampaignPresetEditorDialog(
+            title = "Add Setting Details Preset",
+            guidanceLabel = "Setting details for the AI",
+            defaultSection = "Custom",
+            defaultTheme = "Saved presets",
+            onDismiss = { showAddSettingDetail = false },
+            onSave = onAddSettingDetail,
         )
     }
 }

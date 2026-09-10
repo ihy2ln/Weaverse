@@ -61,6 +61,8 @@ Planner and startup panes use independent scroll containers. Horizontal preset r
 
 Campaign presets are catalogued as `CampaignSettingTemplate` and `CampaignSettingDetailTemplate` records with explicit `section` and `theme` metadata. `CampaignPresetBrowserDialog` presents those records as main section → theme → preset and reads two DataStore-backed favorite-ID sets. The RPG creation dialog and campaign options sheet share this browser; the Text Game creation surface retains its existing flat selector.
 
+`CampaignPresetEditorDialog` creates either catalog type with a name, section, theme, and guidance body. Custom rows and their favorite IDs are stored in DataStore; decoders accept both the new five-field representation and the legacy three-field setting-template representation.
+
 Active Adventure scenes obtain the bound persona ID from `RoleplayChatUiState` and combine that player with the immediate `PartyViewModel` cast. `CampaignCharacterCardsDialog` renders the result as portrait playing cards and routes each card to the existing full persona or character sheet.
 
 `PromptWordLimit` supplies the shared word-range instruction and performs sentence-safe final insertion. It searches for a sentence ending near the selected maximum, permits a bounded overrun to reach that ending, and otherwise falls back to the previous complete sentence. Unpunctuated or structured output is preserved rather than sliced into a fragment. Shared provider token budgets include additional completion headroom.

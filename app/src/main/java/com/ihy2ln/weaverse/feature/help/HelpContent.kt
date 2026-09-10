@@ -88,7 +88,8 @@ object HelpContent {
                         "Preset browsers. Sections include Adams Haven worlds, Fantasy, Action, " +
                         "survival, science fiction, games/media, 18+, and Custom. Tap ☆ beside " +
                         "any preset to keep it in Favorites. Slow Life and Overpowered " +
-                        "Protagonist are available under Setting Details.",
+                        "Protagonist are available under Setting Details. Use + Add in either " +
+                        "browser to save your own named section, theme, and AI guidance.",
                 ),
                 HelpEntry(
                     "Mode and rule system",

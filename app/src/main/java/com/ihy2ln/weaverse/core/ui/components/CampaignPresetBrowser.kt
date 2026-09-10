@@ -41,9 +41,26 @@ data class CampaignPresetBrowserItem(
 
 fun decodeCampaignSettingTemplates(rawTemplates: Set<String>): List<CampaignSettingTemplate> =
     rawTemplates.mapNotNull { raw ->
-        val parts = raw.split('|', limit = 3)
-        if (parts.size < 3 || parts[0].isBlank()) null
-        else CampaignSettingTemplate(parts[0], parts[1], parts[2], "Custom", "Saved templates")
+        val parts = raw.split('|', limit = 5)
+        when {
+            parts.size >= 5 && parts[0].isNotBlank() ->
+                CampaignSettingTemplate(parts[0], parts[1], parts[4], parts[2], parts[3])
+            parts.size >= 3 && parts[0].isNotBlank() ->
+                CampaignSettingTemplate(parts[0], parts[1], parts[2], "Custom", "Saved templates")
+            else -> null
+        }
+    }.sortedBy { it.label.lowercase() }
+
+fun decodeCampaignSettingDetailTemplates(rawTemplates: Set<String>): List<CampaignSettingDetailTemplate> =
+    rawTemplates.mapNotNull { raw ->
+        val parts = raw.split('|', limit = 5)
+        when {
+            parts.size >= 5 && parts[0].isNotBlank() ->
+                CampaignSettingDetailTemplate(parts[0], parts[1], parts[4], parts[2], parts[3])
+            parts.size >= 3 && parts[0].isNotBlank() ->
+                CampaignSettingDetailTemplate(parts[0], parts[1], parts[2], "Custom", "Saved presets")
+            else -> null
+        }
     }.sortedBy { it.label.lowercase() }
 
 fun campaignSettingBrowserItems(
@@ -59,14 +76,17 @@ fun campaignSettingBrowserItems(
     )
 }
 
-fun campaignSettingDetailBrowserItems(): List<CampaignPresetBrowserItem> =
-    CampaignSettingDetailTemplates.map { preset ->
+fun campaignSettingDetailBrowserItems(
+    custom: List<CampaignSettingDetailTemplate> = emptyList(),
+): List<CampaignPresetBrowserItem> =
+    (CampaignSettingDetailTemplates + custom).map { preset ->
         CampaignPresetBrowserItem(
             id = preset.id,
             label = preset.label,
             description = preset.details,
             section = preset.section,
             theme = preset.theme,
+            removable = preset.id.startsWith("custom-detail-"),
         )
     }
 
@@ -81,6 +101,8 @@ fun CampaignPresetBrowserDialog(
     onSelect: (CampaignPresetBrowserItem) -> Unit,
     onDismiss: () -> Unit,
     onRemove: ((String) -> Unit)? = null,
+    onAdd: (() -> Unit)? = null,
+    addLabel: String = "Add new",
 ) {
     val tokens = inkTokens()
     var section by remember { mutableStateOf<String?>(null) }
@@ -131,6 +153,13 @@ fun CampaignPresetBrowserDialog(
                             search = ""
                         },
                     ) { Text(if (theme != null) "‹ Themes" else "‹ Main sections") }
+                }
+                if (onAdd != null) {
+                    InkOutlinedButton(
+                        label = "＋ $addLabel",
+                        onClick = onAdd,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
                 when {
                     section == null -> BrowserList(
@@ -236,4 +265,69 @@ private fun BrowserList(rows: List<BrowserRow>, onClick: (BrowserRow) -> Unit) {
             }
         }
     }
+}
+
+/** Editor shared by Add Setting Template and Add Setting Details Preset. */
+@Composable
+fun CampaignPresetEditorDialog(
+    title: String,
+    guidanceLabel: String,
+    defaultSection: String,
+    defaultTheme: String,
+    onDismiss: () -> Unit,
+    onSave: (name: String, section: String, theme: String, guidance: String) -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    var section by remember { mutableStateOf(defaultSection) }
+    var theme by remember { mutableStateOf(defaultTheme) }
+    var guidance by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it.take(60) },
+                    label = { Text("Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = section,
+                    onValueChange = { section = it.take(60) },
+                    label = { Text("Main section") },
+                    placeholder = { Text("Custom, Fantasy, Action…") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = theme,
+                    onValueChange = { theme = it.take(60) },
+                    label = { Text("Theme subsection") },
+                    placeholder = { Text("Saved presets") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = guidance,
+                    onValueChange = { guidance = it.take(2000) },
+                    label = { Text(guidanceLabel) },
+                    minLines = 4,
+                    maxLines = 9,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = name.isNotBlank() && guidance.isNotBlank(),
+                onClick = {
+                    onSave(name, section, theme, guidance)
+                    onDismiss()
+                },
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }

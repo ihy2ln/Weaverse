@@ -69,6 +69,22 @@ class AppShellViewModel @Inject constructor(
         viewModelScope.launch { settings.toggleFavoriteSettingDetail(id) }
     }
 
+    fun addSettingTemplate(name: String, section: String, theme: String, guidance: String) {
+        viewModelScope.launch { settings.addSettingTemplate(name, guidance, section, theme) }
+    }
+
+    fun removeSettingTemplate(id: String) {
+        viewModelScope.launch { settings.removeSettingTemplate(id) }
+    }
+
+    fun addSettingDetailTemplate(name: String, section: String, theme: String, guidance: String) {
+        viewModelScope.launch { settings.addSettingDetailTemplate(name, guidance, section, theme) }
+    }
+
+    fun removeSettingDetailTemplate(id: String) {
+        viewModelScope.launch { settings.removeSettingDetailTemplate(id) }
+    }
+
     val campaignCharacterOptions: StateFlow<List<WorkCharacterOption>> = combine(
         db.roleplayDao().observePersonas(),
         db.roleplayDao().observeCharacters(),

@@ -31,8 +31,10 @@ import com.ihy2ln.weaverse.core.ui.components.CampaignRulesetTemplates
 import com.ihy2ln.weaverse.core.ui.components.CampaignSettingDetailTemplates
 import com.ihy2ln.weaverse.core.ui.components.CampaignHouseRuleTemplates
 import com.ihy2ln.weaverse.core.ui.components.CampaignSettingTemplate
+import com.ihy2ln.weaverse.core.ui.components.CampaignSettingDetailTemplate
 import com.ihy2ln.weaverse.core.ui.components.CampaignSettingTemplates
 import com.ihy2ln.weaverse.core.ui.components.CampaignPresetBrowserDialog
+import com.ihy2ln.weaverse.core.ui.components.CampaignPresetEditorDialog
 import com.ihy2ln.weaverse.core.ui.components.campaignSettingBrowserItems
 import com.ihy2ln.weaverse.core.ui.components.campaignSettingDetailBrowserItems
 import com.ihy2ln.weaverse.core.ui.components.InkChip
@@ -58,15 +60,19 @@ fun CampaignOptionsDialog(
     onApply: (NewWorkDetails) -> Unit,
     onRestart: (() -> Unit)? = null,
     customSettings: List<CampaignSettingTemplate> = emptyList(),
+    customSettingDetails: List<CampaignSettingDetailTemplate> = emptyList(),
     favoriteSettingIds: Set<String> = emptySet(),
     favoriteSettingDetailIds: Set<String> = emptySet(),
     onToggleSettingFavorite: (String) -> Unit = {},
     onToggleSettingDetailFavorite: (String) -> Unit = {},
-    onAddSetting: ((label: String, directive: String) -> Unit)? = null,
+    onAddSetting: ((name: String, section: String, theme: String, guidance: String) -> Unit)? = null,
     onRemoveSetting: ((id: String) -> Unit)? = null,
+    onAddSettingDetail: ((name: String, section: String, theme: String, guidance: String) -> Unit)? = null,
+    onRemoveSettingDetail: ((id: String) -> Unit)? = null,
 ) {
     val tokens = inkTokens()
     val effectiveSettings = CampaignSettingTemplates + customSettings
+    val effectiveSettingDetails = CampaignSettingDetailTemplates + customSettingDetails
     var settingId by remember { mutableStateOf(initial.settingId.ifBlank { "high-fantasy" }) }
     var settingMenuOpen by remember { mutableStateOf(false) }
     var genre by remember { mutableStateOf(initial.genre) }
@@ -94,8 +100,7 @@ fun CampaignOptionsDialog(
     var houseRuleId by remember { mutableStateOf(initial.houseRuleId.ifBlank { "custom" }) }
     var houseRuleMenuOpen by remember { mutableStateOf(false) }
     var showAddSetting by remember { mutableStateOf(false) }
-    var newSettingLabel by remember { mutableStateOf("") }
-    var newSettingDirective by remember { mutableStateOf("") }
+    var showAddSettingDetail by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -111,52 +116,9 @@ fun CampaignOptionsDialog(
                     onClick = { settingMenuOpen = true },
                     modifier = Modifier.fillMaxWidth(),
                 )
-                if (onAddSetting != null) {
-                    TextButton(onClick = { showAddSetting = true }) { Text("＋ New setting template") }
-                }
-                if (showAddSetting) {
-                    AlertDialog(
-                        onDismissRequest = { showAddSetting = false },
-                        title = { Text("New setting template") },
-                        text = {
-                            Column(verticalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
-                                OutlinedTextField(
-                                    value = newSettingLabel,
-                                    onValueChange = { newSettingLabel = it.take(60) },
-                                    label = { Text("Name") },
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                OutlinedTextField(
-                                    value = newSettingDirective,
-                                    onValueChange = { newSettingDirective = it.take(2000) },
-                                    label = { Text("World guidance for the AI") },
-                                    placeholder = { Text("Nations, magic, factions, tone…") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    minLines = 3,
-                                    maxLines = 8,
-                                )
-                            }
-                        },
-                        confirmButton = {
-                            TextButton(
-                                onClick = {
-                                    onAddSetting?.invoke(newSettingLabel, newSettingDirective)
-                                    newSettingLabel = ""
-                                    newSettingDirective = ""
-                                    showAddSetting = false
-                                },
-                                enabled = newSettingLabel.isNotBlank(),
-                            ) { Text("Save") }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = { showAddSetting = false }) { Text("Cancel") }
-                        },
-                    )
-                }
                 Text("Setting Details preset", style = MaterialTheme.typography.labelMedium)
                 InkOutlinedButton(
-                    label = (CampaignSettingDetailTemplates.firstOrNull { it.id == settingDetailId }?.label ?: "Choose details") + " ▸",
+                    label = (effectiveSettingDetails.firstOrNull { it.id == settingDetailId }?.label ?: "Choose details") + " ▸",
                     onClick = { settingDetailMenuOpen = true },
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -394,7 +356,7 @@ fun CampaignOptionsDialog(
                         styleGuide = listOf(
                             "Setting guidance: " +
                                 (effectiveSettings.firstOrNull { it.id == settingId }?.directive ?: ""),
-                            "Setting details preset: ${CampaignSettingDetailTemplates.first { it.id == settingDetailId }.details}",
+                            "Setting details preset: ${effectiveSettingDetails.firstOrNull { it.id == settingDetailId }?.details.orEmpty()}",
                             "Game mode: ${RpgCombatRuleset.fromId(gameModeId).label}. " +
                                 "Resolve encounters only through the RPG combat mode selected above.",
                             "Rule system guidance: " + (CampaignRulesetTemplates.firstOrNull { it.id == rulesetId } ?: CampaignRulesetTemplates.first()).directive,
@@ -448,12 +410,19 @@ fun CampaignOptionsDialog(
             },
             onDismiss = { settingMenuOpen = false },
             onRemove = onRemoveSetting,
+            onAdd = onAddSetting?.let {
+                {
+                    settingMenuOpen = false
+                    showAddSetting = true
+                }
+            },
+            addLabel = "Add setting template",
         )
     }
     if (settingDetailMenuOpen) {
         CampaignPresetBrowserDialog(
             title = "Setting details",
-            items = campaignSettingDetailBrowserItems(),
+            items = campaignSettingDetailBrowserItems(customSettingDetails),
             selectedId = settingDetailId,
             favoriteIds = favoriteSettingDetailIds,
             onToggleFavorite = onToggleSettingDetailFavorite,
@@ -463,6 +432,34 @@ fun CampaignOptionsDialog(
                 settingDetailMenuOpen = false
             },
             onDismiss = { settingDetailMenuOpen = false },
+            onRemove = onRemoveSettingDetail,
+            onAdd = onAddSettingDetail?.let {
+                {
+                    settingDetailMenuOpen = false
+                    showAddSettingDetail = true
+                }
+            },
+            addLabel = "Add details preset",
+        )
+    }
+    if (showAddSetting && onAddSetting != null) {
+        CampaignPresetEditorDialog(
+            title = "Add Setting Template",
+            guidanceLabel = "World guidance for the AI",
+            defaultSection = "Custom",
+            defaultTheme = "Saved templates",
+            onDismiss = { showAddSetting = false },
+            onSave = onAddSetting,
+        )
+    }
+    if (showAddSettingDetail && onAddSettingDetail != null) {
+        CampaignPresetEditorDialog(
+            title = "Add Setting Details Preset",
+            guidanceLabel = "Setting details for the AI",
+            defaultSection = "Custom",
+            defaultTheme = "Saved presets",
+            onDismiss = { showAddSettingDetail = false },
+            onSave = onAddSettingDetail,
         )
     }
 }

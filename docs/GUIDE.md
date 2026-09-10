@@ -166,7 +166,9 @@ Setting Template and Setting Details are organized as **Main section → Theme �
 Preset**. Tap ☆ on any preset to place it in the persistent Favorites section.
 The catalogs include Adams Haven worlds, fantasy, action media, horror and
 survival, science fiction, games/media, 18+, Slow Life, and Overpowered
-Protagonist choices.
+Protagonist choices. Use **+ Add** inside either browser to save your own named
+template or details preset with a main section, theme, and AI guidance. Custom
+entries can be favorited or removed and remain available after restarting.
 
 ### RPG modes and rule systems
 

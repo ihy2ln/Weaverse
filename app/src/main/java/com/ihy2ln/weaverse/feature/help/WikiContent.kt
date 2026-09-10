@@ -203,7 +203,9 @@ object WikiContent {
                   any preset in the persistent **Favorites** section. Adams
                   Haven's worlds, Fantasy, Action, survival, science fiction,
                   games/media, 18+, Slow Life and Overpowered Protagonist are
-                  organized here.
+                  organized here. **+ Add** in either browser creates a reusable
+                  template or details preset with its own section, theme and AI
+                  guidance; custom entries can be favorited or removed.
                 - **Point of view**, **tense**, **rules system** (D&D 5e,
                   Pathfinder 2e, older D&D, OSR, PbtA, Fate, custom), and
                   **house rules** complete setup.

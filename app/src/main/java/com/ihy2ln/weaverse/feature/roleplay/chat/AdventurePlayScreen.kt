@@ -569,12 +569,15 @@ fun AdventurePlayScreen(
                 onApply = viewModel::applyCampaignSetup,
                 onRestart = viewModel::restartAdventure,
                 customSettings = state.customSettingTemplates,
+                customSettingDetails = state.customSettingDetailTemplates,
                 favoriteSettingIds = state.favoriteSettingTemplateIds,
                 favoriteSettingDetailIds = state.favoriteSettingDetailIds,
                 onToggleSettingFavorite = viewModel::toggleFavoriteSettingTemplate,
                 onToggleSettingDetailFavorite = viewModel::toggleFavoriteSettingDetail,
                 onAddSetting = viewModel::addSettingTemplate,
                 onRemoveSetting = viewModel::removeSettingTemplate,
+                onAddSettingDetail = viewModel::addSettingDetailTemplate,
+                onRemoveSettingDetail = viewModel::removeSettingDetailTemplate,
             )
         }
         if (modelsOpen) {
@@ -1350,12 +1353,15 @@ fun AdventurePlayScreen(
             onApply = viewModel::applyCampaignSetup,
             onRestart = viewModel::restartAdventure,
             customSettings = state.customSettingTemplates,
+            customSettingDetails = state.customSettingDetailTemplates,
             favoriteSettingIds = state.favoriteSettingTemplateIds,
             favoriteSettingDetailIds = state.favoriteSettingDetailIds,
             onToggleSettingFavorite = viewModel::toggleFavoriteSettingTemplate,
             onToggleSettingDetailFavorite = viewModel::toggleFavoriteSettingDetail,
             onAddSetting = viewModel::addSettingTemplate,
             onRemoveSetting = viewModel::removeSettingTemplate,
+            onAddSettingDetail = viewModel::addSettingDetailTemplate,
+            onRemoveSettingDetail = viewModel::removeSettingDetailTemplate,
         )
     }
     }

@@ -32,6 +32,8 @@ Setting Template opens a three-level browser: **Main section → Theme → Prese
 
 Tap the ☆ on a preset to add it to the persistent **Favorites** main section. Favorites can contain built-in or custom setting templates and remain available in both new-campaign setup and the in-campaign Setup editor.
 
+Use **+ Add setting template** or **+ Add details preset** inside the appropriate browser to create reusable entries. The editor records a name, main section, theme subsection, and AI guidance. Saved entries appear immediately, survive app restarts, support Favorites, and expose a Remove action. Older custom setting templates migrate into Custom → Saved templates.
+
 ### Setting-details presets
 
 Setting Details uses the same Main section → Theme → Preset navigation and its own Favorites list. Presets include Frontier settlement, Factional city, Wilderness expedition, War-torn realm, Stormbound coast, Sky-island frontier, Under-city intrigue, Arcane academy, Reclaimed wasteland, Fey borderlands, Clockwork metropolis, Stars beyond the veil, Slow Life, Overpowered Protagonist, action movie/anime/superhero themes, and adult-only consent-forward options such as Porn with plot, Smut romance, Hentai fantasy, and Ecchi comedy. Adult presets are grouped under 18+ and are guidance for fictional adult characters; provider or platform restrictions still apply.

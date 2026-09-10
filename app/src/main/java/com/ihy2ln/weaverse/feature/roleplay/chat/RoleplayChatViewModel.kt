@@ -31,6 +31,9 @@ import com.ihy2ln.weaverse.core.ui.components.CampaignRulesetTemplates
 import com.ihy2ln.weaverse.core.ui.components.CampaignSettingDetailTemplates
 import com.ihy2ln.weaverse.core.ui.components.CampaignSettingTemplate
 import com.ihy2ln.weaverse.core.ui.components.CampaignSettingTemplates
+import com.ihy2ln.weaverse.core.ui.components.CampaignSettingDetailTemplate
+import com.ihy2ln.weaverse.core.ui.components.decodeCampaignSettingTemplates
+import com.ihy2ln.weaverse.core.ui.components.decodeCampaignSettingDetailTemplates
 import com.ihy2ln.weaverse.core.ui.components.CampaignHouseRuleTemplates
 import com.ihy2ln.weaverse.core.ui.components.NewWorkDetails
 import com.ihy2ln.weaverse.core.ui.components.WorkCharacterOption
@@ -186,10 +189,13 @@ class RoleplayChatViewModel @Inject constructor(
     private var removedBangKeywords: Set<String> = emptySet()
     private var starCommands: List<RpgTurnCommand> = RpgTurnCommands.all
     private var customSettingTemplates: List<CampaignSettingTemplate> = emptyList()
+    private var customSettingDetailTemplates: List<CampaignSettingDetailTemplate> = emptyList()
 
     /** Built-in campaign setting templates plus the user's own, in menu order. */
     private fun effectiveSettingTemplates(): List<CampaignSettingTemplate> =
         CampaignSettingTemplates + customSettingTemplates
+    private fun effectiveSettingDetailTemplates(): List<CampaignSettingDetailTemplate> =
+        CampaignSettingDetailTemplates + customSettingDetailTemplates
     private var boundCharacter: RpCharacterEntity? = null
     private var boundPersona: RpPersonaEntity? = null
     private var contextLimit = ContextMeter.DEFAULT_LIMIT
@@ -280,18 +286,16 @@ class RoleplayChatViewModel @Inject constructor(
                         prefs.customStarCommands,
                         prefs.removedStarKeywords,
                     )
-                    customSettingTemplates = prefs.customSettingTemplates.mapNotNull { raw ->
-                        val parts = raw.split('|')
-                        if (parts.size < 3) {
-                            return@mapNotNull null
-                        }
-                        CampaignSettingTemplate(parts[0], parts[1], parts[2])
-                    }
+                    customSettingTemplates = decodeCampaignSettingTemplates(prefs.customSettingTemplates)
+                    customSettingDetailTemplates = decodeCampaignSettingDetailTemplates(
+                        prefs.customSettingDetailTemplates,
+                    )
                     _uiState.update {
                         it.copy(
                             presetId = prefs.roleplayPresetId,
                             showExtraPromptSurfaces = prefs.extraPromptSurfaces.roleplayButtons,
                             customSettingTemplates = customSettingTemplates,
+                            customSettingDetailTemplates = customSettingDetailTemplates,
                             favoriteSettingTemplateIds = prefs.favoriteSettingTemplateIds,
                             favoriteSettingDetailIds = prefs.favoriteSettingDetailIds,
                         )
@@ -3128,7 +3132,7 @@ class RoleplayChatViewModel @Inject constructor(
             ?.id ?: "dnd-5e"
         val gameModeId = rpgCombatRulesetFromSetup(note).id
         val settingDetailId = line("Setting details preset")
-            .takeIf { id -> CampaignSettingDetailTemplates.any { it.id.equals(id, ignoreCase = true) } }
+            .takeIf { id -> effectiveSettingDetailTemplates().any { it.id.equals(id, ignoreCase = true) } }
             ?: "custom"
         val houseRuleId = line("House rules preset")
             .takeIf { id -> CampaignHouseRuleTemplates.any { it.id.equals(id, ignoreCase = true) } }
@@ -3162,13 +3166,21 @@ class RoleplayChatViewModel @Inject constructor(
     }
 
     /** Setup dialog: save a user-defined setting template. */
-    fun addSettingTemplate(label: String, directive: String) {
-        viewModelScope.launch { settings.addSettingTemplate(label, directive) }
+    fun addSettingTemplate(name: String, section: String, theme: String, guidance: String) {
+        viewModelScope.launch { settings.addSettingTemplate(name, guidance, section, theme) }
     }
 
     /** Setup dialog: delete a user-defined setting template. */
     fun removeSettingTemplate(id: String) {
         viewModelScope.launch { settings.removeSettingTemplate(id) }
+    }
+
+    fun addSettingDetailTemplate(name: String, section: String, theme: String, guidance: String) {
+        viewModelScope.launch { settings.addSettingDetailTemplate(name, guidance, section, theme) }
+    }
+
+    fun removeSettingDetailTemplate(id: String) {
+        viewModelScope.launch { settings.removeSettingDetailTemplate(id) }
     }
 
     fun toggleFavoriteSettingTemplate(id: String) {

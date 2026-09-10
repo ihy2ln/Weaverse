@@ -198,10 +198,17 @@ fun AppShell(
             customSettings = com.ihy2ln.weaverse.core.ui.components.decodeCampaignSettingTemplates(
                 prefs.customSettingTemplates,
             ),
+            customSettingDetails = com.ihy2ln.weaverse.core.ui.components.decodeCampaignSettingDetailTemplates(
+                prefs.customSettingDetailTemplates,
+            ),
             favoriteSettingIds = prefs.favoriteSettingTemplateIds,
             favoriteSettingDetailIds = prefs.favoriteSettingDetailIds,
             onToggleSettingFavorite = shellViewModel::toggleFavoriteSettingTemplate,
             onToggleSettingDetailFavorite = shellViewModel::toggleFavoriteSettingDetail,
+            onAddSetting = shellViewModel::addSettingTemplate,
+            onRemoveSetting = shellViewModel::removeSettingTemplate,
+            onAddSettingDetail = shellViewModel::addSettingDetailTemplate,
+            onRemoveSettingDetail = shellViewModel::removeSettingDetailTemplate,
             onDismiss = { creatingWork = null },
             onCreate = { details ->
                 // Campaigns and storyboards are both manuscripts underneath, so one

@@ -16,6 +16,8 @@ Campaign setup presents Setting Template, Setting Details preset/custom details,
 
 Setting Template and Setting Details use a hierarchical main-section → theme → preset browser. Favorites are persisted independently for each catalog. The setting catalog includes the Adams Haven worlds; detail themes include fantasy, action media, survival, science fiction, 18+, Slow Life, and Overpowered Protagonist.
 
+Players can create reusable entries in either catalog by supplying a name, main section, theme, and AI guidance. Custom templates and details presets persist locally, can be favorited, and can be removed without affecting campaigns that already copied their guidance into saved setup state.
+
 ## Combat contract
 
 `RpgCombatRuleset`, `RpgCombatState`, `RpgEncounterSetup`, `RpgCombatAction`, `RpgCombatPreview`, `RpgCombatOutcome`, `RpgEnemyIntent`, and `RpgStatusEffect` are RPG-only types. Each mode resolves to the same normalized outcome contract so the adventure layer can update party HP/conditions, inventory and rewards, companions, factions/world changes, recap, and the next map node. No RPG combat class imports `textgame` packages.

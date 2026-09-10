@@ -5,6 +5,8 @@ import com.ihy2ln.weaverse.core.ui.components.CampaignSettingDetailTemplates
 import com.ihy2ln.weaverse.core.ui.components.CampaignSettingTemplates
 import com.ihy2ln.weaverse.core.ui.components.campaignSettingBrowserItems
 import com.ihy2ln.weaverse.core.ui.components.campaignSettingDetailBrowserItems
+import com.ihy2ln.weaverse.core.ui.components.decodeCampaignSettingTemplates
+import com.ihy2ln.weaverse.core.ui.components.decodeCampaignSettingDetailTemplates
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -124,6 +126,31 @@ class AdventureStartupTest {
         assertTrue(settings.filter { it.section == "Adams Haven" }.map { it.theme }.distinct().size >= 2)
         listOf("aqualuria", "arcanis", "elysara", "heroica", "mythoria", "nexara-prime", "veridian")
             .forEach { world -> assertTrue(settings.any { it.id == "adams-haven-$world" }) }
+    }
+
+    @Test
+    fun customTemplatesAndPresetsRetainTheirSectionAndTheme() {
+        val template = decodeCampaignSettingTemplates(
+            setOf("custom-moon|Moon Realm|Science fiction|Lost colonies|A moon colony mystery"),
+        ).single()
+        val preset = decodeCampaignSettingDetailTemplates(
+            setOf("custom-detail-calm|Calm voyage|Everyday adventure|Slow travel|A relaxed voyage"),
+        ).single()
+        assertEquals("Science fiction", template.section)
+        assertEquals("Lost colonies", template.theme)
+        assertEquals("A moon colony mystery", template.directive)
+        assertEquals("Everyday adventure", preset.section)
+        assertEquals("Slow travel", preset.theme)
+        assertTrue(campaignSettingBrowserItems(listOf(template)).any { it.id == template.id && it.removable })
+        assertTrue(campaignSettingDetailBrowserItems(listOf(preset)).any { it.id == preset.id && it.removable })
+    }
+
+    @Test
+    fun legacyCustomTemplateEncodingStillLoads() {
+        val legacy = decodeCampaignSettingTemplates(setOf("custom-old|Old World|Legacy guidance")).single()
+        assertEquals("Custom", legacy.section)
+        assertEquals("Saved templates", legacy.theme)
+        assertEquals("Legacy guidance", legacy.directive)
     }
 
     @Test

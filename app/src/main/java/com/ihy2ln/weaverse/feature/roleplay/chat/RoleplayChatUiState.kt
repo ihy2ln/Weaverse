@@ -172,6 +172,7 @@ data class RoleplayChatUiState(
     val showCampaignOptions: Boolean = false,
     /** User-defined setting templates for the campaign setup sheet. */
     val customSettingTemplates: List<com.ihy2ln.weaverse.core.ui.components.CampaignSettingTemplate> = emptyList(),
+    val customSettingDetailTemplates: List<com.ihy2ln.weaverse.core.ui.components.CampaignSettingDetailTemplate> = emptyList(),
     val favoriteSettingTemplateIds: Set<String> = emptySet(),
     val favoriteSettingDetailIds: Set<String> = emptySet(),
     /** Non-null opens the full-screen picture editor for that panel. */

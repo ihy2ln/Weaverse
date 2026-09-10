@@ -146,6 +146,8 @@ data class UserPreferences(
     val removedStarKeywords: Set<String> = emptySet(),
     /** User-defined campaign setting templates: "id|label|directive". */
     val customSettingTemplates: Set<String> = emptySet(),
+    /** User-defined Setting Details presets. */
+    val customSettingDetailTemplates: Set<String> = emptySet(),
     /** Built-in or custom RPG setting templates pinned in the hierarchical browser. */
     val favoriteSettingTemplateIds: Set<String> = emptySet(),
     /** RPG setting-detail presets pinned in the hierarchical browser. */
@@ -255,6 +257,9 @@ class SettingsRepository @Inject constructor(
                 .filter { it.isNotBlank() }
                 .toSet(),
             customSettingTemplates = prefs[KEY_CUSTOM_SETTING_TEMPLATES].orEmpty()
+                .filter { it.substringBefore('|').isNotBlank() }
+                .toSet(),
+            customSettingDetailTemplates = prefs[KEY_CUSTOM_SETTING_DETAIL_TEMPLATES].orEmpty()
                 .filter { it.substringBefore('|').isNotBlank() }
                 .toSet(),
             favoriteSettingTemplateIds = prefs[KEY_FAVORITE_SETTING_TEMPLATES].orEmpty(),
@@ -595,11 +600,22 @@ class SettingsRepository @Inject constructor(
     }
 
     /** Adds (or replaces) a user-defined campaign setting template. */
-    suspend fun addSettingTemplate(label: String, directive: String) {
+    suspend fun addSettingTemplate(
+        label: String,
+        directive: String,
+        section: String = "Custom",
+        theme: String = "Saved templates",
+    ) {
         val trimmedLabel = label.trim()
         if (trimmedLabel.isBlank()) return
         val id = "custom-" + trimmedLabel.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
-        val entry = "$id|${trimmedLabel.take(60)}|${directive.trim().take(2000)}"
+        val entry = listOf(
+            id,
+            trimmedLabel.take(60),
+            section.trim().ifBlank { "Custom" }.take(60),
+            theme.trim().ifBlank { "Saved templates" }.take(60),
+            directive.trim().replace('|', '/').take(2000),
+        ).joinToString("|")
         context.dataStore.edit { prefs ->
             prefs[KEY_CUSTOM_SETTING_TEMPLATES] = prefs[KEY_CUSTOM_SETTING_TEMPLATES].orEmpty()
                 .filterNot { it.substringBefore('|') == id }
@@ -613,6 +629,45 @@ class SettingsRepository @Inject constructor(
             prefs[KEY_CUSTOM_SETTING_TEMPLATES] = prefs[KEY_CUSTOM_SETTING_TEMPLATES].orEmpty()
                 .filterNot { it.substringBefore('|') == id }
                 .toSet()
+            prefs[KEY_FAVORITE_SETTING_TEMPLATES] =
+                prefs[KEY_FAVORITE_SETTING_TEMPLATES].orEmpty() - id
+        }
+    }
+
+    suspend fun addSettingDetailTemplate(
+        label: String,
+        details: String,
+        section: String = "Custom",
+        theme: String = "Saved presets",
+    ) {
+        val trimmedLabel = label.trim()
+        if (trimmedLabel.isBlank()) return
+        val id = "custom-detail-" + trimmedLabel.lowercase()
+            .replace(Regex("[^a-z0-9]+"), "-")
+            .trim('-')
+        val entry = listOf(
+            id,
+            trimmedLabel.take(60),
+            section.trim().ifBlank { "Custom" }.take(60),
+            theme.trim().ifBlank { "Saved presets" }.take(60),
+            details.trim().replace('|', '/').take(2000),
+        ).joinToString("|")
+        context.dataStore.edit { prefs ->
+            prefs[KEY_CUSTOM_SETTING_DETAIL_TEMPLATES] =
+                prefs[KEY_CUSTOM_SETTING_DETAIL_TEMPLATES].orEmpty()
+                    .filterNot { it.substringBefore('|') == id }
+                    .toSet() + entry
+        }
+    }
+
+    suspend fun removeSettingDetailTemplate(id: String) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_CUSTOM_SETTING_DETAIL_TEMPLATES] =
+                prefs[KEY_CUSTOM_SETTING_DETAIL_TEMPLATES].orEmpty()
+                    .filterNot { it.substringBefore('|') == id }
+                    .toSet()
+            prefs[KEY_FAVORITE_SETTING_DETAILS] =
+                prefs[KEY_FAVORITE_SETTING_DETAILS].orEmpty() - id
         }
     }
 
@@ -709,6 +764,7 @@ class SettingsRepository @Inject constructor(
         private val KEY_CUSTOM_STARS = stringSetPreferencesKey("star_commands_custom")
         private val KEY_REMOVED_STARS = stringSetPreferencesKey("star_commands_removed")
         private val KEY_CUSTOM_SETTING_TEMPLATES = stringSetPreferencesKey("campaign_setting_templates_custom")
+        private val KEY_CUSTOM_SETTING_DETAIL_TEMPLATES = stringSetPreferencesKey("campaign_setting_details_custom")
         private val KEY_FAVORITE_SETTING_TEMPLATES = stringSetPreferencesKey("campaign_setting_templates_favorites")
         private val KEY_FAVORITE_SETTING_DETAILS = stringSetPreferencesKey("campaign_setting_details_favorites")
 
