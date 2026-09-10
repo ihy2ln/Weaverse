@@ -97,6 +97,8 @@ import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgGenerationStatus
 import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgStartupState
 import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgStartupStep
 import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatRuleset
+import com.ihy2ln.weaverse.feature.roleplay.party.PartyMemberUi
+import com.ihy2ln.weaverse.feature.roleplay.party.PartyViewModel
 import java.io.File
 import kotlinx.coroutines.launch
 
@@ -460,13 +462,17 @@ fun AdventurePlayScreen(
     chatId: String,
     onChromeChange: (RoleplayChatChrome?) -> Unit = {},
     onOpenCodexEntry: (String) -> Unit = {},
+    onOpenCharacter: (String) -> Unit = {},
+    onOpenPersona: (String) -> Unit = {},
     viewModel: RoleplayChatViewModel = hiltViewModel(),
+    partyViewModel: PartyViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(chatId) {
         viewModel.bindChat(chatId)
         viewModel.setDisplayMode("dungeonMaster")
     }
     val state by viewModel.uiState.collectAsState()
+    val partyState by partyViewModel.uiState.collectAsState()
     val tokens = inkTokens()
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -480,6 +486,7 @@ fun AdventurePlayScreen(
     var selectionAddTextVisible by remember { mutableStateOf(false) }
     var sceneArtMenuOpen by remember { mutableStateOf(false) }
     var showAppPictures by remember { mutableStateOf(false) }
+    var showCharacterCards by rememberSaveable { mutableStateOf(false) }
     // 0 normal, 1 collapsed (thin strip), 2 enlarged.
     var sceneArtSize by rememberSaveable { mutableStateOf(0) }
     var modelSearch by rememberSaveable { mutableStateOf("") }
@@ -562,6 +569,10 @@ fun AdventurePlayScreen(
                 onApply = viewModel::applyCampaignSetup,
                 onRestart = viewModel::restartAdventure,
                 customSettings = state.customSettingTemplates,
+                favoriteSettingIds = state.favoriteSettingTemplateIds,
+                favoriteSettingDetailIds = state.favoriteSettingDetailIds,
+                onToggleSettingFavorite = viewModel::toggleFavoriteSettingTemplate,
+                onToggleSettingDetailFavorite = viewModel::toggleFavoriteSettingDetail,
                 onAddSetting = viewModel::addSettingTemplate,
                 onRemoveSetting = viewModel::removeSettingTemplate,
             )
@@ -748,6 +759,13 @@ fun AdventurePlayScreen(
                 )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (!startupPending) {
+                        InkTextButton(
+                            label = "Character cards",
+                            onClick = { showCharacterCards = true },
+                            compact = true,
+                        )
+                    }
                     InkTextButton(
                         label = "Setup",
                         onClick = viewModel::beginCampaignSetup,
@@ -1226,6 +1244,20 @@ fun AdventurePlayScreen(
             onDismiss = { showAppPictures = false },
         )
     }
+    if (showCharacterCards) {
+        CampaignCharacterCardsDialog(
+            members = partyState.players.filter { it.id == state.activeCampaignPersonaId } + partyState.cast,
+            onDismiss = { showCharacterCards = false },
+            onOpen = { member ->
+                showCharacterCards = false
+                if (member.isPlayer && member.sheetCharacterId == null) {
+                    onOpenPersona(member.id)
+                } else {
+                    onOpenCharacter(member.sheetCharacterId ?: member.id)
+                }
+            },
+        )
+    }
     if (showAddText) {
         AddTextDialog(
             initialText = clipboard.getText()?.text.orEmpty(),
@@ -1318,11 +1350,114 @@ fun AdventurePlayScreen(
             onApply = viewModel::applyCampaignSetup,
             onRestart = viewModel::restartAdventure,
             customSettings = state.customSettingTemplates,
+            favoriteSettingIds = state.favoriteSettingTemplateIds,
+            favoriteSettingDetailIds = state.favoriteSettingDetailIds,
+            onToggleSettingFavorite = viewModel::toggleFavoriteSettingTemplate,
+            onToggleSettingDetailFavorite = viewModel::toggleFavoriteSettingDetail,
             onAddSetting = viewModel::addSettingTemplate,
             onRemoveSetting = viewModel::removeSettingTemplate,
         )
     }
     }
+}
+
+@Composable
+private fun CampaignCharacterCardsDialog(
+    members: List<PartyMemberUi>,
+    onDismiss: () -> Unit,
+    onOpen: (PartyMemberUi) -> Unit,
+) {
+    val tokens = inkTokens()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Campaign character cards") },
+        text = {
+            if (members.isEmpty()) {
+                Text("No character cards are attached to this party yet.", color = tokens.secondaryText)
+            } else {
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
+                ) {
+                    items(members, key = { "campaign-card-${it.isPlayer}-${it.id}" }) { member ->
+                        Column(
+                            modifier = Modifier
+                                .width(260.dp)
+                                .heightIn(min = 390.dp, max = 500.dp)
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(tokens.panel)
+                                .border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(18.dp))
+                                .padding(6.dp)
+                                .border(1.dp, tokens.hairline, RoundedCornerShape(13.dp))
+                                .padding(InkSpacing.sm),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(
+                                if (member.isPlayer) "PLAYER CHARACTER" else "PARTY CHARACTER",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(220.dp)
+                                    .padding(vertical = InkSpacing.xs)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(tokens.hover)
+                                    .border(1.dp, tokens.hairline, RoundedCornerShape(10.dp)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (member.portraitPath.isNotBlank()) {
+                                    AsyncImage(
+                                        model = File(member.portraitPath),
+                                        contentDescription = "${member.name} character-card art",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                } else {
+                                    com.ihy2ln.weaverse.feature.roleplay.friends.CharacterAvatar(
+                                        name = member.name,
+                                        colorHex = member.avatarColorHex,
+                                        size = 128.dp,
+                                        present = member.isPlayer,
+                                    )
+                                }
+                            }
+                            Text(
+                                member.name,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            if (member.sheetLabel.isNotBlank()) {
+                                Text(
+                                    "${member.sheetLabel} · HP ${member.hpLabel} · AC ${member.armorClassLabel}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = tokens.secondaryText,
+                                )
+                            }
+                            if (member.summary.isNotBlank()) {
+                                Text(
+                                    member.summary,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = tokens.secondaryText,
+                                    maxLines = 3,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(top = InkSpacing.xs),
+                                )
+                            }
+                            InkOutlinedButton(
+                                label = "Open full character sheet",
+                                onClick = { onOpen(member) },
+                                modifier = Modifier.fillMaxWidth().padding(top = InkSpacing.sm),
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { InkTextButton(label = "Close", onClick = onDismiss) },
+    )
 }
 
 @Composable

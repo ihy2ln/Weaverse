@@ -82,29 +82,44 @@ data class CampaignSettingTemplate(
     val id: String,
     val label: String,
     val directive: String,
+    val section: String = "Other worlds",
+    val theme: String = "General",
 )
 
 data class CampaignHouseRuleTemplate(val id: String, val label: String, val directive: String)
-data class CampaignSettingDetailTemplate(val id: String, val label: String, val details: String)
+data class CampaignSettingDetailTemplate(
+    val id: String,
+    val label: String,
+    val details: String,
+    val section: String = "Everyday adventure",
+    val theme: String = "General",
+)
 
 val CampaignSettingDetailTemplates = listOf(
-    CampaignSettingDetailTemplate("frontier", "Frontier settlement", "A remote settlement at the edge of mapped lands, surrounded by old roads, ruins, and competing claims."),
-    CampaignSettingDetailTemplate("city", "Factional city", "A crowded city of guilds, noble houses, undercity networks, and public choices that shift faction power."),
-    CampaignSettingDetailTemplate("wilds", "Wilderness expedition", "A dangerous wilderness expedition where weather, supplies, discovery, and travel routes shape the adventure."),
-    CampaignSettingDetailTemplate("war", "War-torn realm", "A realm divided by active conflict, with scarce resources, shifting borders, refugees, and hard moral decisions."),
-    CampaignSettingDetailTemplate("coastal", "Stormbound coast", "A chain of salt-worn ports and lighthouse villages where storms, smugglers, sea ruins, and rival captains shape every journey."),
-    CampaignSettingDetailTemplate("sky", "Sky-island frontier", "Floating islands drift above a cloud sea; airship routes, ancient weather engines, and falling ruins turn travel into discovery."),
-    CampaignSettingDetailTemplate("undercity", "Under-city intrigue", "A prosperous city sits over a hidden world of tunnels, forgotten gods, secret markets, and factions competing below the streets."),
-    CampaignSettingDetailTemplate("academy", "Arcane academy", "A living school of magic and rival apprentices where lessons, forbidden experiments, faculty politics, and student bonds drive the story."),
-    CampaignSettingDetailTemplate("wasteland", "Reclaimed wasteland", "Survivors rebuild among broken roads and scarce water while expeditions recover lost technology and negotiate with rival enclaves."),
-    CampaignSettingDetailTemplate("fae", "Fey borderlands", "A mortal village borders a beautiful, dangerous fey realm where names, promises, seasons, and bargains have literal power."),
-    CampaignSettingDetailTemplate("clockwork", "Clockwork metropolis", "A soot-dark metropolis runs on gears, contracts, and living engines while inventors, labor guilds, and old houses fight for control."),
-    CampaignSettingDetailTemplate("cosmic", "Stars beyond the veil", "Strange lights and impossible visitors appear in a familiar world, drawing the party into a mystery that reaches beyond the sky."),
-    CampaignSettingDetailTemplate("adult-plot", "Porn with plot · 18+", "An adult-only erotic romance campaign where all characters are consenting adults and intimate content supports character arcs, mystery, and story stakes."),
-    CampaignSettingDetailTemplate("adult-smut", "Smut romance · 18+", "An adult-only, consent-forward romance campaign focused on emotional chemistry, relationship choices, and fade-to-black intimate scenes."),
-    CampaignSettingDetailTemplate("adult-hentai", "Hentai fantasy · 18+", "An adult-only anime-inspired erotic fantasy with exaggerated magic and romance; every character is an adult and consent is explicit."),
-    CampaignSettingDetailTemplate("adult-ecchi", "Ecchi comedy · 18+", "An adult-only playful romantic comedy with suggestive misunderstandings, ensemble chemistry, and non-explicit fan-service; no minors or coercion."),
-    CampaignSettingDetailTemplate("custom", "Custom setting details", "Describe the kingdom, era, locations, factions, tone, and boundaries in your own words."),
+    CampaignSettingDetailTemplate("frontier", "Frontier settlement", "A remote settlement at the edge of mapped lands, surrounded by old roads, ruins, and competing claims.", "Everyday adventure", "Settlements"),
+    CampaignSettingDetailTemplate("city", "Factional city", "A crowded city of guilds, noble houses, undercity networks, and public choices that shift faction power.", "Mystery & intrigue", "Urban intrigue"),
+    CampaignSettingDetailTemplate("wilds", "Wilderness expedition", "A dangerous wilderness expedition where weather, supplies, discovery, and travel routes shape the adventure.", "Action", "Expeditions"),
+    CampaignSettingDetailTemplate("war", "War-torn realm", "A realm divided by active conflict, with scarce resources, shifting borders, refugees, and hard moral decisions.", "Action", "War stories"),
+    CampaignSettingDetailTemplate("coastal", "Stormbound coast", "A chain of salt-worn ports and lighthouse villages where storms, smugglers, sea ruins, and rival captains shape every journey.", "Fantasy", "Fantasy locations"),
+    CampaignSettingDetailTemplate("sky", "Sky-island frontier", "Floating islands drift above a cloud sea; airship routes, ancient weather engines, and falling ruins turn travel into discovery.", "Fantasy", "High fantasy"),
+    CampaignSettingDetailTemplate("undercity", "Under-city intrigue", "A prosperous city sits over a hidden world of tunnels, forgotten gods, secret markets, and factions competing below the streets.", "Mystery & intrigue", "Urban intrigue"),
+    CampaignSettingDetailTemplate("academy", "Arcane academy", "A living school of magic and rival apprentices where lessons, forbidden experiments, faculty politics, and student bonds drive the story.", "Fantasy", "Magic & academy"),
+    CampaignSettingDetailTemplate("wasteland", "Reclaimed wasteland", "Survivors rebuild among broken roads and scarce water while expeditions recover lost technology and negotiate with rival enclaves.", "Horror & survival", "Post-apocalypse"),
+    CampaignSettingDetailTemplate("fae", "Fey borderlands", "A mortal village borders a beautiful, dangerous fey realm where names, promises, seasons, and bargains have literal power.", "Fantasy", "Fey & folklore"),
+    CampaignSettingDetailTemplate("clockwork", "Clockwork metropolis", "A soot-dark metropolis runs on gears, contracts, and living engines while inventors, labor guilds, and old houses fight for control.", "Science fiction", "Steampunk"),
+    CampaignSettingDetailTemplate("cosmic", "Stars beyond the veil", "Strange lights and impossible visitors appear in a familiar world, drawing the party into a mystery that reaches beyond the sky.", "Science fiction", "Cosmic mystery"),
+    CampaignSettingDetailTemplate("slow-life", "Slow life", "Center play on a comfortable home, daily routines, crafting, farming, cooking, friendships, festivals, and gradual community growth. Keep danger optional and let small personal goals matter.", "Everyday adventure", "Slow life & cozy"),
+    CampaignSettingDetailTemplate("overpowered", "Overpowered protagonist", "The protagonist begins exceptionally capable and may overwhelm ordinary threats. Preserve depth through discovery, responsibility, relationships, political consequences, unusual counters, and goals that raw power cannot solve.", "Power fantasy", "Overpowered hero"),
+    CampaignSettingDetailTemplate("action-blockbuster", "Blockbuster action movie", "Frame scenes like a big-budget action film: clear objectives, kinetic set pieces, daring rescues, escalating complications, memorable villains, and breathers between major sequences.", "Action", "Movies & television"),
+    CampaignSettingDetailTemplate("action-anime", "High-action anime", "Use fast, expressive action, named techniques, rival growth, team combinations, dramatic reversals, and emotional stakes while keeping the app's selected rules authoritative.", "Action", "Anime & games"),
+    CampaignSettingDetailTemplate("action-superhero", "Superhero team-up", "Build around public heroics, secret identities, rescue priorities, colorful adversaries, collateral consequences, and team relationships that matter as much as winning fights.", "Action", "Comics & superheroes"),
+    CampaignSettingDetailTemplate("fantasy-quest", "Epic fantasy quest", "A long journey crosses distinct realms, ancient ruins, rival powers, monsters, and cultures while a growing party confronts a threat larger than any one kingdom.", "Fantasy", "High fantasy"),
+    CampaignSettingDetailTemplate("fantasy-low-magic", "Low-magic realm", "Magic is rare, feared, costly, or politically controlled. Travel, steel, reputation, alliances, and practical knowledge solve most problems.", "Fantasy", "Low fantasy"),
+    CampaignSettingDetailTemplate("adult-plot", "Porn with plot · 18+", "An adult-only erotic romance campaign where all characters are consenting adults and intimate content supports character arcs, mystery, and story stakes.", "18+", "Adult story styles"),
+    CampaignSettingDetailTemplate("adult-smut", "Smut romance · 18+", "An adult-only, consent-forward romance campaign focused on emotional chemistry, relationship choices, and fade-to-black intimate scenes.", "18+", "Adult story styles"),
+    CampaignSettingDetailTemplate("adult-hentai", "Hentai fantasy · 18+", "An adult-only anime-inspired erotic fantasy with exaggerated magic and romance; every character is an adult and consent is explicit.", "18+", "Adult anime themes"),
+    CampaignSettingDetailTemplate("adult-ecchi", "Ecchi comedy · 18+", "An adult-only playful romantic comedy with suggestive misunderstandings, ensemble chemistry, and non-explicit fan-service; no minors or coercion.", "18+", "Adult anime themes"),
+    CampaignSettingDetailTemplate("custom", "Custom setting details", "Describe the kingdom, era, locations, factions, tone, and boundaries in your own words.", "Custom", "Write your own"),
 )
 
 /** Curated defaults used by both campaign creation and the RPG options sheet. */
@@ -173,116 +188,218 @@ val CampaignSettingTemplates = listOf(
         "adams-haven",
         "Adams Haven · Elysium Vale",
         "Run Adams Haven as a first-person card-RPG in Elysium Vale. The player is the off-field Summoner who commands a shared hand, grows a Haven from a shack, and links dungeon expeditions, battle-grown crops, Town services, and Home preparation into one progression loop.",
+        "Adams Haven",
+        "Core worlds",
+    ),
+    CampaignSettingTemplate(
+        "adams-haven-aqualuria",
+        "Adams Haven · Aqualuria",
+        "Run an Adams Haven campaign on Aqualuria, an ocean-dominated world of island settlements, submerged ruins, sea routes, aquatic peoples, and dangerous weather. Treat imported Adams Haven lore as authoritative and connect exploration, relationships, and survival to the selected RPG mode.",
+        "Adams Haven",
+        "Other planets",
+    ),
+    CampaignSettingTemplate(
+        "adams-haven-arcanis",
+        "Adams Haven · Arcanis",
+        "Run an Adams Haven campaign on Arcanis, a magic-rich world where arcane institutions, living relics, rival traditions, and unstable wonders shape daily life. Preserve established Adams Haven characters and lore while letting the chosen rules govern play.",
+        "Adams Haven",
+        "Other planets",
+    ),
+    CampaignSettingTemplate(
+        "adams-haven-elysara",
+        "Adams Haven · Elysara",
+        "Run an Adams Haven campaign on Elysara, a beautiful but politically layered world of cultivated city-states, old estates, hidden histories, and powerful social bonds. Use available imported lore first and build new details consistently around it.",
+        "Adams Haven",
+        "Other planets",
+    ),
+    CampaignSettingTemplate(
+        "adams-haven-heroica",
+        "Adams Haven · Heroica",
+        "Run an Adams Haven campaign on Heroica, where heroic orders, public quests, dangerous frontiers, rival champions, and legendary trials make adventure part of civic life. Balance spectacle with companion consequences and player choice.",
+        "Adams Haven",
+        "Other planets",
+    ),
+    CampaignSettingTemplate(
+        "adams-haven-mythoria",
+        "Adams Haven · Mythoria",
+        "Run an Adams Haven campaign on Mythoria, a broad mythic world of distinct continents, old civilizations, gods, monsters, trade routes, and regional conflicts. Anchor scenes in the imported Mythoria lore and maps whenever they are available.",
+        "Adams Haven",
+        "Other planets",
+    ),
+    CampaignSettingTemplate(
+        "adams-haven-nexara-prime",
+        "Adams Haven · Nexara Prime",
+        "Run an Adams Haven campaign on Nexara Prime, a dense science-fantasy world of advanced cities, corporate and civic factions, artificial systems, off-world traffic, and technology that collides with the wider WeaverVerse.",
+        "Adams Haven",
+        "Other planets",
+    ),
+    CampaignSettingTemplate(
+        "adams-haven-veridian",
+        "Adams Haven · Veridian",
+        "Run an Adams Haven campaign on Veridian, a verdant world of vast living landscapes, frontier communities, unusual ecosystems, lost sites, and competing ideas about settlement and stewardship.",
+        "Adams Haven",
+        "Other planets",
+    ),
+    CampaignSettingTemplate(
+        "adams-haven-serenity-atoll",
+        "Adams Haven · Serenity Atoll",
+        "Run an Adams Haven campaign centered on Serenity Atoll, an isolated tropical refuge whose communities, reefs, routes, secrets, and outside pressures support slow-life play as well as sudden adventure.",
+        "Adams Haven",
+        "Colonies & refuges",
     ),
     CampaignSettingTemplate(
         "high-fantasy",
         "High fantasy",
         "Run a high-fantasy world of ancient kingdoms, dungeon delves, dangerous wilderness, monsters, magic, gods, factions, treasure, and heroic quests. Present locations as explorable spaces and seed meaningful choices, secrets, and consequences.",
+        "Fantasy",
+        "Classic fantasy",
     ),
     CampaignSettingTemplate(
         "dark-fantasy",
         "Dark fantasy",
         "Run a morally difficult fantasy world shaped by curses, corruption, scarce safety, frightening magic, compromised factions, and costly victories. Keep danger serious without removing player agency or fair warning.",
+        "Fantasy",
+        "Dark fantasy",
     ),
     CampaignSettingTemplate(
         "highschool-of-the-dead",
         "Highschool of the Dead-inspired",
         "Run an age-appropriate zombie survival horror campaign centered on a school evacuation, improvised defenses, dwindling supplies, and hard choices during a fast-moving outbreak. Keep the tone tense and pulpy; do not sexualize minors or include explicit sexual content involving students.",
+        "Horror & survival",
+        "Zombie media",
     ),
     CampaignSettingTemplate(
         "walking-dead",
         "The Walking Dead-inspired",
         "Run a grounded survivor drama after society collapses: scarce food, fortified shelters, roaming dead, rival communities, difficult moral choices, and relationships tested by every loss. Keep violence consequential and hope earned.",
+        "Horror & survival",
+        "Zombie media",
     ),
     CampaignSettingTemplate(
         "world-war-z",
         "World War Z-inspired",
         "Run a global outbreak thriller with rapid infection, mass evacuations, desperate logistics, shifting fronts, and survivor stories across cities and continents. Emphasize coordinated action, credible public response, and human resilience.",
+        "Horror & survival",
+        "Zombie media",
     ),
     CampaignSettingTemplate(
         "zombie-apocalypse",
         "Original zombie apocalypse",
         "Run an original zombie setting with your choice of outbreak cause, infection rules, survivor communities, safe zones, factions, and rebuilding goals. Define the threat clearly and let preparation, trust, and resource choices shape survival.",
+        "Horror & survival",
+        "Original apocalypse",
     ),
     CampaignSettingTemplate(
         "sword-sorcery",
         "Sword & sorcery",
         "Run a pulpy sword-and-sorcery world of decadent city-states, dangerous ruins, personal ambition, strange cults, mercenary work, and rare unsettling magic. Favor immediate stakes and adventurous momentum over world-saving destiny.",
+        "Fantasy",
+        "Classic fantasy",
     ),
     CampaignSettingTemplate(
         "gothic-horror",
         "Gothic horror",
         "Run a gothic-horror setting of isolated communities, decaying estates, family secrets, supernatural dread, investigation, and temptation. Build tension through clues and atmosphere while keeping threats actionable at the table.",
+        "Horror & survival",
+        "Supernatural horror",
     ),
     CampaignSettingTemplate(
         "urban-fantasy",
         "Urban fantasy",
         "Run a modern city where supernatural communities, hidden magic, institutions, neighborhoods, and mundane life collide. Treat information, favors, territory, and relationships as important adventure resources.",
+        "Fantasy",
+        "Modern fantasy",
     ),
     CampaignSettingTemplate(
         "science-fantasy",
         "Science fantasy",
         "Run a science-fantasy world where advanced relics, strange planets or ruins, sorcery, nonhuman cultures, and lost civilizations coexist. Keep technology and magic wondrous but internally consistent.",
+        "Science fiction",
+        "Science fantasy",
     ),
     CampaignSettingTemplate(
         "genshin-impact",
         "Genshin Impact · Teyvat",
         "Run a campaign in Teyvat: seven nations each ruled by an Archon and shaped by an ideal — Mondstadt (Freedom), Liyue (Contracts), Inazuma (Eternity), Sumeru (Wisdom), Fontaine (Justice), Natlan (War), and Snezhnaya (the Tsaritsa's Snow). Mortals blessed with Visions channel one of seven elements (Anemo, Geo, Electro, Dendro, Hydro, Pyro, Cryo); elemental reactions matter in and out of combat. Weave in the Fatui and the Eleven Harbingers as scheming antagonists, the Abyss Order in the ruins below, Celestia's distant watchers, plus Paimon-style traveling-companion banter. Keep the tone bright, adventurous, and food-loving, with courts, guilds, festivals, and ancient civilizations buried beneath each nation.",
+        "Games & media",
+        "Anime action RPGs",
     ),
     CampaignSettingTemplate(
         "wuthering-waves",
         "Wuthering Waves · Solaris-3",
         "Run a campaign on Solaris-3 after the Lament: a ruined, echoing world where civilization clings to pockets like Jinzhou and the Midnight Rangers fight back. Players are Resonators whose bodies channel frequencies; Tacet Discords — monstrous echo-beasts born of the Lament — stalk the wilds and can be absorbed as Echoes to borrow their shapes and powers. Factions like the Fractsidus exploit the calamity; Sentinels, Resonance Beacons, and reverberating ruins reward exploration. Favor kinetic, agile combat, sound-and-frequency motifs, mystery-driven storytelling, and the slow restoration of a broken world.",
+        "Games & media",
+        "Anime action RPGs",
     ),
     CampaignSettingTemplate(
         "brown-dust-2",
         "Brown Dust 2",
         "Run a campaign in Brown Dust 2's mercenary dark fantasy: a wartorn continent of hardened sellsword companies, scheming nobles and churches, ancient evil stirring beneath politics, and small frontier towns caught between them. Emphasize tactical squad play — a band of specialists with distinct kits working together — bittersweet character drama, morally gray contracts, and vignette-style episodes (a haunted village, a caravan run, an arena scheme). Keep the tone mature but warm: loyal companions, hard choices, and hard-won small victories.",
+        "Games & media",
+        "Tactical fantasy games",
     ),
     CampaignSettingTemplate(
         "world-of-warcraft",
         "World of Warcraft · Azeroth",
         "Run a campaign on Azeroth: the Alliance and the Horde in uneasy truce, races and cultures from Stormwind to Orgrimmar, Darnassus to Silvermoon. Class fantasies (warrior, mage, paladin, druid, warlock, shaman, rogue, priest, hunter, death knight, demon hunter, monk, evoker) with levelled abilities, dungeons and raids as expedition set-pieces, and iconic threats: the Scourge, the Burning Legion, Old Gods whispering beneath the earth, dragons and their Aspects, and faction politics that can erupt into war at any moment. Grand, high-adventure tone with taverns, mounts, profession crafting, and zones that each tell their own story.",
+        "Games & media",
+        "Online fantasy worlds",
     ),
     CampaignSettingTemplate(
         "ff14",
         "Final Fantasy XIV · Hydaelyn",
         "Run a campaign on Hydaelyn: the city-states of Eorzea (Gridania's wood, Limsa Lominsa's seas, Ul'dah's sands) and beyond to Ishgard, Doma, and the Garlean Empire. Players are adventurers — potentially the Warrior of Light — blessed with the Echo, able to survive primal tempering and witness the past. Primals summon gods from belief and aether; Ascians scheme across the shards; jobs (paladin, white mage, black mage, dragoon, summoner, sage, reaper, and more) define combat identity. Emphasize found fellowship, duty and sacrifice, aether as the stuff of souls, crystal-centric lore, grand emotional story beats, and small-party tactical play.",
+        "Games & media",
+        "Online fantasy worlds",
     ),
     CampaignSettingTemplate(
         "elder-scrolls",
         "The Elder Scrolls · Tamriel",
         "Run an open-ended Tamriel campaign of guilds, ruins, competing provinces, Daedric bargains, flexible skills, exploration, crafting, and player-led discovery. Keep factions morally layered and let small local choices reshape later opportunities.",
+        "Games & media",
+        "Western fantasy RPGs",
     ),
     CampaignSettingTemplate(
         "dragon-age",
         "Dragon Age · Thedas",
         "Run a party-driven Thedas campaign of darkspawn, the Fade, templar-mage tension, court politics, companion loyalty, consequential dialogue, and difficult choices whose results return later.",
+        "Games & media",
+        "Western fantasy RPGs",
     ),
     CampaignSettingTemplate(
         "baldurs-gate-3",
         "Baldur's Gate 3 · Forgotten Realms",
         "Run a cinematic Forgotten Realms campaign with interactive environments, companion agendas, branching quests, tactical encounters, unusual problem solving, camp conversations, and consequences that honor player improvisation.",
+        "Games & media",
+        "Western fantasy RPGs",
     ),
     CampaignSettingTemplate(
         "persona",
         "Persona-style urban fantasy",
         "Run a calendar-driven urban fantasy where ordinary daily life, relationships, school or work, and a hidden symbolic dungeon reinforce one another. Social bonds unlock practical adventure benefits without replacing the core mystery.",
+        "Games & media",
+        "Modern character RPGs",
     ),
     CampaignSettingTemplate(
         "fire-emblem",
         "Fire Emblem-style war chronicle",
         "Run a character-led war chronicle of rival kingdoms, tactical deployments, class growth, support bonds, political consequences, and a mobile home base. Make every recruited ally distinct in voice and battlefield purpose.",
+        "Games & media",
+        "Tactical fantasy games",
     ),
     CampaignSettingTemplate(
         "mass-effect",
         "Mass Effect-style space opera",
         "Run a squad-focused galactic space opera with a customizable commander, shipboard Home hub, loyalty missions, species and faction politics, tactical powers, exploration, and decisions that alter later missions.",
+        "Science fiction",
+        "Space opera",
     ),
     CampaignSettingTemplate(
         "custom",
         "Custom setting",
         "Use the player's setting details as the authoritative world guide. Infer only what is needed for play, remain internally consistent, and ask or offer choices instead of overwriting established lore.",
+        "Custom",
+        "Write your own",
     ),
 )
 
@@ -418,6 +535,11 @@ data class CreateWorkVocabulary(
 fun CreateWorkDialog(
     vocabulary: CreateWorkVocabulary,
     characterOptions: List<WorkCharacterOption> = emptyList(),
+    customSettings: List<CampaignSettingTemplate> = emptyList(),
+    favoriteSettingIds: Set<String> = emptySet(),
+    favoriteSettingDetailIds: Set<String> = emptySet(),
+    onToggleSettingFavorite: (String) -> Unit = {},
+    onToggleSettingDetailFavorite: (String) -> Unit = {},
     onDismiss: () -> Unit,
     onCreate: (NewWorkDetails) -> Unit,
 ) {
@@ -454,6 +576,7 @@ fun CreateWorkDialog(
     var mangaFileName by remember { mutableStateOf("") }
     val isCampaign = vocabulary.campaignSpecific
     val isTextGame = vocabulary.textGameSpecific
+    val effectiveSettings = CampaignSettingTemplates + customSettings
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -556,45 +679,56 @@ fun CreateWorkDialog(
                     }
                 } else if (isCampaign) {
                     Text("Setting template", style = MaterialTheme.typography.labelMedium)
-                    Box(modifier = Modifier.fillMaxWidth()) {
+                    if (isTextGame) {
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            InkOutlinedButton(
+                                label = (effectiveSettings.firstOrNull { it.id == settingId }?.label ?: "Choose setting") + " ▾",
+                                onClick = { settingMenuOpen = true },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            DropdownMenu(expanded = settingMenuOpen, onDismissRequest = { settingMenuOpen = false }) {
+                                effectiveSettings.forEach { template ->
+                                    DropdownMenuItem(
+                                        text = { Text(template.label) },
+                                        onClick = { settingId = template.id; settingMenuOpen = false },
+                                    )
+                                }
+                            }
+                        }
+                    } else {
                         InkOutlinedButton(
-                            label = CampaignSettingTemplates.first { it.id == settingId }.label + " ▾",
+                            label = (effectiveSettings.firstOrNull { it.id == settingId }?.label ?: "Choose setting") + " ▸",
                             onClick = { settingMenuOpen = true },
                             modifier = Modifier.fillMaxWidth(),
                         )
-                        DropdownMenu(
-                            expanded = settingMenuOpen,
-                            onDismissRequest = { settingMenuOpen = false },
-                        ) {
-                            CampaignSettingTemplates.forEach { template ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Column {
-                                            Text(template.label)
-                                            Text(
-                                                template.directive,
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = tokens.secondaryText,
-                                                maxLines = 3,
-                                            )
-                                        }
-                                    },
-                                    onClick = {
-                                        settingId = template.id
-                                        settingMenuOpen = false
-                                    },
-                                )
-                            }
-                        }
                     }
                     Text("Setting Details preset", style = MaterialTheme.typography.labelMedium)
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        InkOutlinedButton(label = CampaignSettingDetailTemplates.first { it.id == settingDetailId }.label + " ▾", onClick = { settingDetailMenuOpen = true }, modifier = Modifier.fillMaxWidth())
-                        DropdownMenu(expanded = settingDetailMenuOpen, onDismissRequest = { settingDetailMenuOpen = false }) {
-                            CampaignSettingDetailTemplates.forEach { preset ->
-                                DropdownMenuItem(text = { Column { Text(preset.label); Text(preset.details, style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText, maxLines = 3) } }, onClick = { settingDetailId = preset.id; if (genre.isBlank()) genre = preset.details; settingDetailMenuOpen = false })
+                    if (isTextGame) {
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            InkOutlinedButton(
+                                label = (CampaignSettingDetailTemplates.firstOrNull { it.id == settingDetailId }?.label ?: "Choose details") + " ▾",
+                                onClick = { settingDetailMenuOpen = true },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            DropdownMenu(expanded = settingDetailMenuOpen, onDismissRequest = { settingDetailMenuOpen = false }) {
+                                CampaignSettingDetailTemplates.forEach { preset ->
+                                    DropdownMenuItem(
+                                        text = { Text(preset.label) },
+                                        onClick = {
+                                            settingDetailId = preset.id
+                                            if (genre.isBlank()) genre = preset.details
+                                            settingDetailMenuOpen = false
+                                        },
+                                    )
+                                }
                             }
                         }
+                    } else {
+                        InkOutlinedButton(
+                            label = (CampaignSettingDetailTemplates.firstOrNull { it.id == settingDetailId }?.label ?: "Choose details") + " ▸",
+                            onClick = { settingDetailMenuOpen = true },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                     }
                     OutlinedTextField(
                         value = genre,
@@ -894,7 +1028,8 @@ fun CreateWorkDialog(
                     NewWorkDetails(
                         title = title.trim().ifBlank { vocabulary.titlePlaceholder },
                         genre = if (isCampaign) {
-                            val settingLabel = CampaignSettingTemplates.first { it.id == settingId }.label
+                            val settingLabel = effectiveSettings.firstOrNull { it.id == settingId }?.label
+                                ?: "Custom setting"
                             listOf(settingLabel, genre.trim()).filter { it.isNotBlank() }.joinToString(" — ")
                         } else genre.trim(),
                         pov = if (isCampaign) {
@@ -904,7 +1039,7 @@ fun CreateWorkDialog(
                         tense = if (isTextGame) "Present tense" else tense.trim().ifBlank { if (isCampaign) "Past tense" else "" },
                         styleGuide = if (isCampaign) {
                             listOf(
-                                "Setting guidance: ${CampaignSettingTemplates.first { it.id == settingId }.directive}",
+                                "Setting guidance: ${effectiveSettings.firstOrNull { it.id == settingId }?.directive.orEmpty()}",
                                 "Setting details preset: ${CampaignSettingDetailTemplates.first { it.id == settingDetailId }.details}",
                                 "Game mode: ${CampaignGameModeTemplates.first { it.id == gameModeId }.label}. ${CampaignGameModeTemplates.first { it.id == gameModeId }.description}",
                                 "Rule system guidance: ${CampaignRulesetTemplates.first { it.id == rulesetId }.directive}",
@@ -951,4 +1086,34 @@ fun CreateWorkDialog(
             TextButton(onClick = onDismiss) { Text("Cancel") }
         },
     )
+
+    if (isCampaign && !isTextGame && settingMenuOpen) {
+        CampaignPresetBrowserDialog(
+            title = "Setting templates",
+            items = campaignSettingBrowserItems(customSettings),
+            selectedId = settingId,
+            favoriteIds = favoriteSettingIds,
+            onToggleFavorite = onToggleSettingFavorite,
+            onSelect = { preset ->
+                settingId = preset.id
+                settingMenuOpen = false
+            },
+            onDismiss = { settingMenuOpen = false },
+        )
+    }
+    if (isCampaign && !isTextGame && settingDetailMenuOpen) {
+        CampaignPresetBrowserDialog(
+            title = "Setting details",
+            items = campaignSettingDetailBrowserItems(),
+            selectedId = settingDetailId,
+            favoriteIds = favoriteSettingDetailIds,
+            onToggleFavorite = onToggleSettingDetailFavorite,
+            onSelect = { preset ->
+                settingDetailId = preset.id
+                genre = preset.description
+                settingDetailMenuOpen = false
+            },
+            onDismiss = { settingDetailMenuOpen = false },
+        )
+    }
 }

@@ -195,6 +195,13 @@ fun AppShell(
             } else {
                 emptyList()
             },
+            customSettings = com.ihy2ln.weaverse.core.ui.components.decodeCampaignSettingTemplates(
+                prefs.customSettingTemplates,
+            ),
+            favoriteSettingIds = prefs.favoriteSettingTemplateIds,
+            favoriteSettingDetailIds = prefs.favoriteSettingDetailIds,
+            onToggleSettingFavorite = shellViewModel::toggleFavoriteSettingTemplate,
+            onToggleSettingDetailFavorite = shellViewModel::toggleFavoriteSettingDetail,
             onDismiss = { creatingWork = null },
             onCreate = { details ->
                 // Campaigns and storyboards are both manuscripts underneath, so one
@@ -1024,6 +1031,8 @@ fun AppShell(
                                             chatId = chatId,
                                             onChromeChange = { rpChrome = it },
                                             onOpenCodexEntry = { selectedCodexEntryId = it },
+                                            onOpenCharacter = { selectedCharacterId = it },
+                                            onOpenPersona = { selectedPersonaId = it },
                                         )
                                     } else {
                                         WorkShelfScreen(

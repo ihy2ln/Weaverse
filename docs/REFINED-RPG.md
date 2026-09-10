@@ -14,6 +14,8 @@ Core RPG operations are:
 
 Campaign setup presents Setting Template, Setting Details preset/custom details, Mode, Rule system, Additional House Rules preset/custom rules, then character and table preferences. The three modes are Focused Tactical Cards, D&D d20, and Text Reactions. The mode selects the player-facing loop; the rule system supplies RPG conventions. Encounter overrides are transient and never rewrite the campaign default.
 
+Setting Template and Setting Details use a hierarchical main-section → theme → preset browser. Favorites are persisted independently for each catalog. The setting catalog includes the Adams Haven worlds; detail themes include fantasy, action media, survival, science fiction, 18+, Slow Life, and Overpowered Protagonist.
+
 ## Combat contract
 
 `RpgCombatRuleset`, `RpgCombatState`, `RpgEncounterSetup`, `RpgCombatAction`, `RpgCombatPreview`, `RpgCombatOutcome`, `RpgEnemyIntent`, and `RpgStatusEffect` are RPG-only types. Each mode resolves to the same normalized outcome contract so the adventure layer can update party HP/conditions, inventory and rewards, companions, factions/world changes, recap, and the next map node. No RPG combat class imports `textgame` packages.
@@ -21,6 +23,8 @@ Campaign setup presents Setting Template, Setting Details preset/custom details,
 ## Setup catalogs
 
 Backend catalogs provide starter setting details (Frontier, City, Wilds, War), house rules (Cinematic, Gritty, Heroic, Political), and custom entries. Preset identity is saved explicitly; custom text supplements or overrides guidance without erasing which preset was chosen.
+
+During an active scene, Character cards opens the campaign player and active party as horizontally scrollable playing cards. Cards expose portrait, class/level, HP, AC, and summary and link to the full editable sheet.
 
 ## UI and offline rules
 

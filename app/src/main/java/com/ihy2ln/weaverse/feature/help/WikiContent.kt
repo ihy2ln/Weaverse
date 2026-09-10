@@ -198,9 +198,15 @@ object WikiContent {
                   time from the Setup button.
                 - **Play as** — Character(s) (you act, AI runs the world) or
                   Dungeon Master (you run the world, AI plays the party).
-                - **Setting template** and setting details, **point of
-                  view**, **tense**, **rules system** (D&D 5e, Pathfinder 2e,
-                  older D&D, OSR, PbtA, Fate, custom), and **house rules**.
+                - **Setting template** and setting details use a three-level
+                  browser: main section, theme, then preset. Tap ☆ to place
+                  any preset in the persistent **Favorites** section. Adams
+                  Haven's worlds, Fantasy, Action, survival, science fiction,
+                  games/media, 18+, Slow Life and Overpowered Protagonist are
+                  organized here.
+                - **Point of view**, **tense**, **rules system** (D&D 5e,
+                  Pathfinder 2e, older D&D, OSR, PbtA, Fate, custom), and
+                  **house rules** complete setup.
 
                 Their full guidance is supplied to the game master during
                 play.
@@ -269,6 +275,11 @@ object WikiContent {
                 dice roll; the page shows the resolved outcome and
                 consequences. **Previous** browses saved scenes; **Next
                 scene ›** and **Stay here** control pacing.
+
+                Tap **Character cards** in the scene header to browse the
+                player and active party as full playing cards. The gallery
+                shows portrait art, class/level, HP, AC and character summary;
+                each card can open its complete editable sheet.
 
                 ## Codex links and lore in play
 

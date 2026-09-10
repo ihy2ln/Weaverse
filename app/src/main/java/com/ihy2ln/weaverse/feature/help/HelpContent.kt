@@ -83,6 +83,14 @@ object HelpContent {
                         "guidance is supplied to the game master during play.",
                 ),
                 HelpEntry(
+                    "Setting browsers and favorites",
+                    "Setting Template and Setting Details open as Main section → Theme → " +
+                        "Preset browsers. Sections include Adams Haven worlds, Fantasy, Action, " +
+                        "survival, science fiction, games/media, 18+, and Custom. Tap ☆ beside " +
+                        "any preset to keep it in Favorites. Slow Life and Overpowered " +
+                        "Protagonist are available under Setting Details.",
+                ),
+                HelpEntry(
                     "Mode and rule system",
                     "Campaign setup keeps Mode and Rule system separate. Focused Tactical Cards " +
                         "uses the Adams Haven card loop; D&D d20 uses the saved character sheet " +
@@ -159,6 +167,13 @@ object HelpContent {
                         "level, HP, and AC; tap one for its full stat sheet, or Inventory & gear " +
                         "for that same character's linked equipment. Add / remove changes the " +
                         "team while the wider cast stays in Lore.",
+                ),
+                HelpEntry(
+                    "Character cards during play",
+                    "Tap Character cards in an active scene to open a horizontally scrolling " +
+                        "gallery of the player and party cards. Each card shows its portrait, " +
+                        "class, level, HP, AC, and summary; Open full character sheet reveals " +
+                        "the editable record without ending the campaign.",
                 ),
                 HelpEntry(
                     "Inventory",

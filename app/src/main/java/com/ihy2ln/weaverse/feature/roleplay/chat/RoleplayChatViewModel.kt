@@ -292,6 +292,8 @@ class RoleplayChatViewModel @Inject constructor(
                             presetId = prefs.roleplayPresetId,
                             showExtraPromptSurfaces = prefs.extraPromptSurfaces.roleplayButtons,
                             customSettingTemplates = customSettingTemplates,
+                            favoriteSettingTemplateIds = prefs.favoriteSettingTemplateIds,
+                            favoriteSettingDetailIds = prefs.favoriteSettingDetailIds,
                         )
                     }
                 }
@@ -338,6 +340,7 @@ class RoleplayChatViewModel @Inject constructor(
                                 activePageId = activePage,
                                 activeTemplateId = activeTemplate,
                                 userIsDungeonMaster = userIsDungeonMaster(chat.authorsNote),
+                                activeCampaignPersonaId = chat.personaId,
                             )
                         }
                         migrateLegacyAdventureOpeningIfNeeded(chat)
@@ -3166,6 +3169,14 @@ class RoleplayChatViewModel @Inject constructor(
     /** Setup dialog: delete a user-defined setting template. */
     fun removeSettingTemplate(id: String) {
         viewModelScope.launch { settings.removeSettingTemplate(id) }
+    }
+
+    fun toggleFavoriteSettingTemplate(id: String) {
+        viewModelScope.launch { settings.toggleFavoriteSettingTemplate(id) }
+    }
+
+    fun toggleFavoriteSettingDetail(id: String) {
+        viewModelScope.launch { settings.toggleFavoriteSettingDetail(id) }
     }
 
     /**

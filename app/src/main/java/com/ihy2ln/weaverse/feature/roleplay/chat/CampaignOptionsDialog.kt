@@ -32,6 +32,9 @@ import com.ihy2ln.weaverse.core.ui.components.CampaignSettingDetailTemplates
 import com.ihy2ln.weaverse.core.ui.components.CampaignHouseRuleTemplates
 import com.ihy2ln.weaverse.core.ui.components.CampaignSettingTemplate
 import com.ihy2ln.weaverse.core.ui.components.CampaignSettingTemplates
+import com.ihy2ln.weaverse.core.ui.components.CampaignPresetBrowserDialog
+import com.ihy2ln.weaverse.core.ui.components.campaignSettingBrowserItems
+import com.ihy2ln.weaverse.core.ui.components.campaignSettingDetailBrowserItems
 import com.ihy2ln.weaverse.core.ui.components.InkChip
 import com.ihy2ln.weaverse.core.ui.components.InkOutlinedButton
 import com.ihy2ln.weaverse.core.ui.components.InkSegmentedPill
@@ -55,6 +58,10 @@ fun CampaignOptionsDialog(
     onApply: (NewWorkDetails) -> Unit,
     onRestart: (() -> Unit)? = null,
     customSettings: List<CampaignSettingTemplate> = emptyList(),
+    favoriteSettingIds: Set<String> = emptySet(),
+    favoriteSettingDetailIds: Set<String> = emptySet(),
+    onToggleSettingFavorite: (String) -> Unit = {},
+    onToggleSettingDetailFavorite: (String) -> Unit = {},
     onAddSetting: ((label: String, directive: String) -> Unit)? = null,
     onRemoveSetting: ((id: String) -> Unit)? = null,
 ) {
@@ -99,71 +106,13 @@ fun CampaignOptionsDialog(
                 verticalArrangement = Arrangement.spacedBy(InkSpacing.sm),
             ) {
                 Text("Setting template", style = MaterialTheme.typography.labelMedium)
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    InkOutlinedButton(
-                        label = (effectiveSettings.firstOrNull { it.id == settingId }?.label ?: "Custom setting") + " ▾",
-                        onClick = { settingMenuOpen = true },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    DropdownMenu(
-                        expanded = settingMenuOpen,
-                        onDismissRequest = { settingMenuOpen = false },
-                    ) {
-                        effectiveSettings.forEach { template ->
-                            DropdownMenuItem(
-                                text = {
-                                    Column {
-                                        Text(template.label)
-                                        Text(
-                                            template.directive,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = tokens.secondaryText,
-                                            maxLines = 3,
-                                        )
-                                    }
-                                },
-                                trailingIcon = if (
-                                    onRemoveSetting != null &&
-                                    template.id.startsWith("custom-")
-                                ) {
-                                    {
-                                        Text(
-                                            "✕",
-                                            color = MaterialTheme.colorScheme.error,
-                                            modifier = Modifier.padding(start = InkSpacing.xs),
-                                        )
-                                    }
-                                } else {
-                                    null
-                                },
-                                onClick = {
-                                    if (onRemoveSetting != null && template.id.startsWith("custom-") &&
-                                        settingId != template.id
-                                    ) {
-                                        onRemoveSetting(template.id)
-                                    } else {
-                                        settingId = template.id
-                                    }
-                                    settingMenuOpen = false
-                                },
-                            )
-                        }
-                        if (onAddSetting != null) {
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        "＋ New setting…",
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.SemiBold,
-                                    )
-                                },
-                                onClick = {
-                                    settingMenuOpen = false
-                                    showAddSetting = true
-                                },
-                            )
-                        }
-                    }
+                InkOutlinedButton(
+                    label = (effectiveSettings.firstOrNull { it.id == settingId }?.label ?: "Custom setting") + " ▸",
+                    onClick = { settingMenuOpen = true },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (onAddSetting != null) {
+                    TextButton(onClick = { showAddSetting = true }) { Text("＋ New setting template") }
                 }
                 if (showAddSetting) {
                     AlertDialog(
@@ -206,14 +155,11 @@ fun CampaignOptionsDialog(
                     )
                 }
                 Text("Setting Details preset", style = MaterialTheme.typography.labelMedium)
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    InkOutlinedButton(label = CampaignSettingDetailTemplates.first { it.id == settingDetailId }.label + " ▾", onClick = { settingDetailMenuOpen = true }, modifier = Modifier.fillMaxWidth())
-                    DropdownMenu(expanded = settingDetailMenuOpen, onDismissRequest = { settingDetailMenuOpen = false }) {
-                        CampaignSettingDetailTemplates.forEach { preset ->
-                            DropdownMenuItem(text = { Column { Text(preset.label); Text(preset.details, style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText, maxLines = 3) } }, onClick = { settingDetailId = preset.id; if (genre.isBlank()) genre = preset.details; settingDetailMenuOpen = false })
-                        }
-                    }
-                }
+                InkOutlinedButton(
+                    label = (CampaignSettingDetailTemplates.firstOrNull { it.id == settingDetailId }?.label ?: "Choose details") + " ▸",
+                    onClick = { settingDetailMenuOpen = true },
+                    modifier = Modifier.fillMaxWidth(),
+                )
                 OutlinedTextField(
                     value = genre,
                     onValueChange = { genre = it },
@@ -488,4 +434,35 @@ fun CampaignOptionsDialog(
             }
         },
     )
+
+    if (settingMenuOpen) {
+        CampaignPresetBrowserDialog(
+            title = "Setting templates",
+            items = campaignSettingBrowserItems(customSettings),
+            selectedId = settingId,
+            favoriteIds = favoriteSettingIds,
+            onToggleFavorite = onToggleSettingFavorite,
+            onSelect = { preset ->
+                settingId = preset.id
+                settingMenuOpen = false
+            },
+            onDismiss = { settingMenuOpen = false },
+            onRemove = onRemoveSetting,
+        )
+    }
+    if (settingDetailMenuOpen) {
+        CampaignPresetBrowserDialog(
+            title = "Setting details",
+            items = campaignSettingDetailBrowserItems(),
+            selectedId = settingDetailId,
+            favoriteIds = favoriteSettingDetailIds,
+            onToggleFavorite = onToggleSettingDetailFavorite,
+            onSelect = { preset ->
+                settingDetailId = preset.id
+                genre = preset.description
+                settingDetailMenuOpen = false
+            },
+            onDismiss = { settingDetailMenuOpen = false },
+        )
+    }
 }

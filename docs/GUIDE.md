@@ -162,6 +162,12 @@ template—D&D 5e, Pathfinder 2e, D&D 3.5e, OSR/B/X, Powered by the Apocalypse,
 Fate Core, or Custom/systemless—and can be extended with campaign-specific
 rulings, tone, and boundaries.
 
+Setting Template and Setting Details are organized as **Main section → Theme →
+Preset**. Tap ☆ on any preset to place it in the persistent Favorites section.
+The catalogs include Adams Haven worlds, fantasy, action media, horror and
+survival, science fiction, games/media, 18+, Slow Life, and Overpowered
+Protagonist choices.
+
 ### RPG modes and rule systems
 
 Campaign setup keeps the player-facing **Mode** separate from the underlying
@@ -208,6 +214,11 @@ subsequent combat.
 Select story text to reveal **Add text to…**, which opens the existing capture
 popup for Codex, roster, or inventory bookkeeping. The button stays hidden
 until text is selected so it does not cover the scene controls.
+
+The **Character cards** button in an active scene opens the player and current
+party as scrollable playing cards with portrait, class/level, HP, AC, and a
+summary. A card can open the full editable character sheet without discarding
+the active scene.
 
 Scene art is selected from the local Pictures library. The app matches scene
 prose, campaign setting, category, mood, and tags, then attaches the best local

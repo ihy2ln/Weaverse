@@ -146,6 +146,10 @@ data class UserPreferences(
     val removedStarKeywords: Set<String> = emptySet(),
     /** User-defined campaign setting templates: "id|label|directive". */
     val customSettingTemplates: Set<String> = emptySet(),
+    /** Built-in or custom RPG setting templates pinned in the hierarchical browser. */
+    val favoriteSettingTemplateIds: Set<String> = emptySet(),
+    /** RPG setting-detail presets pinned in the hierarchical browser. */
+    val favoriteSettingDetailIds: Set<String> = emptySet(),
 )
 
 data class ReaderSavedState(
@@ -253,6 +257,8 @@ class SettingsRepository @Inject constructor(
             customSettingTemplates = prefs[KEY_CUSTOM_SETTING_TEMPLATES].orEmpty()
                 .filter { it.substringBefore('|').isNotBlank() }
                 .toSet(),
+            favoriteSettingTemplateIds = prefs[KEY_FAVORITE_SETTING_TEMPLATES].orEmpty(),
+            favoriteSettingDetailIds = prefs[KEY_FAVORITE_SETTING_DETAILS].orEmpty(),
         )
     }
 
@@ -610,6 +616,23 @@ class SettingsRepository @Inject constructor(
         }
     }
 
+    suspend fun toggleFavoriteSettingTemplate(id: String) {
+        toggleStringSet(KEY_FAVORITE_SETTING_TEMPLATES, id)
+    }
+
+    suspend fun toggleFavoriteSettingDetail(id: String) {
+        toggleStringSet(KEY_FAVORITE_SETTING_DETAILS, id)
+    }
+
+    private suspend fun toggleStringSet(key: Preferences.Key<Set<String>>, id: String) {
+        val clean = id.trim()
+        if (clean.isBlank()) return
+        context.dataStore.edit { prefs ->
+            val current = prefs[key].orEmpty()
+            prefs[key] = if (clean in current) current - clean else current + clean
+        }
+    }
+
     private fun extraFlag(prefs: Preferences, key: androidx.datastore.preferences.core.Preferences.Key<Boolean>): Boolean =
         prefs[key] ?: (prefs[KEY_SHOW_EXTRA_PROMPT_SURFACES] ?: false)
 
@@ -686,6 +709,8 @@ class SettingsRepository @Inject constructor(
         private val KEY_CUSTOM_STARS = stringSetPreferencesKey("star_commands_custom")
         private val KEY_REMOVED_STARS = stringSetPreferencesKey("star_commands_removed")
         private val KEY_CUSTOM_SETTING_TEMPLATES = stringSetPreferencesKey("campaign_setting_templates_custom")
+        private val KEY_FAVORITE_SETTING_TEMPLATES = stringSetPreferencesKey("campaign_setting_templates_favorites")
+        private val KEY_FAVORITE_SETTING_DETAILS = stringSetPreferencesKey("campaign_setting_details_favorites")
 
         const val InkSpacingRailMin = 48f
         const val InkSpacingRailMax = 420f

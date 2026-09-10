@@ -3,6 +3,8 @@ package com.ihy2ln.weaverse.feature.roleplay.chat
 import kotlin.random.Random
 import com.ihy2ln.weaverse.core.ui.components.CampaignSettingDetailTemplates
 import com.ihy2ln.weaverse.core.ui.components.CampaignSettingTemplates
+import com.ihy2ln.weaverse.core.ui.components.campaignSettingBrowserItems
+import com.ihy2ln.weaverse.core.ui.components.campaignSettingDetailBrowserItems
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -106,6 +108,22 @@ class AdventureStartupTest {
         assertTrue(CampaignSettingTemplates.any { it.id == "highschool-of-the-dead" })
         assertTrue(CampaignSettingTemplates.any { it.id == "walking-dead" })
         assertTrue(CampaignSettingTemplates.any { it.id == "world-war-z" })
+        assertTrue(CampaignSettingDetailTemplates.any { it.id == "slow-life" })
+        assertTrue(CampaignSettingDetailTemplates.any { it.id == "overpowered" })
+        assertTrue(CampaignSettingDetailTemplates.any { it.section == "Action" && it.theme.contains("Movies") })
+        assertTrue(CampaignSettingDetailTemplates.any { it.section == "Fantasy" })
+        assertTrue(CampaignSettingDetailTemplates.filter { it.section == "18+" }.size >= 4)
+    }
+
+    @Test
+    fun settingBrowsersExposeMainSectionsThemesAndAdamsHavenWorlds() {
+        val settings = campaignSettingBrowserItems()
+        val details = campaignSettingDetailBrowserItems()
+        assertTrue(settings.map { it.section }.distinct().size >= 6)
+        assertTrue(details.map { it.section }.distinct().size >= 7)
+        assertTrue(settings.filter { it.section == "Adams Haven" }.map { it.theme }.distinct().size >= 2)
+        listOf("aqualuria", "arcanis", "elysara", "heroica", "mythoria", "nexara-prime", "veridian")
+            .forEach { world -> assertTrue(settings.any { it.id == "adams-haven-$world" }) }
     }
 
     @Test

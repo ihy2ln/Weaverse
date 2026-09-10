@@ -28,11 +28,13 @@ Campaign setup is intentionally hierarchical. Values selected here are written i
 
 ### Setting templates
 
-Built-in templates include Adams Haven · Elysium Vale, High fantasy, Dark fantasy, Sword & sorcery, Highschool of the Dead-inspired, The Walking Dead-inspired, World War Z-inspired, Original zombie apocalypse, and additional genre templates. Inspired zombie templates are written for fictional survival play and do not sexualize minors.
+Setting Template opens a three-level browser: **Main section → Theme → Preset**. Main sections include Adams Haven, Fantasy, Horror & survival, Science fiction, Games & media, Other worlds, and Custom. The Adams Haven section includes Elysium Vale, Aqualuria, Arcanis, Elysara, Heroica, Mythoria, Nexara Prime, Veridian, and Serenity Atoll. Other built-ins include High fantasy, Dark fantasy, Sword & sorcery, Highschool of the Dead-inspired, The Walking Dead-inspired, World War Z-inspired, Original zombie apocalypse, and additional genre templates. Inspired zombie templates are written for fictional survival play and do not sexualize minors.
+
+Tap the ☆ on a preset to add it to the persistent **Favorites** main section. Favorites can contain built-in or custom setting templates and remain available in both new-campaign setup and the in-campaign Setup editor.
 
 ### Setting-details presets
 
-Presets include Frontier settlement, Factional city, Wilderness expedition, War-torn realm, Stormbound coast, Sky-island frontier, Under-city intrigue, Arcane academy, Reclaimed wasteland, Fey borderlands, Clockwork metropolis, Stars beyond the veil, and adult-only consent-forward options such as Porn with plot, Smut romance, Hentai fantasy, and Ecchi comedy. Adult presets are marked 18+ and are guidance for fictional adult characters; provider or platform restrictions still apply.
+Setting Details uses the same Main section → Theme → Preset navigation and its own Favorites list. Presets include Frontier settlement, Factional city, Wilderness expedition, War-torn realm, Stormbound coast, Sky-island frontier, Under-city intrigue, Arcane academy, Reclaimed wasteland, Fey borderlands, Clockwork metropolis, Stars beyond the veil, Slow Life, Overpowered Protagonist, action movie/anime/superhero themes, and adult-only consent-forward options such as Porn with plot, Smut romance, Hentai fantasy, and Ecchi comedy. Adult presets are grouped under 18+ and are guidance for fictional adult characters; provider or platform restrictions still apply.
 
 ### House-rule presets
 
@@ -91,6 +93,7 @@ During an RPG scene:
 - **Other RPG** offers speaking, questioning, persuading, searching, preparing for the selected mode, and checking the party.
 - **Your own action** accepts any custom player wording. The app still enforces the active mode and its rules.
 - **Add text to…** appears after the player selects story text. It opens the existing text-capture popup rather than occupying the scene controls permanently.
+- **Character cards** opens a horizontal gallery of the player and active party. Each playing card shows portrait art, class/level, HP, AC, and a summary, and can open the full editable character sheet.
 
 The scene layout keeps artwork and story/action content balanced for portrait, landscape, and narrow phone screens. Setup panes and planner lists scroll independently so no question or action is clipped.
 

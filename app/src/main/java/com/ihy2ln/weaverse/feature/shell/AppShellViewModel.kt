@@ -61,6 +61,14 @@ class AppShellViewModel @Inject constructor(
 ) : ViewModel() {
     val preferences = settings.preferences
 
+    fun toggleFavoriteSettingTemplate(id: String) {
+        viewModelScope.launch { settings.toggleFavoriteSettingTemplate(id) }
+    }
+
+    fun toggleFavoriteSettingDetail(id: String) {
+        viewModelScope.launch { settings.toggleFavoriteSettingDetail(id) }
+    }
+
     val campaignCharacterOptions: StateFlow<List<WorkCharacterOption>> = combine(
         db.roleplayDao().observePersonas(),
         db.roleplayDao().observeCharacters(),

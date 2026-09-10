@@ -164,12 +164,16 @@ data class RoleplayChatUiState(
     val codexTargets: List<CodexMentionTarget> = emptyList(),
     /** Campaign options sheet: the character options available to select. */
     val campaignCharacterOptions: List<WorkCharacterOption> = emptyList(),
+    /** Persona actually bound to this campaign; used by the in-scene character-card gallery. */
+    val activeCampaignPersonaId: String = "",
     /** Non-null opens the campaign options dialog pre-filled from the setup note. */
     val campaignSetupInitial: NewWorkDetails? = null,
     /** True while the campaign options dialog is open. */
     val showCampaignOptions: Boolean = false,
     /** User-defined setting templates for the campaign setup sheet. */
     val customSettingTemplates: List<com.ihy2ln.weaverse.core.ui.components.CampaignSettingTemplate> = emptyList(),
+    val favoriteSettingTemplateIds: Set<String> = emptySet(),
+    val favoriteSettingDetailIds: Set<String> = emptySet(),
     /** Non-null opens the full-screen picture editor for that panel. */
     val imageEditor: PanelEditorUi? = null,
     /** Short status for the storyboard tools (panel separation results…). */
