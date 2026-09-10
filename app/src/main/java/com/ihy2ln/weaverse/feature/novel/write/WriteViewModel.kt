@@ -10,6 +10,8 @@ import com.ihy2ln.weaverse.ai.context.ContextMeter
 import com.ihy2ln.weaverse.ai.openrouter.OpenRouterModelCache
 import com.ihy2ln.weaverse.ai.prompt.PromptRenderContext
 import com.ihy2ln.weaverse.core.media.MediaRepository
+import com.ihy2ln.weaverse.core.media.AiMediaRequestParser
+import com.ihy2ln.weaverse.core.media.AiMediaResolver
 import com.ihy2ln.weaverse.core.text.Block
 import com.ihy2ln.weaverse.core.text.Document
 import com.ihy2ln.weaverse.core.text.Mark
@@ -49,6 +51,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.decodeFromString
@@ -1019,7 +1022,8 @@ class WriteViewModel @Inject constructor(
 
     fun acceptAiResult() {
         val overlay = _uiState.value.aiOverlay ?: return
-        val text = overlay.streamingText.trim()
+        val extracted = AiMediaRequestParser.extract(overlay.streamingText.trim())
+        val text = extracted.first
         if (text.isBlank()) {
             dismissAiOverlay()
             return
@@ -1029,6 +1033,16 @@ class WriteViewModel @Inject constructor(
             val next = writeGeneration.acceptIntoBlocks(blocks, overlay, text)
             blocks.clear()
             blocks.addAll(next)
+        }
+        if (extracted.second.isNotEmpty()) {
+            viewModelScope.launch {
+                val resolver = AiMediaResolver { db.mediaDao().observeAll().first() }
+                extracted.second.mapNotNull { resolver.resolve(it) }.forEach { media ->
+                    val index = _uiState.value.blocks.lastIndex
+                    insertMediaBlock(index, media.id, MediaRepository.kindForType(media.type))
+                }
+                _uiState.update { it.copy(statusMessage = "Scene media requests resolved") }
+            }
         }
         dismissAiOverlay()
     }

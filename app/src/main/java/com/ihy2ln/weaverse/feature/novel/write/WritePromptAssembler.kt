@@ -162,6 +162,10 @@ class WritePromptAssembler @Inject constructor(
             append(defaultPromptFor(overlay.commandId))
             append("\n\n")
         }
+        append("For scene art, you may request an existing library asset by adding one line exactly in this form: ")
+        append("[MEDIA type=image|video query=search words tags=tag1,tag2 category=optional]. ")
+        append("Only add that line when a picture or video materially improves the scene. Never invent a file path or URL; ")
+        append("the app resolves the request against its existing media library. Keep the media line separate from the prose.\n\n")
         append(
             "Target length: about ${overlay.outputWords} words. Complete the final sentence; " +
                 "a slight overrun is allowed when necessary.\n\n",

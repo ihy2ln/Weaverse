@@ -1,6 +1,8 @@
 package com.ihy2ln.weaverse.feature.novel.codex
 
 import com.ihy2ln.weaverse.ai.AiGenerationService
+import com.ihy2ln.weaverse.core.media.AiMediaRequest
+import com.ihy2ln.weaverse.core.media.AiMediaResolver
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
 import com.ihy2ln.weaverse.data.db.entities.RpItem
 import com.ihy2ln.weaverse.data.db.entities.encodeItems
@@ -14,6 +16,7 @@ import kotlinx.serialization.json.JsonObject
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.first
 
 /** What a `!kind …` command produced. */
 data class CodexQuickAddResult(
@@ -48,6 +51,7 @@ class CodexQuickAdd @Inject constructor(
         val personality: String = "",
         val gear: List<String> = emptyList(),
         val fields: JsonObject = JsonObject(emptyMap()),
+        val media: AiMediaRequest? = null,
     )
 
     class NoApiKey : IllegalStateException("Add an API key in Settings to use ! commands")
@@ -89,6 +93,9 @@ class CodexQuickAdd @Inject constructor(
             name = name,
             plainText = text,
             sheetJson = sheetJson,
+            imageMediaId = draft.media?.let { request ->
+                AiMediaResolver { db.mediaDao().observeAll().first() }.resolve(request)?.id
+            },
         )
         return CodexQuickAddResult(
             entryId = entry.id,
@@ -166,7 +173,9 @@ class CodexQuickAdd @Inject constructor(
             if (command.kind == CodexEntryKind.Character) {
                 append(",\"personality\":\"\",\"gear\":[\"\"]")
             }
-            append(",\"fields\":{}}\n")
+            append(",\"fields\":{},\"media\":null}\n")
+            append("If a relevant existing library asset would improve this entry, set media to " +
+                "{\"type\":\"image\"|\"video\",\"query\":\"search words\",\"tags\":[\"tag\"],\"category\":\"optional category\",\"caption\":\"optional caption\"}; otherwise use null. Never invent a file path or URL.\n")
             append("\"fields\" uses exactly these keys, and only these keys:\n")
             append(fieldNames.joinToString(", "))
             append("\n")
@@ -244,6 +253,9 @@ class CodexQuickAdd @Inject constructor(
             id = entryId,
             name = name,
             plainText = text,
+            imageMediaId = draft.media?.let { request ->
+                AiMediaResolver { db.mediaDao().observeAll().first() }.resolve(request)?.id
+            },
             sheetJson = sheetJson,
         )
         return true
