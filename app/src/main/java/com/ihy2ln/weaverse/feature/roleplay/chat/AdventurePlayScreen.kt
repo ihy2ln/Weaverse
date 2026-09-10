@@ -97,6 +97,7 @@ import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgGenerationStatus
 import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgStartupState
 import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgStartupStep
 import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatRuleset
+import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatScreen
 import com.ihy2ln.weaverse.feature.roleplay.characters.formatModifier
 import com.ihy2ln.weaverse.feature.roleplay.party.PartyMemberUi
 import com.ihy2ln.weaverse.feature.roleplay.party.PartyViewModel
@@ -110,17 +111,19 @@ private fun RpgSceneActionPalette(
     mode: RpgCombatRuleset,
     onSelect: (String) -> Unit,
     onOpenParty: () -> Unit,
+    onStartCombat: () -> Unit,
 ) {
     val partyOption = when (mode) {
         RpgCombatRuleset.CardBattle -> "View tactical roster cards"
         RpgCombatRuleset.DndD20 -> "View party character sheets"
         RpgCombatRuleset.TextReactions -> "View party roster"
     }
+    val combatOption = "Enter ${mode.label} combat"
     val groups = remember(mode) {
         listOf(
             RpgActionPresetGroup("Actions", listOf("Look around carefully", "Move closer cautiously", "Interact with the environment", "Use a carried item", "Help a party member", "Wait and observe")),
             RpgActionPresetGroup("Thoughts", listOf("Think through the situation", "Recall relevant knowledge", "Study their intentions", "Consider the risks", "Focus on a suspicious detail", "Reflect on the party's goal")),
-            RpgActionPresetGroup("Other RPG", listOf(partyOption, "Speak to a nearby character", "Ask a direct question", "Attempt to persuade them", "Search for clues", "Prepare for ${mode.label} combat", "Check the party's condition")),
+            RpgActionPresetGroup("Other RPG", listOf(partyOption, combatOption, "Speak to a nearby character", "Ask a direct question", "Attempt to persuade them", "Search for clues", "Check the party's condition")),
         )
     }
     Row(
@@ -140,7 +143,11 @@ private fun RpgSceneActionPalette(
                         DropdownMenuItem(
                             text = { Text(option) },
                             onClick = {
-                                if (option == partyOption) onOpenParty() else onSelect(option)
+                                when (option) {
+                                    partyOption -> onOpenParty()
+                                    combatOption -> onStartCombat()
+                                    else -> onSelect(option)
+                                }
                                 expanded = false
                             },
                         )
@@ -608,6 +615,26 @@ fun AdventurePlayScreen(
                 onDismiss = { modelsOpen = false },
             )
         }
+        return
+    }
+
+    state.activeRpgCombat?.let { combat ->
+        RpgCombatScreen(
+            state = combat,
+            campaignRuleset = state.rpgCombatMode,
+            selectedCardId = state.selectedCombatCardId,
+            selectedTargetId = state.selectedCombatTargetId,
+            preview = state.combatActionPreview,
+            textAction = state.combatTextAction,
+            onRulesetSelected = viewModel::selectEncounterRuleset,
+            onCardSelected = viewModel::selectCombatCard,
+            onTargetSelected = viewModel::selectCombatTarget,
+            onTextActionChange = viewModel::onCombatTextAction,
+            onConfirmAction = viewModel::confirmCombatAction,
+            onRetreat = viewModel::retreatRpgCombat,
+            onFinish = viewModel::finishRpgCombat,
+            modifier = Modifier.fillMaxSize(),
+        )
         return
     }
 
@@ -1154,6 +1181,7 @@ fun AdventurePlayScreen(
                 mode = state.rpgCombatMode,
                 onSelect = viewModel::onInputChange,
                 onOpenParty = { showCharacterCards = true },
+                onStartCombat = { viewModel.beginRpgCombat() },
             )
         }
         UnifiedPromptBar(

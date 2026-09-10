@@ -180,6 +180,13 @@ risky-action previews. An encounter override applies only to that battle and
 the saved campaign mode returns afterward. Older RPG saves normalize to D&D
 d20; Text Game saves remain isolated.
 
+Use **Other RPG → Enter [mode] combat** to begin directly. When the AI Dungeon
+Master establishes an unavoidable immediate fight, the same RPG-native screen
+opens automatically after the scene narration is saved. Focused Tactical Cards
+opens its AP/EP hand, targets, intent, and status interface; D&D d20 opens its
+character-sheet attack/check interface. Active rounds persist across
+force-close and resume.
+
 ### Create Your Own Adventure
 
 After Campaign Setup, Adventure opens a scrollable six-card planner: plot

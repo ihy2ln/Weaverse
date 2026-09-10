@@ -45,6 +45,8 @@ Numbered prose, arbitrary outline text, and user-written numbers are not parsed 
 
 `authoritativeRpgMode()` reads the restored typed campaign setup before constructing scene prompts and UI state. The prompt includes a mode-specific directive. Focused Tactical Cards explicitly forbids silently switching to d20; D&D d20 requests the existing sheet and deterministic roll service; Text Reactions keeps text actions primary while applying app guardrails. `RpgCombatRuleset.fromId()` accepts IDs, labels, and legacy descriptive values so old saves do not fall back unnecessarily.
 
+`AdventureWorldUpdates` recognizes and strips the private `START_COMBAT` marker. Both that automatic handoff and **Other RPG → Enter combat** call `beginRpgCombat()`, which constructs party combatants from saved sheets and starts with `authoritativeRpgMode()`. `RpgCombatState` and its nested types serialize into `RpgCampaignState.activeCombatJson`; confirmed rounds persist. `finishRpgCombat()` writes HP back to the roster, applies the normalized outcome, clears the encounter, records a timeline recap, and restores the unchanged campaign mode.
+
 ## Local scene-media selection
 
 `SceneMediaLibrary.find(SceneMediaRequest)` ranks local media by scene tokens, category, tags, requested tags, and display name. RPG scene publishing calls this service for opening and ordinary Dungeon Master replies when the document has no image block. The selected `MediaBlock` stores a stable media ID, allowing normal Room/media resolution and the existing scene-art controls to render it.

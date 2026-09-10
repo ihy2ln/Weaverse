@@ -96,6 +96,8 @@ object HelpContent {
                     "Campaign setup keeps Mode and Rule system separate. Focused Tactical Cards " +
                         "uses the Adams Haven card loop; D&D d20 uses the saved character sheet " +
                         "and deterministic checks; Text Reactions keeps written actions primary. " +
+                        "Other RPG can enter combat directly, and an immediate AI encounter opens " +
+                        "the same native screen automatically in the saved campaign mode. " +
                         "A one-battle override never changes the saved campaign mode, and the " +
                         "next encounter returns to that mode.",
                 ),

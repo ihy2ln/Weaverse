@@ -22,6 +22,8 @@ Players can create reusable entries in either catalog by supplying a name, main 
 
 `RpgCombatRuleset`, `RpgCombatState`, `RpgEncounterSetup`, `RpgCombatAction`, `RpgCombatPreview`, `RpgCombatOutcome`, `RpgEnemyIntent`, and `RpgStatusEffect` are RPG-only types. Each mode resolves to the same normalized outcome contract so the adventure layer can update party HP/conditions, inventory and rewards, companions, factions/world changes, recap, and the next map node. No RPG combat class imports `textgame` packages.
 
+Combat begins through the explicit Other RPG action or a hidden immediate-combat directive from an AI scene. Both routes use `authoritativeRpgMode()`: tactical campaigns enter the AP/EP card surface and d20 campaigns enter the character-sheet roll surface. Active combat is serialized for force-close/resume, and transient overrides reset after the outcome returns to the adventure.
+
 ## Setup catalogs
 
 Backend catalogs provide starter setting details (Frontier, City, Wilds, War), house rules (Cinematic, Gritty, Heroic, Political), and custom entries. Preset identity is saved explicitly; custom text supplements or overrides guidance without erasing which preset was chosen.

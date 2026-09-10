@@ -4,6 +4,9 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
 
 class RpgCombatTest {
     private fun encounter() = RpgEncounterSetup(
@@ -52,5 +55,17 @@ class RpgCombatTest {
             RpgCombatRuleset.CardBattle,
             rpgCombatRulesetFromSetup("Game mode: rpg-cards\nCombat style: rpg-d20"),
         )
+    }
+
+    @Test
+    fun activeEncounterRoundTripsForForceCloseResume() {
+        val active = createRpgEncounter(encounter(), RpgCombatRuleset.CardBattle)
+        val encoded = Json.encodeToString(active)
+        val restored = Json.decodeFromString<RpgCombatState>(encoded)
+
+        assertEquals(RpgCombatRuleset.CardBattle, restored.ruleset)
+        assertEquals("The Glass Gate", restored.encounter.title)
+        assertEquals(active.hand, restored.hand)
+        assertEquals(active.combatants, restored.combatants)
     }
 }

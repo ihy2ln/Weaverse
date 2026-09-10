@@ -24,6 +24,20 @@ class AdventureWorldUpdatesTest {
     @Test
     fun partialPrivateMarkerNeverFlashesDuringStreaming() {
         assertEquals("", adventureWorldProseFrom("[[ROSTER_CHARACTER|name=Mi"))
+        assertEquals("", adventureWorldProseFrom("[[START_COMBAT|title=Amb"))
         assertTrue("first created or first met" in adventureWorldUpdateDirective())
+    }
+
+    @Test
+    fun parsesAndHidesImmediateCombatDirective() {
+        val updates = adventureWorldUpdatesFrom(
+            "[[START_COMBAT|title=Bridge Ambush|stakes=The caravan is captured|enemies=Bandit Captain, Bandit Scout]]" +
+                "Steel flashes at both ends of the bridge.",
+        )
+
+        assertEquals("Bridge Ambush", updates.combat?.title)
+        assertEquals("The caravan is captured", updates.combat?.stakes)
+        assertEquals(listOf("Bandit Captain", "Bandit Scout"), updates.combat?.enemies)
+        assertEquals("Steel flashes at both ends of the bridge.", updates.prose)
     }
 }

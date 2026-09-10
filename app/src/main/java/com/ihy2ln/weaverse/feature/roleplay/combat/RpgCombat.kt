@@ -25,8 +25,10 @@ enum class RpgCombatRuleset(val id: String, val label: String) {
     }
 }
 
+@Serializable
 enum class RpgStatusEffect { Stunned, Guarded, Bleeding, Exposed, Empowered }
 
+@Serializable
 data class RpgEnemyIntent(
     val enemyId: String,
     val label: String,
@@ -34,6 +36,7 @@ data class RpgEnemyIntent(
     val power: Int = 0,
 )
 
+@Serializable
 data class RpgCombatant(
     val id: String,
     val name: String,
@@ -45,6 +48,7 @@ data class RpgCombatant(
     val isEnemy: Boolean = false,
 )
 
+@Serializable
 data class RpgCombatCard(
     val id: String,
     val title: String,
@@ -56,6 +60,7 @@ data class RpgCombatCard(
     val healing: Boolean = false,
 )
 
+@Serializable
 data class RpgEncounterSetup(
     val id: String,
     val title: String,
@@ -66,6 +71,7 @@ data class RpgEncounterSetup(
     val party: List<RpgCombatant>,
 )
 
+@Serializable
 data class RpgCombatState(
     val encounter: RpgEncounterSetup,
     val ruleset: RpgCombatRuleset = encounter.campaignRuleset,
@@ -81,6 +87,7 @@ data class RpgCombatState(
     val outcome: RpgCombatOutcome? = null,
 )
 
+@Serializable
 data class RpgCombatAction(
     val actorId: String,
     val cardId: String? = null,
@@ -89,6 +96,7 @@ data class RpgCombatAction(
     val requestedCheck: Boolean = false,
 )
 
+@Serializable
 data class RpgCombatPreview(
     val legal: Boolean,
     val reason: String = "",
@@ -107,6 +115,7 @@ data class RpgCombatOutcome(
     val relationshipDelta: Int = 0,
     val recap: String,
 ) {
+    @Serializable
     enum class Result { Victory, Defeat, Retreat, Surrender }
 }
 
@@ -197,8 +206,39 @@ fun resolveRpgCombatAction(state: RpgCombatState, action: RpgCombatAction, seed:
             message = "${actor.name}: ${if (succeeds) "the reaction opens an advantage" else "the reaction turns against the party"}."
         }
     }
-    val enemiesLeft = nextCombatants.any { it.isEnemy && it.hp > 0 }
-    val partyLeft = nextCombatants.any { !it.isEnemy && it.hp > 0 }
+    val roundLog = mutableListOf(message)
+    var enemiesLeft = nextCombatants.any { it.isEnemy && it.hp > 0 }
+    var partyLeft = nextCombatants.any { !it.isEnemy && it.hp > 0 }
+    if (enemiesLeft && partyLeft) {
+        nextCombatants.filter { it.isEnemy && it.hp > 0 }.forEach { enemy ->
+            val enemyIndex = nextCombatants.indexOfFirst { it.id == enemy.id }
+            if (enemy.statuses.contains(RpgStatusEffect.Stunned)) {
+                nextCombatants[enemyIndex] = enemy.copy(statuses = enemy.statuses - RpgStatusEffect.Stunned)
+                roundLog += "${enemy.name} is stunned and loses its action."
+            } else {
+                val intent = state.intents.firstOrNull { it.enemyId == enemy.id }
+                val targetIndex = intent?.targetId?.let { targetId ->
+                    nextCombatants.indexOfFirst { it.id == targetId && !it.isEnemy && it.hp > 0 }.takeIf { it >= 0 }
+                } ?: nextCombatants.indexOfFirst { !it.isEnemy && it.hp > 0 }
+                if (targetIndex >= 0) {
+                    val defender = nextCombatants[targetIndex]
+                    val baseDamage = (intent?.power ?: 4) + enemy.attackModifier.coerceAtLeast(0)
+                    val damage = if (defender.statuses.contains(RpgStatusEffect.Guarded)) {
+                        max(1, baseDamage / 2)
+                    } else {
+                        max(1, baseDamage)
+                    }
+                    nextCombatants[targetIndex] = defender.copy(
+                        hp = max(0, defender.hp - damage),
+                        statuses = defender.statuses - RpgStatusEffect.Guarded,
+                    )
+                    roundLog += "${enemy.name} follows its ${intent?.label ?: "Attack"} intent against ${defender.name} for $damage damage."
+                }
+            }
+        }
+        enemiesLeft = nextCombatants.any { it.isEnemy && it.hp > 0 }
+        partyLeft = nextCombatants.any { !it.isEnemy && it.hp > 0 }
+    }
     val finished = !enemiesLeft || !partyLeft
     val outcome = if (finished) {
         val result = if (enemiesLeft) RpgCombatOutcome.Result.Defeat else RpgCombatOutcome.Result.Victory
@@ -217,9 +257,9 @@ fun resolveRpgCombatAction(state: RpgCombatState, action: RpgCombatAction, seed:
         turn = state.turn + 1,
         ap = if (nextAp <= 0) 3 else nextAp,
         ep = if (nextAp <= 0) 3 else nextEp,
-        activeCombatantId = state.encounter.party.firstOrNull { it.hp > 0 }?.id.orEmpty(),
+        activeCombatantId = nextCombatants.firstOrNull { !it.isEnemy && it.hp > 0 }?.id.orEmpty(),
         combatants = nextCombatants,
-        log = state.log + message,
+        log = state.log + roundLog,
         finished = finished,
         outcome = outcome,
     )

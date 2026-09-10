@@ -8,6 +8,8 @@ import com.ihy2ln.weaverse.core.ui.components.NewWorkDetails
 import com.ihy2ln.weaverse.core.ui.components.WorkCharacterOption
 import com.ihy2ln.weaverse.data.db.entities.RpPageMeta
 import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatRuleset
+import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatPreview
+import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatState
 import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgStartupState
 
 data class RpMediaRef(
@@ -192,5 +194,11 @@ data class RoleplayChatUiState(
     val rpgSceneArt: RpgSceneArtChoice? = null,
     /** Persistent campaign battle mode (encounter overrides never replace it). */
     val rpgCombatMode: RpgCombatRuleset = RpgCombatRuleset.DndD20,
+    /** Non-null replaces ordinary scene input with the RPG-native encounter screen. */
+    val activeRpgCombat: RpgCombatState? = null,
+    val selectedCombatCardId: String? = null,
+    val selectedCombatTargetId: String? = null,
+    val combatActionPreview: RpgCombatPreview? = null,
+    val combatTextAction: String = "",
     val rpgChapterRecap: String = "",
 )

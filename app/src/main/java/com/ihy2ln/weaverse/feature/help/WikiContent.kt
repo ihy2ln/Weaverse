@@ -226,6 +226,11 @@ object WikiContent {
                 - **Text Reactions** — written or dictated actions with legal
                   action checks and risky-action previews.
 
+                **Other RPG → Enter combat** opens the native screen for the
+                saved campaign mode. An immediate AI encounter opens the same
+                screen automatically after its narration is saved. Active
+                rounds survive force-close and resume.
+
                 A battle may use a temporary override. Victory, defeat,
                 retreat or surrender restores the saved campaign mode for the
                 next encounter. Older RPG saves normalize to D&D d20; Text

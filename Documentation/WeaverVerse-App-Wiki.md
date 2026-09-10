@@ -58,6 +58,8 @@ Mode controls how the player interacts with the adventure. Rule system controls 
 
 An encounter can temporarily override the campaign mode. After victory, defeat, retreat, or surrender, the saved campaign mode is restored for the next encounter. Older RPG saves default to D&D d20 during migration; Text Game saves are not migrated or rewritten.
 
+Choose **Other RPG → Enter combat** to open the RPG-native encounter screen in the saved campaign mode. The AI Dungeon Master can also hand off an immediate fight automatically after saving its scene narration. Focused Tactical Cards opens the AP/EP hand, targets, intent, and statuses; D&D d20 opens the character-sheet roll interface. Active encounter state survives force-close.
+
 ## Adventure startup: four screens
 
 ### 1. Create Your Own Adventure

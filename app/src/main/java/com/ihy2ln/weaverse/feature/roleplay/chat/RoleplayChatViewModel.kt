@@ -83,6 +83,14 @@ import com.ihy2ln.weaverse.data.db.entities.encodePages
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
 import com.ihy2ln.weaverse.feature.roleplay.presets.defaultPresets
 import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatRuleset
+import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatAction
+import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatOutcome
+import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatState
+import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatant
+import com.ihy2ln.weaverse.feature.roleplay.combat.RpgEncounterSetup
+import com.ihy2ln.weaverse.feature.roleplay.combat.createRpgEncounter
+import com.ihy2ln.weaverse.feature.roleplay.combat.previewRpgCombatAction
+import com.ihy2ln.weaverse.feature.roleplay.combat.resolveRpgCombatAction
 import com.ihy2ln.weaverse.feature.roleplay.combat.rpgCombatRulesetFromSetup
 import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgAdventurePlan
 import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgCampaignRepository
@@ -106,6 +114,7 @@ import com.ihy2ln.weaverse.feature.roleplay.campaign.openingScenePrompt
 import com.ihy2ln.weaverse.feature.roleplay.campaign.parseChapterPlan
 import com.ihy2ln.weaverse.feature.roleplay.campaign.parseCyoaSuggestions
 import com.ihy2ln.weaverse.feature.roleplay.campaign.parseSceneDraft
+import com.ihy2ln.weaverse.feature.roleplay.campaign.applyCombatOutcome
 import com.ihy2ln.weaverse.feature.roleplay.characters.abilityModifier
 import com.ihy2ln.weaverse.feature.roleplay.characters.decodeRpgSheet
 import com.ihy2ln.weaverse.feature.roleplay.characters.encodeRpgSheet
@@ -130,6 +139,9 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.util.UUID
 import javax.inject.Inject
 
@@ -146,6 +158,10 @@ private val ExplicitStayInScene = Regex(
 )
 private val AiSceneAdvanceMarker = Regex(
     "\\[\\[ADVANCE_SCENE(?::\\s*([^]]+))?]]",
+    RegexOption.IGNORE_CASE,
+)
+private val riskyCombatText = Regex(
+    "\\b(attack|strike|shoot|cast|charge|grapple|dodge|parry|disarm|intimidate|escape)\\b",
     RegexOption.IGNORE_CASE,
 )
 
@@ -184,6 +200,7 @@ class RoleplayChatViewModel @Inject constructor(
     private var boundChat: RpChatEntity? = null
     private val rpgCampaignRepository by lazy { RpgCampaignRepository(db.roleplayDao()) }
     private var rpgCampaignState: RpgCampaignState? = null
+    private val rpgCombatJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private var loadedRpgCampaignId: String? = null
     private var customBangCommands: Map<String, String> = emptyMap()
     private var removedBangKeywords: Set<String> = emptySet()
@@ -2258,6 +2275,9 @@ class RoleplayChatViewModel @Inject constructor(
                     adventurePlanProgress = if (startupActive) 100 else it.adventurePlanProgress,
                 )
             }
+            if (mode == "dungeonMaster") {
+                worldUpdates.combat?.let { encounter -> beginRpgCombat(encounter) }
+            }
         }
     }
 
@@ -2752,13 +2772,261 @@ class RoleplayChatViewModel @Inject constructor(
             ?: rpgCombatRulesetFromSetup(boundChat?.authorsNote.orEmpty())
     }
 
+    /** Opens the RPG-native encounter screen in the campaign's authoritative mode. */
+    fun beginRpgCombat(start: AdventureCombatStart? = null) {
+        if (_uiState.value.activeRpgCombat != null || _uiState.value.isStreaming) return
+        viewModelScope.launch {
+            val chat = boundChat ?: return@launch
+            val mode = authoritativeRpgMode()
+            val roster = db.roleplayDao().getCharacters()
+            val partyEntities = buildList {
+                boundCharacter?.let(::add)
+                addAll(roster.filter { it.inParty })
+            }.distinctBy { it.id }.take(4)
+            val party = partyEntities.map { character ->
+                val sheet = decodeRpgSheet(character.extensionsJson)
+                val attack = when (mode) {
+                    RpgCombatRuleset.CardBattle -> sheet.tacticalAttack
+                    else -> maxOf(
+                        abilityModifier(sheet.strength),
+                        abilityModifier(sheet.dexterity),
+                        abilityModifier(sheet.intelligence),
+                        abilityModifier(sheet.wisdom),
+                        abilityModifier(sheet.charisma),
+                    ) + sheet.proficiencyBonus
+                }
+                RpgCombatant(
+                    id = character.id,
+                    name = character.name,
+                    maxHp = sheet.maxHp.coerceAtLeast(1),
+                    hp = sheet.currentHp.coerceIn(0, sheet.maxHp.coerceAtLeast(1)),
+                    armorClass = sheet.armorClass.coerceAtLeast(1),
+                    attackModifier = attack,
+                )
+            }.ifEmpty {
+                listOf(RpgCombatant("party-hero", boundPersona?.name?.ifBlank { "Hero" } ?: "Hero", 12, armorClass = 12, attackModifier = 3))
+            }
+            val enemyNames = start?.enemies?.filter(String::isNotBlank).orEmpty().ifEmpty { listOf("Hostile Threat") }
+            val enemies = enemyNames.mapIndexed { index, name ->
+                RpgCombatant(
+                    id = "enemy-${UUID.randomUUID()}",
+                    name = name,
+                    maxHp = 10 + index * 4,
+                    armorClass = 12 + index.coerceAtMost(2),
+                    attackModifier = 2 + index.coerceAtMost(2),
+                    isEnemy = true,
+                )
+            }
+            val latestScene = rawMessages.asReversed().firstOrNull { it.role != "user" && it.role != ADVENTURE_SCENE_ROLE }
+                ?.let { documentFromJson(it.contentJson).plainText().lineSequence().firstOrNull()?.trim() }
+                .orEmpty()
+            val setup = RpgEncounterSetup(
+                id = "enc-${UUID.randomUUID()}",
+                title = start?.title?.takeIf { it.isNotBlank() } ?: "Scene ${_uiState.value.sceneNumber} Encounter",
+                stakes = start?.stakes?.takeIf { it.isNotBlank() }
+                    ?: latestScene.ifBlank { "The party must overcome the immediate threat." },
+                campaignRuleset = mode,
+                enemies = enemies,
+                party = party,
+            )
+            val combat = createRpgEncounter(setup)
+            val campaign = rpgCampaignState ?: createRpgCampaign(chat.id, mode.id)
+            persistRpgCampaign(campaign.copy(activeCombatJson = rpgCombatJson.encodeToString(combat)))
+            _uiState.update {
+                it.copy(
+                    activeRpgCombat = combat,
+                    selectedCombatCardId = null,
+                    selectedCombatTargetId = null,
+                    combatActionPreview = null,
+                    combatTextAction = "",
+                    composerStatus = "Entered ${mode.label} combat.",
+                )
+            }
+        }
+    }
+
+    /** One-encounter override. The campaign mode itself is deliberately unchanged. */
+    fun selectEncounterRuleset(ruleset: RpgCombatRuleset) {
+        val combat = _uiState.value.activeRpgCombat ?: return
+        val updated = combat.copy(ruleset = ruleset)
+        viewModelScope.launch {
+            persistActiveCombat(updated)
+            _uiState.update {
+                it.copy(
+                    selectedCombatCardId = null,
+                    selectedCombatTargetId = null,
+                    combatActionPreview = null,
+                    combatTextAction = "",
+                )
+            }
+        }
+    }
+
+    fun selectCombatCard(card: com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatCard) {
+        _uiState.update { current ->
+            val combat = current.activeRpgCombat ?: return@update current
+            val cardId = card.id
+            val action = RpgCombatAction(
+                actorId = combat.activeCombatantId,
+                cardId = cardId,
+                targetId = current.selectedCombatTargetId,
+            )
+            current.copy(
+                selectedCombatCardId = cardId,
+                combatActionPreview = previewRpgCombatAction(combat, action),
+            )
+        }
+    }
+
+    fun selectCombatTarget(target: RpgCombatant) {
+        _uiState.update { current ->
+            val combat = current.activeRpgCombat ?: return@update current
+            val action = RpgCombatAction(
+                actorId = combat.activeCombatantId,
+                cardId = current.selectedCombatCardId,
+                targetId = target.id,
+                text = current.combatTextAction,
+                requestedCheck = riskyCombatText.containsMatchIn(current.combatTextAction),
+            )
+            current.copy(
+                selectedCombatTargetId = target.id,
+                combatActionPreview = previewRpgCombatAction(combat, action),
+            )
+        }
+    }
+
+    fun onCombatTextAction(value: String) {
+        _uiState.update { current ->
+            val combat = current.activeRpgCombat ?: return@update current
+            val targetId = current.selectedCombatTargetId
+                ?: combat.combatants.firstOrNull { it.isEnemy && it.hp > 0 }?.id
+            val action = RpgCombatAction(
+                actorId = combat.activeCombatantId,
+                targetId = targetId,
+                text = value,
+                requestedCheck = riskyCombatText.containsMatchIn(value),
+            )
+            current.copy(
+                combatTextAction = value,
+                selectedCombatTargetId = targetId,
+                combatActionPreview = previewRpgCombatAction(combat, action),
+            )
+        }
+    }
+
+    fun confirmCombatAction() {
+        val current = _uiState.value
+        val combat = current.activeRpgCombat ?: return
+        val targetId = current.selectedCombatTargetId
+            ?: combat.combatants.firstOrNull { it.isEnemy && it.hp > 0 }?.id
+        val action = RpgCombatAction(
+            actorId = combat.activeCombatantId,
+            cardId = current.selectedCombatCardId,
+            targetId = targetId,
+            text = current.combatTextAction,
+            requestedCheck = riskyCombatText.containsMatchIn(current.combatTextAction),
+        )
+        val preview = previewRpgCombatAction(combat, action)
+        if (!preview.legal) {
+            _uiState.update { it.copy(combatActionPreview = preview) }
+            return
+        }
+        val resolved = resolveRpgCombatAction(
+            combat,
+            action,
+            seed = combat.encounter.id.hashCode().toLong() + combat.turn,
+        )
+        viewModelScope.launch {
+            persistActiveCombat(resolved)
+            _uiState.update {
+                it.copy(
+                    selectedCombatCardId = null,
+                    selectedCombatTargetId = null,
+                    combatActionPreview = null,
+                    combatTextAction = "",
+                )
+            }
+        }
+    }
+
+    fun retreatRpgCombat() {
+        val combat = _uiState.value.activeRpgCombat ?: return
+        if (combat.finished) return
+        val outcome = RpgCombatOutcome(
+            encounterId = combat.encounter.id,
+            result = RpgCombatOutcome.Result.Retreat,
+            ruleset = combat.ruleset,
+            survivingPartyIds = combat.combatants.filter { !it.isEnemy && it.hp > 0 }.map { it.id },
+            recap = "The party retreated from ${combat.encounter.title}.",
+        )
+        viewModelScope.launch { persistActiveCombat(combat.copy(finished = true, outcome = outcome)) }
+    }
+
+    fun finishRpgCombat() {
+        val combat = _uiState.value.activeRpgCombat ?: return
+        val outcome = combat.outcome ?: return
+        viewModelScope.launch {
+            combat.combatants.filterNot { it.isEnemy }.forEach { member ->
+                db.roleplayDao().getCharacter(member.id)?.let { character ->
+                    val sheet = decodeRpgSheet(character.extensionsJson)
+                    db.roleplayDao().upsertCharacter(
+                        character.copy(extensionsJson = encodeRpgSheet(character.extensionsJson, sheet.copy(currentHp = member.hp.coerceIn(0, sheet.maxHp)))),
+                    )
+                }
+            }
+            val campaign = rpgCampaignState ?: return@launch
+            persistRpgCampaign(applyCombatOutcome(campaign, outcome))
+            val now = System.currentTimeMillis()
+            db.roleplayDao().upsertMessage(
+                RpMessageEntity(
+                    id = "rpm-combat-$now",
+                    chatId = campaign.campaignId,
+                    swipeGroupId = "combat-${outcome.encounterId}",
+                    swipeIndex = 0,
+                    isActiveSwipe = true,
+                    role = "char",
+                    contentJson = Document.fromPlainText(
+                        "COMBAT OUTCOME · ${outcome.result.name.uppercase()}\n${outcome.recap}\nThe campaign returns to ${authoritativeRpgMode().label}.",
+                    ).toJson(),
+                    createdAt = now,
+                    displayMode = "dungeonMaster",
+                ),
+            )
+            _uiState.update {
+                it.copy(
+                    activeRpgCombat = null,
+                    selectedCombatCardId = null,
+                    selectedCombatTargetId = null,
+                    combatActionPreview = null,
+                    combatTextAction = "",
+                    rpgCombatMode = authoritativeRpgMode(),
+                    composerStatus = "Combat resolved: ${outcome.result.name}.",
+                )
+            }
+        }
+    }
+
+    private suspend fun persistActiveCombat(combat: RpgCombatState) {
+        val campaign = rpgCampaignState ?: return
+        persistRpgCampaign(campaign.copy(activeCombatJson = rpgCombatJson.encodeToString(combat)))
+        _uiState.update { it.copy(activeRpgCombat = combat) }
+    }
+
     private suspend fun persistRpgCampaign(state: RpgCampaignState) {
         rpgCampaignState = state
         rpgCampaignRepository.saveRpgCampaign(state)
+        val restoredCombat = state.activeCombatJson?.let { encoded ->
+            runCatching { rpgCombatJson.decodeFromString<RpgCombatState>(encoded) }.getOrNull()
+        }
         _uiState.update {
             it.copy(
                 rpgStartup = state.startup,
                 adventurePlanProgress = state.startup.generationProgress,
+                activeRpgCombat = restoredCombat,
+                selectedCombatCardId = it.selectedCombatCardId.takeIf { restoredCombat != null },
+                selectedCombatTargetId = it.selectedCombatTargetId.takeIf { restoredCombat != null },
+                combatActionPreview = it.combatActionPreview.takeIf { restoredCombat != null },
+                combatTextAction = it.combatTextAction.takeIf { restoredCombat != null }.orEmpty(),
             )
         }
     }

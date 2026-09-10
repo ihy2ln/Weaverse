@@ -24,11 +24,19 @@ data class AdventureLoreUpdate(
     val summary: String,
 )
 
+/** Private AI directive that hands an immediate fight to the app-owned RPG combat engine. */
+data class AdventureCombatStart(
+    val title: String = "Scene Encounter",
+    val stakes: String = "The party must overcome the immediate threat.",
+    val enemies: List<String> = emptyList(),
+)
+
 data class AdventureWorldUpdates(
     val prose: String,
     val characters: List<AdventureCharacterUpdate>,
     val lore: List<AdventureLoreUpdate>,
     val sceneSynopsis: String = "",
+    val combat: AdventureCombatStart? = null,
 )
 
 private val RosterMarker = Regex(
@@ -41,6 +49,10 @@ private val LoreMarker = Regex(
 )
 private val SceneSynopsisMarker = Regex(
     "\\[\\[SCENE_SYNOPSIS:\\s*(.+?)]]",
+    setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
+)
+private val CombatStartMarker = Regex(
+    "\\[\\[START_COMBAT\\|(.+?)]]",
     setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
 )
 
@@ -83,17 +95,32 @@ fun adventureWorldUpdatesFrom(text: String): AdventureWorldUpdates {
             summary = value["summary"].orEmpty().take(1_500),
         )
     }.toList()
+    val combat = CombatStartMarker.find(text)?.let { match ->
+        val value = fields(match.groupValues[1])
+        AdventureCombatStart(
+            title = value["title"].orEmpty().ifBlank { "Scene Encounter" }.take(120),
+            stakes = value["stakes"].orEmpty().ifBlank { "The party must overcome the immediate threat." }.take(500),
+            enemies = value["enemies"].orEmpty().split(',')
+                .map(String::trim)
+                .filter(String::isNotBlank)
+                .take(6),
+        )
+    }
     return AdventureWorldUpdates(
-        prose = SceneSynopsisMarker.replace(LoreMarker.replace(RosterMarker.replace(text, ""), ""), "").trimStart(),
+        prose = CombatStartMarker.replace(
+            SceneSynopsisMarker.replace(LoreMarker.replace(RosterMarker.replace(text, ""), ""), ""),
+            "",
+        ).trimStart(),
         characters = characters,
         lore = lore,
         sceneSynopsis = SceneSynopsisMarker.find(text)?.groupValues?.getOrNull(1)?.trim().orEmpty().take(1_500),
+        combat = combat,
     )
 }
 
 fun adventureWorldProseFrom(text: String): String {
     val cleaned = adventureWorldUpdatesFrom(text).prose
-    val partialStarts = listOf("[[ROSTER_", "[[LORE_", "[[SCENE_")
+    val partialStarts = listOf("[[ROSTER_", "[[LORE_", "[[SCENE_", "[[START_COMBAT")
         .map { cleaned.indexOf(it, ignoreCase = true) }
         .filter { it >= 0 }
     return if (partialStarts.isEmpty()) cleaned else cleaned.substring(0, partialStarts.min()).trimEnd()
@@ -109,4 +136,7 @@ fun adventureWorldUpdateDirective(): String =
         "sentence|portrait=Concise visual portrait brief]]. Do not use | inside values and do not repeat a " +
         "marker for an unchanged known character. For an important newly established place, faction, item, " +
         "or fact, emit [[LORE_UPDATE|category=Locations, Factions, Items, or Lore|name=Name|summary=Concise " +
-        "current fact]]. These markers are hidden from the player and must never replace the visible response."
+        "current fact]]. When hostile combat becomes immediate, emit exactly one [[START_COMBAT|title=Short " +
+        "encounter title|stakes=What happens if the party fails|enemies=Enemy One, Enemy Two]] marker. Do not " +
+        "emit it for distant danger, arguments, or avoidable tension. The app will open the campaign's saved " +
+        "combat mode. These markers are hidden from the player and must never replace the visible response."
