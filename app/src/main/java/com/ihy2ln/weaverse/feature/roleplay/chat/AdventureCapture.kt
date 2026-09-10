@@ -7,7 +7,7 @@ import com.ihy2ln.weaverse.data.db.entities.RpCharacterEntity
 import com.ihy2ln.weaverse.data.db.entities.RpItem
 import com.ihy2ln.weaverse.data.db.entities.decodeItems
 import com.ihy2ln.weaverse.data.db.entities.encodeItems
-import com.ihy2ln.weaverse.feature.roleplay.characters.RpgCharacterSheet
+import com.ihy2ln.weaverse.feature.roleplay.characters.createRpgCharacterSheet
 import com.ihy2ln.weaverse.feature.roleplay.characters.decodeRpgSheet
 import com.ihy2ln.weaverse.feature.roleplay.characters.encodeRpgSheet
 import java.util.UUID
@@ -273,14 +273,19 @@ class AdventureCapture @Inject constructor(
                     createdAt = now,
                     updatedAt = now,
                 )
-                val sheet = RpgCharacterSheet(
-                    characterClass = extracted.characterClass.ifBlank { "Adventurer" },
+                val generated = createRpgCharacterSheet(
+                    name = name,
+                    description = extracted.notes,
+                    characterClass = extracted.characterClass,
                     species = extracted.species,
                     level = extracted.level.coerceAtLeast(1),
-                    currentHp = extracted.currentHp.coerceAtLeast(0),
-                    maxHp = extracted.maxHp.coerceAtLeast(0),
-                    armorClass = extracted.armorClass.coerceAtLeast(0),
-                    appearance = extracted.appearance,
+                )
+                val knownMaxHp = extracted.maxHp.takeIf { it > 0 } ?: generated.maxHp
+                val sheet = generated.copy(
+                    currentHp = extracted.currentHp.takeIf { it > 0 }?.coerceAtMost(knownMaxHp) ?: knownMaxHp,
+                    maxHp = knownMaxHp,
+                    armorClass = extracted.armorClass.takeIf { it > 0 } ?: generated.armorClass,
+                    appearance = extracted.appearance.ifBlank { generated.appearance },
                 )
                 dao.upsertCharacter(
                     entity.copy(extensionsJson = encodeRpgSheet(entity.extensionsJson, sheet)),
@@ -412,6 +417,10 @@ class AdventureCapture @Inject constructor(
             id = "rpc-${UUID.randomUUID()}",
             name = "New Character",
             inParty = true,
+            extensionsJson = encodeRpgSheet(
+                "{}",
+                createRpgCharacterSheet(name = "New Character"),
+            ),
             createdAt = now,
             updatedAt = now,
         )

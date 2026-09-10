@@ -95,7 +95,7 @@ During an RPG scene:
 - **Other RPG** offers speaking, questioning, persuading, searching, preparing for the selected mode, and checking the party.
 - **Your own action** accepts any custom player wording. The app still enforces the active mode and its rules.
 - **Add text to…** appears after the player selects story text. It opens the existing text-capture popup rather than occupying the scene controls permanently.
-- **Character cards** opens a horizontal gallery of the player and active party. Each playing card shows portrait art, class/level, HP, AC, and a summary, and can open the full editable character sheet.
+- **Character cards** and the mode-aware party entry under **Other RPG** open the player and active party outside combat. Tactical mode shows ATK, DEF, SUP, SPD, AP, EP, and the signature card; d20 mode shows ability scores and modifiers. Each card opens the full editable sheet. New, AI-created, and imported characters receive populated d20 and tactical starting statistics.
 
 The scene layout keeps artwork and story/action content balanced for portrait, landscape, and narrow phone screens. Setup panes and planner lists scroll independently so no question or action is clipped.
 

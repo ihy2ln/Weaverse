@@ -6,6 +6,7 @@ import com.ihy2ln.weaverse.core.media.MediaRepository
 import com.ihy2ln.weaverse.core.roleplay.avatarColorHexFor
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
 import com.ihy2ln.weaverse.feature.roleplay.characters.decodeRpgSheet
+import com.ihy2ln.weaverse.feature.roleplay.characters.RpgCharacterSheet
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,6 +27,8 @@ data class PartyMemberUi(
     val sheetLabel: String = "",
     val hpLabel: String = "",
     val armorClassLabel: String = "",
+    /** Complete saved sheet used by the in-scene card/sheet viewer. */
+    val sheet: RpgCharacterSheet? = null,
     /** Player personas open the persona editor; everyone else the character editor. */
     val isDefaultPersona: Boolean = false,
     /** Stable blank/full sheet created for this player when an adventure begins. */
@@ -97,6 +100,7 @@ class PartyViewModel @Inject constructor(
                             sheetLabel = sheet?.let { "${it.characterClass} ${it.level}" }.orEmpty(),
                             hpLabel = sheet?.let { "${it.currentHp}/${it.maxHp}" }.orEmpty(),
                             armorClassLabel = sheet?.armorClass?.toString().orEmpty(),
+                            sheet = sheet,
                             isDefaultPersona = persona.isDefault,
                             sheetCharacterId = character?.id,
                         )
@@ -115,6 +119,7 @@ class PartyViewModel @Inject constructor(
                             sheetLabel = "${sheet.characterClass} ${sheet.level}",
                             hpLabel = "${sheet.currentHp}/${sheet.maxHp}",
                             armorClassLabel = sheet.armorClass.toString(),
+                            sheet = sheet,
                         )
                     },
                     bench = nonPlayerCharacters.filterNot { it.inParty }.map { character ->
@@ -130,6 +135,7 @@ class PartyViewModel @Inject constructor(
                             sheetLabel = "${sheet.characterClass} ${sheet.level}",
                             hpLabel = "${sheet.currentHp}/${sheet.maxHp}",
                             armorClassLabel = sheet.armorClass.toString(),
+                            sheet = sheet,
                         )
                     },
                     loading = false,

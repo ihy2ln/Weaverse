@@ -217,10 +217,13 @@ Select story text to reveal **Add text to…**, which opens the existing capture
 popup for Codex, roster, or inventory bookkeeping. The button stays hidden
 until text is selected so it does not cover the scene controls.
 
-The **Character cards** button in an active scene opens the player and current
-party as scrollable playing cards with portrait, class/level, HP, AC, and a
-summary. A card can open the full editable character sheet without discarding
-the active scene.
+The **Character cards** button in an active scene—or the mode-aware party entry
+under **Other RPG**—opens the player and current party outside combat. Focused
+Tactical Cards displays ATK, DEF, SUP, SPD, AP, EP, and the signature card;
+D&D d20 displays the six ability scores and modifiers. A card can open the full
+editable character sheet without discarding the active scene. Newly created,
+AI-created, and imported characters receive populated d20 and tactical starting
+statistics instead of an empty sheet.
 
 Scene art is selected from the local Pictures library. The app matches scene
 prose, campaign setting, category, mood, and tags, then attaches the best local

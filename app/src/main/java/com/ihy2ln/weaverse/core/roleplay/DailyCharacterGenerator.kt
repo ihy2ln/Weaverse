@@ -6,6 +6,8 @@ import com.ihy2ln.weaverse.core.text.encodeAliases
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
 import com.ihy2ln.weaverse.data.db.entities.RpCharacterEntity
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
+import com.ihy2ln.weaverse.feature.roleplay.characters.createRpgCharacterSheet
+import com.ihy2ln.weaverse.feature.roleplay.characters.encodeRpgSheet
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -90,6 +92,10 @@ class DailyCharacterGenerator @Inject constructor(
             ),
             tagsJson = encodeAliases(listOf(DAILY_CHARACTER_TAG) + parsed.tags),
             colorHex = pickColorHex(parsed.name),
+            extensionsJson = encodeRpgSheet(
+                "{}",
+                createRpgCharacterSheet(name = parsed.name, description = parsed.description),
+            ),
             createdAt = now,
         )
     }

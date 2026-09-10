@@ -5,6 +5,7 @@ import android.net.Uri
 import com.ihy2ln.weaverse.core.media.MediaRepository
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
 import com.ihy2ln.weaverse.data.db.entities.RpCharacterEntity
+import com.ihy2ln.weaverse.feature.roleplay.characters.ensureRpgSheet
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -72,7 +73,11 @@ class CharacterCardImporter @Inject constructor(
                     "\"${it.replace("\"", "")}\""
                 }.ifBlank { "[]" },
                 characterVersion = spec.characterVersion,
-                extensionsJson = spec.extensionsJson.ifBlank { "{}" },
+                extensionsJson = ensureRpgSheet(
+                    extensionsJson = spec.extensionsJson.ifBlank { "{}" },
+                    name = spec.name,
+                    description = spec.description,
+                ),
                 createdAt = now,
             ),
         )

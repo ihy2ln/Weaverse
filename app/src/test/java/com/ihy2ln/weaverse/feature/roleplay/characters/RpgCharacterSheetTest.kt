@@ -28,4 +28,33 @@ class RpgCharacterSheetTest {
         assertEquals("Elf", decodeRpgSheet(encoded).species)
         assertEquals("Evoker", decodeRpgSheet(encoded).subclass)
     }
+
+    @Test fun `new sheets contain playable d20 and tactical card statistics`() {
+        val sheet = createRpgCharacterSheet(
+            name = "Aria",
+            characterClass = "Wizard",
+            species = "Elf",
+            level = 3,
+        )
+
+        assertEquals("Arcanist", sheet.tacticalRole)
+        assertTrue(sheet.maxHp > 0)
+        assertEquals(sheet.maxHp, sheet.currentHp)
+        assertTrue(sheet.armorClass > 0)
+        assertTrue(sheet.proficiencyBonus > 0)
+        assertTrue(sheet.attacksAndActions.isNotBlank())
+        assertTrue(sheet.savingThrows.isNotBlank())
+        assertTrue(sheet.tacticalAttack > 0)
+        assertTrue(sheet.tacticalActionPoints > 0)
+        assertTrue(sheet.tacticalEnergyPoints > 0)
+        assertTrue(sheet.tacticalSignatureEffect.isNotBlank())
+    }
+
+    @Test fun `missing sheet data receives a populated backward compatible sheet`() {
+        val sheet = decodeRpgSheet("{\"talkativeness\":0.8}")
+        assertEquals("Adventurer", sheet.characterClass)
+        assertTrue(sheet.maxHp > 0)
+        assertTrue(sheet.skillsAndProficiencies.isNotBlank())
+        assertTrue(sheet.tacticalSignature.isNotBlank())
+    }
 }

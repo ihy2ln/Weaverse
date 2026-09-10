@@ -171,10 +171,11 @@ object HelpContent {
                 ),
                 HelpEntry(
                     "Character cards during play",
-                    "Tap Character cards in an active scene to open a horizontally scrolling " +
-                        "gallery of the player and party cards. Each card shows its portrait, " +
-                        "class, level, HP, AC, and summary; Open full character sheet reveals " +
-                        "the editable record without ending the campaign.",
+                    "Tap Character cards in the scene header, or open Other RPG and choose the " +
+                        "party viewer. Focused Tactical Cards shows ATK, DEF, SUP, SPD, AP, EP, " +
+                        "and the signature card. D&D d20 shows abilities and modifiers. Every " +
+                        "card opens the complete editable sheet without ending the campaign. " +
+                        "New characters receive filled d20 and tactical starting statistics.",
                 ),
                 HelpEntry(
                     "Inventory",

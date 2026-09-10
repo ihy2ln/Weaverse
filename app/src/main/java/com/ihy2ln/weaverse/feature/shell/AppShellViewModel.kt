@@ -28,7 +28,7 @@ import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgCampaignRepository
 import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgCampaignSetupSnapshot
 import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgStartupState
 import com.ihy2ln.weaverse.feature.roleplay.campaign.createRpgCampaign
-import com.ihy2ln.weaverse.feature.roleplay.characters.RpgCharacterSheet
+import com.ihy2ln.weaverse.feature.roleplay.characters.createRpgCharacterSheet
 import com.ihy2ln.weaverse.feature.roleplay.characters.encodeRpgSheet
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -355,7 +355,10 @@ class AppShellViewModel @Inject constructor(
             avatarMediaId = persona.avatarMediaId,
             description = persona.description,
             tagsJson = "[\"Player\"]",
-            extensionsJson = encodeRpgSheet("{}", RpgCharacterSheet()),
+            extensionsJson = encodeRpgSheet(
+                "{}",
+                createRpgCharacterSheet(name = persona.name, description = persona.description),
+            ),
             defaultCodexId = "persona:$personaId",
             inParty = true,
             createdAt = now,

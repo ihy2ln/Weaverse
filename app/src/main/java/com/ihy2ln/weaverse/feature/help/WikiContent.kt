@@ -278,10 +278,13 @@ object WikiContent {
                 consequences. **Previous** browses saved scenes; **Next
                 scene ›** and **Stay here** control pacing.
 
-                Tap **Character cards** in the scene header to browse the
-                player and active party as full playing cards. The gallery
-                shows portrait art, class/level, HP, AC and character summary;
-                each card can open its complete editable sheet.
+                Tap **Character cards** in the scene header, or use **Other
+                RPG → View tactical roster cards / View party character
+                sheets**, to inspect the player and active party outside
+                combat. Tactical cards show ATK, DEF, SUP, SPD, AP, EP and a
+                signature card; d20 mode shows the six abilities and modifiers.
+                Each card opens its complete editable sheet. Newly created
+                characters start with populated d20 and tactical statistics.
 
                 ## Codex links and lore in play
 

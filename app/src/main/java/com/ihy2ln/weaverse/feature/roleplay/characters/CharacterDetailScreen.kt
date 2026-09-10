@@ -35,6 +35,7 @@ import java.io.File
 
 private enum class SheetSection(val label: String, val symbol: String, val hint: String) {
     Abilities("Abilities & Skills", "◆", "Scores, modifiers, skills and proficiencies"),
+    Tactical("Tactical Character Card", "▤", "Card role, AP/EP, combat ratings and signature card"),
     Combat("Combat & Defenses", "⚔", "Armor class, speed, initiative and conditions"),
     Health("Health & Death", "♥", "Hit points, hit dice and death saves"),
     Saves("Saving Throws", "⬟", "Class and ancestry saving-throw bonuses"),
@@ -250,6 +251,7 @@ private fun SheetSectionContent(section: SheetSection, state: CharacterDetailUiS
                 vm.onSheet(sheet.copy(skillsAndProficiencies = it))
             }
         }
+        SheetSection.Tactical -> TacticalCardPanel(sheet, vm::onSheet)
         SheetSection.Combat -> CombatPanel(sheet, vm::onSheet)
         SheetSection.Health -> HealthPanel(sheet, vm::onSheet, vm::adjustHp)
         SheetSection.Saves -> NotesPanel("Saving throws", sheet.savingThrows) {
@@ -286,6 +288,37 @@ private fun SheetSectionContent(section: SheetSection, state: CharacterDetailUiS
         SheetSection.Bio -> BioPanel(state, vm)
         SheetSection.Settings -> SettingsPanel(state, vm)
     }
+}
+
+@Composable
+private fun TacticalCardPanel(s: RpgCharacterSheet, change: (RpgCharacterSheet) -> Unit) {
+    PanelTitle("FOCUSED TACTICAL CARDS")
+    VoiceToTextField(
+        value = s.tacticalRole,
+        onValueChange = { change(s.copy(tacticalRole = it)) },
+        label = "Tactical role",
+        singleLine = true,
+    )
+    NumberEditor("Attack rating", s.tacticalAttack, 0, max = 20) { change(s.copy(tacticalAttack = it)) }
+    NumberEditor("Defense rating", s.tacticalDefense, 0, max = 20) { change(s.copy(tacticalDefense = it)) }
+    NumberEditor("Support rating", s.tacticalSupport, 0, max = 20) { change(s.copy(tacticalSupport = it)) }
+    NumberEditor("Speed rating", s.tacticalSpeed, 0, max = 20) { change(s.copy(tacticalSpeed = it)) }
+    NumberEditor("Action points", s.tacticalActionPoints, 1, max = 10) { change(s.copy(tacticalActionPoints = it)) }
+    NumberEditor("Energy points", s.tacticalEnergyPoints, 0, max = 10) { change(s.copy(tacticalEnergyPoints = it)) }
+    VoiceToTextField(
+        value = s.tacticalSignature,
+        onValueChange = { change(s.copy(tacticalSignature = it)) },
+        label = "Signature card",
+        singleLine = true,
+        modifier = Modifier.padding(top = InkSpacing.sm),
+    )
+    VoiceToTextField(
+        value = s.tacticalSignatureEffect,
+        onValueChange = { change(s.copy(tacticalSignatureEffect = it)) },
+        label = "Signature card effect",
+        minLines = 3,
+        modifier = Modifier.padding(top = InkSpacing.sm),
+    )
 }
 
 @Composable

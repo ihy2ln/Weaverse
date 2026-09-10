@@ -26,7 +26,7 @@ Players can create reusable entries in either catalog by supplying a name, main 
 
 Backend catalogs provide starter setting details (Frontier, City, Wilds, War), house rules (Cinematic, Gritty, Heroic, Political), and custom entries. Preset identity is saved explicitly; custom text supplements or overrides guidance without erasing which preset was chosen.
 
-During an active scene, Character cards opens the campaign player and active party as horizontally scrollable playing cards. Cards expose portrait, class/level, HP, AC, and summary and link to the full editable sheet.
+During an active scene, Character cards and the Other RPG party action open the campaign player and active party outside combat. Focused Tactical Cards exposes ATK, DEF, SUP, SPD, AP, EP, and a signature card; D&D d20 exposes the six ability scores and modifiers. Both link to the full editable sheet. New, AI-created, and imported characters are initialized with populated d20 and tactical statistics.
 
 ## UI and offline rules
 

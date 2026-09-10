@@ -97,6 +97,7 @@ import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgGenerationStatus
 import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgStartupState
 import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgStartupStep
 import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatRuleset
+import com.ihy2ln.weaverse.feature.roleplay.characters.formatModifier
 import com.ihy2ln.weaverse.feature.roleplay.party.PartyMemberUi
 import com.ihy2ln.weaverse.feature.roleplay.party.PartyViewModel
 import java.io.File
@@ -105,12 +106,21 @@ import kotlinx.coroutines.launch
 private data class RpgActionPresetGroup(val label: String, val options: List<String>)
 
 @Composable
-private fun RpgSceneActionPalette(mode: RpgCombatRuleset, onSelect: (String) -> Unit) {
+private fun RpgSceneActionPalette(
+    mode: RpgCombatRuleset,
+    onSelect: (String) -> Unit,
+    onOpenParty: () -> Unit,
+) {
+    val partyOption = when (mode) {
+        RpgCombatRuleset.CardBattle -> "View tactical roster cards"
+        RpgCombatRuleset.DndD20 -> "View party character sheets"
+        RpgCombatRuleset.TextReactions -> "View party roster"
+    }
     val groups = remember(mode) {
         listOf(
             RpgActionPresetGroup("Actions", listOf("Look around carefully", "Move closer cautiously", "Interact with the environment", "Use a carried item", "Help a party member", "Wait and observe")),
             RpgActionPresetGroup("Thoughts", listOf("Think through the situation", "Recall relevant knowledge", "Study their intentions", "Consider the risks", "Focus on a suspicious detail", "Reflect on the party's goal")),
-            RpgActionPresetGroup("Other RPG", listOf("Speak to a nearby character", "Ask a direct question", "Attempt to persuade them", "Search for clues", "Prepare for ${mode.label} combat", "Check the party's condition")),
+            RpgActionPresetGroup("Other RPG", listOf(partyOption, "Speak to a nearby character", "Ask a direct question", "Attempt to persuade them", "Search for clues", "Prepare for ${mode.label} combat", "Check the party's condition")),
         )
     }
     Row(
@@ -130,7 +140,7 @@ private fun RpgSceneActionPalette(mode: RpgCombatRuleset, onSelect: (String) -> 
                         DropdownMenuItem(
                             text = { Text(option) },
                             onClick = {
-                                onSelect(option)
+                                if (option == partyOption) onOpenParty() else onSelect(option)
                                 expanded = false
                             },
                         )
@@ -1140,7 +1150,11 @@ fun AdventurePlayScreen(
             )
         }
         if (!startupPending) {
-            RpgSceneActionPalette(state.rpgCombatMode, viewModel::onInputChange)
+            RpgSceneActionPalette(
+                mode = state.rpgCombatMode,
+                onSelect = viewModel::onInputChange,
+                onOpenParty = { showCharacterCards = true },
+            )
         }
         UnifiedPromptBar(
             value = state.input,
@@ -1250,6 +1264,7 @@ fun AdventurePlayScreen(
     if (showCharacterCards) {
         CampaignCharacterCardsDialog(
             members = partyState.players.filter { it.id == state.activeCampaignPersonaId } + partyState.cast,
+            mode = state.rpgCombatMode,
             onDismiss = { showCharacterCards = false },
             onOpen = { member ->
                 showCharacterCards = false
@@ -1370,13 +1385,22 @@ fun AdventurePlayScreen(
 @Composable
 private fun CampaignCharacterCardsDialog(
     members: List<PartyMemberUi>,
+    mode: RpgCombatRuleset,
     onDismiss: () -> Unit,
     onOpen: (PartyMemberUi) -> Unit,
 ) {
     val tokens = inkTokens()
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Campaign character cards") },
+        title = {
+            Text(
+                when (mode) {
+                    RpgCombatRuleset.CardBattle -> "Tactical roster cards"
+                    RpgCombatRuleset.DndD20 -> "Party character sheets"
+                    RpgCombatRuleset.TextReactions -> "Party roster"
+                },
+            )
+        },
         text = {
             if (members.isEmpty()) {
                 Text("No character cards are attached to this party yet.", color = tokens.secondaryText)
@@ -1389,7 +1413,7 @@ private fun CampaignCharacterCardsDialog(
                         Column(
                             modifier = Modifier
                                 .width(260.dp)
-                                .heightIn(min = 390.dp, max = 500.dp)
+                                .heightIn(min = 390.dp, max = 540.dp)
                                 .clip(RoundedCornerShape(18.dp))
                                 .background(tokens.panel)
                                 .border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(18.dp))
@@ -1407,7 +1431,7 @@ private fun CampaignCharacterCardsDialog(
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(220.dp)
+                                    .height(if (mode == RpgCombatRuleset.TextReactions) 220.dp else 160.dp)
                                     .padding(vertical = InkSpacing.xs)
                                     .clip(RoundedCornerShape(10.dp))
                                     .background(tokens.hover)
@@ -1442,12 +1466,63 @@ private fun CampaignCharacterCardsDialog(
                                     color = tokens.secondaryText,
                                 )
                             }
+                            member.sheet?.let { sheet ->
+                                when (mode) {
+                                    RpgCombatRuleset.CardBattle -> {
+                                        Text(
+                                            sheet.tacticalRole.uppercase(),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.padding(top = InkSpacing.xs),
+                                        )
+                                        Row(
+                                            Modifier.fillMaxWidth().padding(top = 4.dp),
+                                            horizontalArrangement = Arrangement.SpaceEvenly,
+                                        ) {
+                                            CompactCardStat("ATK", sheet.tacticalAttack)
+                                            CompactCardStat("DEF", sheet.tacticalDefense)
+                                            CompactCardStat("SUP", sheet.tacticalSupport)
+                                            CompactCardStat("SPD", sheet.tacticalSpeed)
+                                        }
+                                        Row(
+                                            Modifier.fillMaxWidth().padding(top = 4.dp),
+                                            horizontalArrangement = Arrangement.SpaceEvenly,
+                                        ) {
+                                            CompactCardStat("AP", sheet.tacticalActionPoints)
+                                            CompactCardStat("EP", sheet.tacticalEnergyPoints)
+                                        }
+                                        Text(
+                                            "${sheet.tacticalSignature} — ${sheet.tacticalSignatureEffect}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.padding(top = InkSpacing.xs),
+                                        )
+                                    }
+                                    RpgCombatRuleset.DndD20 -> {
+                                        listOf(
+                                            listOf("STR" to sheet.strength, "DEX" to sheet.dexterity, "CON" to sheet.constitution),
+                                            listOf("INT" to sheet.intelligence, "WIS" to sheet.wisdom, "CHA" to sheet.charisma),
+                                        ).forEach { abilities ->
+                                            Row(
+                                                Modifier.fillMaxWidth().padding(top = 4.dp),
+                                                horizontalArrangement = Arrangement.SpaceEvenly,
+                                            ) {
+                                                abilities.forEach { (label, score) ->
+                                                    CompactCardStat(label, score, formatModifier(score))
+                                                }
+                                            }
+                                        }
+                                    }
+                                    RpgCombatRuleset.TextReactions -> Unit
+                                }
+                            }
                             if (member.summary.isNotBlank()) {
                                 Text(
                                     member.summary,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = tokens.secondaryText,
-                                    maxLines = 3,
+                                    maxLines = 2,
                                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                     modifier = Modifier.padding(top = InkSpacing.xs),
                                 )
@@ -1464,6 +1539,15 @@ private fun CampaignCharacterCardsDialog(
         },
         confirmButton = { InkTextButton(label = "Close", onClick = onDismiss) },
     )
+}
+
+@Composable
+private fun CompactCardStat(label: String, value: Int, secondary: String = "") {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = inkTokens().secondaryText)
+        Text(value.toString(), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+        if (secondary.isNotBlank()) Text(secondary, style = MaterialTheme.typography.labelSmall)
+    }
 }
 
 @Composable

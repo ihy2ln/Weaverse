@@ -95,6 +95,10 @@ class CharactersViewModel @Inject constructor(
                 name = "New character",
                 description = "",
                 tagsJson = "[\"$safe\"]",
+                extensionsJson = encodeRpgSheet(
+                    "{}",
+                    createRpgCharacterSheet(name = "New character"),
+                ),
                 createdAt = now,
             )
             db.roleplayDao().upsertCharacter(entity)

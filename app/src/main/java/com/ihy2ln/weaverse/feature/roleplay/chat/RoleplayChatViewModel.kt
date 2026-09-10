@@ -109,7 +109,7 @@ import com.ihy2ln.weaverse.feature.roleplay.campaign.parseSceneDraft
 import com.ihy2ln.weaverse.feature.roleplay.characters.abilityModifier
 import com.ihy2ln.weaverse.feature.roleplay.characters.decodeRpgSheet
 import com.ihy2ln.weaverse.feature.roleplay.characters.encodeRpgSheet
-import com.ihy2ln.weaverse.feature.roleplay.characters.RpgCharacterSheet
+import com.ihy2ln.weaverse.feature.roleplay.characters.createRpgCharacterSheet
 import com.ihy2ln.weaverse.ai.prompt.PromptRenderContext
 import com.ihy2ln.weaverse.ai.prompt.PromptRenderer
 import com.ihy2ln.weaverse.feature.prompt.PromptModelSelection
@@ -2559,7 +2559,9 @@ class RoleplayChatViewModel @Inject constructor(
                 },
                 now = now,
             )
-            val generatedSheet = RpgCharacterSheet(
+            val generatedSheet = createRpgCharacterSheet(
+                name = update.name,
+                description = update.description,
                 species = update.species,
                 characterClass = update.characterClass,
                 level = update.level,
@@ -3331,7 +3333,10 @@ class RoleplayChatViewModel @Inject constructor(
             avatarMediaId = persona.avatarMediaId,
             description = persona.description,
             tagsJson = "[\"Player\"]",
-            extensionsJson = encodeRpgSheet("{}", RpgCharacterSheet()),
+            extensionsJson = encodeRpgSheet(
+                "{}",
+                createRpgCharacterSheet(name = persona.name, description = persona.description),
+            ),
             defaultCodexId = "persona:$personaId",
             inParty = true,
             createdAt = now,
