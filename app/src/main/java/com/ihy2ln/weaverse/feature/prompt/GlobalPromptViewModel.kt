@@ -414,7 +414,7 @@ class GlobalPromptViewModel @Inject constructor(
             _uiState.update {
                 it.copy(isStreaming = true, streamingText = "", errorMessage = "", usageText = "")
             }
-            val maxTokens = (state.outputWords * 1.5).toInt().coerceIn(64, 8192)
+            val maxTokens = (state.outputWords * 1.7 + 192).toInt().coerceIn(192, 8192)
             val userMessage = buildString {
                 append(state.text.ifBlank { DefaultAiGuides.draftFor(context.mode) })
                 if (state.imageMediaId != null) {

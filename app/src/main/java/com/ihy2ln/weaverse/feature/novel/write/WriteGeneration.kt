@@ -164,7 +164,7 @@ class WriteGeneration @Inject constructor(
                 )
             }
         }
-        val maxTokens = (activeOverlay.outputWords * 1.4).toInt().coerceIn(64, 8192)
+        val maxTokens = (activeOverlay.outputWords * 1.7 + 192).toInt().coerceIn(192, 8192)
         val userMessage = fresh.finalUserMessage
             ?: promptAssembler.buildUserMessage(activeOverlay, sceneText, hasImage)
         val imageAttachments = if (hasImage) {

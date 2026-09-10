@@ -206,8 +206,9 @@ object DefaultAiGuides {
             AppMode.Notes -> add(notesDraft)
         }
         add(
-            "Write no more than $outputWords words. Treat this as a hard maximum; " +
-                "finish naturally below it and never exceed it, even if the user asks for more.",
+            "Target about $outputWords words. Always complete the final sentence before stopping. " +
+                "Aim to finish at or below the target, but exceed it slightly when necessary to " +
+                "finish that sentence. Never end with a cut-off sentence or fragment.",
         )
     }.map { PromptTokens.apply(it, tokens) }
 

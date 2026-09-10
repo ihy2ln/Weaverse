@@ -555,8 +555,9 @@ object WikiContent {
                 Every prompt window — Novel, RPG, Chatting, Brainstorm —
                 carries the same controls:
 
-                - **W min–max** — the word range the AI targets; the ceiling
-                  also trims the finished reply.
+                - **W min–max** — the word range the AI targets. The app
+                  finishes on a complete sentence and may allow a small
+                  overrun rather than cut prose off mid-sentence.
                 - **/A vs \\M** — AI generation versus filing your text
                   without calling a model.
                 - **✓ send** — tap to send. **Hold ✓** for ↻ retry (redo the

@@ -16,6 +16,21 @@ class DefaultAiGuidesTest {
     }
 
     @Test
+    fun `every mode instructs the model to finish its final sentence`() {
+        AppMode.entries.forEach { mode ->
+            val blocks = DefaultAiGuides.systemBlocks(mode, outputWords = 250)
+            assertTrue(
+                blocks.any { it.contains("complete the final sentence", ignoreCase = true) },
+                "$mode should prohibit cut-off sentences",
+            )
+            assertTrue(
+                blocks.any { it.contains("exceed it slightly", ignoreCase = true) },
+                "$mode should permit a small overrun to complete prose",
+            )
+        }
+    }
+
+    @Test
     fun seedPrompts_includeRoleplayAndContinue() {
         val prompts = DefaultAiGuides.seedPrompts(0L)
         assertTrue(prompts.any { it.id == "prompt-roleplay-reply" })

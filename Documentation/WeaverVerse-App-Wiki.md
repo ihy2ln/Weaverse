@@ -108,6 +108,10 @@ Milestones are the first progression layer. Encounters and major choices can unl
 
 Authored fallback questions, outlines, scenes, map nodes, and encounters ship locally. AI enrichment is optional. If a model is unavailable, the user can use the authored fallback and continue a valid campaign. The selected model can be changed in the adventure setup and is locked only while a generation request is running.
 
+## Text generation endings
+
+The selected maximum word count is a target, not a destructive hard cut. Every shared AI prompt instructs the model to complete its final sentence. If the response crosses the target while finishing that sentence, the app permits a small overrun; if trimming is still needed, it stops at a detected sentence boundary instead of leaving cut-off prose.
+
 ## Troubleshooting
 
 **The selected mode changed to D&D d20.** Reopen Campaign Setup and confirm the Mode row. The campaign stores the mode ID separately from the prose setup note; current scene prompts and scene UI read that saved ID. Existing label-form saves are normalized during restore.

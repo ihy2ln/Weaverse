@@ -59,6 +59,8 @@ Planner and startup panes use independent scroll containers. Horizontal preset r
 
 ## Tests
 
+`PromptWordLimit` supplies the shared word-range instruction and performs sentence-safe final insertion. It searches for a sentence ending near the selected maximum, permits a bounded overrun to reach that ending, and otherwise falls back to the previous complete sentence. Unpunctuated or structured output is preserved rather than sliced into a fragment. Shared provider token budgets include additional completion headroom.
+
 Focused unit coverage currently includes:
 
 - RPG mode parsing and label/ID normalization.
@@ -67,6 +69,7 @@ Focused unit coverage currently includes:
 - RPG save creation, migration, persistence, and startup state.
 - Scene choice/art marker parsing.
 - Local scene-media ranking and category/tag behavior.
+- Complete-sentence prompt directives and sentence-safe word limiting.
 
 Recommended commands from the repository root (the bundled Gradle distribution avoids a network download):
 

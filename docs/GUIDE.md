@@ -315,8 +315,9 @@ When expanded, prompt text sits above one compact control row:
 
 - **PROMPT** is the small collapse control at the top-left.
 - **W minimum–maximum** sets the requested generation range. The app asks the
-  model to stay within the maximum, although model output cannot be guaranteed
-  with mathematical precision.
+  model to stay within the maximum, but treats it as a target rather than a hard
+  cut. The AI must complete its final sentence and may go slightly over the
+  target when necessary instead of ending on a sentence fragment.
 - **Model** opens the OpenRouter model selector. Long names scroll within their
   available space.
 - **/A · \\M** is one toggle: A selects AI generation and M manual entry.

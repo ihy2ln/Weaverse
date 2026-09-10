@@ -162,7 +162,10 @@ class WritePromptAssembler @Inject constructor(
             append(defaultPromptFor(overlay.commandId))
             append("\n\n")
         }
-        append("Target length: about ${overlay.outputWords} words.\n\n")
+        append(
+            "Target length: about ${overlay.outputWords} words. Complete the final sentence; " +
+                "a slight overrun is allowed when necessary.\n\n",
+        )
         append("Current scene:\n")
         append(sceneText.take(6000))
     }

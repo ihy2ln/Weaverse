@@ -330,7 +330,9 @@ object HelpContent {
                     "W sets the minimum and maximum word count the AI targets. /A is AI " +
                         "generation, \\M files your text without calling a model. Tap ✓ to " +
                         "send; hold ✓ for retry and continue; while streaming, × cancels. " +
-                        "The context meter shows roughly how full the model's window is.",
+                        "The context meter shows roughly how full the model's window is. " +
+                        "The maximum is a target: the AI may go slightly over it to finish " +
+                        "the final sentence instead of cutting the reply off mid-sentence.",
                 ),
                 HelpEntry(
                     "Backspace clear with hold-to-undo",
