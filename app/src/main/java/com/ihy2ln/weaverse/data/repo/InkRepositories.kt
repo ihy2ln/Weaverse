@@ -1,6 +1,10 @@
 package com.ihy2ln.weaverse.data.repo
 
+import com.ihy2ln.weaverse.core.media.AiMediaRequest
+import com.ihy2ln.weaverse.core.media.AiMediaResolver
+import com.ihy2ln.weaverse.core.media.MediaRepository
 import com.ihy2ln.weaverse.core.text.Document
+import com.ihy2ln.weaverse.core.text.MediaBlock
 import com.ihy2ln.weaverse.core.text.Paragraph
 import com.ihy2ln.weaverse.core.text.Span
 import com.ihy2ln.weaverse.core.text.appendSceneBeat
@@ -270,7 +274,38 @@ class ManuscriptRepository @Inject constructor(
         val nextOrder = (existing.maxOfOrNull { it.sortOrder } ?: -1) + 1
         val now = System.currentTimeMillis()
         val id = "scene-${UUID.randomUUID()}"
-        val doc = Document(listOf(Paragraph("p-$id", listOf(Span("")))))
+        // A new scene gets relevant existing library art immediately. The preceding
+        // scene supplies continuity terms; unresolved/no-match media is simply skipped.
+        val chapterTitle = db.manuscriptDao().getChapter(chapterId)?.title.orEmpty()
+        val mediaQuery = buildList {
+            add(chapterTitle)
+            existing.lastOrNull()?.let { previous ->
+                add(previous.title)
+                add(previous.summary)
+                add(previous.plainText.takeLast(1200))
+            }
+        }.filter(String::isNotBlank).joinToString(" ")
+        val resolver = AiMediaResolver { db.mediaDao().observeAll().first() }
+        val sceneMedia = if (mediaQuery.isBlank()) {
+            emptyList()
+        } else {
+            (resolver.resolveAll(AiMediaRequest(type = "image", query = mediaQuery), limit = 2) +
+                resolver.resolveAll(AiMediaRequest(type = "video", query = mediaQuery), limit = 1))
+                .distinctBy { it.id }
+        }
+        val blocks = buildList {
+            add(Paragraph("p-$id", listOf(Span(""))))
+            sceneMedia.forEach { media ->
+                add(
+                    MediaBlock(
+                        id = "media-${UUID.randomUUID()}",
+                        mediaId = media.id,
+                        kind = MediaRepository.kindForType(media.type),
+                    ),
+                )
+            }
+        }
+        val doc = Document(blocks)
         val entity = SceneEntity(
             id = id,
             chapterId = chapterId,

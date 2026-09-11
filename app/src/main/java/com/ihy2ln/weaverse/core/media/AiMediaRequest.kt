@@ -37,7 +37,11 @@ object AiMediaRequestParser {
 
 class AiMediaResolver(private val allMedia: suspend () -> List<MediaEntity>) {
     suspend fun resolve(request: AiMediaRequest): MediaEntity? {
-        val wanted = AiMediaRequestParser.normalize(request) ?: return null
+        return resolveAll(request, 1).firstOrNull()
+    }
+
+    suspend fun resolveAll(request: AiMediaRequest, limit: Int = 3): List<MediaEntity> {
+        val wanted = AiMediaRequestParser.normalize(request) ?: return emptyList()
         val terms = (wanted.tags + wanted.query.split(Regex("\\W+"))).map { it.lowercase() }.filter { it.length > 2 }.toSet()
         return allMedia().asSequence()
             .filter { it.type == wanted.type }
@@ -46,7 +50,8 @@ class AiMediaResolver(private val allMedia: suspend () -> List<MediaEntity>) {
             .filter { it.second > 0 || terms.isEmpty() }
             .sortedWith(compareByDescending<Pair<MediaEntity, Int>> { it.second }.thenBy { it.first.displayName }.thenBy { it.first.id })
             .map { it.first }
-            .firstOrNull()
+            .take(limit.coerceAtLeast(0))
+            .toList()
     }
 
     private fun score(media: MediaEntity, terms: Set<String>): Int {

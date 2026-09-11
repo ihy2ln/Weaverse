@@ -82,6 +82,9 @@ interface ManuscriptDao {
     @Query("SELECT * FROM chapters WHERE actId = :actId ORDER BY sortOrder")
     suspend fun getChapters(actId: String): List<ChapterEntity>
 
+    @Query("SELECT * FROM chapters WHERE id = :id LIMIT 1")
+    suspend fun getChapter(id: String): ChapterEntity?
+
     @Query("SELECT * FROM scenes WHERE chapterId = :chapterId ORDER BY sortOrder")
     fun observeScenes(chapterId: String): Flow<List<SceneEntity>>
 
