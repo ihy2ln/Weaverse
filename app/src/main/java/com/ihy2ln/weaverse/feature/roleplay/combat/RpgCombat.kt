@@ -46,6 +46,8 @@ data class RpgCombatant(
     val attackModifier: Int = 0,
     val statuses: Set<RpgStatusEffect> = emptySet(),
     val isEnemy: Boolean = false,
+    /** Saved portrait file or bundled asset URI used by the battle unit card. */
+    val artPath: String = "",
 )
 
 @Serializable

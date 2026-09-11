@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -28,12 +30,22 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
+import com.ihy2ln.weaverse.core.roleplay.avatarColorHexFor
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
+import com.ihy2ln.weaverse.feature.roleplay.friends.CharacterAvatar
+import com.ihy2ln.weaverse.feature.roleplay.textgame.pickGkomVariant
+import java.io.File
 
 /** RPG-only encounter surface. It deliberately has no dependency on Text Game UI/state. */
 @Composable
@@ -44,6 +56,7 @@ fun RpgCombatScreen(
     selectedTargetId: String?,
     preview: RpgCombatPreview?,
     textAction: String,
+    unitArtPaths: Map<String, String> = emptyMap(),
     onRulesetSelected: (RpgCombatRuleset) -> Unit,
     onCardSelected: (RpgCombatCard) -> Unit,
     onTargetSelected: (RpgCombatant) -> Unit,
@@ -94,14 +107,20 @@ fun RpgCombatScreen(
         Text("Party", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
             items(state.combatants.filterNot { it.isEnemy }, key = { it.id }) { member ->
-                CombatantTile(member, selectedTargetId == member.id, onTargetSelected)
+                CombatantPlayingCard(
+                    combatant = member,
+                    artPath = unitArtPaths[member.id].orEmpty(),
+                    selected = selectedTargetId == member.id,
+                    onSelected = onTargetSelected,
+                )
             }
         }
         Text("Enemies and intent", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
             items(state.combatants.filter { it.isEnemy }, key = { it.id }) { enemy ->
-                CombatantTile(
+                CombatantPlayingCard(
                     combatant = enemy,
+                    artPath = unitArtPaths[enemy.id].orEmpty(),
                     selected = selectedTargetId == enemy.id,
                     onSelected = onTargetSelected,
                     intent = state.intents.firstOrNull { it.enemyId == enemy.id }?.label,
@@ -202,32 +221,132 @@ fun RpgCombatScreen(
 }
 
 @Composable
-private fun CombatantTile(
+private fun CombatantPlayingCard(
     combatant: RpgCombatant,
+    artPath: String,
     selected: Boolean,
     onSelected: (RpgCombatant) -> Unit,
     intent: String? = null,
 ) {
-    val tokens = inkTokens()
+    val alive = combatant.hp > 0
+    val resolvedArtPath = artPath.ifBlank { combatant.artPath }.ifBlank {
+        if (combatant.isEnemy) {
+            pickGkomVariant(
+                enemyId = combatant.id,
+                seed = combatant.name.hashCode().toLong(),
+            )?.artAssetPath?.let { "file:///android_asset/$it" }.orEmpty()
+        } else {
+            ""
+        }
+    }
+    val shape = RoundedCornerShape(12.dp)
+    val accent = if (combatant.isEnemy) Color(0xFFD45757) else Color(0xFF4E91C9)
+    val borderColor = when {
+        selected -> Color(0xFFFFC857)
+        combatant.isEnemy -> Color(0xFF9D4949)
+        else -> Color(0xFF527EA3)
+    }
     Box(
         modifier = Modifier
-            .width(190.dp)
-            .heightIn(min = 88.dp)
-            .background(tokens.panel, RoundedCornerShape(inkRadiusSm()))
-            .then(
-                if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(inkRadiusSm()))
-                else Modifier,
-            )
-            .clickable(enabled = combatant.hp > 0) { onSelected(combatant) }
-            .padding(InkSpacing.sm),
+            .width(154.dp)
+            .aspectRatio(0.68f)
+            .clip(shape)
+            .background(Brush.verticalGradient(listOf(Color(0xFF242832), Color(0xFF111318))))
+            .border(if (selected) 3.dp else 2.dp, borderColor, shape)
+            .clickable(enabled = alive) { onSelected(combatant) }
+            .alpha(if (alive) 1f else 0.48f),
     ) {
-        Column(Modifier.align(Alignment.CenterStart)) {
-            Text(combatant.name, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-            Text("HP ${combatant.hp}/${combatant.maxHp} · AC ${combatant.armorClass}", style = MaterialTheme.typography.labelSmall)
-            if (combatant.statuses.isNotEmpty()) {
-                Text(combatant.statuses.joinToString(), style = MaterialTheme.typography.labelSmall, color = tokens.activePill)
+        if (resolvedArtPath.isNotBlank()) {
+            AsyncImage(
+                model = resolvedArtPath.takeIf {
+                    it.startsWith("file:") || it.startsWith("content:")
+                } ?: File(resolvedArtPath),
+                contentDescription = "${combatant.name} unit card art",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.radialGradient(
+                            listOf(accent.copy(alpha = 0.72f), Color(0xFF191D25)),
+                        ),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                CharacterAvatar(
+                    name = combatant.name,
+                    colorHex = avatarColorHexFor(combatant.name, null),
+                    size = 88.dp,
+                )
             }
-            intent?.let { Text("Intent: $it", style = MaterialTheme.typography.labelSmall, color = tokens.activePill) }
+        }
+        Text(
+            text = if (selected) "TARGET" else if (combatant.isEnemy) "ENEMY" else "ALLY",
+            color = Color.White,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .background(if (selected) Color(0xFFE09B24) else accent)
+                .padding(horizontal = 7.dp, vertical = 3.dp),
+        )
+        intent?.let {
+            Text(
+                text = "▶ $it",
+                color = Color(0xFFFFE39A),
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .background(Color(0xD9181115))
+                    .padding(horizontal = 6.dp, vertical = 3.dp),
+            )
+        }
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color.Transparent, Color(0xF20B0D11), Color(0xFF0B0D11)),
+                    ),
+                )
+                .padding(horizontal = InkSpacing.sm, vertical = 7.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            Text(
+                combatant.name,
+                color = Color.White,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            LinearProgressIndicator(
+                progress = { combatant.hp.toFloat() / combatant.maxHp.coerceAtLeast(1) },
+                modifier = Modifier.fillMaxWidth().height(6.dp),
+                color = if (combatant.isEnemy) Color(0xFFFF6262) else Color(0xFF62C77A),
+                trackColor = Color(0xFF343945),
+            )
+            Text(
+                "HP ${combatant.hp}/${combatant.maxHp}  ·  AC ${combatant.armorClass}  ·  ATK ${signed(combatant.attackModifier)}",
+                color = Color(0xFFE7E1D8),
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+            )
+            if (combatant.statuses.isNotEmpty()) {
+                Text(
+                    combatant.statuses.joinToString(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFFFFD36A),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }

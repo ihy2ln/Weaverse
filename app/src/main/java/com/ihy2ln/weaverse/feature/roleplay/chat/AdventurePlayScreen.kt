@@ -619,6 +619,14 @@ fun AdventurePlayScreen(
     }
 
     state.activeRpgCombat?.let { combat ->
+        val unitArtPaths = buildMap {
+            (partyState.players + partyState.cast).forEach { member ->
+                if (member.portraitPath.isNotBlank()) {
+                    put(member.id, member.portraitPath)
+                    member.sheetCharacterId?.let { put(it, member.portraitPath) }
+                }
+            }
+        }
         RpgCombatScreen(
             state = combat,
             campaignRuleset = state.rpgCombatMode,
@@ -626,6 +634,7 @@ fun AdventurePlayScreen(
             selectedTargetId = state.selectedCombatTargetId,
             preview = state.combatActionPreview,
             textAction = state.combatTextAction,
+            unitArtPaths = unitArtPaths,
             onRulesetSelected = viewModel::selectEncounterRuleset,
             onCardSelected = viewModel::selectCombatCard,
             onTargetSelected = viewModel::selectCombatTarget,

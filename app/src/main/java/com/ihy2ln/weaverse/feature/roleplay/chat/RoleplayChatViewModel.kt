@@ -83,6 +83,7 @@ import com.ihy2ln.weaverse.data.db.entities.encodePages
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
 import com.ihy2ln.weaverse.feature.roleplay.presets.defaultPresets
 import com.ihy2ln.weaverse.feature.roleplay.textgame.adamsHavenSceneCatalog
+import com.ihy2ln.weaverse.feature.roleplay.textgame.pickGkomVariant
 import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatRuleset
 import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatAction
 import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatOutcome
@@ -2787,6 +2788,12 @@ class RoleplayChatViewModel @Inject constructor(
             }.distinctBy { it.id }.take(4)
             val party = partyEntities.map { character ->
                 val sheet = decodeRpgSheet(character.extensionsJson)
+                val portraitPath = character.avatarMediaId
+                    ?.let { mediaRepository.getById(it) }
+                    ?.let { media -> mediaRepository.resolveFile(media) }
+                    ?.takeIf { it.isFile && it.length() > 0L }
+                    ?.absolutePath
+                    .orEmpty()
                 val attack = when (mode) {
                     RpgCombatRuleset.CardBattle -> sheet.tacticalAttack
                     else -> maxOf(
@@ -2804,12 +2811,32 @@ class RoleplayChatViewModel @Inject constructor(
                     hp = sheet.currentHp.coerceIn(0, sheet.maxHp.coerceAtLeast(1)),
                     armorClass = sheet.armorClass.coerceAtLeast(1),
                     attackModifier = attack,
+                    artPath = portraitPath,
                 )
             }.ifEmpty {
-                listOf(RpgCombatant("party-hero", boundPersona?.name?.ifBlank { "Hero" } ?: "Hero", 12, armorClass = 12, attackModifier = 3))
+                val portraitPath = boundPersona?.avatarMediaId
+                    ?.let { mediaRepository.getById(it) }
+                    ?.let { media -> mediaRepository.resolveFile(media) }
+                    ?.takeIf { it.isFile && it.length() > 0L }
+                    ?.absolutePath
+                    .orEmpty()
+                listOf(
+                    RpgCombatant(
+                        id = "party-hero",
+                        name = boundPersona?.name?.ifBlank { "Hero" } ?: "Hero",
+                        maxHp = 12,
+                        armorClass = 12,
+                        attackModifier = 3,
+                        artPath = portraitPath,
+                    ),
+                )
             }
             val enemyNames = start?.enemies?.filter(String::isNotBlank).orEmpty().ifEmpty { listOf("Hostile Threat") }
             val enemies = enemyNames.mapIndexed { index, name ->
+                val monsterArt = pickGkomVariant(
+                    enemyId = name,
+                    seed = chat.id.hashCode().toLong() + index,
+                )?.artAssetPath.orEmpty()
                 RpgCombatant(
                     id = "enemy-${UUID.randomUUID()}",
                     name = name,
@@ -2817,6 +2844,9 @@ class RoleplayChatViewModel @Inject constructor(
                     armorClass = 12 + index.coerceAtMost(2),
                     attackModifier = 2 + index.coerceAtMost(2),
                     isEnemy = true,
+                    artPath = monsterArt.takeIf(String::isNotBlank)
+                        ?.let { "file:///android_asset/$it" }
+                        .orEmpty(),
                 )
             }
             val latestScene = rawMessages.asReversed().firstOrNull { it.role != "user" && it.role != ADVENTURE_SCENE_ROLE }
