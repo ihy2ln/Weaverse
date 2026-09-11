@@ -82,6 +82,7 @@ import com.ihy2ln.weaverse.data.db.entities.decodePages
 import com.ihy2ln.weaverse.data.db.entities.encodePages
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
 import com.ihy2ln.weaverse.feature.roleplay.presets.defaultPresets
+import com.ihy2ln.weaverse.feature.roleplay.textgame.adamsHavenSceneCatalog
 import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatRuleset
 import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatAction
 import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatOutcome
@@ -207,6 +208,7 @@ class RoleplayChatViewModel @Inject constructor(
     private var starCommands: List<RpgTurnCommand> = RpgTurnCommands.all
     private var customSettingTemplates: List<CampaignSettingTemplate> = emptyList()
     private var customSettingDetailTemplates: List<CampaignSettingDetailTemplate> = emptyList()
+    private var bundledAdventureSceneMediaReady = false
 
     /** Built-in campaign setting templates plus the user's own, in menu order. */
     private fun effectiveSettingTemplates(): List<CampaignSettingTemplate> =
@@ -4251,25 +4253,78 @@ class RoleplayChatViewModel @Inject constructor(
         sceneTags: String,
     ): Document {
         if (document.blocks.any { block -> block is MediaBlock && block.kind == MediaKind.Image }) return document
+        ensureBundledAdventureSceneMedia()
         val tags = sceneTags.split(',').map(String::trim).filter(String::isNotBlank)
-        val candidate = runCatching {
+        val ranked = runCatching {
             sceneMediaLibrary.find(
                 SceneMediaRequest(
                     scene = "$sceneText $sceneTags ${rpgCampaignState?.startup?.setup?.setting.orEmpty()}",
                     kind = "image",
                     tags = tags,
-                    limit = 1,
+                    limit = 12,
                 ),
-            ).firstOrNull()
-        }.getOrNull() ?: return document
+            )
+        }.getOrDefault(emptyList())
+        val rankedMedia = ranked.firstNotNullOfOrNull { choice ->
+            mediaRepository.getById(choice.id)?.takeIf { media ->
+                media.type == "image" && mediaRepository.resolveFile(media).let { it.isFile && it.length() > 0L }
+            }
+        }
+        val candidate = rankedMedia ?: db.mediaDao().observeAll().first()
+            .asSequence()
+            .filter { it.type == "image" }
+            .filter { mediaRepository.resolveFile(it).let { file -> file.isFile && file.length() > 0L } }
+            .sortedWith(
+                compareByDescending<MediaEntity> { media ->
+                    val metadata = "${media.displayName} ${media.category} ${media.tags}".lowercase()
+                    when {
+                        "/ scene /" in media.category.lowercase() -> 3
+                        "scene:" in media.tags.lowercase() -> 2
+                        tags.any { it.lowercase() in metadata } -> 1
+                        else -> 0
+                    }
+                }.thenBy { it.displayName.lowercase() }.thenBy { it.id },
+            )
+            .toList()
+            .let { choices ->
+                if (choices.isEmpty()) null
+                else choices[((_uiState.value.sceneNumber - 1).coerceAtLeast(0)) % choices.size]
+            }
+            ?: return document
         return Document(
             blocks = document.blocks + MediaBlock(
                 id = "scene-media-${UUID.randomUUID()}",
                 mediaId = candidate.id,
                 kind = MediaKind.Image,
                 caption = listOf(Span(candidate.displayName)),
+                pageId = _uiState.value.activePageId.takeIf(String::isNotBlank),
             ),
         )
+    }
+
+    /** Makes the APK's scene backdrops available to Adventure even if Text Games was never opened. */
+    private suspend fun ensureBundledAdventureSceneMedia() {
+        if (bundledAdventureSceneMediaReady) return
+        adamsHavenSceneCatalog().forEach { asset ->
+            runCatching {
+                val existing = mediaRepository.getById(asset.mediaId)
+                if (existing != null && mediaRepository.resolveFile(existing).let { it.isFile && it.length() > 0L }) {
+                    return@runCatching
+                }
+                val extension = asset.artAssetPath.substringAfterLast('.', "png")
+                mediaRepository.registerBundledImage(
+                    assetPath = asset.artAssetPath,
+                    id = asset.mediaId,
+                    relativePath = "images/adams_haven/scenes/${asset.id}.$extension",
+                    width = asset.width,
+                    height = asset.height,
+                    displayName = asset.displayName,
+                    category = asset.category,
+                    tags = asset.tags.joinToString(","),
+                )
+            }
+        }
+        bundledAdventureSceneMediaReady = true
     }
 
     private suspend fun insertStoredMessage(entity: RpMessageEntity) {
