@@ -282,7 +282,13 @@ private fun SetupSummary(
 }
 
 @Composable
-private fun GenerationPanel(startup: RpgStartupState, label: String, onRetry: () -> Unit, onFallback: () -> Unit) {
+private fun GenerationPanel(
+    startup: RpgStartupState,
+    label: String,
+    onRetry: () -> Unit,
+    onFallback: () -> Unit,
+    onCancel: () -> Unit,
+) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
         Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         LinearProgressIndicator(
@@ -296,6 +302,7 @@ private fun GenerationPanel(startup: RpgStartupState, label: String, onRetry: ()
             InkTextButton("Use authored fallback", onFallback)
         } else {
             Text("The AI Dungeon Master is working. This screen advances only after the result is validated and saved.", style = MaterialTheme.typography.bodyMedium)
+            InkOutlinedButton("Stop AI generation", onCancel, Modifier.fillMaxWidth())
         }
     }
 }
@@ -335,6 +342,7 @@ private fun RpgStartupWizard(
                                     progress = { startup.cyoaSuggestionProgress.coerceIn(0, 100) / 100f },
                                     modifier = Modifier.fillMaxWidth(),
                                 )
+                                InkOutlinedButton("Stop AI suggestions", viewModel::cancelRpgSetupGeneration, Modifier.fillMaxWidth())
                             }
                             RpgGenerationStatus.Complete -> Text("AI campaign suggestions are mixed with the built-in choices below.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                             RpgGenerationStatus.Failed -> Text(startup.cyoaSuggestionError, style = MaterialTheme.typography.bodySmall, color = tokens.secondaryText)
@@ -366,7 +374,7 @@ private fun RpgStartupWizard(
             )
             RpgStartupStep.GeneratingChapterPlan -> StartupSplit(
                 summary = { SetupSummary(startup, "Chapter One Plan", "Your answers are being turned into a flexible chapter outline and opening-scene guideline.", modelLabel, onChooseModel, modelEnabled) },
-                controls = { GenerationPanel(startup, "Creating Chapter One", viewModel::retryStartupGeneration, viewModel::useAuthoredChapterPlan) },
+                controls = { GenerationPanel(startup, "Creating Chapter One", viewModel::retryStartupGeneration, viewModel::useAuthoredChapterPlan, viewModel::cancelRpgSetupGeneration) },
             )
             RpgStartupStep.ChapterPlan -> StartupSplit(
                 summary = { SetupSummary(startup, "Chapter One Plan", "Edit the AI's rough outline. These beats guide the story but never override player choices.", modelLabel, onChooseModel, modelEnabled) },
@@ -461,7 +469,7 @@ private fun RpgStartupWizard(
             )
             RpgStartupStep.GeneratingScene -> StartupSplit(
                 summary = { SetupSummary(startup, "Scene One", "The verified chapter plan is being turned into the playable opening scene.", modelLabel, onChooseModel, modelEnabled) },
-                controls = { GenerationPanel(startup, "Generating Scene One", viewModel::retryStartupGeneration, viewModel::useAuthoredOpeningScene) },
+                controls = { GenerationPanel(startup, "Generating Scene One", viewModel::retryStartupGeneration, viewModel::useAuthoredOpeningScene, viewModel::cancelRpgSetupGeneration) },
             )
             RpgStartupStep.Started -> Unit
         }

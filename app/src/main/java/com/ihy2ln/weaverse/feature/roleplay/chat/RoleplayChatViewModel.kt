@@ -128,6 +128,7 @@ import com.ihy2ln.weaverse.feature.prompt.PromptWordLimit
 import com.ihy2ln.weaverse.feature.shell.WorkspaceHistory
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -3156,7 +3157,8 @@ class RoleplayChatViewModel @Inject constructor(
                     cyoaSuggestionProgress = 100,
                     cyoaSuggestionError = "",
                 ) }
-            }.onFailure {
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
                 updateRpgStartup { current -> current.copy(
                     cyoaSuggestions = fallbackCyoaSuggestions(current.setup),
                     cyoaSuggestionStatus = RpgGenerationStatus.Failed,
@@ -3229,6 +3231,7 @@ class RoleplayChatViewModel @Inject constructor(
                     )
                 }
             }.onFailure { error ->
+                if (error is CancellationException) throw error
                 updateRpgStartup { current -> current.copy(
                     generationStatus = RpgGenerationStatus.Failed,
                     generationError = formatError(error),
@@ -3330,10 +3333,13 @@ class RoleplayChatViewModel @Inject constructor(
                     fallbackSceneDraft(campaign.startup.plan, campaign.startup.openingScene),
                 )
             }.onSuccess { draft -> finishOpeningScene(requestId, draft) }
-                .onFailure { error -> updateRpgStartup { it.copy(
-                    generationStatus = RpgGenerationStatus.Failed,
-                    generationError = formatError(error),
-                ) } }
+                .onFailure { error ->
+                    if (error is CancellationException) throw error
+                    updateRpgStartup { it.copy(
+                        generationStatus = RpgGenerationStatus.Failed,
+                        generationError = formatError(error),
+                    ) }
+                }
             _uiState.update { it.copy(isStreaming = false) }
         }
     }
@@ -3396,6 +3402,47 @@ class RoleplayChatViewModel @Inject constructor(
             RpgStartupStep.GeneratingChapterPlan -> generateChapterPlan()
             RpgStartupStep.GeneratingScene -> verifyAndGenerateOpeningScene()
             else -> Unit
+        }
+    }
+
+    /** Stops any AI work started by the RPG setup wizard without discarding the player's answers. */
+    fun cancelRpgSetupGeneration() {
+        val startup = rpgCampaignState?.startup ?: return
+        val cancelSuggestions = startup.cyoaSuggestionStatus == RpgGenerationStatus.Generating
+        val cancelMainGeneration = startup.generationStatus == RpgGenerationStatus.Generating &&
+            startup.step in setOf(RpgStartupStep.GeneratingChapterPlan, RpgStartupStep.GeneratingScene)
+        if (!cancelSuggestions && !cancelMainGeneration) return
+
+        cyoaSuggestionJob?.cancel()
+        cyoaSuggestionJob = null
+        generateJob?.cancel()
+        generateJob = null
+        viewModelScope.launch {
+            if (cancelSuggestions) {
+                updateRpgStartup {
+                    it.copy(
+                        cyoaSuggestionStatus = RpgGenerationStatus.Idle,
+                        cyoaSuggestionProgress = 0,
+                        cyoaSuggestionError = "",
+                    )
+                }
+            }
+            if (cancelMainGeneration) {
+                updateRpgStartup {
+                    it.copy(
+                        step = if (it.step == RpgStartupStep.GeneratingChapterPlan) {
+                            RpgStartupStep.Cyoa
+                        } else {
+                            RpgStartupStep.Verification
+                        },
+                        generationStatus = RpgGenerationStatus.Idle,
+                        generationProgress = 0,
+                        generationError = "",
+                        generationRequestId = "",
+                    )
+                }
+            }
+            _uiState.update { it.copy(isStreaming = false, errorMessage = "") }
         }
     }
 
