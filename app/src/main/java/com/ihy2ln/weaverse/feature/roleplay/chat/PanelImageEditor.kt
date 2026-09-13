@@ -86,9 +86,10 @@ fun PanelImageEditor(
     val bitmap = remember(editor.path) { ImageOps.loadBitmap(editor.path) }
     var version by remember(editor.path) { mutableIntStateOf(0) }
     val undoStack = remember(editor.path) { mutableStateListOf<Bitmap>() }
-    var tool by remember { mutableStateOf("brush") } // brush | rect | regions
+    var tool by remember { mutableStateOf("brush") } // brush | color | rect | regions
     var brushSize by remember { androidx.compose.runtime.mutableFloatStateOf(28f) }
     var eraseColor by remember { mutableStateOf(android.graphics.Color.WHITE) }
+    var paintColor by remember { mutableStateOf(android.graphics.Color.rgb(210, 72, 64)) }
     var viewSize by remember { mutableStateOf(IntSize.Zero) }
     var rectStart by remember { mutableStateOf<Offset?>(null) }
     var rectCurrent by remember { mutableStateOf<Offset?>(null) }
@@ -127,6 +128,13 @@ fun PanelImageEditor(
         val p = bitmapOffset(pos)
         val radius = min(bitmap.width, bitmap.height) * (brushSize / 100f) / 2f
         ImageOps.eraseCircle(bitmap, p.x, p.y, radius, eraseColor)
+        version++
+    }
+
+    fun paintAt(pos: Offset) {
+        val p = bitmapOffset(pos)
+        val radius = min(bitmap.width, bitmap.height) * (brushSize / 100f) / 2f
+        ImageOps.paintCircle(bitmap, p.x, p.y, radius, paintColor)
         version++
     }
 
@@ -282,6 +290,24 @@ fun PanelImageEditor(
                                 },
                         )
                     }
+                    "color" -> {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .pointerInput(paintColor, brushSize) {
+                                    detectDragGestures(
+                                        onDragStart = { pos ->
+                                            pushUndo()
+                                            paintAt(pos)
+                                        },
+                                        onDrag = { change, _ ->
+                                            change.consume()
+                                            paintAt(change.position)
+                                        },
+                                    )
+                                },
+                        )
+                    }
                     "rect" -> {
                         Box(
                             modifier = Modifier
@@ -333,7 +359,7 @@ fun PanelImageEditor(
                 horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                listOf("brush" to "Brush", "rect" to "Rect", "regions" to "AI regions").forEach { (id, label) ->
+                listOf("brush" to "Erase brush", "color" to "Color brush", "rect" to "Rect", "regions" to "AI regions").forEach { (id, label) ->
                     Text(
                         label,
                         color = if (tool == id) Color(0xFFE8C872) else Color(0xFF9AA0B4),
@@ -343,6 +369,38 @@ fun PanelImageEditor(
                             .background(if (tool == id) Color(0x33E8C872) else Color.Transparent)
                             .combinedClickable(onClick = { tool = id; showRegions = id == "regions" })
                             .padding(horizontal = 8.dp, vertical = 6.dp),
+                    )
+                }
+                if (tool == "color") {
+                    Spacer(Modifier.width(InkSpacing.sm))
+                    listOf(
+                        android.graphics.Color.rgb(210, 72, 64),
+                        android.graphics.Color.rgb(55, 115, 190),
+                        android.graphics.Color.rgb(54, 145, 90),
+                        android.graphics.Color.rgb(220, 160, 48),
+                        android.graphics.Color.rgb(165, 85, 160),
+                    ).forEach { color ->
+                        Box(
+                            modifier = Modifier
+                                .size(22.dp)
+                                .clip(CircleShape)
+                                .background(Color(color))
+                                .border(
+                                    if (paintColor == color) 2.dp else 1.dp,
+                                    if (paintColor == color) Color(0xFFE8C872) else Color.Gray,
+                                    CircleShape,
+                                )
+                                .combinedClickable(onClick = { paintColor = color }),
+                        )
+                    }
+                    InkTextButton(
+                        label = "Auto-color wash",
+                        onClick = {
+                            pushUndo()
+                            ImageOps.applyColorWash(bitmap, paintColor)
+                            version++
+                        },
+                        compact = true,
                     )
                 }
                 Spacer(Modifier.width(InkSpacing.sm))

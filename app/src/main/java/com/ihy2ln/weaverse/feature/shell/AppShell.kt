@@ -121,6 +121,7 @@ import com.ihy2ln.weaverse.feature.roleplay.presets.PresetsScreen
 import com.ihy2ln.weaverse.feature.search.GlobalSearchScreen
 import com.ihy2ln.weaverse.feature.search.SearchResultType
 import com.ihy2ln.weaverse.feature.settings.SettingsScreen
+import com.ihy2ln.weaverse.feature.storyboard.StoryboardMangaHubScreen
 import java.io.File
 
 @Composable
@@ -975,10 +976,9 @@ fun AppShell(
                             }
                             AppMode.Storyboard.name -> {
                                 if (storyboardDestinationOf(sd) == StoryboardDestination.Window) {
-                                    WorkShelfScreen(
-                                        kind = WorkShelfKind.Storyboard,
-                                        onCreate = { storyboardPlusMenu = true },
-                                        onOpen = { card ->
+                                    StoryboardMangaHubScreen(
+                                        onCreateProject = { storyboardPlusMenu = true },
+                                        onOpenProject = { card ->
                                             card.bookId?.let(shellViewModel::setSelectedBookId)
                                             storyboardChatId = card.chatId
                                             storyboardDest = card.preferredStoryboardMode

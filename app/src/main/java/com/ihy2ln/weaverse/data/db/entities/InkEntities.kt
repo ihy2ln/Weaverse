@@ -339,6 +339,12 @@ data class RpPageMeta(
     val title: String? = null,
     /** Layout whose slot outlines this page shows; media drops into the slots. */
     val templateId: String = "classic-6",
+    /** Persisted reading direction for generated and manually authored pages. */
+    val readingOrder: String = "ltr",
+    /** ai, offline, or manual; informational and safe for older saves to omit. */
+    val generationStatus: String = "manual",
+    /** Optional local manga-library chapter that produced this page. */
+    val sourceChapterId: String? = null,
 )
 
 private val pagesJsonCodec = Json { ignoreUnknownKeys = true }
@@ -389,6 +395,86 @@ data class MediaEntity(
     /** Comma-separated machine-searchable labels used by scene selection and AI context. */
     val tags: String = "",
     val createdAt: Long,
+)
+
+/** A chapter discovered through a reviewed manga source adapter. */
+@Entity(
+    tableName = "manga_chapters",
+    indices = [Index(value = ["sourceId", "remoteId"], unique = true), Index("mangaId")],
+)
+data class MangaChapterEntity(
+    @PrimaryKey val id: String,
+    val sourceId: String,
+    val remoteId: String,
+    val mangaId: String,
+    val mangaTitle: String,
+    val title: String,
+    val volume: String = "",
+    val chapterNumber: String = "",
+    val language: String = "en",
+    val canonicalUrl: String = "",
+    val readingOrder: String = "ltr",
+    val pageCount: Int = 0,
+    val status: String = "discovered",
+    val progress: Int = 0,
+    val errorMessage: String = "",
+    val updatedAt: Long = 0L,
+    val downloadedAt: Long? = null,
+)
+
+/** One remote page and its immutable local/original copy. */
+@Entity(
+    tableName = "manga_pages",
+    indices = [Index(value = ["chapterId", "pageIndex"], unique = true)],
+)
+data class MangaPageEntity(
+    @PrimaryKey val id: String,
+    val chapterId: String,
+    val sourceId: String,
+    val pageIndex: Int,
+    val remoteUrl: String,
+    val fileName: String,
+    val localPath: String = "",
+    val checksum: String = "",
+    val status: String = "queued",
+    val errorMessage: String = "",
+    val mediaId: String? = null,
+    val updatedAt: Long = 0L,
+)
+
+/** A catalog title saved independently of its downloaded chapters. */
+@Entity(
+    tableName = "manga_series",
+    indices = [Index(value = ["sourceId", "remoteId"], unique = true)],
+)
+data class MangaSeriesEntity(
+    @PrimaryKey val id: String,
+    val sourceId: String,
+    val remoteId: String,
+    val title: String,
+    val description: String = "",
+    val coverUrl: String = "",
+    val canonicalUrl: String = "",
+    val updatedAt: Long = 0L,
+)
+
+@Entity(tableName = "manga_favorite_categories", indices = [Index(value = ["name"], unique = true)])
+data class MangaFavoriteCategoryEntity(
+    @PrimaryKey val id: String,
+    val name: String,
+    val sortOrder: Int = 0,
+    val createdAt: Long = 0L,
+)
+
+@Entity(
+    tableName = "manga_favorites",
+    primaryKeys = ["seriesId", "categoryId"],
+    indices = [Index("categoryId")],
+)
+data class MangaFavoriteEntity(
+    val seriesId: String,
+    val categoryId: String,
+    val addedAt: Long = 0L,
 )
 
 @Entity(tableName = "prompt_folders")

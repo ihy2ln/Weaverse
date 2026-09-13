@@ -115,6 +115,7 @@ import com.ihy2ln.weaverse.core.ui.util.parseHexColor
 import com.ihy2ln.weaverse.core.ui.util.ScrollGutterBackdrop
 import com.ihy2ln.weaverse.core.ui.util.alwaysScrollEndSpacer
 import com.ihy2ln.weaverse.core.ui.util.scrollGutterPadding
+import com.ihy2ln.weaverse.feature.storyboard.MangaSourceDialog
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -175,6 +176,7 @@ fun RoleplayChatDetailScreen(
     var selectedEmptySlotIndex by rememberSaveable(chatId) { mutableStateOf<Int?>(null) }
     var showGeneratedImportChoice by remember { mutableStateOf(false) }
     var generatedReplaceTargetKey by remember { mutableStateOf<String?>(null) }
+    var showMangaSources by rememberSaveable(chatId) { mutableStateOf(false) }
 
     LaunchedEffect(state.title, state.displayMode, showModeSwitcher) {
         onChromeChange(
@@ -206,7 +208,7 @@ fun RoleplayChatDetailScreen(
     val pagesPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris ->
-        if (uris.isNotEmpty()) viewModel.importPages(uris)
+        if (uris.isNotEmpty()) viewModel.importPages(uris, rightToLeft = rightToLeft)
     }
 
     val generatedPanelPicker = rememberLauncherForActivityResult(
@@ -368,6 +370,35 @@ fun RoleplayChatDetailScreen(
         )
     }
 
+    if (state.storyboardGenerationOpen) {
+        StoryboardGenerationDialog(
+            state = state,
+            onSource = viewModel::onStoryboardSourceChanged,
+            onModel = viewModel::selectModel,
+            onGenerateMissingArt = viewModel::setStoryboardGenerateMissingArt,
+            onStart = viewModel::startStoryboardGeneration,
+            onStop = viewModel::stopStoryboardGeneration,
+            onRetry = viewModel::retryStoryboardGeneration,
+            onOffline = viewModel::continueStoryboardOffline,
+            onApply = viewModel::applyStoryboardDraft,
+            onDismiss = viewModel::closeStoryboardGeneration,
+        )
+    }
+
+    if (showMangaSources) {
+        MangaSourceDialog(
+            onImportChapter = { chapterId ->
+                showMangaSources = false
+                viewModel.importDownloadedChapter(chapterId)
+            },
+            onTranslateChapter = { chapterId ->
+                showMangaSources = false
+                viewModel.translateDownloadedChapter(chapterId)
+            },
+            onDismiss = { showMangaSources = false },
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -400,8 +431,41 @@ fun RoleplayChatDetailScreen(
                         modifier = Modifier.padding(horizontal = InkSpacing.md, vertical = 2.dp),
                     )
                 }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = InkSpacing.md, vertical = InkSpacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    InkTextButton(
+                        label = "Create page with AI",
+                        onClick = { viewModel.openStoryboardGeneration(rightToLeft) },
+                        compact = true,
+                    )
+                    InkTextButton(
+                        label = "Manga sources",
+                        onClick = { showMangaSources = true },
+                        compact = true,
+                    )
+                    InkTextButton(
+                        label = "Export PNG",
+                        onClick = viewModel::exportStoryboardPage,
+                        compact = true,
+                    )
+                    InkTextButton(
+                        label = "Translate page to English",
+                        onClick = viewModel::translateActiveMangaPageToEnglish,
+                        compact = true,
+                    )
+                    Text(
+                        "or continue editing the current page; originals remain preserved",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tokens.secondaryText,
+                        modifier = Modifier.padding(start = InkSpacing.sm),
+                    )
+                }
                 Text(
-                    "Codex/ImageGen → export PNG/JPG → select an empty layout slot → Import generated panel → adjust it.",
+                    "AI page plans reuse saved artwork first; every panel stays editable after applying.",
                     style = MaterialTheme.typography.labelSmall,
                     color = tokens.secondaryText,
                     modifier = Modifier.padding(horizontal = InkSpacing.md, vertical = 2.dp),

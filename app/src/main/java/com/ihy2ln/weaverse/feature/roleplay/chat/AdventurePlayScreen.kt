@@ -93,6 +93,7 @@ import com.ihy2ln.weaverse.feature.prompt.PromptModelSelection
 import com.ihy2ln.weaverse.feature.prompt.PromptWordLimit
 import com.ihy2ln.weaverse.feature.prompt.UnifiedPromptBar
 import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgChapterBeat
+import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgAdventureMapScreen
 import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgGenerationStatus
 import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgStartupState
 import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgStartupStep
@@ -299,7 +300,7 @@ private fun GenerationPanel(
         if (startup.generationStatus == RpgGenerationStatus.Failed) {
             Text(startup.generationError.ifBlank { "Generation failed." }, color = MaterialTheme.colorScheme.error)
             InkOutlinedButton("Retry", onRetry, Modifier.fillMaxWidth())
-            InkTextButton("Use authored fallback", onFallback)
+            InkTextButton("Continue with offline fallback", onFallback)
         } else {
             Text("The AI Dungeon Master is working. This screen advances only after the result is validated and saved.", style = MaterialTheme.typography.bodyMedium)
             InkOutlinedButton("Stop AI generation", onCancel, Modifier.fillMaxWidth())
@@ -345,7 +346,13 @@ private fun RpgStartupWizard(
                                 InkOutlinedButton("Stop AI suggestions", viewModel::cancelRpgSetupGeneration, Modifier.fillMaxWidth())
                             }
                             RpgGenerationStatus.Complete -> Text("AI campaign suggestions are mixed with the built-in choices below.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                            RpgGenerationStatus.Failed -> Text(startup.cyoaSuggestionError, style = MaterialTheme.typography.bodySmall, color = tokens.secondaryText)
+                            RpgGenerationStatus.Failed -> {
+                                Text(startup.cyoaSuggestionError, style = MaterialTheme.typography.bodySmall, color = tokens.secondaryText)
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                                    InkOutlinedButton("Retry AI suggestions", viewModel::generateCyoaSuggestions, Modifier.weight(1f))
+                                    InkTextButton("Use local suggestions", viewModel::useLocalCyoaSuggestions)
+                                }
+                            }
                             RpgGenerationStatus.Idle -> Unit
                         }
                         adventurePlanQuestions().forEachIndexed { index, question ->
@@ -512,6 +519,7 @@ fun AdventurePlayScreen(
     var sceneArtMenuOpen by remember { mutableStateOf(false) }
     var showAppPictures by remember { mutableStateOf(false) }
     var showCharacterCards by rememberSaveable { mutableStateOf(false) }
+    var showAdventureMap by rememberSaveable { mutableStateOf(false) }
     // 0 normal, 1 collapsed (thin strip), 2 enlarged.
     var sceneArtSize by rememberSaveable { mutableStateOf(0) }
     var modelSearch by rememberSaveable { mutableStateOf("") }
@@ -621,6 +629,27 @@ fun AdventurePlayScreen(
                     modelsOpen = false
                 },
                 onDismiss = { modelsOpen = false },
+            )
+        }
+        return
+    }
+
+    if (showAdventureMap && state.rpgCampaign != null) {
+        Column(Modifier.fillMaxSize().background(tokens.background)) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = InkSpacing.md, vertical = InkSpacing.xs),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                InkTextButton("Back to adventure", { showAdventureMap = false })
+            }
+            RpgAdventureMapScreen(
+                state = state.rpgCampaign!!,
+                onSelectNode = { node ->
+                    viewModel.enterAdventureMapNode(node.id)
+                    showAdventureMap = false
+                },
+                onExploreFreely = viewModel::exploreRpgFreely,
+                onReturnToChapter = viewModel::returnToRpgChapter,
             )
         }
         return
@@ -817,6 +846,11 @@ fun AdventurePlayScreen(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (!startupPending) {
+                        InkTextButton(
+                            label = "Map",
+                            onClick = { showAdventureMap = true },
+                            compact = true,
+                        )
                         InkTextButton(
                             label = "Character cards",
                             onClick = { showCharacterCards = true },

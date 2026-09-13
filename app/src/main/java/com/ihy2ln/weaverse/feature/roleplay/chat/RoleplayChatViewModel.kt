@@ -7,13 +7,19 @@ import androidx.lifecycle.viewModelScope
 import com.ihy2ln.weaverse.ai.AIChunk
 import com.ihy2ln.weaverse.ai.AIError
 import com.ihy2ln.weaverse.ai.AiGenerationService
+import com.ihy2ln.weaverse.ai.context.AssembledPrompt
 import com.ihy2ln.weaverse.ai.context.ContextMeter
 import com.ihy2ln.weaverse.ai.openrouter.OpenRouterModelCache
 import com.ihy2ln.weaverse.core.media.MediaClipboard
 import com.ihy2ln.weaverse.core.media.MediaClipboardPayload
 import com.ihy2ln.weaverse.core.media.MangaFileImporter
+import com.ihy2ln.weaverse.core.media.MangaPageProcessor
+import com.ihy2ln.weaverse.core.media.MangaPageProcessingResult
 import com.ihy2ln.weaverse.core.media.MediaRepository
+import com.ihy2ln.weaverse.core.manga.MangaDownloadRepository
 import com.ihy2ln.weaverse.core.media.ImageOps
+import com.ihy2ln.weaverse.core.media.StoryboardExportPanel
+import com.ihy2ln.weaverse.core.media.StoryboardPageExporter
 import com.ihy2ln.weaverse.core.media.NormalizedPanelBox
 import com.ihy2ln.weaverse.core.media.OfflinePanelDetectionKind
 import com.ihy2ln.weaverse.core.text.TextOverlayStyle
@@ -50,6 +56,7 @@ import com.ihy2ln.weaverse.core.text.Span
 import com.ihy2ln.weaverse.core.text.TextOverlay
 import com.ihy2ln.weaverse.core.text.MediaGrid
 import com.ihy2ln.weaverse.core.text.PanelTemplates
+import com.ihy2ln.weaverse.core.text.PanelSlot
 import com.ihy2ln.weaverse.core.text.StoryboardGridItem
 import com.ihy2ln.weaverse.core.text.buildPanelSeparationOutput
 import com.ihy2ln.weaverse.core.text.decodeAliases
@@ -90,6 +97,7 @@ import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatOutcome
 import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatState
 import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatant
 import com.ihy2ln.weaverse.feature.roleplay.combat.RpgEncounterSetup
+import com.ihy2ln.weaverse.feature.roleplay.combat.RpgStatusEffect
 import com.ihy2ln.weaverse.feature.roleplay.combat.createRpgEncounter
 import com.ihy2ln.weaverse.feature.roleplay.combat.previewRpgCombatAction
 import com.ihy2ln.weaverse.feature.roleplay.combat.resolveRpgCombatAction
@@ -117,6 +125,11 @@ import com.ihy2ln.weaverse.feature.roleplay.campaign.parseChapterPlan
 import com.ihy2ln.weaverse.feature.roleplay.campaign.parseCyoaSuggestions
 import com.ihy2ln.weaverse.feature.roleplay.campaign.parseSceneDraft
 import com.ihy2ln.weaverse.feature.roleplay.campaign.applyCombatOutcome
+import com.ihy2ln.weaverse.feature.roleplay.campaign.enterFreeformExploration
+import com.ihy2ln.weaverse.feature.roleplay.campaign.enterRpgSceneNode
+import com.ihy2ln.weaverse.feature.roleplay.campaign.returnToChapterNode
+import com.ihy2ln.weaverse.feature.roleplay.campaign.stopRpgSetupGeneration
+import com.ihy2ln.weaverse.feature.roleplay.campaign.updateRpgPartyFromCombat
 import com.ihy2ln.weaverse.feature.roleplay.characters.abilityModifier
 import com.ihy2ln.weaverse.feature.roleplay.characters.decodeRpgSheet
 import com.ihy2ln.weaverse.feature.roleplay.characters.encodeRpgSheet
@@ -151,6 +164,12 @@ import javax.inject.Inject
 /** Sentinel mediaId for DM text-only tiles placed on the 3×3 grid. */
 const val DM_TEXT_TILE_MEDIA_ID = "__dm_text__"
 private const val ADVENTURE_SCENE_ROLE = "scene"
+/**
+ * Luna is the inexpensive default Vision model for manga import/translation.
+ * Keep this provider-qualified so the storyboard path cannot accidentally pick
+ * the first unrelated Vision model returned by the cache.
+ */
+private const val MANGA_TRANSLATION_LUNA_REF = "openrouter/openai/gpt-5.6-luna"
 private val ExplicitSceneAdvance = Regex(
     "\\b(next scene|advance (?:the )?scene|move (?:on|forward)|leave this scene|go to the next)\\b",
     RegexOption.IGNORE_CASE,
@@ -174,7 +193,9 @@ class RoleplayChatViewModel @Inject constructor(
     private val db: WeaverseDatabase,
     private val aiGeneration: AiGenerationService,
     private val mangaFileImporter: MangaFileImporter,
+    private val mangaDownloadRepository: MangaDownloadRepository,
     private val mediaRepository: MediaRepository,
+    private val storyboardPageExporter: StoryboardPageExporter,
     private val topicMediaLibrary: TopicMediaLibrary,
     private val sceneMediaLibrary: SceneMediaLibrary,
     private val settings: SettingsRepository,
@@ -191,6 +212,7 @@ class RoleplayChatViewModel @Inject constructor(
     val uiState: StateFlow<RoleplayChatUiState> = _uiState.asStateFlow()
     private var bindJob: Job? = null
     private var generateJob: Job? = null
+    private var storyboardGenerationJob: Job? = null
     private var cyoaSuggestionJob: Job? = null
     private var rpgDraftSaveJob: Job? = null
     private var composerStatusJob: Job? = null
@@ -211,6 +233,7 @@ class RoleplayChatViewModel @Inject constructor(
     private var customSettingTemplates: List<CampaignSettingTemplate> = emptyList()
     private var customSettingDetailTemplates: List<CampaignSettingDetailTemplate> = emptyList()
     private var bundledAdventureSceneMediaReady = false
+    private var storyboardFallbackMediaId: String? = null
 
     /** Built-in campaign setting templates plus the user's own, in menu order. */
     private fun effectiveSettingTemplates(): List<CampaignSettingTemplate> =
@@ -1328,6 +1351,441 @@ class RoleplayChatViewModel @Inject constructor(
 
     fun clearAudioPickRequest() {
         _uiState.update { it.copy(audioPickRequestId = 0L) }
+    }
+
+    // --- AI storyboard page creation ---------------------------------------
+
+    fun openStoryboardGeneration(rightToLeft: Boolean) {
+        val state = _uiState.value
+        val source = state.input.ifBlank {
+            state.messages.asReversed().firstOrNull { it.text.isNotBlank() }?.text.orEmpty()
+        }
+        _uiState.update {
+            it.copy(
+                storyboardGenerationOpen = true,
+                storyboardGeneration = it.storyboardGeneration.copy(
+                    prompt = source,
+                    rightToLeft = rightToLeft,
+                    status = "",
+                ),
+            )
+        }
+    }
+
+    fun closeStoryboardGeneration() {
+        if (_uiState.value.storyboardGeneration.phase == StoryboardGenerationPhase.Generating) {
+            stopStoryboardGeneration()
+        }
+        _uiState.update { it.copy(storyboardGenerationOpen = false) }
+    }
+
+    fun onStoryboardSourceChanged(source: String) {
+        _uiState.update {
+            it.copy(
+                storyboardGeneration = it.storyboardGeneration.copy(
+                    prompt = source,
+                    status = if (it.storyboardGeneration.phase == StoryboardGenerationPhase.Failed) "" else it.storyboardGeneration.status,
+                ),
+            )
+        }
+    }
+
+    fun setStoryboardGenerateMissingArt(enabled: Boolean) {
+        _uiState.update {
+            it.copy(storyboardGeneration = it.storyboardGeneration.copy(generateMissingArt = enabled))
+        }
+    }
+
+    fun startStoryboardGeneration() {
+        val state = _uiState.value
+        val source = state.storyboardGeneration.prompt.trim()
+        if (source.isBlank()) {
+            _uiState.update {
+                it.copy(
+                    storyboardGeneration = it.storyboardGeneration.copy(
+                        phase = StoryboardGenerationPhase.Failed,
+                        progress = 0,
+                        status = "Describe the scene or story beat first.",
+                    ),
+                )
+            }
+            return
+        }
+        storyboardGenerationJob?.cancel()
+        val modelRef = state.selectedModelRef.ifBlank { state.defaultModelRef }
+        storyboardGenerationJob = viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    storyboardGeneration = it.storyboardGeneration.copy(
+                        phase = StoryboardGenerationPhase.Generating,
+                        progress = 8,
+                        status = "Planning panels and dialogue…",
+                        draft = null,
+                        modelRef = modelRef,
+                    ),
+                )
+            }
+            try {
+                if (!aiGeneration.hasApiKey(modelRef.ifBlank { null })) {
+                    throw AIError.NoApiKey()
+                }
+                val result = aiGeneration.complete(
+                    userMessage = storyboardPagePrompt(
+                        source = source,
+                        rightToLeft = state.storyboardGeneration.rightToLeft,
+                    ),
+                    assembled = AssembledPrompt(
+                        systemBlocks = listOf(
+                            "You are an assistant that creates editable comic and manga page plans. " +
+                                "Return only the requested JSON object.",
+                        ),
+                        messages = emptyList(),
+                        usedEntries = emptyList(),
+                        tokenBreakdown = emptyList(),
+                    ),
+                    modelRef = modelRef.ifBlank { null },
+                    maxTokens = 1800,
+                    temperature = 0.35,
+                )
+                _uiState.update {
+                    it.copy(
+                        storyboardGeneration = it.storyboardGeneration.copy(
+                            progress = 72,
+                            status = "Validating the page plan…",
+                        ),
+                    )
+                }
+                val draft = parseStoryboardPageDraft(result.text)
+                    ?: error("The model returned an invalid page plan.")
+                _uiState.update {
+                    it.copy(
+                        storyboardGeneration = it.storyboardGeneration.copy(
+                            phase = StoryboardGenerationPhase.ReadyToApply,
+                            progress = 100,
+                            status = "Page plan ready. Review it, then apply it to the storyboard.",
+                            draft = draft,
+                        ),
+                    )
+                }
+            } catch (_: CancellationException) {
+                // Stop owns the visible state; a cancelled request must not resurrect a spinner.
+            } catch (error: Throwable) {
+                _uiState.update {
+                    it.copy(
+                        storyboardGeneration = it.storyboardGeneration.copy(
+                            phase = StoryboardGenerationPhase.Failed,
+                            progress = 0,
+                            status = error.message?.takeIf(String::isNotBlank)
+                                ?: "AI page creation failed. Continue offline to make the page now.",
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    fun retryStoryboardGeneration() = startStoryboardGeneration()
+
+    fun stopStoryboardGeneration() {
+        storyboardGenerationJob?.cancel()
+        storyboardGenerationJob = null
+        _uiState.update {
+            it.copy(
+                storyboardGeneration = it.storyboardGeneration.copy(
+                    phase = StoryboardGenerationPhase.Stopped,
+                    progress = 0,
+                    status = "Stopped. Your scene text is preserved; continue offline or retry when ready.",
+                ),
+            )
+        }
+    }
+
+    fun continueStoryboardOffline() {
+        val state = _uiState.value
+        storyboardGenerationJob?.cancel()
+        storyboardGenerationJob = null
+        val draft = fallbackStoryboardPageDraft(
+            source = state.storyboardGeneration.prompt,
+            rightToLeft = state.storyboardGeneration.rightToLeft,
+        )
+        _uiState.update {
+            it.copy(
+                storyboardGeneration = it.storyboardGeneration.copy(
+                    phase = StoryboardGenerationPhase.OfflineFallback,
+                    progress = 100,
+                    draft = draft,
+                    status = "Offline page plan ready. It uses safe local artwork and remains fully editable.",
+                ),
+            )
+        }
+    }
+
+    fun applyStoryboardDraft() {
+        val state = _uiState.value
+        val draft = state.storyboardGeneration.draft ?: return
+        viewModelScope.launch {
+            val chat = boundChat ?: return@launch
+            ensureBundledAdventureSceneMedia()
+            val template = PanelTemplates.byId(draft.templateId) ?: PanelTemplates.byId("classic-6")!!
+            val currentPages = decodePages(chat.pagesJson).toMutableList()
+            val activePageId = state.activePageId
+            val activeHasArtwork = state.mediaPanels.isNotEmpty()
+            val targetPage = if (activePageId.isNotBlank() && !activeHasArtwork) {
+                currentPages.firstOrNull { it.id == activePageId }
+            } else {
+                null
+            }
+            val page = targetPage ?: RpPageMeta(
+                id = "page-${UUID.randomUUID()}",
+                order = (currentPages.maxOfOrNull { it.order } ?: -1) + 1,
+                title = draft.title,
+                templateId = template.id,
+                readingOrder = draft.readingOrder,
+                generationStatus = if (state.storyboardGeneration.phase == StoryboardGenerationPhase.OfflineFallback) "offline" else "ai",
+            )
+            val pages = if (targetPage == null) {
+                currentPages + page
+            } else {
+                currentPages.map { existing ->
+                    if (existing.id == page.id) existing.copy(
+                        title = draft.title.ifBlank { existing.title },
+                        templateId = template.id,
+                        readingOrder = draft.readingOrder,
+                        generationStatus = if (state.storyboardGeneration.phase == StoryboardGenerationPhase.OfflineFallback) "offline" else "ai",
+                    ) else existing
+                }
+            }
+            val slots = template.slots.sortedWith(
+                compareBy<PanelSlot> { it.row }
+                    .thenBy { slot -> if (draft.readingOrder == "rtl") -slot.col else slot.col },
+            )
+            val usedMediaIds = mutableSetOf<String>()
+            val blocks = draft.panels.mapIndexedNotNull { index, panel ->
+                val slot = slots.getOrNull(index) ?: return@mapIndexedNotNull null
+                val media = resolveStoryboardMedia(
+                    query = "${panel.mediaQuery} ${panel.description}",
+                    source = state.storyboardGeneration.prompt,
+                    usedMediaIds = usedMediaIds,
+                    allowAiArt = state.storyboardGeneration.generateMissingArt,
+                ) ?: return@mapIndexedNotNull null
+                usedMediaIds += media.id
+                val blockId = "storyboard-${UUID.randomUUID()}"
+                val overlays = buildList {
+                    if (panel.caption.isNotBlank()) add(
+                        TextOverlay(
+                            id = "$blockId-caption",
+                            text = panel.caption.trim(),
+                            style = TextOverlayStyle.Plain,
+                            xPercent = 50f,
+                            yPercent = 86f,
+                            widthPercent = 88f,
+                            fontSizeSp = 13f,
+                            backgroundHex = "#000000",
+                            backgroundAlpha = 0.62f,
+                        ),
+                    )
+                    if (panel.dialogue.isNotBlank()) add(
+                        TextOverlay(
+                            id = "$blockId-dialogue",
+                            text = panel.dialogue.trim(),
+                            style = TextOverlayStyle.SpeechBubble,
+                            xPercent = 52f,
+                            yPercent = 24f,
+                            widthPercent = 66f,
+                            fontSizeSp = 15f,
+                            colorHex = "#111111",
+                            backgroundHex = "#FFFFFF",
+                            backgroundAlpha = 0.92f,
+                        ),
+                    )
+                }
+                MediaBlock(
+                    id = blockId,
+                    mediaId = media.id,
+                    kind = MediaRepository.kindForType(media.type),
+                    caption = panel.description.takeIf(String::isNotBlank)?.let { listOf(Span(it)) }.orEmpty(),
+                    pageId = page.id,
+                    gridCol = slot.col,
+                    gridRow = slot.row,
+                    gridColSpan = slot.colSpan,
+                    gridRowSpan = slot.rowSpan,
+                    overlays = overlays,
+                    panelRotationDeg = slot.rotationDeg,
+                )
+            }
+            if (blocks.isEmpty()) {
+                _uiState.update {
+                    it.copy(storyboardGeneration = it.storyboardGeneration.copy(
+                        phase = StoryboardGenerationPhase.Failed,
+                        status = "No valid artwork was available for this page.",
+                    ))
+                }
+                return@launch
+            }
+            db.roleplayDao().upsertChat(
+                chat.copy(
+                    pagesJson = encodePages(pages),
+                    updatedAt = System.currentTimeMillis(),
+                ),
+            )
+            boundChat = chat.copy(pagesJson = encodePages(pages), updatedAt = System.currentTimeMillis())
+            insertStoredMessage(
+                RpMessageEntity(
+                    id = "rpm-${UUID.randomUUID()}",
+                    chatId = chat.id,
+                    swipeGroupId = "sw-${UUID.randomUUID()}",
+                    swipeIndex = 0,
+                    isActiveSwipe = true,
+                    role = "user",
+                    contentJson = Document(blocks = blocks).toJson(),
+                    createdAt = System.currentTimeMillis(),
+                    displayMode = "roleplay",
+                ),
+            )
+            _uiState.update {
+                it.copy(
+                    pages = pages,
+                    activePageId = page.id,
+                    activeTemplateId = page.templateId,
+                    storyboardGenerationOpen = false,
+                    storyboardGeneration = StoryboardGenerationUiState(),
+                    storyboardStatus = "Created ${blocks.size}-panel page. Artwork and dialogue are editable.",
+                )
+            }
+            publishMessages()
+        }
+    }
+
+    fun exportStoryboardPage() {
+        val state = _uiState.value
+        val page = state.pages.firstOrNull { it.id == state.activePageId }
+        if (page == null) {
+            _uiState.update { it.copy(storyboardStatus = "There is no storyboard page to export yet.") }
+            return
+        }
+        viewModelScope.launch {
+            val panels = state.mediaPanels.mapNotNull { panel ->
+                panel.path.takeIf { path -> java.io.File(path).isFile && java.io.File(path).length() > 0L }
+                    ?.let { path ->
+                        StoryboardExportPanel(
+                            path = path,
+                            col = panel.gridCol.coerceAtLeast(0),
+                            row = panel.gridRow.coerceAtLeast(0),
+                            colSpan = panel.gridColSpan.coerceAtLeast(1),
+                            rowSpan = panel.gridRowSpan.coerceAtLeast(1),
+                            rotationDeg = panel.panelRotationDeg,
+                            overlays = panel.overlays,
+                        )
+                    }
+            }
+            if (panels.isEmpty()) {
+                _uiState.update { it.copy(storyboardStatus = "There is no valid panel artwork to export.") }
+                return@launch
+            }
+            runCatching {
+                storyboardPageExporter.export(
+                    pageId = page.id,
+                    title = page.title ?: "Storyboard page",
+                    templateId = page.templateId,
+                    panels = panels,
+                )
+            }.onSuccess { file ->
+                _uiState.update { it.copy(storyboardStatus = "Exported page PNG to ${file.absolutePath}") }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(storyboardStatus = "Page export failed: ${error.message ?: "unknown error"}")
+                }
+            }
+        }
+    }
+
+    private suspend fun resolveStoryboardMedia(
+        query: String,
+        source: String,
+        usedMediaIds: Set<String>,
+        allowAiArt: Boolean,
+    ): MediaEntity? {
+        val tokens = ("$query $source")
+            .lowercase()
+            .split(Regex("[^a-z0-9]+"))
+            .filter { it.length >= 3 }
+            .toSet()
+        val saved = _uiState.value.mediaPanels
+            .mapNotNull { panel -> mediaRepository.getById(panel.mediaId)?.let { panel to it } }
+            .filter { (_, media) -> media.type == "image" && mediaRepository.resolveFile(media).let { it.isFile && it.length() > 0L } }
+        val all = db.mediaDao().observeAll().first()
+            .filter { media -> media.type == "image" && mediaRepository.resolveFile(media).let { it.isFile && it.length() > 0L } }
+        val ranked = (saved.map { (panel, media) -> media to 1000 + mediaScore(media, panel.caption, tokens) } +
+            all.map { media -> media to mediaScore(media, "", tokens) })
+            .distinctBy { it.first.id }
+            .sortedWith(compareByDescending<Pair<MediaEntity, Int>> { it.second }.thenBy { it.first.id })
+        val preferred = ranked.firstOrNull { it.first.id !in usedMediaIds && it.second > 0 }?.first
+        if (preferred != null) return preferred
+        if (allowAiArt) {
+            generateStoryboardArt(query = query, source = source)?.let { return it }
+        }
+        return ensureStoryboardFallbackMedia()
+    }
+
+    private suspend fun generateStoryboardArt(query: String, source: String): MediaEntity? {
+        val modelRef = PromptModelSelection.effectiveModelRef(
+            _uiState.value.selectedModelRef,
+            _uiState.value.defaultModelRef,
+        )
+        if (!aiGeneration.hasApiKey(modelRef)) return null
+        return runCatching {
+            val result = aiGeneration.generateImage(
+                prompt = "Editable ${if (_uiState.value.storyboardGeneration.rightToLeft) "manga" else "comic"} panel art. " +
+                    "Scene: $source. Panel direction: $query. No text or speech bubbles.",
+                modelRef = modelRef,
+            )
+            val mime = result.second
+            mediaRepository.importFromBytes(
+                bytes = result.first,
+                fileName = "storyboard-${UUID.randomUUID()}.${if (mime == "image/png") "png" else "jpg"}",
+                mimeType = mime,
+            )
+        }.getOrNull()
+    }
+
+    private fun mediaScore(media: MediaEntity, extra: String, tokens: Set<String>): Int {
+        val metadata = "${media.displayName} ${media.category} ${media.tags} $extra".lowercase()
+        return tokens.count { it in metadata } * 10 +
+            if (media.category.contains("scene", ignoreCase = true) || media.tags.contains("scene", ignoreCase = true)) 3 else 0
+    }
+
+    private suspend fun ensureStoryboardFallbackMedia(): MediaEntity {
+        storyboardFallbackMediaId?.let { id -> mediaRepository.getById(id)?.let { return it } }
+        val id = "storyboard-fallback-art"
+        mediaRepository.getById(id)?.let {
+            storyboardFallbackMediaId = id
+            return it
+        }
+        val bitmap = android.graphics.Bitmap.createBitmap(
+            1200,
+            800,
+            android.graphics.Bitmap.Config.ARGB_8888,
+        )
+        val canvas = android.graphics.Canvas(bitmap)
+        canvas.drawColor(android.graphics.Color.rgb(38, 43, 62))
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.WHITE
+            textSize = 52f
+            textAlign = android.graphics.Paint.Align.CENTER
+        }
+        canvas.drawText("STORYBOARD", 600f, 380f, paint)
+        paint.textSize = 28f
+        paint.alpha = 190
+        canvas.drawText("offline fallback art", 600f, 430f, paint)
+        val entity = mediaRepository.importFromBytes(
+            bytes = ImageOps.toPngBytes(bitmap),
+            id = id,
+            fileName = "storyboard-fallback-art.png",
+            mimeType = "image/png",
+        )
+        bitmap.recycle()
+        storyboardFallbackMediaId = entity.id
+        return entity
     }
 
     /** ☁️ AI: generate a picture with a cloud image model and attach it. */
@@ -2782,6 +3240,8 @@ class RoleplayChatViewModel @Inject constructor(
         viewModelScope.launch {
             val chat = boundChat ?: return@launch
             val mode = authoritativeRpgMode()
+            val campaign = rpgCampaignState ?: createRpgCampaign(chat.id, mode.id)
+            val currentNode = campaign.map.nodes.firstOrNull { it.id == campaign.map.currentNodeId }
             val roster = db.roleplayDao().getCharacters()
             val partyEntities = buildList {
                 boundCharacter?.let(::add)
@@ -2809,9 +3269,12 @@ class RoleplayChatViewModel @Inject constructor(
                     id = character.id,
                     name = character.name,
                     maxHp = sheet.maxHp.coerceAtLeast(1),
-                    hp = sheet.currentHp.coerceIn(0, sheet.maxHp.coerceAtLeast(1)),
+                    hp = (campaign.party.hpByMember[character.id] ?: sheet.currentHp).coerceIn(0, sheet.maxHp.coerceAtLeast(1)),
                     armorClass = sheet.armorClass.coerceAtLeast(1),
                     attackModifier = attack,
+                    statuses = campaign.party.conditionsByMember[character.id].orEmpty().mapNotNull { value ->
+                        runCatching { RpgStatusEffect.valueOf(value) }.getOrNull()
+                    }.toSet(),
                     artPath = portraitPath,
                 )
             }.ifEmpty {
@@ -2854,7 +3317,8 @@ class RoleplayChatViewModel @Inject constructor(
                 ?.let { documentFromJson(it.contentJson).plainText().lineSequence().firstOrNull()?.trim() }
                 .orEmpty()
             val setup = RpgEncounterSetup(
-                id = "enc-${UUID.randomUUID()}",
+                id = currentNode?.encounterId
+                    ?: "enc-${UUID.randomUUID()}",
                 title = start?.title?.takeIf { it.isNotBlank() } ?: "Scene ${_uiState.value.sceneNumber} Encounter",
                 stakes = start?.stakes?.takeIf { it.isNotBlank() }
                     ?: latestScene.ifBlank { "The party must overcome the immediate threat." },
@@ -2863,8 +3327,12 @@ class RoleplayChatViewModel @Inject constructor(
                 party = party,
             )
             val combat = createRpgEncounter(setup)
-            val campaign = rpgCampaignState ?: createRpgCampaign(chat.id, mode.id)
-            persistRpgCampaign(campaign.copy(activeCombatJson = rpgCombatJson.encodeToString(combat)))
+            val partyState = campaign.party.copy(
+                memberIds = party.map { it.id },
+                hpByMember = campaign.party.hpByMember + party.associate { it.id to it.hp },
+                conditionsByMember = campaign.party.conditionsByMember + party.associate { it.id to it.statuses.map { status -> status.name }.toSet() },
+            )
+            persistRpgCampaign(campaign.copy(party = partyState, activeCombatJson = rpgCombatJson.encodeToString(combat)))
             _uiState.update {
                 it.copy(
                     activeRpgCombat = combat,
@@ -3008,7 +3476,8 @@ class RoleplayChatViewModel @Inject constructor(
                 }
             }
             val campaign = rpgCampaignState ?: return@launch
-            persistRpgCampaign(applyCombatOutcome(campaign, outcome))
+            val withParty = updateRpgPartyFromCombat(campaign, combat.combatants)
+            persistRpgCampaign(applyCombatOutcome(withParty, outcome))
             val now = System.currentTimeMillis()
             db.roleplayDao().upsertMessage(
                 RpMessageEntity(
@@ -3039,6 +3508,63 @@ class RoleplayChatViewModel @Inject constructor(
         }
     }
 
+    fun enterAdventureMapNode(nodeId: String) {
+        viewModelScope.launch {
+            val campaign = rpgCampaignState ?: return@launch
+            val updated = enterRpgSceneNode(campaign, nodeId)
+            if (updated == campaign) return@launch
+            persistRpgCampaign(updated)
+            updated.map.nodes.firstOrNull { it.id == nodeId }?.let { node ->
+                publishRpgMapScene(node)
+            }
+        }
+    }
+
+    fun exploreRpgFreely() {
+        viewModelScope.launch {
+            rpgCampaignState?.let { campaign ->
+                persistRpgCampaign(enterFreeformExploration(campaign, campaign.map.nodes.firstOrNull { it.id == campaign.map.currentNodeId }?.location ?: "the surrounding wilds"))
+            }
+        }
+    }
+
+    fun returnToRpgChapter() {
+        viewModelScope.launch {
+            rpgCampaignState?.let { campaign -> persistRpgCampaign(returnToChapterNode(campaign)) }
+        }
+    }
+
+    private suspend fun publishRpgMapScene(node: com.ihy2ln.weaverse.feature.roleplay.campaign.RpgSceneNode) {
+        val chat = boundChat ?: return
+        val text = buildString {
+            appendLine(node.title)
+            appendLine()
+            appendLine(node.summary)
+            appendLine()
+            appendLine("Objective: ${node.objective}")
+            appendLine("Location: ${node.location}")
+            appendLine("[[RPG_CHOICE|id=1|title=Investigate the objective|description=Follow the current lead and look for a useful opening.]]")
+            appendLine("[[RPG_CHOICE|id=2|title=Study the surroundings|description=Search for a safer route or hidden clue.]]")
+            appendLine("[[RPG_CHOICE|id=3|title=Prepare the party|description=Check the party before committing to the next danger.]]")
+            append("[[SCENE_ART:${node.sceneArtAssetId.ifBlank { "scene-auto" }}|category=scene|mood=adventure]]")
+        }
+        val document = documentWithBestSceneMedia(Document.fromPlainText(text), "${node.title} ${node.summary}", node.location)
+        val now = System.currentTimeMillis()
+        db.roleplayDao().upsertMessage(
+            RpMessageEntity(
+                id = "rpm-node-${node.id}-$now",
+                chatId = chat.id,
+                swipeGroupId = "sw-node-${node.id}-$now",
+                swipeIndex = 0,
+                isActiveSwipe = true,
+                role = "char",
+                contentJson = document.toJson(),
+                createdAt = now,
+                displayMode = "dungeonMaster",
+            ),
+        )
+    }
+
     private suspend fun persistActiveCombat(combat: RpgCombatState) {
         val campaign = rpgCampaignState ?: return
         persistRpgCampaign(campaign.copy(activeCombatJson = rpgCombatJson.encodeToString(combat)))
@@ -3055,6 +3581,7 @@ class RoleplayChatViewModel @Inject constructor(
             it.copy(
                 rpgStartup = state.startup,
                 adventurePlanProgress = state.startup.generationProgress,
+                rpgCampaign = state,
                 activeRpgCombat = restoredCombat,
                 selectedCombatCardId = it.selectedCombatCardId.takeIf { restoredCombat != null },
                 selectedCombatTargetId = it.selectedCombatTargetId.takeIf { restoredCombat != null },
@@ -3165,6 +3692,20 @@ class RoleplayChatViewModel @Inject constructor(
                     cyoaSuggestionProgress = 100,
                     cyoaSuggestionError = "AI suggestions could not be loaded, so campaign-aware local suggestions are shown.",
                 ) }
+            }
+        }
+    }
+
+    fun useLocalCyoaSuggestions() {
+        if (rpgCampaignState == null) return
+        viewModelScope.launch {
+            updateRpgStartup {
+                it.copy(
+                    cyoaSuggestions = fallbackCyoaSuggestions(it.setup),
+                    cyoaSuggestionStatus = RpgGenerationStatus.Failed,
+                    cyoaSuggestionProgress = 100,
+                    cyoaSuggestionError = "Using campaign-aware local suggestions.",
+                )
             }
         }
     }
@@ -3418,30 +3959,7 @@ class RoleplayChatViewModel @Inject constructor(
         generateJob?.cancel()
         generateJob = null
         viewModelScope.launch {
-            if (cancelSuggestions) {
-                updateRpgStartup {
-                    it.copy(
-                        cyoaSuggestionStatus = RpgGenerationStatus.Idle,
-                        cyoaSuggestionProgress = 0,
-                        cyoaSuggestionError = "",
-                    )
-                }
-            }
-            if (cancelMainGeneration) {
-                updateRpgStartup {
-                    it.copy(
-                        step = if (it.step == RpgStartupStep.GeneratingChapterPlan) {
-                            RpgStartupStep.Cyoa
-                        } else {
-                            RpgStartupStep.Verification
-                        },
-                        generationStatus = RpgGenerationStatus.Idle,
-                        generationProgress = 0,
-                        generationError = "",
-                        generationRequestId = "",
-                    )
-                }
-            }
+            rpgCampaignState?.let { campaign -> persistRpgCampaign(stopRpgSetupGeneration(campaign)) }
             _uiState.update { it.copy(isStreaming = false, errorMessage = "") }
         }
     }
@@ -3728,9 +4246,170 @@ class RoleplayChatViewModel @Inject constructor(
         _uiState.update { ed -> ed.imageEditor?.let { ed.copy(imageEditor = it.copy(targetLanguage = language)) } ?: ed }
     }
 
-    /** Vision model choice: first available Vision-capable model, else the default if it supports images. */
+    /**
+     * Runs the same vision OCR/translation used by the panel editor over every
+     * image panel on the active imported manga page. Originals stay in the
+     * media library; English is stored as editable overlays on the page.
+     */
+    fun translateActiveMangaPageToEnglish() {
+        val panels = _uiState.value.mediaPanels.filterNot { it.isAudio }
+        if (panels.isEmpty()) {
+            _uiState.update { it.copy(storyboardStatus = "Select an imported manga page first.") }
+            return
+        }
+        viewModelScope.launch {
+            val modelRef = visionModelRef()
+            if (modelRef == null) {
+                _uiState.update {
+                    it.copy(storyboardStatus = "English translation needs a Vision-capable model in Settings → Writing.")
+                }
+                return@launch
+            }
+            val modelLabel = if (modelRef == MANGA_TRANSLATION_LUNA_REF) {
+                "GPT-5.6 Luna"
+            } else {
+                modelRef.removePrefix("openrouter/")
+            }
+            var translatedPanels = 0
+            var translatedRegions = 0
+            panels.forEachIndexed { index, panel ->
+                _uiState.update {
+                    it.copy(
+                        storyboardStatus =
+                            "Translating manga panel ${index + 1}/${panels.size} with $modelLabel to English…",
+                    )
+                }
+                val regions = PanelAi.readText(aiGeneration, modelRef, panel.path, "English")
+                    .orEmpty()
+                    .filter { it.translation.isNotBlank() || it.original.isNotBlank() }
+                if (regions.isEmpty()) return@forEachIndexed
+                val message = rawMessages.find { it.id == panel.messageId } ?: return@forEachIndexed
+                val blocks = documentFromJson(message.contentJson).blocks.toMutableList()
+                val blockIndex = blocks.indexOfFirst { it.id == panel.blockId }
+                val base = blocks.getOrNull(blockIndex) as? MediaBlock ?: return@forEachIndexed
+                val overlays = regions.map { region ->
+                    TextOverlay(
+                        id = "ov-${UUID.randomUUID()}",
+                        text = region.translation.ifBlank { region.original },
+                        style = TextOverlayStyle.SpeechBubble,
+                        xPercent = ((region.x + region.w / 2f) * 100f).coerceIn(5f, 95f),
+                        yPercent = ((region.y + region.h / 2f) * 100f).coerceIn(5f, 95f),
+                        widthPercent = (region.w * 130f).coerceIn(24f, 96f),
+                        fontSizeSp = (region.h * baseFontSize(base)).coerceIn(9f, 26f),
+                        colorHex = "#111111",
+                        backgroundHex = "#FFFFFF",
+                        backgroundAlpha = 0.92f,
+                    )
+                }
+                blocks[blockIndex] = base.copy(overlays = base.overlays + overlays)
+                persistMessageBlocks(message, blocks)
+                translatedPanels++
+                translatedRegions += overlays.size
+            }
+            _uiState.update {
+                it.copy(
+                    storyboardStatus = if (translatedPanels == 0) {
+                        "No readable text was returned for this page. The original art is unchanged."
+                    } else {
+                        "Added $translatedRegions English text overlay(s) across $translatedPanels panel(s)."
+                    },
+                )
+            }
+        }
+    }
+
+    /** Translates every editable panel produced from one downloaded chapter. */
+    fun translateDownloadedChapter(chapterId: String) {
+        viewModelScope.launch {
+            val modelRef = visionModelRef()
+            if (modelRef == null) {
+                _uiState.update { it.copy(storyboardStatus = "Whole-chapter translation needs a Vision-capable model in Settings → Writing.") }
+                return@launch
+            }
+            val pageIds = _uiState.value.pages
+                .filter { it.sourceChapterId == chapterId }
+                .map { it.id }
+                .toSet()
+            val panels = rawMessages.flatMap { message ->
+                documentFromJson(message.contentJson).blocks.mapNotNull { block ->
+                    (block as? MediaBlock)?.takeIf { it.pageId in pageIds }?.let { block to message }
+                }
+            }
+            if (panels.isEmpty()) {
+                _uiState.update { it.copy(storyboardStatus = "Add this downloaded chapter to the current Storyboard before translating it.") }
+                return@launch
+            }
+            var translatedPanels = 0
+            var translatedRegions = 0
+            panels.forEachIndexed { index, (panel, message) ->
+                _uiState.update {
+                    it.copy(storyboardStatus = "Translating chapter panel ${index + 1}/${panels.size} to English…")
+                }
+                if (panel.overlays.isNotEmpty()) return@forEachIndexed
+                val entity = mediaRepository.getById(panel.mediaId) ?: return@forEachIndexed
+                val regions = PanelAi.readText(aiGeneration, modelRef, mediaRepository.resolveFile(entity).absolutePath, "English")
+                    .orEmpty()
+                    .filter { it.translation.isNotBlank() || it.original.isNotBlank() }
+                if (regions.isEmpty()) return@forEachIndexed
+                val blocks = documentFromJson(message.contentJson).blocks.toMutableList()
+                val blockIndex = blocks.indexOfFirst { it.id == panel.id }
+                val current = blocks.getOrNull(blockIndex) as? MediaBlock ?: return@forEachIndexed
+                val overlays = regions.map { region ->
+                    TextOverlay(
+                        id = "ov-${UUID.randomUUID()}",
+                        text = region.translation.ifBlank { region.original },
+                        style = TextOverlayStyle.SpeechBubble,
+                        xPercent = ((region.x + region.w / 2f) * 100f).coerceIn(5f, 95f),
+                        yPercent = ((region.y + region.h / 2f) * 100f).coerceIn(5f, 95f),
+                        widthPercent = (region.w * 130f).coerceIn(24f, 96f),
+                        fontSizeSp = (region.h * baseFontSize(current)).coerceIn(9f, 26f),
+                        colorHex = "#111111",
+                        backgroundHex = "#FFFFFF",
+                        backgroundAlpha = 0.92f,
+                    )
+                }
+                blocks[blockIndex] = current.copy(overlays = current.overlays + overlays)
+                persistMessageBlocks(message, blocks)
+                translatedPanels++
+                translatedRegions += overlays.size
+            }
+            _uiState.update {
+                it.copy(
+                    storyboardStatus = if (translatedPanels == 0) {
+                        "No new readable text was found in the downloaded chapter. Original art is unchanged."
+                    } else {
+                        "Added $translatedRegions English overlay(s) across $translatedPanels chapter panel(s). Originals remain preserved."
+                    },
+                )
+            }
+        }
+    }
+
+    /**
+     * Vision model choice for storyboard work.
+     *
+     * Prefer the configured GPT-5.6 Luna roll for the manga workflow, then the
+     * user's selected/default model, and only then another cached Vision model.
+     * This makes the model used for page translation deterministic instead of
+     * depending on cache ordering.
+     */
     private suspend fun visionModelRef(): String? {
         val infos = modelCache.toModelInfo(modelCache.models.first())
+        if (aiGeneration.hasApiKey(MANGA_TRANSLATION_LUNA_REF) &&
+            aiGeneration.modelSupportsImages(MANGA_TRANSLATION_LUNA_REF)
+        ) {
+            return MANGA_TRANSLATION_LUNA_REF
+        }
+        val selected = PromptModelSelection.effectiveModelRef(
+            _uiState.value.selectedModelRef,
+            _uiState.value.defaultModelRef,
+        )
+        if (selected.isNotBlank() &&
+            aiGeneration.hasApiKey(selected) &&
+            aiGeneration.modelSupportsImages(selected)
+        ) {
+            return selected
+        }
         infos.firstOrNull { it.supportsImages && it.available }?.let {
             return PromptModelSelection.modelRef(it.id)
         }
@@ -4170,10 +4849,10 @@ class RoleplayChatViewModel @Inject constructor(
      * Add-pages button: imports individual pictures or whole PDF/CBZ/webtoon
      * files and appends every discovered page as one full-page panel.
      */
-    fun importPages(uris: List<Uri>) {
+    fun importPages(uris: List<Uri>, rightToLeft: Boolean = false) {
         if (uris.isEmpty()) return
         viewModelScope.launch {
-            val importedPages = mutableListOf<MediaEntity>()
+            val importedPages = mutableListOf<MangaPageProcessingResult>()
             var failedFiles = 0
             uris.forEach { uri ->
                 runCatching {
@@ -4182,8 +4861,35 @@ class RoleplayChatViewModel @Inject constructor(
                         onProgress = { progress ->
                             _uiState.update { it.copy(storyboardStatus = progress) }
                         },
-                    ) { media, _ ->
-                        importedPages += media
+                    ) { media, label ->
+                        val aiBoxes = runCatching {
+                            val modelRef = visionModelRef()
+                            if (modelRef == null || !aiGeneration.hasApiKey(modelRef)) {
+                                null
+                            } else {
+                                _uiState.update {
+                                    it.copy(storyboardStatus = "AI is separating panels in $label…")
+                                }
+                                PanelAi.detectPanelsDetailed(
+                                    aiGeneration,
+                                    modelRef,
+                                    mediaRepository.resolveFile(media).absolutePath,
+                                ).boxes.takeIf { boxes -> boxes.size > 1 }
+                            }
+                        }.getOrNull()
+                        if (aiBoxes == null) {
+                            _uiState.update {
+                                it.copy(storyboardStatus = "Using offline panel fallback for $label…")
+                            }
+                        }
+                        importedPages += MangaPageProcessor.splitPage(
+                            source = media,
+                            mediaRepository = mediaRepository,
+                            rightToLeft = rightToLeft,
+                            preferredBoxes = aiBoxes?.map { box ->
+                                NormalizedPanelBox(box.left, box.top, box.right, box.bottom)
+                            },
+                        )
                     }
                 }.onFailure {
                     failedFiles++
@@ -4201,23 +4907,62 @@ class RoleplayChatViewModel @Inject constructor(
             val pageMetas = decodePages(chat.pagesJson).toMutableList()
             val now = System.currentTimeMillis()
             val blocks = mutableListOf<Block>()
-            importedPages.forEach { imported ->
-                val pageId = "page-${java.util.UUID.randomUUID()}"
-                pageMetas.add(
-                    RpPageMeta(
-                        id = pageId,
-                        order = (pageMetas.maxOfOrNull { it.order } ?: -1) + 1,
-                        title = "Page ${pageMetas.size + 1}",
-                    ),
-                )
-                blocks.add(
-                    MediaBlock(
-                        id = "mb-${java.util.UUID.randomUUID()}",
-                        mediaId = imported.id,
-                        kind = MediaKind.Image,
-                        pageId = pageId,
-                    ).withGridPlacement(0, 0, gridSize, gridSize, gridSize),
-                )
+            var lastImportedPageId = _uiState.value.activePageId
+            importedPages.forEachIndexed { sourceIndex, imported ->
+                val templateId = if (imported.panels.size <= 6) "classic-6" else "vertical-strip"
+                val template = PanelTemplates.byId(templateId) ?: PanelTemplates.byId("classic-6")!!
+                var panelIndex = 0
+                var continuation = 0
+                while (panelIndex < imported.panels.size) {
+                    val pageId = "page-${java.util.UUID.randomUUID()}"
+                    lastImportedPageId = pageId
+                    pageMetas.add(
+                        RpPageMeta(
+                            id = pageId,
+                            order = (pageMetas.maxOfOrNull { it.order } ?: -1) + 1,
+                            title = buildString {
+                                append("Page ${pageMetas.size + 1}")
+                                append(" · ${imported.panels.size} panel(s)")
+                                if (continuation > 0) append(" · continued")
+                            },
+                            templateId = template.id,
+                            readingOrder = if (rightToLeft) "rtl" else "ltr",
+                            generationStatus = if (imported.usedFallback) "offline-fallback" else "offline-panels",
+                        ),
+                    )
+                    val remaining = imported.panels.size - panelIndex
+                    val placementPlan = planStoryboardAssetPlacements(
+                        importCount = remaining,
+                        panels = emptyList(),
+                        slots = template.slots,
+                        gridSize = gridSize,
+                    )
+                    if (placementPlan.placements.isEmpty()) break
+                    placementPlan.placements.forEach { placement ->
+                        val media = imported.panels[panelIndex++]
+                        blocks.add(
+                            MediaBlock(
+                                id = "mb-${java.util.UUID.randomUUID()}",
+                                mediaId = media.id,
+                                kind = MediaKind.Image,
+                                pageId = pageId,
+                            ).withGridPlacement(
+                                placement.col,
+                                placement.row,
+                                placement.colSpan,
+                                placement.rowSpan,
+                                gridSize,
+                            ).let { placed ->
+                                (placed as MediaBlock).copy(panelRotationDeg = placement.rotationDeg)
+                            },
+                        )
+                    }
+                    continuation++
+                    if (placementPlan.remainingCount <= 0) break
+                }
+                _uiState.update {
+                    it.copy(storyboardStatus = "Imported page ${sourceIndex + 1}/${importedPages.size} with ${imported.panels.size} editable panel(s).")
+                }
             }
             val updated = chat.copy(pagesJson = encodePages(pageMetas), updatedAt = System.currentTimeMillis())
             db.roleplayDao().upsertChat(updated)
@@ -4238,13 +4983,110 @@ class RoleplayChatViewModel @Inject constructor(
             _uiState.update {
                 it.copy(
                     pages = pageMetas,
-                    activePageId = pageMetas.last().id,
+                    activePageId = lastImportedPageId.ifBlank { pageMetas.last().id },
                     storyboardStatus = buildString {
-                        append("Added ${importedPages.size} page(s). Long-press a page panel for picture tools.")
+                        val panelCount = importedPages.sumOf { it.panels.size }
+                        append("Imported ${importedPages.size} manga page(s) as $panelCount editable panel(s). Original page media was preserved.")
                         if (failedFiles > 0) append(" $failedFiles file(s) could not be read.")
                     },
                 )
             }
+        }
+    }
+
+    /** Adds a completed library chapter as editable Storyboard pages and panels. */
+    fun importDownloadedChapter(chapterId: String) {
+        viewModelScope.launch {
+            val chat = boundChat ?: return@launch
+            val chapter = db.mangaDao().getChapter(chapterId)
+            if (chapter == null) {
+                _uiState.update { it.copy(storyboardStatus = "Downloaded chapter not found.") }
+                return@launch
+            }
+            if (chapter.status != "completed") {
+                _uiState.update { it.copy(storyboardStatus = "Download the chapter completely before adding it to Storyboard.") }
+                return@launch
+            }
+            val originals = mangaDownloadRepository.importChapterPages(chapterId)
+            if (originals.isEmpty()) {
+                _uiState.update { it.copy(storyboardStatus = "The chapter has no readable local pages. Retry the download.") }
+                return@launch
+            }
+            val rightToLeft = chapter.readingOrder.equals("rtl", ignoreCase = true)
+            val processed = originals.map { original ->
+                MangaPageProcessor.splitPage(
+                    source = original,
+                    mediaRepository = mediaRepository,
+                    rightToLeft = rightToLeft,
+                )
+            }
+            val pages = decodePages(chat.pagesJson).toMutableList()
+            val blocks = mutableListOf<Block>()
+            var lastPageId = _uiState.value.activePageId
+            processed.forEachIndexed { sourceIndex, result ->
+                val template = PanelTemplates.byId(if (result.panels.size <= 6) "classic-6" else "vertical-strip")
+                    ?: PanelTemplates.byId("classic-6")!!
+                var panelIndex = 0
+                while (panelIndex < result.panels.size) {
+                    val pageId = "page-${UUID.randomUUID()}"
+                    lastPageId = pageId
+                    pages += RpPageMeta(
+                        id = pageId,
+                        order = (pages.maxOfOrNull { it.order } ?: -1) + 1,
+                        title = "${chapter.mangaTitle} · ${chapter.title} · Page ${sourceIndex + 1}",
+                        templateId = template.id,
+                        readingOrder = if (rightToLeft) "rtl" else "ltr",
+                        generationStatus = "downloaded-offline-panels",
+                        sourceChapterId = chapterId,
+                    )
+                    val placement = planStoryboardAssetPlacements(
+                        importCount = result.panels.size - panelIndex,
+                        panels = emptyList(),
+                        slots = template.slots,
+                        gridSize = activeGridSize(),
+                    )
+                    if (placement.placements.isEmpty()) break
+                    placement.placements.forEach { slot ->
+                        val media = result.panels[panelIndex++]
+                        blocks += MediaBlock(
+                            id = "mb-${UUID.randomUUID()}",
+                            mediaId = media.id,
+                            kind = MediaKind.Image,
+                            pageId = pageId,
+                        ).withGridPlacement(
+                            slot.col,
+                            slot.row,
+                            slot.colSpan,
+                            slot.rowSpan,
+                            activeGridSize(),
+                        )
+                    }
+                }
+            }
+            val now = System.currentTimeMillis()
+            db.roleplayDao().upsertChat(chat.copy(pagesJson = encodePages(pages), updatedAt = now))
+            boundChat = chat.copy(pagesJson = encodePages(pages), updatedAt = now)
+            db.roleplayDao().upsertMessage(
+                RpMessageEntity(
+                    id = "rpm-$now",
+                    chatId = chat.id,
+                    swipeGroupId = "sw-$now",
+                    swipeIndex = 0,
+                    isActiveSwipe = true,
+                    role = "user",
+                    contentJson = Document(blocks = blocks).toJson(),
+                    createdAt = now,
+                    displayMode = "roleplay",
+                ),
+            )
+            _uiState.update {
+                it.copy(
+                    pages = pages,
+                    activePageId = lastPageId.ifBlank { pages.lastOrNull()?.id.orEmpty() },
+                    storyboardStatus = "Added ${originals.size} downloaded page(s) as ${processed.sumOf { it.panels.size }} editable panel(s). Original pages remain in the local library.",
+                )
+            }
+            publishMessages()
         }
     }
 

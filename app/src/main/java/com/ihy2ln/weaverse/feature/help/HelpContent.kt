@@ -292,6 +292,25 @@ object HelpContent {
                         "Manga reads right-to-left, Comic the other way.",
                 ),
                 HelpEntry(
+                    "Manga hub and sources",
+                    "Storyboard → Window opens Library, Browse, Downloads, Extensions, and Projects. " +
+                        "Browse selects MangaDex, Comix, Atsumaru, MangaFire, MangaDot, or Rawkuma, " +
+                        "then loads Popular, Latest, Search, series metadata, and chapter links inside Weaverse. " +
+                        "A source that requires a browser challenge reports the block instead of showing a fake empty library.",
+                ),
+                HelpEntry(
+                    "Favorites and sections",
+                    "Open a title in Browse and tap one or more Favorite section chips. In Library, " +
+                        "switch between Downloads and your named sections. Type a name in New favorite section " +
+                        "and tap Add to create another category. Favorites do not require a chapter download.",
+                ),
+                HelpEntry(
+                    "Download and read chapters",
+                    "Open a cover to load its chapters, then tap Download. Downloads shows queue progress, Stop, " +
+                        "Retry, and Read. Completed chapters open offline from either Downloads or Library. " +
+                        "For another public reader page, paste its chapter URL in Browse and preview the ordered images first.",
+                ),
+                HelpEntry(
                     "Layouts",
                     "Six templates. The chosen one draws numbered empty frames, so a page " +
                         "looks like a comic page before you add anything.",

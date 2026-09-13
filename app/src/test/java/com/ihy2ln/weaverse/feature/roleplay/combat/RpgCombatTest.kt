@@ -68,4 +68,28 @@ class RpgCombatTest {
         assertEquals(active.hand, restored.hand)
         assertEquals(active.combatants, restored.combatants)
     }
+
+    @Test
+    fun cardBattleRefreshesApAndEpIndependently() {
+        val state = createRpgEncounter(encounter(), RpgCombatRuleset.CardBattle).copy(ap = 1, ep = 2)
+        val resolved = resolveRpgCombatAction(state, RpgCombatAction("hero", "arcane_burst", "golem"), seed = 3)
+        assertEquals(3, resolved.ap)
+        assertEquals(3, resolved.ep)
+    }
+
+    @Test
+    fun exposedTargetTakesBonusAndStatusIsConsumed() {
+        val state = createRpgEncounter(encounter(), RpgCombatRuleset.CardBattle).copy(
+            combatants = listOf(
+                RpgCombatant("hero", "Hero", 20, statuses = setOf(RpgStatusEffect.Empowered)),
+                RpgCombatant("golem", "Gate Golem", 20, armorClass = 12, isEnemy = true, statuses = setOf(RpgStatusEffect.Exposed)),
+            ),
+        )
+        val resolved = resolveRpgCombatAction(state, RpgCombatAction("hero", "strike", "golem"), seed = 3)
+        val golem = resolved.combatants.first { it.id == "golem" }
+        val hero = resolved.combatants.first { it.id == "hero" }
+        assertEquals(11, golem.hp)
+        assertFalse(golem.statuses.contains(RpgStatusEffect.Exposed))
+        assertFalse(hero.statuses.contains(RpgStatusEffect.Empowered))
+    }
 }

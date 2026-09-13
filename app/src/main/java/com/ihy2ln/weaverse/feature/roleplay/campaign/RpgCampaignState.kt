@@ -2,6 +2,7 @@ package com.ihy2ln.weaverse.feature.roleplay.campaign
 
 import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatOutcome
 import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatRuleset
+import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatant
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -175,7 +176,7 @@ data class RpgCampaignState(
 const val CURRENT_RPG_SCHEMA = 2
 
 fun defaultRpgSceneNodes(): List<RpgSceneNode> = listOf(
-    RpgSceneNode("chapter-1-arrival", "The First Sign", "A strange summons pulls the party into the opening mystery.", objective = "Inspect the waystone and identify who sent the summons.", branchIds = listOf("chapter-1-crossroads", "chapter-1-wild-trail"), location = "Whispering Forest", sceneArtAssetId = "scene_forest_waystone"),
+    RpgSceneNode("chapter-1-arrival", "The First Sign", "A strange summons pulls the party into the opening mystery.", encounterId = "encounter-arrival", objective = "Inspect the waystone and identify who sent the summons.", branchIds = listOf("chapter-1-crossroads", "chapter-1-wild-trail"), location = "Whispering Forest", sceneArtAssetId = "scene_forest_waystone"),
     RpgSceneNode("chapter-1-crossroads", "The Crossroads", "Three leads compete for the party's attention.", objective = "Choose which lead to follow before nightfall.", prerequisites = listOf("chapter-1-arrival"), encounterId = "encounter-crossroads", location = "Old Crossroads", sceneArtAssetId = "scene_crossroads"),
     RpgSceneNode("chapter-1-wild-trail", "The Wild Trail", "A risky shortcut reveals a different side of the mystery.", objective = "Follow the tracks without alerting the hidden watchers.", prerequisites = listOf("chapter-1-arrival"), location = "Whispering Forest", sceneArtAssetId = "scene_forest_trail"),
     RpgSceneNode("chapter-1-vault", "The Sealed Vault", "The first chapter's danger waits behind an ancient seal.", objective = "Break the seal and survive what answers from within.", prerequisites = listOf("chapter-1-crossroads"), encounterId = "encounter-vault", location = "Sunken Vault", sceneArtAssetId = "scene_vault"),
@@ -204,6 +205,7 @@ fun enterRpgSceneNode(state: RpgCampaignState, nodeId: String): RpgCampaignState
 
 fun completeRpgSceneNode(state: RpgCampaignState, nodeId: String, consequence: String = ""): RpgCampaignState {
     val node = state.map.nodes.firstOrNull { it.id == nodeId } ?: return state
+    if (node.id in state.map.completedNodeIds) return state
     val completed = state.map.completedNodeIds + node.id
     val discovered = state.map.discoveredNodeIds + node.branchIds
     val recap = buildString {
@@ -230,15 +232,49 @@ fun applyCompanionConsequence(state: RpgCampaignState, companionId: String, delt
     })
 
 fun applyCombatOutcome(state: RpgCampaignState, outcome: RpgCombatOutcome): RpgCampaignState {
+    if (state.lastOutcome?.encounterId == outcome.encounterId && state.activeCombatJson == null) return state
     val node = state.map.nodes.firstOrNull { it.encounterId == outcome.encounterId }
     val completed = if (outcome.result == RpgCombatOutcome.Result.Victory && node != null) state.map.completedNodeIds + node.id else state.map.completedNodeIds
-    val discovered = if (node != null) state.map.discoveredNodeIds + node.id else state.map.discoveredNodeIds
+    val discovered = if (node != null) state.map.discoveredNodeIds + node.id + node.branchIds else state.map.discoveredNodeIds
+    val rewards = (state.progression.rewards + outcome.rewards).distinct()
     return state.copy(
         map = state.map.copy(completedNodeIds = completed, discoveredNodeIds = discovered, currentNodeId = node?.id ?: state.map.currentNodeId),
-        progression = state.progression.copy(milestonePoints = state.progression.milestonePoints + if (outcome.result == RpgCombatOutcome.Result.Victory) 1 else 0, rewards = state.progression.rewards + outcome.rewards),
+        progression = state.progression.copy(milestonePoints = state.progression.milestonePoints + if (outcome.result == RpgCombatOutcome.Result.Victory) 1 else 0, rewards = rewards),
         lastOutcome = outcome,
         chapterRecap = outcome.recap,
         activeCombatJson = null,
+    )
+}
+
+fun updateRpgPartyFromCombat(state: RpgCampaignState, combatants: List<RpgCombatant>): RpgCampaignState {
+    val party = combatants.filterNot { it.isEnemy }
+    if (party.isEmpty()) return state
+    return state.copy(
+        party = state.party.copy(
+            memberIds = party.map { it.id },
+            hpByMember = state.party.hpByMember + party.associate { it.id to it.hp },
+            conditionsByMember = state.party.conditionsByMember + party.associate { it.id to it.statuses.map { status -> status.name }.toSet() },
+        ),
+    )
+}
+
+fun stopRpgSetupGeneration(state: RpgCampaignState): RpgCampaignState {
+    val startup = state.startup
+    val stopSuggestions = startup.cyoaSuggestionStatus == RpgGenerationStatus.Generating
+    val stopMain = startup.generationStatus == RpgGenerationStatus.Generating &&
+        startup.step in setOf(RpgStartupStep.GeneratingChapterPlan, RpgStartupStep.GeneratingScene)
+    if (!stopSuggestions && !stopMain) return state
+    return state.copy(
+        startup = startup.copy(
+            cyoaSuggestions = if (stopSuggestions) fallbackCyoaSuggestions(startup.setup) else startup.cyoaSuggestions,
+            cyoaSuggestionStatus = if (stopSuggestions) RpgGenerationStatus.Failed else startup.cyoaSuggestionStatus,
+            cyoaSuggestionProgress = if (stopSuggestions) 100 else startup.cyoaSuggestionProgress,
+            cyoaSuggestionError = if (stopSuggestions) "AI suggestions stopped. Using campaign-aware local suggestions." else startup.cyoaSuggestionError,
+            generationStatus = if (stopMain) RpgGenerationStatus.Failed else startup.generationStatus,
+            generationProgress = if (stopMain) 0 else startup.generationProgress,
+            generationError = if (stopMain) "AI generation stopped. Retry or continue with the offline fallback." else startup.generationError,
+            generationRequestId = if (stopMain) "" else startup.generationRequestId,
+        ),
     )
 }
 

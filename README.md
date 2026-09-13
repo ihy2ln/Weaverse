@@ -78,6 +78,19 @@ also become Roleplay cards with Messenger, DM, and manga chats.
 - Shared board — same notes in Novel, Roleplay, and Notes mode.
 - Mic speech-to-text.
 
+### Storyboard manga hub
+
+- **Library · Browse · Downloads · Extensions · Projects** in a dark, cover-first interface.
+- Built-in source adapters for MangaDex, Comix, Atsumaru, MangaFire, MangaDot,
+  and Rawkuma. Catalog adapters load public Popular/Latest/Search results,
+  metadata, chapter links, and page manifests without opening an external browser.
+- Resumable chapter downloads, offline reading, direct public chapter-URL import,
+  and Storyboard processing for panel separation, translation, and coloring.
+- Persistent favorites and user-named Library sections. A title can belong to
+  several sections without being downloaded.
+- Sources that return a login, CAPTCHA, JavaScript, or anti-bot challenge report
+  a blocked state; Weaverse does not bypass access controls.
+
 ### Prompts & AI
 - **`/`** AI prompt · **`\`** manual entry · OpenRouter provider.
 - Compact **PROMPT** dock; **Models** picks any OpenRouter text model.
@@ -131,7 +144,8 @@ JUnit 5 + Turbine (app), a Go launcher for the Windows `.exe` shim.
 
 - Build notes / working log: [BUILD_NOTES.md](BUILD_NOTES.md)
 - **User helper guide:** [docs/GUIDE.md](docs/GUIDE.md)
-- **Latest hard checkpoint:** [docs/CHECKPOINT-v1.3.26-PROMPT-TEMPLATES.md](docs/CHECKPOINT-v1.3.26-PROMPT-TEMPLATES.md)
+- **Latest hard checkpoint:** [docs/CHECKPOINT-v1.4.9-STORYBOARD-MANGA-HUB.md](docs/CHECKPOINT-v1.4.9-STORYBOARD-MANGA-HUB.md)
+- **Storyboard Manga Hub wiki guide:** [docs/wiki/Storyboard-Manga-Hub.md](docs/wiki/Storyboard-Manga-Hub.md)
 - **Prompt Templates wiki guide:** [docs/wiki/Prompt-Templates-and-Add-Ons.md](docs/wiki/Prompt-Templates-and-Add-Ons.md)
 - Earlier Codex checkpoint: [docs/CHECKPOINT-v1.3.2-CODEX-NAVIGATION.md](docs/CHECKPOINT-v1.3.2-CODEX-NAVIGATION.md)
 - **RPG Adventure checkpoint:** [docs/CHECKPOINT-v1.3.2-RPG-ADVENTURE.md](docs/CHECKPOINT-v1.3.2-RPG-ADVENTURE.md)

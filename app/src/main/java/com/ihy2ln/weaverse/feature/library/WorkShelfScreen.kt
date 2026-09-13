@@ -1,5 +1,6 @@
 package com.ihy2ln.weaverse.feature.library
 
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -14,10 +15,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.AlertDialog
@@ -37,6 +41,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -53,6 +58,9 @@ import com.ihy2ln.weaverse.core.ui.util.adaptiveContentPadding
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
 import com.ihy2ln.weaverse.data.repo.BookRepository
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
+import com.ihy2ln.weaverse.feature.storyboard.MangaLibraryCoverGrid
+import com.ihy2ln.weaverse.feature.storyboard.MangaSourceDialog
+import com.ihy2ln.weaverse.feature.storyboard.MangaSourceViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.File
 import javax.inject.Inject
@@ -303,6 +311,95 @@ fun WorkShelfScreen(
             },
             dismissButton = { TextButton(onClick = { pendingDeleteIds = emptySet() }) { Text("Cancel") } },
         )
+    }
+}
+
+@Composable
+private fun StoryboardSourceCatalog(
+    onOpenDownloads: () -> Unit,
+    sourceViewModel: MangaSourceViewModel = hiltViewModel(),
+) {
+    val sourceState by sourceViewModel.uiState.collectAsState()
+    val context = LocalContext.current
+    val tokens = inkTokens()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = InkSpacing.md)
+            .clip(RoundedCornerShape(inkRadiusMd()))
+            .background(tokens.panel.copy(alpha = 0.72f))
+            .padding(InkSpacing.md),
+        verticalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Extensions", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Reviewed source adapters for manga, manhwa, and comics.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = tokens.secondaryText,
+                )
+            }
+            InkOutlinedButton(label = "Open downloader", onClick = onOpenDownloads)
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("MangaDex", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            Text("Installed · authorized API", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = InkSpacing.sm))
+        }
+        Text(
+            "Websites",
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.padding(top = InkSpacing.xs),
+        )
+        Text(
+            "These open in your browser. Downloading inside Weaverse requires an authorized adapter; use manual CBZ/PDF/image import otherwise.",
+            style = MaterialTheme.typography.labelSmall,
+            color = tokens.secondaryText,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+        ) {
+            sourceState.websites.forEach { site ->
+                TextButton(onClick = {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(site.url)))
+                }) {
+                    Text(site.name)
+                }
+            }
+            TextButton(onClick = onOpenDownloads) { Text("+ Add website") }
+        }
+        if (sourceState.downloads.isNotEmpty()) {
+            Text(
+                "Library",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(top = InkSpacing.sm),
+            )
+            Text(
+                "Downloaded chapter covers are kept here until you add them to a storyboard.",
+                style = MaterialTheme.typography.labelSmall,
+                color = tokens.secondaryText,
+            )
+            MangaLibraryCoverGrid(
+                downloads = sourceState.downloads.take(6),
+                coverPaths = sourceState.coverPaths,
+                onSelectChapter = { chapterId ->
+                    sourceViewModel.openReader(chapterId)
+                    onOpenDownloads()
+                },
+                compact = true,
+                modifier = Modifier
+                    .padding(top = InkSpacing.xs)
+                    .heightIn(max = 260.dp),
+            )
+        }
     }
 }
 

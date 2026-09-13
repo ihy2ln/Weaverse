@@ -7,6 +7,7 @@ import androidx.work.ListenableWorker
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import com.ihy2ln.weaverse.core.crash.CrashLog
+import com.ihy2ln.weaverse.core.manga.MangaDownloadRepository
 import com.ihy2ln.weaverse.core.roleplay.DailyCharacterGenerator
 import com.ihy2ln.weaverse.data.backup.AutoBackupScheduler
 import com.ihy2ln.weaverse.data.backup.AutoBackupWorker
@@ -32,6 +33,7 @@ class WeaverseApp : Application(), Configuration.Provider {
     @Inject lateinit var crashLog: CrashLog
     @Inject lateinit var settings: SettingsRepository
     @Inject lateinit var backupManager: BackupManager
+    @Inject lateinit var mangaDownloadRepository: MangaDownloadRepository
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -46,6 +48,13 @@ class WeaverseApp : Application(), Configuration.Provider {
                     ): ListenableWorker? {
                         if (workerClassName == AutoBackupWorker::class.java.name) {
                             return AutoBackupWorker(appContext, workerParameters, backupManager)
+                        }
+                        if (workerClassName == com.ihy2ln.weaverse.core.manga.MangaDownloadWorker::class.java.name) {
+                            return com.ihy2ln.weaverse.core.manga.MangaDownloadWorker(
+                                appContext,
+                                workerParameters,
+                                mangaDownloadRepository,
+                            )
                         }
                         return null
                     }

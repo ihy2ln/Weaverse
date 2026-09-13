@@ -187,10 +187,13 @@ fun resolveRpgCombatAction(state: RpgCombatState, action: RpgCombatAction, seed:
             val card = state.hand.first { it.id == action.cardId }
             nextAp -= card.apCost
             nextEp -= card.epCost
-            val amount = if (card.healing) card.power else max(1, card.power + if (random % 10L == 0L) 3 else 0)
+            val empoweredBonus = if (!card.healing && actor.statuses.contains(RpgStatusEffect.Empowered)) 2 else 0
+            val exposedBonus = if (!card.healing && target.statuses.contains(RpgStatusEffect.Exposed)) 2 else 0
+            val amount = if (card.healing) card.power else max(1, card.power + empoweredBonus + exposedBonus + if (random % 10L == 0L) 3 else 0)
             val hp = if (card.healing) minOf(target.maxHp, target.hp + amount) else max(0, target.hp - amount)
-            val statuses = if (card.status != null) target.statuses + card.status else target.statuses
+            val statuses = (target.statuses - RpgStatusEffect.Exposed) + listOfNotNull(card.status)
             nextCombatants[index] = target.copy(hp = hp, statuses = statuses)
+            if (empoweredBonus > 0) nextCombatants[actorIndex] = actor.copy(statuses = actor.statuses - RpgStatusEffect.Empowered)
             message = "${actor.name} played ${card.title} on ${target.name}."
         }
         RpgCombatRuleset.DndD20 -> {
@@ -258,7 +261,7 @@ fun resolveRpgCombatAction(state: RpgCombatState, action: RpgCombatAction, seed:
     return state.copy(
         turn = state.turn + 1,
         ap = if (nextAp <= 0) 3 else nextAp,
-        ep = if (nextAp <= 0) 3 else nextEp,
+        ep = if (nextEp <= 0) 3 else nextEp,
         activeCombatantId = nextCombatants.firstOrNull { !it.isEnemy && it.hp > 0 }?.id.orEmpty(),
         combatants = nextCombatants,
         log = state.log + roundLog,

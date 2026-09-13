@@ -11,6 +11,7 @@ import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatRuleset
 import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatPreview
 import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatState
 import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgStartupState
+import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgCampaignState
 
 data class RpMediaRef(
     val messageId: String,
@@ -181,6 +182,9 @@ data class RoleplayChatUiState(
     val imageEditor: PanelEditorUi? = null,
     /** Short status for the storyboard tools (panel separation results…). */
     val storyboardStatus: String = "",
+    /** Recoverable AI/offline storyboard page creation state. */
+    val storyboardGeneration: StoryboardGenerationUiState = StoryboardGenerationUiState(),
+    val storyboardGenerationOpen: Boolean = false,
     /** ☁️ AI picture generation dialog. */
     val showImageGen: Boolean = false,
     val imageGenPrompt: String = "",
@@ -201,4 +205,6 @@ data class RoleplayChatUiState(
     val combatActionPreview: RpgCombatPreview? = null,
     val combatTextAction: String = "",
     val rpgChapterRecap: String = "",
+    /** Authoritative RPG campaign state used by the adventure map and resume UI. */
+    val rpgCampaign: RpgCampaignState? = null,
 )

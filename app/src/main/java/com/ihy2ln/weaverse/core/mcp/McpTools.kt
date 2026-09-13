@@ -1,6 +1,8 @@
 package com.ihy2ln.weaverse.core.mcp
 
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
+import com.ihy2ln.weaverse.core.manga.MangaDownloadRepository
+import com.ihy2ln.weaverse.core.manga.MangaSearchResult
 import com.ihy2ln.weaverse.core.media.SceneMediaLibrary
 import com.ihy2ln.weaverse.core.media.SceneMediaRequest
 import com.ihy2ln.weaverse.core.text.documentFromJson
@@ -27,6 +29,7 @@ import javax.inject.Singleton
 class McpTools @Inject constructor(
     private val db: WeaverseDatabase,
     private val sceneMediaLibrary: SceneMediaLibrary,
+    private val mangaDownloads: MangaDownloadRepository,
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
@@ -157,6 +160,62 @@ class McpTools @Inject constructor(
                     val limit = (args["limit"] as? JsonPrimitive)?.content?.toIntOrNull() ?: 12
                     text(sceneMediaLibrary.promptContext(SceneMediaRequest(scene, kind, tags, limit)))
                 }
+                "search_manga" -> {
+                    val query = (args["query"] as? JsonPrimitive)?.content.orEmpty().trim()
+                    if (query.isBlank()) return text("A manga title is required.", isErr = true)
+                    val source = (args["sourceId"] as? JsonPrimitive)?.content.orEmpty().ifBlank { "mangadex" }
+                    val results = mangaDownloads.search(source, query)
+                    text(results.joinToString("\n") {
+                        "${it.title} · id=${it.remoteId} · source=${it.sourceId}\n${it.canonicalUrl}"
+                    }.ifBlank { "No manga matches." })
+                }
+                "list_manga_chapters" -> {
+                    val mangaId = (args["mangaId"] as? JsonPrimitive)?.content.orEmpty()
+                    val title = (args["title"] as? JsonPrimitive)?.content.orEmpty().ifBlank { "Manga" }
+                    if (mangaId.isBlank()) return text("mangaId is required.", isErr = true)
+                    val source = (args["sourceId"] as? JsonPrimitive)?.content.orEmpty().ifBlank { "mangadex" }
+                    val manga = MangaSearchResult(source, mangaId, title)
+                    val chapters = mangaDownloads.loadChapters(manga)
+                    text(chapters.joinToString("\n") {
+                        "${it.title} · remoteId=${it.remoteId} · ${it.language} · ${it.canonicalUrl}"
+                    }.ifBlank { "No English chapters found." })
+                }
+                "queue_manga_download" -> {
+                    if (!confirmed(args)) return text("This downloads remote pages into the local library. Repeat with confirm=true after the user approves it.", isErr = true)
+                    val source = (args["sourceId"] as? JsonPrimitive)?.content.orEmpty().ifBlank { "mangadex" }
+                    val remoteId = (args["chapterId"] as? JsonPrimitive)?.content.orEmpty()
+                    val mangaId = (args["mangaId"] as? JsonPrimitive)?.content.orEmpty()
+                    val title = (args["title"] as? JsonPrimitive)?.content.orEmpty().ifBlank { "Chapter $remoteId" }
+                    if (remoteId.isBlank() || mangaId.isBlank()) return text("chapterId and mangaId are required.", isErr = true)
+                    val entity = mangaDownloads.addDiscoveredChapter(
+                        com.ihy2ln.weaverse.core.manga.MangaChapter(
+                            sourceId = source,
+                            remoteId = remoteId,
+                            mangaId = mangaId,
+                            mangaTitle = (args["mangaTitle"] as? JsonPrimitive)?.content.orEmpty().ifBlank { "Manga" },
+                            title = title,
+                            chapterNumber = (args["chapterNumber"] as? JsonPrimitive)?.content.orEmpty(),
+                            canonicalUrl = (args["url"] as? JsonPrimitive)?.content.orEmpty(),
+                        ),
+                    )
+                    mangaDownloads.enqueue(entity)
+                    text("Queued ${entity.mangaTitle} · ${entity.title} · chapterId=${entity.id}")
+                }
+                "manga_download_status" -> {
+                    val chapters = mangaDownloads.observeChapters().first()
+                    val id = (args["chapterId"] as? JsonPrimitive)?.content.orEmpty()
+                    text(chapters.filter { id.isBlank() || it.id == id }.joinToString("\n") {
+                        "${it.mangaTitle} · ${it.title} · ${it.status} · ${it.progress}% · id=${it.id}"
+                    }.ifBlank { "No local manga downloads." })
+                }
+                "import_manga_chapter_to_storyboard" -> {
+                    if (!confirmed(args)) return text("This creates Storyboard pages. Repeat with confirm=true after the user approves it.", isErr = true)
+                    val chapterId = (args["chapterId"] as? JsonPrimitive)?.content.orEmpty()
+                    val chatId = (args["chatId"] as? JsonPrimitive)?.content.orEmpty()
+                    if (chapterId.isBlank() || chatId.isBlank()) return text("chapterId and chatId are required.", isErr = true)
+                    val count = mangaDownloads.importChapterToStoryboard(chatId, chapterId)
+                    text("Added $count original page(s) to Storyboard chat $chatId. Pages remain editable and can be translated or colored in the app.")
+                }
                 else -> McpCall(error(id, -32602, "Unknown tool: $name"), isError = true)
             }
         } catch (err: Throwable) {
@@ -204,8 +263,16 @@ class McpTools @Inject constructor(
                 ),
                 required = setOf("scene"),
             ),
+            tool("search_manga", "Search the authorized MangaDex connector", mapOf("query" to "Manga title", "sourceId" to "Optional source id; defaults to mangadex"), required = setOf("query")),
+            tool("list_manga_chapters", "List chapters for a manga returned by search_manga", mapOf("mangaId" to "Remote manga id", "title" to "Manga title", "sourceId" to "Optional source id; defaults to mangadex"), required = setOf("mangaId")),
+            tool("queue_manga_download", "Queue an authorized chapter for local download; requires confirm=true", mapOf("chapterId" to "Remote chapter id", "mangaId" to "Remote manga id", "mangaTitle" to "Manga title", "title" to "Chapter title", "sourceId" to "Optional source id", "confirm" to "Must be true after explicit user approval"), required = setOf("chapterId", "mangaId", "confirm")),
+            tool("manga_download_status", "Read local manga download progress", mapOf("chapterId" to "Optional local chapter id"), required = emptySet()),
+            tool("import_manga_chapter_to_storyboard", "Create editable Storyboard pages from a completed local chapter; requires confirm=true", mapOf("chapterId" to "Local chapter id", "chatId" to "Storyboard chat id", "confirm" to "Must be true after explicit user approval"), required = setOf("chapterId", "chatId", "confirm")),
         ),
     )
+
+    private fun confirmed(args: JsonObject): Boolean =
+        (args["confirm"] as? JsonPrimitive)?.content?.equals("true", ignoreCase = true) == true
 
     private fun tool(
         name: String,

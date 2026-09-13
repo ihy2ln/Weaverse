@@ -3,7 +3,9 @@ package com.ihy2ln.weaverse.core.media
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.PorterDuff
 import android.graphics.RectF
 import java.io.ByteArrayOutputStream
 import kotlin.math.abs
@@ -49,6 +51,36 @@ object ImageOps {
     fun eraseRect(target: Bitmap, rect: RectF, color: Int) {
         val canvas = Canvas(target)
         canvas.drawRect(rect, Paint().apply { this.color = color })
+    }
+
+    /** Paints a translucent color mark without changing the source media. */
+    fun paintCircle(
+        target: Bitmap,
+        cx: Float,
+        cy: Float,
+        radius: Float,
+        color: Int,
+        alpha: Int = 150,
+    ) {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = color
+            this.alpha = alpha.coerceIn(0, 255)
+            style = Paint.Style.FILL
+        }
+        Canvas(target).drawCircle(cx, cy, radius, paint)
+    }
+
+    /**
+     * Applies a restrained color wash to a derived bitmap. This is an
+     * intentionally local fallback for devices without an image-to-image AI
+     * provider; the original bitmap remains untouched and the result can be
+     * discarded or edited with the color brush.
+     */
+    fun applyColorWash(target: Bitmap, color: Int, alpha: Int = 42) {
+        Canvas(target).drawColor(
+            android.graphics.Color.argb(alpha.coerceIn(0, 255), Color.red(color), Color.green(color), Color.blue(color)),
+            PorterDuff.Mode.SRC_ATOP,
+        )
     }
 
     fun toPngBytes(bitmap: Bitmap): ByteArray =
@@ -129,16 +161,6 @@ internal fun detectPanelsFromArgb(
             val b = px and 0xff
             return r > 225 && g > 225 && b > 225 && abs(r - b) < 26
         }
-        val rowWhite = FloatArray(height) { row ->
-            var count = 0
-            for (x in 0 until width) if (isWhite(pixels[row * width + x])) count++
-            count.toFloat() / width
-        }
-        val colWhite = FloatArray(width) { col ->
-            var count = 0
-            for (y in 0 until height) if (isWhite(pixels[y * width + col])) count++
-            count.toFloat() / height
-        }
         val boxes = mutableListOf<NormalizedPanelBox>()
         val minW = 0.16f
         val minH = 0.10f
@@ -148,24 +170,36 @@ internal fun detectPanelsFromArgb(
             val regionW = x1 - x0
             val regionH = y1 - y0
             if (regionW < 8 || regionH < 8) return
-            // Longest horizontal white run inside the region (with margins).
-            var bestRowRun = 0 to 0
-            var run = 0
-            for (y in y0 until y1) {
-                if (rowWhite[y] > 0.93f) {
-                    run++
-                    if (run > bestRowRun.second - bestRowRun.first) bestRowRun = (y - run + 1) to (y + 1)
-                } else run = 0
+            // Measure gutters inside the current candidate, rather than only
+            // accepting lines that span the entire source page. Real manga
+            // layouts often have overlapping or inset panels.
+            fun rowIsGutter(row: Int): Boolean {
+                var white = 0
+                for (x in x0 until x1) if (isWhite(pixels[row * width + x])) white++
+                return white.toFloat() / regionW > 0.90f
             }
+            fun colIsGutter(col: Int): Boolean {
+                var white = 0
+                for (y in y0 until y1) if (isWhite(pixels[y * width + col])) white++
+                return white.toFloat() / regionH > 0.90f
+            }
+
+            fun longestRun(start: Int, end: Int, isGutter: (Int) -> Boolean): Pair<Int, Int> {
+                var best = start to start
+                var runStart = start
+                for (value in start until end) {
+                    if (!isGutter(value)) {
+                        if (value - runStart > best.second - best.first) best = runStart to value
+                        runStart = value + 1
+                    }
+                }
+                if (end - runStart > best.second - best.first) best = runStart to end
+                return best
+            }
+
+            val bestRowRun = longestRun(y0, y1, ::rowIsGutter)
+            val bestColRun = longestRun(x0, x1, ::colIsGutter)
             val rowRunLen = bestRowRun.second - bestRowRun.first
-            var bestColRun = 0 to 0
-            run = 0
-            for (x in x0 until x1) {
-                if (colWhite[x] > 0.93f) {
-                    run++
-                    if (run > bestColRun.second - bestColRun.first) bestColRun = (x - run + 1) to (x + 1)
-                } else run = 0
-            }
             val colRunLen = bestColRun.second - bestColRun.first
             val canSplitH = rowRunLen >= 3 && rowRunLen < regionH * 0.85f
             val canSplitV = colRunLen >= 3 && colRunLen < regionW * 0.85f

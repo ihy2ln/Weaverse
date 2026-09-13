@@ -411,9 +411,38 @@ object WikiContent {
             markdown = """
                 ## Window, Manga, Comic
 
-                **Window** is the cover-art shelf for every storyboard.
-                **Manga** reads right-to-left; **Comic** the other way. The
-                same pages are shown — only the reading direction changes.
+                **Window** opens the dedicated manga hub: **Library, Browse,
+                Downloads, Extensions, and Projects**. **Manga** reads
+                right-to-left; **Comic** the other way.
+
+                ## Browsable sources
+
+                Browse starts with source chips for **MangaDex, Comix,
+                Atsumaru, MangaFire, MangaDot, and Rawkuma**. Select one, then
+                use Popular, Latest, or Search. A cover opens series metadata
+                and the chapter list without leaving Weaverse. MangaDex uses
+                its API; the other built-in adapters read catalog and chapter
+                links exposed by their public pages. If a host requires a
+                JavaScript, CAPTCHA, login, or anti-bot challenge, Weaverse
+                reports that source as blocked instead of pretending that it
+                returned an empty catalog.
+
+                ## Favorites and named sections
+
+                Open a title in Browse and select one or more favorite-section
+                chips. Favorites are saved even when no chapter is downloaded.
+                Library begins with Downloads and Favorites sections. Enter a
+                name in **New favorite section** and tap Add to create personal
+                categories such as Reading, Finished, Translate, or Reference.
+
+                ## Downloading and offline reading
+
+                Open a cover, choose a chapter, then tap Download. Downloads
+                shows queued, downloading, stopped, failed, and completed
+                states with Stop, Retry, and Read actions. Completed originals
+                open offline from Downloads or Library. The direct URL importer
+                remains available for public chapter-reader links: Preview
+                verifies the ordered page manifest before Download is enabled.
 
                 ## Pages
 

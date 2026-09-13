@@ -92,12 +92,14 @@ class StoryboardPagesTest {
     @Test
     fun pageListEncodesInOrderAndSurvivesGarbage() {
         val pages = listOf(
-            RpPageMeta(id = "b", order = 1, title = "Two"),
+            RpPageMeta(id = "b", order = 1, title = "Two", readingOrder = "rtl", generationStatus = "offline"),
             RpPageMeta(id = "a", order = 0),
         )
         val decoded = decodePages(encodePages(pages))
         assertEquals(listOf("a", "b"), decoded.map { it.id })
         assertNull(decoded.first().title)
+        assertEquals("rtl", decoded.last().readingOrder)
+        assertEquals("offline", decoded.last().generationStatus)
         // A chat that predates pages stores "[]" (or anything unparseable); never crash.
         assertTrue(decodePages("[]").isEmpty())
         assertTrue(decodePages("not json").isEmpty())

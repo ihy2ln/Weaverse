@@ -8,6 +8,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.ihy2ln.weaverse.data.db.dao.BookDao
 import com.ihy2ln.weaverse.data.db.dao.CodexDao
 import com.ihy2ln.weaverse.data.db.dao.MediaDao
+import com.ihy2ln.weaverse.data.db.dao.MangaDao
 import com.ihy2ln.weaverse.data.db.dao.ManuscriptDao
 import com.ihy2ln.weaverse.data.db.dao.PromptDao
 import com.ihy2ln.weaverse.data.db.dao.RoleplayDao
@@ -25,6 +26,11 @@ import com.ihy2ln.weaverse.data.db.entities.CodexCategoryEntity
 import com.ihy2ln.weaverse.data.db.entities.CodexEntryEntity
 import com.ihy2ln.weaverse.data.db.entities.CodexEntryLoreEntity
 import com.ihy2ln.weaverse.data.db.entities.MediaEntity
+import com.ihy2ln.weaverse.data.db.entities.MangaChapterEntity
+import com.ihy2ln.weaverse.data.db.entities.MangaFavoriteCategoryEntity
+import com.ihy2ln.weaverse.data.db.entities.MangaFavoriteEntity
+import com.ihy2ln.weaverse.data.db.entities.MangaPageEntity
+import com.ihy2ln.weaverse.data.db.entities.MangaSeriesEntity
 import com.ihy2ln.weaverse.data.db.entities.PromptEntity
 import com.ihy2ln.weaverse.data.db.entities.PromptFolderEntity
 import com.ihy2ln.weaverse.data.db.entities.RpCharacterEntity
@@ -59,13 +65,18 @@ import com.ihy2ln.weaverse.data.db.entities.RpgCampaignSaveEntity
         RpChatEntity::class,
         RpMessageEntity::class,
         MediaEntity::class,
+        MangaChapterEntity::class,
+        MangaPageEntity::class,
+        MangaSeriesEntity::class,
+        MangaFavoriteCategoryEntity::class,
+        MangaFavoriteEntity::class,
         PromptFolderEntity::class,
         PromptEntity::class,
         AiProfileEntity::class,
         TextGameSaveEntity::class,
         RpgCampaignSaveEntity::class,
     ],
-    version = 18,
+    version = 20,
     exportSchema = false,
 )
 @TypeConverters(InkTypeConverters::class)
@@ -78,10 +89,66 @@ abstract class WeaverseDatabase : RoomDatabase() {
     abstract fun workshopChatDao(): WorkshopChatDao
     abstract fun roleplayDao(): RoleplayDao
     abstract fun mediaDao(): MediaDao
+    abstract fun mangaDao(): MangaDao
     abstract fun promptDao(): PromptDao
     abstract fun textGameSaveDao(): TextGameSaveDao
 
     companion object {
+        val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS manga_series (" +
+                        "id TEXT NOT NULL PRIMARY KEY, sourceId TEXT NOT NULL, remoteId TEXT NOT NULL, title TEXT NOT NULL, " +
+                        "description TEXT NOT NULL, coverUrl TEXT NOT NULL, canonicalUrl TEXT NOT NULL, " +
+                        "updatedAt INTEGER NOT NULL)",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_manga_series_sourceId_remoteId " +
+                        "ON manga_series(sourceId, remoteId)",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS manga_favorite_categories (" +
+                        "id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, sortOrder INTEGER NOT NULL, " +
+                        "createdAt INTEGER NOT NULL)",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_manga_favorite_categories_name " +
+                        "ON manga_favorite_categories(name)",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS manga_favorites (" +
+                        "seriesId TEXT NOT NULL, categoryId TEXT NOT NULL, addedAt INTEGER NOT NULL, " +
+                        "PRIMARY KEY(seriesId, categoryId))",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_manga_favorites_categoryId ON manga_favorites(categoryId)")
+                db.execSQL(
+                    "INSERT OR IGNORE INTO manga_favorite_categories(id, name, sortOrder, createdAt) " +
+                        "VALUES('favorites', 'Favorites', 0, 0)",
+                )
+            }
+        }
+        val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS manga_chapters (" +
+                        "id TEXT NOT NULL PRIMARY KEY, sourceId TEXT NOT NULL, remoteId TEXT NOT NULL, " +
+                        "mangaId TEXT NOT NULL, mangaTitle TEXT NOT NULL, title TEXT NOT NULL, volume TEXT NOT NULL DEFAULT '', " +
+                        "chapterNumber TEXT NOT NULL DEFAULT '', language TEXT NOT NULL DEFAULT 'en', canonicalUrl TEXT NOT NULL DEFAULT '', " +
+                        "readingOrder TEXT NOT NULL DEFAULT 'ltr', pageCount INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'discovered', " +
+                        "progress INTEGER NOT NULL DEFAULT 0, errorMessage TEXT NOT NULL DEFAULT '', updatedAt INTEGER NOT NULL DEFAULT 0, downloadedAt INTEGER, " +
+                        "UNIQUE(sourceId, remoteId))",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_manga_chapters_mangaId ON manga_chapters(mangaId)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS manga_pages (" +
+                        "id TEXT NOT NULL PRIMARY KEY, chapterId TEXT NOT NULL, sourceId TEXT NOT NULL, pageIndex INTEGER NOT NULL, " +
+                        "remoteUrl TEXT NOT NULL, fileName TEXT NOT NULL, localPath TEXT NOT NULL DEFAULT '', checksum TEXT NOT NULL DEFAULT '', " +
+                        "status TEXT NOT NULL DEFAULT 'queued', errorMessage TEXT NOT NULL DEFAULT '', mediaId TEXT, updatedAt INTEGER NOT NULL DEFAULT 0, " +
+                        "UNIQUE(chapterId, pageIndex))",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_manga_pages_chapterId ON manga_pages(chapterId)")
+            }
+        }
         val MIGRATION_17_18 = object : Migration(17, 18) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE TABLE IF NOT EXISTS rpg_campaign_saves (campaignId TEXT NOT NULL PRIMARY KEY, schemaVersion INTEGER NOT NULL DEFAULT 1, stateJson TEXT NOT NULL, updatedAt INTEGER NOT NULL)")

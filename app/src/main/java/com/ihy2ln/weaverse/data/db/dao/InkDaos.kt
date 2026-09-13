@@ -13,6 +13,11 @@ import com.ihy2ln.weaverse.data.db.entities.CodexCategoryEntity
 import com.ihy2ln.weaverse.data.db.entities.CodexEntryEntity
 import com.ihy2ln.weaverse.data.db.entities.CodexEntryLoreEntity
 import com.ihy2ln.weaverse.data.db.entities.MediaEntity
+import com.ihy2ln.weaverse.data.db.entities.MangaChapterEntity
+import com.ihy2ln.weaverse.data.db.entities.MangaFavoriteCategoryEntity
+import com.ihy2ln.weaverse.data.db.entities.MangaFavoriteEntity
+import com.ihy2ln.weaverse.data.db.entities.MangaPageEntity
+import com.ihy2ln.weaverse.data.db.entities.MangaSeriesEntity
 import com.ihy2ln.weaverse.data.db.entities.PromptEntity
 import com.ihy2ln.weaverse.data.db.entities.PromptFolderEntity
 import com.ihy2ln.weaverse.data.db.entities.RpCharacterEntity
@@ -449,6 +454,63 @@ interface MediaDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: MediaEntity)
+}
+
+@Dao
+interface MangaDao {
+    @Query("SELECT * FROM manga_chapters ORDER BY updatedAt DESC, mangaTitle, chapterNumber")
+    fun observeChapters(): Flow<List<MangaChapterEntity>>
+
+    @Query("SELECT * FROM manga_chapters WHERE id = :id LIMIT 1")
+    suspend fun getChapter(id: String): MangaChapterEntity?
+
+    @Query("SELECT * FROM manga_chapters WHERE sourceId = :sourceId AND remoteId = :remoteId LIMIT 1")
+    suspend fun getChapterByRemoteId(sourceId: String, remoteId: String): MangaChapterEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertChapter(entity: MangaChapterEntity)
+
+    @Query("SELECT * FROM manga_pages WHERE chapterId = :chapterId ORDER BY pageIndex")
+    fun observePages(chapterId: String): Flow<List<MangaPageEntity>>
+
+    @Query("SELECT * FROM manga_pages WHERE pageIndex = 0 ORDER BY updatedAt DESC")
+    fun observeCoverPages(): Flow<List<MangaPageEntity>>
+
+    @Query("SELECT * FROM manga_pages WHERE chapterId = :chapterId ORDER BY pageIndex")
+    suspend fun getPages(chapterId: String): List<MangaPageEntity>
+
+    @Query("SELECT * FROM manga_pages WHERE id = :id LIMIT 1")
+    suspend fun getPage(id: String): MangaPageEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertPage(entity: MangaPageEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertPages(entities: List<MangaPageEntity>)
+
+    @Query("SELECT * FROM manga_series ORDER BY title COLLATE NOCASE")
+    fun observeSeries(): Flow<List<MangaSeriesEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertSeries(entity: MangaSeriesEntity)
+
+    @Query("SELECT * FROM manga_favorite_categories ORDER BY sortOrder, name COLLATE NOCASE")
+    fun observeFavoriteCategories(): Flow<List<MangaFavoriteCategoryEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertFavoriteCategory(entity: MangaFavoriteCategoryEntity)
+
+    @Query("SELECT COUNT(*) FROM manga_favorite_categories")
+    suspend fun favoriteCategoryCount(): Int
+
+    @Query("SELECT * FROM manga_favorites ORDER BY addedAt DESC")
+    fun observeFavorites(): Flow<List<MangaFavoriteEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertFavorite(entity: MangaFavoriteEntity)
+
+    @Query("DELETE FROM manga_favorites WHERE seriesId = :seriesId AND categoryId = :categoryId")
+    suspend fun removeFavorite(seriesId: String, categoryId: String)
 }
 
 /** Flattened manuscript row for the Reader — one JOIN instead of acts→chapters→scenes. */

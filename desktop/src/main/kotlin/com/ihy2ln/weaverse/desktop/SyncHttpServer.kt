@@ -39,6 +39,11 @@ import io.ktor.server.routing.put
 import io.ktor.server.routing.routing
 import io.ktor.utils.io.jvm.javaio.copyTo
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 import java.io.File
 import java.net.InetAddress
 import java.net.NetworkInterface
@@ -60,6 +65,7 @@ class SyncHttpServer(
         ignoreUnknownKeys = true
         encodeDefaults = true
     }
+    private val mcpTools = DesktopMcpTools(dataDir, config.appVersion)
 
     fun start(): EmbeddedServer<*, *> {
         maybeAutoImport()
@@ -131,6 +137,51 @@ class SyncHttpServer(
                         tls = config.tls,
                         certSha256 = certSha256,
                     ),
+                )
+            }
+            // MCP endpoint for Claude Code, OpenCode, Codex CLI, and other
+            // clients. It uses the same pairing password as the sync hub.
+            post("/mcp") {
+                val bearer = call.request.headers["Authorization"]
+                    ?.removePrefix("Bearer ")?.trim().orEmpty()
+                val pin = call.request.headers["X-MCP-Pin"].orEmpty()
+                if (!SyncAuth.constantTimeEquals(config.pairPin, bearer) &&
+                    !SyncAuth.constantTimeEquals(config.pairPin, pin)
+                ) {
+                    call.respond(
+                        HttpStatusCode.Unauthorized,
+                        buildJsonObject {
+                            put("jsonrpc", "2.0")
+                            put("id", JsonNull)
+                            putJsonObject("error") {
+                                put("code", -32001)
+                                put("message", "Unauthorized — use the sync password as a Bearer token.")
+                            }
+                        },
+                    )
+                    return@post
+                }
+                val rpc = runCatching { call.receive<JsonObject>() }.getOrNull()
+                if (rpc == null) {
+                    call.respond(
+                        HttpStatusCode.BadRequest,
+                        buildJsonObject {
+                            put("jsonrpc", "2.0")
+                            put("id", JsonNull)
+                            putJsonObject("error") {
+                                put("code", -32700)
+                                put("message", "Invalid JSON")
+                            }
+                        },
+                    )
+                    return@post
+                }
+                call.respond(mcpTools.handle(rpc))
+            }
+            get("/mcp") {
+                call.respondText(
+                    "Weaverse MCP server. POST JSON-RPC 2.0 here; auth uses Authorization: Bearer <sync password>.",
+                    ContentType.Text.Plain,
                 )
             }
             post("/api/pair") {
