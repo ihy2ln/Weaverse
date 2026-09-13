@@ -16,6 +16,7 @@ import com.ihy2ln.weaverse.data.db.entities.encodePages
 import com.ihy2ln.weaverse.data.db.entities.decodePages
 import com.ihy2ln.weaverse.core.text.withGridPlacement
 import com.ihy2ln.weaverse.core.media.MediaRepository
+import com.ihy2ln.weaverse.core.manga.MangaDownloadRepository
 import com.ihy2ln.weaverse.data.db.entities.BookEntity
 import com.ihy2ln.weaverse.data.db.entities.SeriesEntity
 import com.ihy2ln.weaverse.data.repo.BookRepository
@@ -58,6 +59,7 @@ class AppShellViewModel @Inject constructor(
     private val workspaceHistory: WorkspaceHistory,
     private val chatRoomSeeder: com.ihy2ln.weaverse.feature.chatting.ChatRoomSeeder,
     private val mangaImporter: com.ihy2ln.weaverse.core.media.MangaFileImporter,
+    private val mangaDownloadRepository: MangaDownloadRepository,
 ) : ViewModel() {
     val preferences = settings.preferences
 
@@ -223,6 +225,55 @@ class AppShellViewModel @Inject constructor(
                 db.roleplayDao().upsertChat(
                     chat.copy(pagesJson = encodePages(pageMetas), updatedAt = now),
                 )
+            }
+        }
+    }
+
+    /**
+     * Opens a completed offline chapter directly in the editable storyboard
+     * canvas.  These sessions use a private work type so Projects continues
+     * to mean user-created or explicitly AI-created projects.
+     */
+    fun createMangaEditorFromChapter(
+        chapterId: String,
+        onCreated: (bookId: String, chatId: String) -> Unit,
+        onFailure: (String) -> Unit = {},
+    ) {
+        viewModelScope.launch {
+            runCatching {
+                val chapter = db.mangaDao().getChapter(chapterId)
+                    ?: error("Downloaded chapter not found")
+                require(chapter.status == "completed") { "Finish downloading the chapter before editing it" }
+                val book = bookRepository.createBook(
+                    title = "${chapter.mangaTitle} · ${chapter.title}",
+                    genre = "Manga edit",
+                    pov = chapter.readingOrder,
+                    tense = "Comic",
+                    styleGuide = "Imported offline chapter editor",
+                    workType = "manga_edit",
+                )
+                settings.setSelectedBookId(book.id)
+                val now = System.currentTimeMillis()
+                val chatId = "rp-chat-${java.util.UUID.randomUUID()}"
+                db.roleplayDao().upsertChat(
+                    RpChatEntity(
+                        id = chatId,
+                        characterId = null,
+                        personaId = "persona-default",
+                        title = "${chapter.mangaTitle} · ${chapter.title}",
+                        displayMode = "roleplay",
+                        pagesJson = encodePages(emptyList()),
+                        createdAt = now,
+                        updatedAt = now,
+                        bookId = book.id,
+                    ),
+                )
+                mangaDownloadRepository.importChapterToStoryboard(chatId, chapterId)
+                book.id to chatId
+            }.onSuccess { (bookId, chatId) ->
+                onCreated(bookId, chatId)
+            }.onFailure { error ->
+                onFailure(error.message ?: "Could not open the downloaded chapter for editing")
             }
         }
     }

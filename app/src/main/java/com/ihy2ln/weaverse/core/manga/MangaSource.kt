@@ -33,13 +33,13 @@ data class MangaWebsite(
     val builtIn: Boolean = false,
 )
 
-val bundledMangaWebsites = listOf(
-    MangaWebsite("comix", "Comix", "https://comix.to/", builtIn = true),
-    MangaWebsite("atsumaru", "Atsumaru", "https://atsu.moe/", builtIn = true),
-    MangaWebsite("mangafire", "MangaFire", "https://mangafire.to/", builtIn = true),
-    MangaWebsite("mangadot", "MangaDot", "https://mangadot.net/", builtIn = true),
-    MangaWebsite("rawkuma", "Rawkuma", "https://rawkuma.net/", builtIn = true),
-)
+/**
+ * Browser-backed sources are intentionally not registered here.  Several of
+ * the old adapters are blocked by their hosts and a green "Ready" label made
+ * the app promise a download path that could not work.  Users can still use
+ * Browse -> Download from web link for a chapter they are permitted to use.
+ */
+val bundledMangaWebsites: List<MangaWebsite> = emptyList()
 
 data class MangaSearchResult(
     val sourceId: String,
@@ -83,9 +83,9 @@ interface MangaSourceAdapter {
 @Singleton
 class MangaSourceRegistry @Inject constructor(
     private val mangaDex: MangaDexSource,
-    publicHtmlSources: PublicHtmlMangaSources,
 ) {
-    val sources: List<MangaSourceAdapter> = listOf(mangaDex) + publicHtmlSources.sources
+    /** Only the reviewed, documented API connector is advertised as installed. */
+    val sources: List<MangaSourceAdapter> = listOf(mangaDex)
 
     fun get(sourceId: String): MangaSourceAdapter? = sources.firstOrNull { it.descriptor.id == sourceId }
 }

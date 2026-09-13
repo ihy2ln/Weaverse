@@ -43,16 +43,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import coil3.compose.AsyncImage
 import com.ihy2ln.weaverse.BuildConfig
-import com.ihy2ln.weaverse.core.manga.MangaBrowseMode
-import com.ihy2ln.weaverse.core.manga.MangaChapter
 import com.ihy2ln.weaverse.core.manga.MangaSearchResult
 import com.ihy2ln.weaverse.data.db.entities.MangaSeriesEntity
 import com.ihy2ln.weaverse.feature.library.WorkShelfCard
 import com.ihy2ln.weaverse.feature.library.WorkShelfKind
 import com.ihy2ln.weaverse.feature.library.WorkShelfScreen
 import java.io.File
+import coil3.compose.AsyncImage
 
 private enum class MangaHubTab(val label: String) {
     Library("Library"), Browse("Browse"), Downloads("Downloads"), Extensions("Extensions"), Projects("Projects")
@@ -78,6 +76,7 @@ private val HubColors = darkColorScheme(
 fun StoryboardMangaHubScreen(
     onCreateProject: () -> Unit,
     onOpenProject: (WorkShelfCard) -> Unit,
+    onEditChapter: (String) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: MangaSourceViewModel = hiltViewModel(),
 ) {
@@ -124,6 +123,7 @@ fun StoryboardMangaHubScreen(
                     MangaHubTab.Library -> HubLibrary(
                         state = state,
                         viewModel = viewModel,
+                        onEditChapter = onEditChapter,
                         onOpenFavorite = { manga ->
                             tabName = MangaHubTab.Browse.name
                             viewModel.selectSource(manga.sourceId)
@@ -131,20 +131,10 @@ fun StoryboardMangaHubScreen(
                         },
                     )
                     MangaHubTab.Browse -> HubBrowse(state, viewModel)
-                    MangaHubTab.Downloads -> HubDownloads(state, viewModel)
+                    MangaHubTab.Downloads -> HubDownloads(state, viewModel, onEditChapter)
                     MangaHubTab.Extensions -> HubExtensions(
                         state = state,
                         viewModel = viewModel,
-                        onBrowseSource = { sourceId ->
-                            tabName = MangaHubTab.Browse.name
-                            viewModel.selectSource(sourceId)
-                            viewModel.browse(MangaBrowseMode.Popular)
-                        },
-                        onUseWebsite = { site ->
-                            tabName = MangaHubTab.Browse.name
-                            viewModel.setLink("")
-                            viewModel.setStatus("Paste a public chapter URL from ${site.name}, then tap Preview.")
-                        },
                     )
                     MangaHubTab.Projects -> WorkShelfScreen(
                         kind = WorkShelfKind.Storyboard,
@@ -162,6 +152,7 @@ fun StoryboardMangaHubScreen(
 private fun HubLibrary(
     state: MangaSourceUiState,
     viewModel: MangaSourceViewModel,
+    onEditChapter: (String) -> Unit,
     onOpenFavorite: (MangaSearchResult) -> Unit,
 ) {
     var categoryId by rememberSaveable { mutableStateOf("downloads") }
@@ -210,6 +201,7 @@ private fun HubLibrary(
                 downloads = series,
                 coverPaths = state.coverPaths,
                 onSelectChapter = viewModel::openReader,
+                onEditChapter = onEditChapter,
                 compact = false,
                 modifier = Modifier.fillMaxSize().padding(top = 10.dp),
             )
@@ -232,91 +224,12 @@ private fun HubLibrary(
 private fun HubBrowse(state: MangaSourceUiState, viewModel: MangaSourceViewModel) {
     LazyColumn(modifier = Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
-            Text("Browse sources", color = HubText, style = MaterialTheme.typography.titleLarge)
-            Text("Browse installed catalogs, open series metadata, then choose chapters.", color = HubMuted, style = MaterialTheme.typography.bodySmall)
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                state.sources.forEach { source ->
-                    FilterChip(
-                        selected = state.activeSourceId == source.id,
-                        onClick = { viewModel.selectSource(source.id) },
-                        label = { Text(source.name) },
-                    )
-                }
-            }
-        }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedTextField(
-                    value = state.query,
-                    onValueChange = viewModel::setQuery,
-                    label = { Text("Search ${state.sources.firstOrNull { it.id == state.activeSourceId }?.name ?: "source"}") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                )
-                Button(onClick = viewModel::search, enabled = !state.busy) { Text("Search") }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(false, { viewModel.browse(MangaBrowseMode.Popular) }, { Text("Popular") })
-                FilterChip(false, { viewModel.browse(MangaBrowseMode.Latest) }, { Text("Latest") })
-                FilterChip(false, { viewModel.setStatus("Title filter is available in the search field.") }, { Text("Filter") })
-            }
-        }
-        if (state.selected == null && state.results.isNotEmpty()) {
-            item {
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(145.dp),
-                    modifier = Modifier.fillMaxWidth().aspectRatio(0.9f),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    items(state.results, key = { it.remoteId }) { result -> HubSearchCover(result) { viewModel.select(result) } }
-                }
-            }
-        }
-        state.selected?.let { selected ->
-            item {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text(selected.title, color = HubText, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                    TextButton(onClick = viewModel::clearSelection) { Text("Back", color = HubAccent) }
-                }
-                if (selected.description.isNotBlank()) {
-                    Text(selected.description, color = HubMuted, style = MaterialTheme.typography.bodySmall, maxLines = 4, overflow = TextOverflow.Ellipsis)
-                }
-                Text("Favorite sections", color = HubText, style = MaterialTheme.typography.labelLarge)
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    state.favoriteCategories.forEach { category ->
-                        val seriesId = state.favoriteSeries.firstOrNull {
-                            it.sourceId == selected.sourceId && it.remoteId == selected.remoteId
-                        }?.id
-                        val saved = seriesId != null && state.favorites.any { it.seriesId == seriesId && it.categoryId == category.id }
-                        FilterChip(
-                            selected = saved,
-                            onClick = { viewModel.toggleFavorite(selected, category.id) },
-                            label = { Text(if (saved) "✓ ${category.name}" else "+ ${category.name}") },
-                        )
-                    }
-                }
-            }
-            if (!state.busy && state.chapters.isEmpty()) {
-                item {
-                    Text(
-                        "No chapter links were returned. The source may be updating or blocking catalog access.",
-                        color = HubMuted,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-            }
-            listItems(state.chapters, key = { it.remoteId }) { chapter -> HubChapterRow(chapter, state, viewModel) }
-        }
-        item {
             Text("Download from web link", color = HubText, style = MaterialTheme.typography.titleMedium)
-            Text("Paste a public chapter reader URL. Weaverse previews the detected pages before downloading.", color = HubMuted, style = MaterialTheme.typography.bodySmall)
+            Text(
+                "Blocked browser catalogs were removed. Paste a chapter URL from a site you are permitted to use; Weaverse downloads the ordered images without opening the ad-filled page.",
+                color = HubMuted,
+                style = MaterialTheme.typography.bodySmall,
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 OutlinedTextField(state.link, viewModel::setLink, label = { Text("Chapter URL") }, singleLine = true, modifier = Modifier.weight(1f))
                 Button(onClick = viewModel::previewLink, enabled = !state.busy) { Text("Preview") }
@@ -336,7 +249,11 @@ private fun HubBrowse(state: MangaSourceUiState, viewModel: MangaSourceViewModel
 }
 
 @Composable
-private fun HubDownloads(state: MangaSourceUiState, viewModel: MangaSourceViewModel) {
+private fun HubDownloads(
+    state: MangaSourceUiState,
+    viewModel: MangaSourceViewModel,
+    onEditChapter: (String) -> Unit,
+) {
     LazyColumn(modifier = Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item { Text("Downloads", color = HubText, style = MaterialTheme.typography.titleLarge) }
         if (state.downloads.isEmpty()) item { Text("No chapter downloads yet.", color = HubMuted) }
@@ -347,7 +264,10 @@ private fun HubDownloads(state: MangaSourceUiState, viewModel: MangaSourceViewMo
                     Text("${chapter.title} · ${chapter.status} · ${chapter.progress}%", color = HubMuted, style = MaterialTheme.typography.labelMedium)
                 }
                 when (chapter.status) {
-                    "completed" -> TextButton(onClick = { viewModel.openReader(chapter.id) }) { Text("Read") }
+                    "completed" -> Row {
+                        TextButton(onClick = { viewModel.openReader(chapter.id) }) { Text("Read") }
+                        TextButton(onClick = { onEditChapter(chapter.id) }) { Text("Edit") }
+                    }
                     "queued", "downloading" -> TextButton(onClick = { viewModel.stop(chapter) }) { Text("Stop") }
                     "failed", "stopped" -> TextButton(onClick = { viewModel.retry(chapter) }) { Text("Retry") }
                 }
@@ -360,39 +280,43 @@ private fun HubDownloads(state: MangaSourceUiState, viewModel: MangaSourceViewMo
 private fun HubExtensions(
     state: MangaSourceUiState,
     viewModel: MangaSourceViewModel,
-    onBrowseSource: (String) -> Unit,
-    onUseWebsite: (com.ihy2ln.weaverse.core.manga.MangaWebsite) -> Unit,
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Text("Extensions", color = HubText, style = MaterialTheme.typography.titleLarge) }
         item {
+            Text(
+                "Blocked browser extensions are not installed. Use Browse → Download from web link for Comix, Atsumaru, MangaFire, MangaDot, Rawkuma, or another public chapter URL.",
+                color = HubMuted,
+                style = MaterialTheme.typography.bodySmall,
+            )
             state.sources.forEach { source ->
                 SourceCapabilityCard(
                     name = source.name,
-                    kind = if (source.id == "mangadex") "Native API" else "Public HTML adapter",
+                    kind = "Native API",
                     detail = "Browse · Search · Metadata · Chapters · Downloads",
-                    status = "Browsable",
+                    status = "Installed",
                     statusColor = Color(0xFF82D993),
-                    actionLabel = "Browse",
-                    onAction = { onBrowseSource(source.id) },
+                    actionLabel = "API metadata retained",
+                    onAction = null,
                 )
             }
         }
-        item { Text("Websites", color = HubText, style = MaterialTheme.typography.titleLarge) }
+        if (state.websites.isNotEmpty()) item { Text("Saved websites", color = HubText, style = MaterialTheme.typography.titleLarge) }
         listItems(state.websites, key = { it.id }) { site ->
             Row(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(HubPanel).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(site.name, color = HubText)
                     Text(site.url, color = HubMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1)
                 }
-                TextButton(onClick = { onUseWebsite(site) }) { Text("Use") }
                 if (!site.builtIn) TextButton(onClick = { viewModel.removeWebsite(site) }) { Text("Remove") }
             }
         }
         item {
+            Text("Optional saved link", color = HubText, style = MaterialTheme.typography.titleMedium)
+            Text("Save a source URL for your own reference. It does not become a scraper; paste its chapter link in Browse to download.", color = HubMuted, style = MaterialTheme.typography.bodySmall)
             OutlinedTextField(state.websiteName, viewModel::setWebsiteName, label = { Text("Website name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(state.websiteUrl, viewModel::setWebsiteUrl, label = { Text("Website URL") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            Button(onClick = viewModel::addWebsite) { Text("Add website") }
+            Button(onClick = viewModel::addWebsite, enabled = state.websiteName.isNotBlank() && state.websiteUrl.isNotBlank()) { Text("Save link") }
         }
     }
 }
@@ -405,6 +329,19 @@ private fun MangaSeriesEntity.toSearchResult(): MangaSearchResult = MangaSearchR
     coverUrl = coverUrl.takeIf(String::isNotBlank),
     canonicalUrl = canonicalUrl,
 )
+
+@Composable
+private fun HubSearchCover(result: MangaSearchResult, onClick: () -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        AsyncImage(
+            model = result.coverUrl,
+            contentDescription = result.title,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxWidth().aspectRatio(0.68f).clip(RoundedCornerShape(8.dp)).background(HubPanel),
+        )
+        Text(result.title, color = HubText, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 5.dp))
+    }
+}
 
 @Composable
 private fun SourceCapabilityCard(
@@ -427,39 +364,11 @@ private fun SourceCapabilityCard(
         }
         Column(horizontalAlignment = Alignment.End) {
             Text(status, color = statusColor, style = MaterialTheme.typography.labelMedium)
-            TextButton(onClick = { onAction?.invoke() }, enabled = onAction != null) {
-                Text(actionLabel, color = if (onAction != null) HubAccent else HubMuted)
+            if (onAction != null) {
+                TextButton(onClick = onAction) { Text(actionLabel, color = HubAccent) }
+            } else {
+                Text(actionLabel, color = HubMuted, style = MaterialTheme.typography.labelSmall)
             }
-        }
-    }
-}
-
-@Composable
-private fun HubSearchCover(result: MangaSearchResult, onClick: () -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
-        AsyncImage(
-            model = result.coverUrl,
-            contentDescription = result.title,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxWidth().aspectRatio(0.68f).clip(RoundedCornerShape(8.dp)).background(HubPanel),
-        )
-        Text(result.title, color = HubText, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 5.dp))
-    }
-}
-
-@Composable
-private fun HubChapterRow(chapter: MangaChapter, state: MangaSourceUiState, viewModel: MangaSourceViewModel) {
-    val existing = state.downloads.firstOrNull { it.sourceId == chapter.sourceId && it.remoteId == chapter.remoteId }
-    Row(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(HubPanel).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(chapter.title.ifBlank { "Chapter ${chapter.chapterNumber}" }, color = HubText)
-            Text("Ch. ${chapter.chapterNumber} · ${existing?.status ?: "not downloaded"}", color = HubMuted, style = MaterialTheme.typography.labelSmall)
-        }
-        when (existing?.status) {
-            "completed" -> TextButton(onClick = { viewModel.openReader(existing.id) }) { Text("Read") }
-            "queued", "downloading" -> TextButton(onClick = { viewModel.stop(existing) }) { Text("Stop") }
-            "failed", "stopped" -> TextButton(onClick = { viewModel.retry(existing) }) { Text("Retry") }
-            else -> TextButton(onClick = { viewModel.enqueue(chapter) }) { Text("Download") }
         }
     }
 }

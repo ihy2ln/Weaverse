@@ -978,6 +978,16 @@ fun AppShell(
                                 if (storyboardDestinationOf(sd) == StoryboardDestination.Window) {
                                     StoryboardMangaHubScreen(
                                         onCreateProject = { storyboardPlusMenu = true },
+                                        onEditChapter = { chapterId ->
+                                            shellViewModel.createMangaEditorFromChapter(
+                                                chapterId = chapterId,
+                                                onCreated = { bookId, chatId ->
+                                                    shellViewModel.setSelectedBookId(bookId)
+                                                    storyboardChatId = chatId
+                                                    storyboardDest = StoryboardDestination.Manga.name
+                                                },
+                                            )
+                                        },
                                         onOpenProject = { card ->
                                             card.bookId?.let(shellViewModel::setSelectedBookId)
                                             storyboardChatId = card.chatId

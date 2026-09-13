@@ -86,7 +86,7 @@ data class MangaSourceUiState(
     val chapters: List<MangaChapter> = emptyList(),
     val downloads: List<MangaChapterEntity> = emptyList(),
     val coverPaths: Map<String, String> = emptyMap(),
-    val websites: List<MangaWebsite> = bundledMangaWebsites,
+    val websites: List<MangaWebsite> = emptyList(),
     val favoriteSeries: List<MangaSeriesEntity> = emptyList(),
     val favoriteCategories: List<MangaFavoriteCategoryEntity> = emptyList(),
     val favorites: List<MangaFavoriteEntity> = emptyList(),
@@ -116,7 +116,7 @@ class MangaSourceViewModel @Inject constructor(
     private val websitePreferences = context.getSharedPreferences("manga-source-websites", Context.MODE_PRIVATE)
     private val local = MutableStateFlow(
         MangaSourceUiState(
-            websites = bundledMangaWebsites + readCustomWebsites(),
+            websites = readCustomWebsites(),
             sources = registry.sources.map { it.descriptor },
         ),
     )
@@ -228,7 +228,7 @@ class MangaSourceViewModel @Inject constructor(
             .sortedBy { it.name.lowercase() }
         persistCustomWebsites(custom)
         local.value = local.value.copy(
-            websites = bundledMangaWebsites + custom,
+            websites = custom,
             websiteName = "",
             websiteUrl = "",
             status = "Website added. Open it in your browser, then paste a public chapter link above to download exposed page images.",
@@ -239,7 +239,7 @@ class MangaSourceViewModel @Inject constructor(
         if (site.builtIn) return
         val custom = local.value.websites.filterNot { it.builtIn || it.id == site.id }
         persistCustomWebsites(custom)
-        local.value = local.value.copy(websites = bundledMangaWebsites + custom, status = "Website removed.")
+        local.value = local.value.copy(websites = custom, status = "Website removed.")
     }
 
     fun previewLink() {
@@ -706,6 +706,7 @@ fun MangaLibraryCoverGrid(
     coverPaths: Map<String, String>,
     onSelectChapter: ((String) -> Unit)?,
     compact: Boolean,
+    onEditChapter: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     if (downloads.isEmpty()) return
@@ -742,6 +743,11 @@ fun MangaLibraryCoverGrid(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                 )
+                if (chapter.status == "completed" && onEditChapter != null) {
+                    TextButton(onClick = { onEditChapter(chapter.id) }) {
+                        Text("Edit")
+                    }
+                }
             }
         }
     }
