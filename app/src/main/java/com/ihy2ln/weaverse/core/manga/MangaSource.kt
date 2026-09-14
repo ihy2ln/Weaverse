@@ -22,6 +22,8 @@ data class MangaSourceDescriptor(
     val authorized: Boolean,
     val supportsSearch: Boolean = true,
     val supportsDownloads: Boolean = true,
+    val language: String = "en",
+    val kind: String = "HTML catalog",
 )
 
 enum class MangaBrowseMode { Popular, Latest }
@@ -34,10 +36,8 @@ data class MangaWebsite(
 )
 
 /**
- * Browser-backed sources are intentionally not registered here.  Several of
- * the old adapters are blocked by their hosts and a green "Ready" label made
- * the app promise a download path that could not work.  Users can still use
- * Browse -> Download from web link for a chapter they are permitted to use.
+ * Saved website bookmarks are optional user links, not installed extensions.
+ * Catalog sources live in [MangaSourceRegistry] (MangaDex + HTML adapters).
  */
 val bundledMangaWebsites: List<MangaWebsite> = emptyList()
 
@@ -82,13 +82,18 @@ interface MangaSourceAdapter {
 
 @Singleton
 class MangaSourceRegistry @Inject constructor(
-    private val mangaDex: MangaDexSource,
+    mangaDex: MangaDexSource,
+    publicHtmlSources: PublicHtmlMangaSources,
 ) {
-    /** Only the reviewed, documented API connector is advertised as installed. */
-    val sources: List<MangaSourceAdapter> = listOf(mangaDex)
+    val sources: List<MangaSourceAdapter> = composeInstalledMangaSources(mangaDex, publicHtmlSources)
 
     fun get(sourceId: String): MangaSourceAdapter? = sources.firstOrNull { it.descriptor.id == sourceId }
 }
+
+internal fun composeInstalledMangaSources(
+    mangaDex: MangaSourceAdapter,
+    publicHtmlSources: PublicHtmlMangaSources,
+): List<MangaSourceAdapter> = listOf(mangaDex) + publicHtmlSources.sources
 
 /** First-party connector for MangaDex's documented API and At-Home image service. */
 @Singleton
@@ -101,6 +106,8 @@ class MangaDexSource @Inject constructor(
         baseUrl = "https://api.mangadex.org",
         description = "Authorized API connector with language and chapter metadata.",
         authorized = true,
+        language = "en",
+        kind = "Native API",
     )
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }

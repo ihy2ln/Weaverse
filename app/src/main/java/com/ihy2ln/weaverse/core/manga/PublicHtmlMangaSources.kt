@@ -1,9 +1,6 @@
 package com.ihy2ln.weaverse.core.manga
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
-import okhttp3.Request
 import java.net.URI
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -16,79 +13,37 @@ import javax.inject.Singleton
  * The adapter performs ordinary HTTP requests only: it does not execute challenge scripts, log in,
  * solve CAPTCHAs, or evade a site's access controls.
  */
+internal val mangaFireHtmlConfig = PublicHtmlSourceConfig(
+    id = "mangafire",
+    name = "MangaFire",
+    baseUrl = "https://mangafire.to/",
+    popularPaths = listOf("/filter?sort=most_viewed", "/"),
+    latestPaths = listOf("/filter?sort=recently_updated", "/updates"),
+    searchPaths = listOf("/filter?keyword=%s", "/search?keyword=%s"),
+    seriesPathHints = listOf("/manga/"),
+)
+
+internal val rawkumaHtmlConfig = PublicHtmlSourceConfig(
+    id = "rawkuma",
+    name = "Rawkuma",
+    baseUrl = "https://rawkuma.net/",
+    popularPaths = listOf("/manga/?order=popular", "/"),
+    latestPaths = listOf("/manga/?order=update", "/"),
+    searchPaths = listOf("/?s=%s&post_type=wp-manga", "/?s=%s"),
+    seriesPathHints = listOf("/manga/"),
+    language = "ja",
+    readingOrder = "rtl",
+)
+
 @Singleton
 class PublicHtmlMangaSources @Inject constructor(
     client: OkHttpClient,
     webLinkImporter: MangaWebLinkImporter,
 ) {
+    /** Installed HTML catalog extensions. Comix/Atsumaru/MangaDot remain unregistered. */
     val sources: List<MangaSourceAdapter> = listOf(
-        PublicHtmlMangaSourceAdapter(
-            config = PublicHtmlSourceConfig(
-                id = "comix",
-                name = "Comix",
-                baseUrl = "https://comix.to/",
-                popularPaths = listOf("/", "/home", "/browse?sort=views"),
-                latestPaths = listOf("/latest", "/browse?sort=updated_at"),
-                searchPaths = listOf("/search?q=%s", "/browse?keyword=%s"),
-                seriesPathHints = listOf("/title/", "/comic/", "/manga/"),
-            ),
-            client = client,
-            webLinkImporter = webLinkImporter,
-        ),
-        PublicHtmlMangaSourceAdapter(
-            config = PublicHtmlSourceConfig(
-                id = "atsumaru",
-                name = "Atsumaru",
-                baseUrl = "https://atsu.moe/",
-                popularPaths = listOf("/", "/browse?sort=popular"),
-                latestPaths = listOf("/latest", "/browse?sort=updated"),
-                searchPaths = listOf("/search?q=%s", "/browse?search=%s"),
-                seriesPathHints = listOf("/manga/", "/series/", "/title/"),
-            ),
-            client = client,
-            webLinkImporter = webLinkImporter,
-        ),
-        PublicHtmlMangaSourceAdapter(
-            config = PublicHtmlSourceConfig(
-                id = "mangafire",
-                name = "MangaFire",
-                baseUrl = "https://mangafire.to/",
-                popularPaths = listOf("/filter?sort=most_viewed", "/"),
-                latestPaths = listOf("/filter?sort=recently_updated", "/updates"),
-                searchPaths = listOf("/filter?keyword=%s", "/search?keyword=%s"),
-                seriesPathHints = listOf("/manga/"),
-            ),
-            client = client,
-            webLinkImporter = webLinkImporter,
-        ),
-        PublicHtmlMangaSourceAdapter(
-            config = PublicHtmlSourceConfig(
-                id = "mangadot",
-                name = "MangaDot",
-                baseUrl = "https://mangadot.net/",
-                popularPaths = listOf("/", "/manga/?order=popular"),
-                latestPaths = listOf("/manga/?order=update", "/latest"),
-                searchPaths = listOf("/?s=%s", "/search?q=%s"),
-                seriesPathHints = listOf("/manga/", "/series/"),
-            ),
-            client = client,
-            webLinkImporter = webLinkImporter,
-        ),
-        PublicHtmlMangaSourceAdapter(
-            config = PublicHtmlSourceConfig(
-                id = "rawkuma",
-                name = "Rawkuma",
-                baseUrl = "https://rawkuma.net/",
-                popularPaths = listOf("/", "/manga/?order=popular"),
-                latestPaths = listOf("/manga/?order=update", "/"),
-                searchPaths = listOf("/?s=%s&post_type=wp-manga", "/?s=%s"),
-                seriesPathHints = listOf("/manga/"),
-                language = "ja",
-                readingOrder = "rtl",
-            ),
-            client = client,
-            webLinkImporter = webLinkImporter,
-        ),
+        MangaFireSource(client, webLinkImporter),
+        RawkumaSource(client, webLinkImporter),
     )
 }
 
@@ -106,15 +61,19 @@ internal data class PublicHtmlSourceConfig(
 
 internal class PublicHtmlMangaSourceAdapter(
     private val config: PublicHtmlSourceConfig,
-    private val client: OkHttpClient,
+    client: OkHttpClient,
     private val webLinkImporter: MangaWebLinkImporter,
 ) : MangaSourceAdapter {
+    private val http = MangaCatalogHttp(client, config.name)
+
     override val descriptor = MangaSourceDescriptor(
         id = config.id,
         name = config.name,
         baseUrl = config.baseUrl,
         description = "Browsable public catalog with series metadata, chapters, and page downloads.",
         authorized = false,
+        language = config.language,
+        kind = "HTML catalog",
     )
 
     override suspend fun search(query: String): List<MangaSearchResult> {
@@ -141,13 +100,15 @@ internal class PublicHtmlMangaSourceAdapter(
         )
     }
 
-    override suspend fun chapters(manga: MangaSearchResult): List<MangaChapter> {
-        val html = fetch(manga.canonicalUrl)
-        val links = extractAnchors(manga.canonicalUrl, html)
+    override suspend fun chapters(manga: MangaSearchResult): List<MangaChapter> =
+        parseChaptersHtml(manga, manga.canonicalUrl, fetch(manga.canonicalUrl))
+
+    internal fun parseChaptersHtml(manga: MangaSearchResult, pageUrl: String, html: String): List<MangaChapter> {
+        val links = extractAnchors(pageUrl, html)
             .filter { (url, _) -> isChapterUrl(url) }
             .distinctBy { it.first.substringBefore('#').trimEnd('/') }
         return links.mapIndexed { index, (url, label) ->
-            val number = CHAPTER_NUMBER.find("$label $url")?.groupValues?.getOrNull(2).orEmpty()
+            val number = parseChapterNumber(label, url)
             MangaChapter(
                 sourceId = descriptor.id,
                 remoteId = stableId(url),
@@ -210,23 +171,7 @@ internal class PublicHtmlMangaSourceAdapter(
         return emptyList()
     }
 
-    private suspend fun fetch(url: String): String = withContext(Dispatchers.IO) {
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", MOBILE_USER_AGENT)
-            .header("Accept", "text/html,application/xhtml+xml;q=0.9,*/*;q=0.7")
-            .header("Accept-Language", "en-US,en;q=0.8")
-            .build()
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) error("${descriptor.name} blocked the catalog request (HTTP ${response.code}).")
-            val html = response.body?.string().orEmpty()
-            if (html.isBlank()) error("${descriptor.name} returned an empty catalog.")
-            if (html.contains("cf-chl-", true) || html.contains("just a moment", true) || html.contains("captcha", true)) {
-                error("${descriptor.name} requires a browser verification challenge and cannot be browsed right now.")
-            }
-            html
-        }
-    }
+    private suspend fun fetch(url: String): String = http.get(url)
 
     private fun extractAnchors(baseUrl: String, html: String): List<Pair<String, String>> = ANCHOR.findAll(html).mapNotNull { match ->
         val open = match.groupValues[1]
@@ -245,10 +190,24 @@ internal class PublicHtmlMangaSourceAdapter(
         return config.seriesPathHints.any(lower::contains) && BLOCKED_PATHS.none(lower::contains)
     }
 
-    private fun isChapterUrl(url: String): Boolean {
-        val lower = URI(url).path.orEmpty().lowercase()
-        return lower.contains("chapter") || lower.contains("/chap-") ||
-            (lower.contains("/read/") && CHAPTER_NUMBER.containsMatchIn(lower))
+    internal fun isChapterUrl(url: String): Boolean {
+        val lower = URI(url).path.orEmpty().lowercase().trim('/')
+        val segments = lower.split('/').filter { it.isNotEmpty() }
+        val last = segments.lastOrNull().orEmpty()
+        if (last in CHAPTER_SKIP_SEGMENTS || segments.any { it in SERIES_ONLY_SEGMENTS }) return false
+        if (lower.contains("chapter") || last.startsWith("chap-") || last.startsWith("ch-")) return true
+        if (lower.contains("read/") && (CHAPTER_NUMBER.containsMatchIn(lower) || last.isNotEmpty())) return true
+        if (config.seriesPathHints.any { hint -> lower.contains(hint.trim('/')) } && segments.size >= 3) {
+            if (segments.contains("page")) return false
+            return true
+        }
+        return false
+    }
+
+    internal fun parseChapterNumber(label: String, url: String): String {
+        CHAPTER_NUMBER.find("$label $url")?.groupValues?.getOrNull(2)?.let { return it }
+        val last = pathSegments(url).lastOrNull().orEmpty()
+        return TRAILING_NUMBER.find(last)?.groupValues?.getOrNull(1)?.replace('-', '.').orEmpty()
     }
 
     private fun imageUrl(baseUrl: String, html: String): String? {
@@ -287,7 +246,6 @@ internal class PublicHtmlMangaSourceAdapter(
         .replace("&gt;", ">", true)
 
     private companion object {
-        const val MOBILE_USER_AGENT = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36 Weaverse/1.0"
         val ANCHOR = Regex("<a\\b([^>]*)>(.*?)</a>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
         val HREF = Regex("href\\s*=\\s*[\"']([^\"']+)", RegexOption.IGNORE_CASE)
         val ATTRIBUTE_TITLE = Regex("title\\s*=\\s*[\"']([^\"']+)", RegexOption.IGNORE_CASE)
@@ -295,6 +253,9 @@ internal class PublicHtmlMangaSourceAdapter(
         val IMAGE_ALT = Regex("<img[^>]+alt\\s*=\\s*[\"']([^\"']+)", RegexOption.IGNORE_CASE)
         val HEADING = Regex("<h1[^>]*>(.*?)</h1>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
         val CHAPTER_NUMBER = Regex("(chapter|chap|ch)[-_. /]*(\\d+(?:\\.\\d+)?)", RegexOption.IGNORE_CASE)
+        val TRAILING_NUMBER = Regex("(\\d+(?:[.-]\\d+)?)")
         val BLOCKED_PATHS = listOf("/chapter", "/read/", "/genre/", "/author/", "/tag/", "/login", "/bookmark")
+        val CHAPTER_SKIP_SEGMENTS = setOf("page", "feed", "comments", "comment", "ajax", "rss", "genre", "author", "tag")
+        val SERIES_ONLY_SEGMENTS = setOf("genre", "author", "tag", "login", "bookmark")
     }
 }
