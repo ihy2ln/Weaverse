@@ -484,14 +484,19 @@ private fun HubExtensions(
                 style = MaterialTheme.typography.bodySmall,
             )
             state.sources.forEach { source ->
+                val health = state.sourceHealth[source.id]
+                val usable = health?.startsWith("Ready") == true || source.authorized
                 SourceCapabilityCard(
                     name = source.name,
                     kind = if (source.authorized) "Native API" else "Public HTML catalog",
                     detail = "Browse · Search · Metadata · Chapters · Downloads",
-                    status = "Installed",
-                    statusColor = Color(0xFF82D993),
-                    actionLabel = if (source.authorized) "API metadata retained" else source.baseUrl,
-                    onAction = null,
+                    status = health ?: if (source.authorized) "Ready" else "Not checked",
+                    statusColor = if (usable) Color(0xFF82D993) else if (health == null) HubMuted else Color(0xFFFFA38B),
+                    actionLabel = if (health == null) "Test in Browse" else source.baseUrl,
+                    onAction = if (health == null) ({
+                        viewModel.selectSource(source.id)
+                        viewModel.browse(MangaBrowseMode.Popular)
+                    }) else null,
                 )
             }
         }

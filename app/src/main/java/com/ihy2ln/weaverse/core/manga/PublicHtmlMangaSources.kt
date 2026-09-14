@@ -201,8 +201,8 @@ internal class PublicHtmlMangaSourceAdapter(
             if (!isSeriesUrl(url)) return@mapNotNull null
             val occurrence = html.indexOf(url.substringAfter(URI(url).host), ignoreCase = true).coerceAtLeast(0)
             val nearby = html.substring(
-                (occurrence - 500).coerceAtLeast(0),
-                (occurrence + 1_500).coerceAtMost(html.length),
+                (occurrence - 350).coerceAtLeast(0),
+                (occurrence + 2_800).coerceAtMost(html.length),
             )
             val metadata = extractMetadata(baseUrl, nearby)
             val title = cleanText(label).ifBlank { imageAlt(nearby) }.ifBlank {
@@ -230,13 +230,18 @@ internal class PublicHtmlMangaSourceAdapter(
 
     private suspend fun fetchCatalog(paths: List<String>): List<MangaSearchResult> {
         var lastFailure: Throwable? = null
+        var reachedPublicPage = false
         paths.distinct().forEach { path ->
             runCatching {
                 val url = resolve(config.baseUrl, path) ?: error("Invalid catalog URL")
                 parseCatalog(url, fetch(url))
-            }.onSuccess { if (it.isNotEmpty()) return it }
+            }.onSuccess {
+                reachedPublicPage = true
+                if (it.isNotEmpty()) return it
+            }
                 .onFailure { lastFailure = it }
         }
+        if (reachedPublicPage) return emptyList()
         if (lastFailure != null) throw lastFailure as Throwable
         return emptyList()
     }
@@ -323,8 +328,24 @@ internal class PublicHtmlMangaSourceAdapter(
     }
 
     private fun imageUrl(baseUrl: String, html: String): String? {
-        val raw = IMAGE_ATTRIBUTE.find(html)?.groupValues?.getOrNull(1).orEmpty().substringBefore(' ')
-        return resolve(baseUrl, decodeHtml(raw))
+        return IMAGE_TAG.findAll(html).flatMap { tag ->
+            val body = tag.value
+            val alt = IMAGE_ALT_ATTRIBUTE.find(body)?.groupValues?.getOrNull(1).orEmpty()
+            val candidates = IMAGE_ATTRIBUTE.findAll(body).flatMap { attribute ->
+                attribute.groupValues[1].split(',').asSequence().map { it.trim().substringBefore(' ') }
+            }
+            candidates.mapNotNull { raw ->
+                val url = resolve(baseUrl, decodeHtml(raw)) ?: return@mapNotNull null
+                val lower = "$url $alt".lowercase()
+                if (COVER_IMAGE_REJECT.any(lower::contains)) return@mapNotNull null
+                val score = (if (lower.contains("cover") || lower.contains("poster")) 8 else 0) +
+                    (if (lower.contains("wp-content/uploads") || lower.contains("cdn")) 5 else 0) +
+                    (if (lower.endsWith(".jpg") || lower.contains(".webp") || lower.contains(".avif")) 3 else 0) +
+                    (if (alt.isNotBlank()) 2 else 0) +
+                    (if (!THUMBNAIL_SUFFIX.containsMatchIn(lower)) 4 else 0)
+                score to url
+            }
+        }.maxByOrNull { it.first }?.second
     }
 
     private fun imageAlt(html: String): String = IMAGE_ALT.find(html)?.groupValues?.getOrNull(1).orEmpty().let(::cleanText)
@@ -399,12 +420,16 @@ internal class PublicHtmlMangaSourceAdapter(
         val ANCHOR = Regex("<a\\b([^>]*)>(.*?)</a>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
         val HREF = Regex("href\\s*=\\s*[\"']([^\"']+)", RegexOption.IGNORE_CASE)
         val ATTRIBUTE_TITLE = Regex("title\\s*=\\s*[\"']([^\"']+)", RegexOption.IGNORE_CASE)
-        val IMAGE_ATTRIBUTE = Regex("(?:data-src|data-lazy-src|data-original|src)\\s*=\\s*[\"']([^\"']+)", RegexOption.IGNORE_CASE)
+        val IMAGE_TAG = Regex("<img\\b[^>]*>", RegexOption.IGNORE_CASE)
+        val IMAGE_ATTRIBUTE = Regex("(?:data-src|data-lazy-src|data-original|srcset|src)\\s*=\\s*[\"']([^\"']+)", RegexOption.IGNORE_CASE)
+        val IMAGE_ALT_ATTRIBUTE = Regex("alt\\s*=\\s*[\"']([^\"']*)", RegexOption.IGNORE_CASE)
         val IMAGE_ALT = Regex("<img[^>]+alt\\s*=\\s*[\"']([^\"']+)", RegexOption.IGNORE_CASE)
         val HTML_LANGUAGE = Regex("<html[^>]+lang\\s*=\\s*[\"']([^\"']+)", RegexOption.IGNORE_CASE)
         val JSON_STRING = Regex("\"((?:\\\\.|[^\"\\\\])*)\"")
         val HEADING = Regex("<h1[^>]*>(.*?)</h1>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
         val CHAPTER_NUMBER = Regex("(chapter|chap|ch)[-_. /]*(\\d+(?:\\.\\d+)?)", RegexOption.IGNORE_CASE)
         val BLOCKED_PATHS = listOf("/chapter", "/read/", "/genre/", "/author/", "/tag/", "/login", "/bookmark")
+        val COVER_IMAGE_REJECT = listOf("logo", "favicon", "avatar", "profile", "banner", "icon", "loading", "placeholder")
+        val THUMBNAIL_SUFFIX = Regex("-(?:96|128|160|211x300|300x\\d+)(?:\\.|-)", RegexOption.IGNORE_CASE)
     }
 }

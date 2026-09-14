@@ -10,6 +10,35 @@ import org.junit.jupiter.api.Test
 
 class PublicHtmlMangaSourceAdapterTest {
     @Test
+    fun catalogPrefersRealCoverOverLogoAndReadsSrcset() {
+        val server = MockWebServer()
+        server.start()
+        server.use {
+            val adapter = PublicHtmlMangaSourceAdapter(
+                PublicHtmlSourceConfig(
+                    id = "rawkuma",
+                    name = "Rawkuma",
+                    baseUrl = server.url("/").toString(),
+                    popularPaths = listOf("/"),
+                    latestPaths = listOf("/"),
+                    searchPaths = listOf("/?s=%s"),
+                    seriesPathHints = listOf("/manga/"),
+                ),
+                OkHttpClient(),
+                MangaWebLinkImporter(OkHttpClient()),
+            )
+            server.enqueue(MockResponse().setBody("""
+                <img src="/wp-content/uploads/site-logo.png" alt="Logo">
+                <a href="/manga/example/">Example Manga</a>
+                <a href="/manga/example/"><img src="/loading.gif" srcset="/wp-content/uploads/example-cover-128.jpg 128w, /wp-content/uploads/example-cover.jpg 700w" alt="Example Manga"></a>
+            """.trimIndent()))
+
+            val result = kotlinx.coroutines.runBlocking { adapter.browse(MangaBrowseMode.Popular).single() }
+
+            assertTrue(result.coverUrl.orEmpty().endsWith("/wp-content/uploads/example-cover.jpg"))
+        }
+    }
+    @Test
     fun catalogAndChapterMetadataAreExtractedFromPublicHtml() = runTest {
         MockWebServer().use { server ->
             val client = OkHttpClient()

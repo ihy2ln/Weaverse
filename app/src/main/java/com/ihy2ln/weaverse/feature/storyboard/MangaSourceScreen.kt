@@ -114,6 +114,8 @@ data class MangaSourceUiState(
     /** False once a page comes back empty, so the list stops asking for more. */
     val canLoadMore: Boolean = false,
     val loadingMore: Boolean = false,
+    /** Latest real adapter result keyed by source id: ready, empty, blocked, or error text. */
+    val sourceHealth: Map<String, String> = emptyMap(),
 )
 
 private data class MangaFavoriteState(
@@ -342,9 +344,13 @@ class MangaSourceViewModel @Inject constructor(
                         busy = false,
                         canLoadMore = it.isNotEmpty(),
                         status = if (it.isEmpty()) "No results found." else "Select a title to load chapters.",
+                        sourceHealth = local.value.sourceHealth + (sourceId to if (it.isEmpty()) "Reachable · no matching titles" else "Ready · ${it.size} titles loaded"),
                     )
                 }
-                .onFailure { local.value = local.value.copy(busy = false, status = it.message ?: "Search failed.") }
+                .onFailure {
+                    val message = it.message ?: "Search failed."
+                    local.value = local.value.copy(busy = false, status = message, sourceHealth = local.value.sourceHealth + (sourceId to message))
+                }
         }
     }
 
@@ -369,9 +375,13 @@ class MangaSourceViewModel @Inject constructor(
                         busy = false,
                         canLoadMore = it.isNotEmpty(),
                         status = if (it.isEmpty()) "No titles were returned." else "Select a cover to view chapters.",
+                        sourceHealth = local.value.sourceHealth + (sourceId to if (it.isEmpty()) "Reachable · catalog format unsupported" else "Ready · ${it.size} titles loaded"),
                     )
                 }
-                .onFailure { local.value = local.value.copy(busy = false, status = it.message ?: "Browse failed.") }
+                .onFailure {
+                    val message = it.message ?: "Browse failed."
+                    local.value = local.value.copy(busy = false, status = message, sourceHealth = local.value.sourceHealth + (sourceId to message))
+                }
         }
     }
 
