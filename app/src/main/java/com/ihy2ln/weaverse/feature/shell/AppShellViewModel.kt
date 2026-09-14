@@ -236,7 +236,8 @@ class AppShellViewModel @Inject constructor(
      */
     fun createMangaEditorFromChapter(
         chapterId: String,
-        onCreated: (bookId: String, chatId: String) -> Unit,
+        focusPageIndex: Int? = null,
+        onCreated: (bookId: String, chatId: String, pageId: String?) -> Unit,
         onFailure: (String) -> Unit = {},
     ) {
         viewModelScope.launch {
@@ -268,10 +269,10 @@ class AppShellViewModel @Inject constructor(
                         bookId = book.id,
                     ),
                 )
-                mangaDownloadRepository.importChapterToStoryboard(chatId, chapterId)
-                book.id to chatId
-            }.onSuccess { (bookId, chatId) ->
-                onCreated(bookId, chatId)
+                val imported = mangaDownloadRepository.importChapterToStoryboardResult(chatId, chapterId)
+                Triple(book.id, chatId, focusPageIndex?.let(imported.pageIds::getOrNull))
+            }.onSuccess { (bookId, chatId, pageId) ->
+                onCreated(bookId, chatId, pageId)
             }.onFailure { error ->
                 onFailure(error.message ?: "Could not open the downloaded chapter for editing")
             }

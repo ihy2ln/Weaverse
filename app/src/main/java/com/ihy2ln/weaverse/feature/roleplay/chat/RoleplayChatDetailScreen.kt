@@ -133,6 +133,11 @@ fun RoleplayChatDetailScreen(
     showModeSwitcher: Boolean = true,
     /** Manga pages read right-to-left, so page tabs run that way too. */
     rightToLeft: Boolean = false,
+    /** Imported manga opens in a focused editor instead of the general prompt workspace. */
+    editorOnly: Boolean = false,
+    initialPageId: String? = null,
+    initialEditorAction: String? = null,
+    initialMangaChapterId: String? = null,
     viewModel: RoleplayChatViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(chatId) { viewModel.bindChat(chatId) }
@@ -177,6 +182,25 @@ fun RoleplayChatDetailScreen(
     var showGeneratedImportChoice by remember { mutableStateOf(false) }
     var generatedReplaceTargetKey by remember { mutableStateOf<String?>(null) }
     var showMangaSources by rememberSaveable(chatId) { mutableStateOf(false) }
+    var initialEditorActionApplied by rememberSaveable(chatId) { mutableStateOf(false) }
+
+    LaunchedEffect(chatId, initialPageId, state.pages) {
+        initialPageId?.let { pageId ->
+            if (state.pages.any { it.id == pageId } && state.activePageId != pageId) {
+                viewModel.switchPage(pageId)
+            }
+        }
+    }
+    LaunchedEffect(chatId, initialPageId, initialEditorAction, initialMangaChapterId, state.activePageId, state.pages, state.mediaPanels) {
+        if (!editorOnly || initialEditorActionApplied || initialEditorAction == null) return@LaunchedEffect
+        if (initialPageId != null && state.activePageId != initialPageId) return@LaunchedEffect
+        when (initialEditorAction) {
+            "TranslatePage" -> viewModel.translateActiveMangaPageToEnglish()
+            "TranslateChapter" -> initialMangaChapterId?.let(viewModel::translateDownloadedChapter)
+            "ColorPage", "ColorChapter" -> viewModel.openFirstMangaPanelEditor()
+        }
+        initialEditorActionApplied = true
+    }
 
     LaunchedEffect(state.title, state.displayMode, showModeSwitcher) {
         onChromeChange(
@@ -431,45 +455,54 @@ fun RoleplayChatDetailScreen(
                         modifier = Modifier.padding(horizontal = InkSpacing.md, vertical = 2.dp),
                     )
                 }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = InkSpacing.md, vertical = InkSpacing.xs),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    InkTextButton(
-                        label = "Create page with AI",
-                        onClick = { viewModel.openStoryboardGeneration(rightToLeft) },
-                        compact = true,
-                    )
-                    InkTextButton(
-                        label = "Manga sources",
-                        onClick = { showMangaSources = true },
-                        compact = true,
-                    )
-                    InkTextButton(
-                        label = "Export PNG",
-                        onClick = viewModel::exportStoryboardPage,
-                        compact = true,
-                    )
-                    InkTextButton(
-                        label = "Translate page to English",
-                        onClick = viewModel::translateActiveMangaPageToEnglish,
-                        compact = true,
-                    )
+                if (!editorOnly) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = InkSpacing.md, vertical = InkSpacing.xs),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        InkTextButton(
+                            label = "Create page with AI",
+                            onClick = { viewModel.openStoryboardGeneration(rightToLeft) },
+                            compact = true,
+                        )
+                        InkTextButton(
+                            label = "Manga sources",
+                            onClick = { showMangaSources = true },
+                            compact = true,
+                        )
+                        InkTextButton(
+                            label = "Export PNG",
+                            onClick = viewModel::exportStoryboardPage,
+                            compact = true,
+                        )
+                        InkTextButton(
+                            label = "Translate page to English",
+                            onClick = viewModel::translateActiveMangaPageToEnglish,
+                            compact = true,
+                        )
+                        Text(
+                            "or continue editing the current page; originals remain preserved",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = tokens.secondaryText,
+                            modifier = Modifier.padding(start = InkSpacing.sm),
+                        )
+                    }
                     Text(
-                        "or continue editing the current page; originals remain preserved",
+                        "AI page plans reuse saved artwork first; every panel stays editable after applying.",
                         style = MaterialTheme.typography.labelSmall,
                         color = tokens.secondaryText,
-                        modifier = Modifier.padding(start = InkSpacing.sm),
+                        modifier = Modifier.padding(horizontal = InkSpacing.md, vertical = 2.dp),
+                    )
+                } else {
+                    Text(
+                        "Editing imported manga · originals stay unchanged",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = InkSpacing.md, vertical = 4.dp),
                     )
                 }
-                Text(
-                    "AI page plans reuse saved artwork first; every panel stays editable after applying.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = tokens.secondaryText,
-                    modifier = Modifier.padding(horizontal = InkSpacing.md, vertical = 2.dp),
-                )
                 PageStrip(
                     pages = state.pages,
                     activePageId = state.activePageId,
@@ -740,6 +773,23 @@ fun RoleplayChatDetailScreen(
             }
         }
 
+        if (editorOnly && state.displayMode == "roleplay") {
+            StoryboardEditorDock(
+                onBack = onBack,
+                onAddPage = viewModel::addPage,
+                onApplyTemplate = viewModel::applyPanelTemplate,
+                onExport = viewModel::exportStoryboardPage,
+                onTranslate = viewModel::translateActiveMangaPageToEnglish,
+                onColor = viewModel::openFirstMangaPanelEditor,
+                onMediaAction = { action ->
+                    state.selectedMediaKey?.split("::", limit = 2)?.takeIf { it.size == 2 }?.let { parts ->
+                        viewModel.onMediaEditAction(parts[0], parts[1], action)
+                    }
+                },
+                hasSelection = state.selectedMediaKey != null,
+            )
+        }
+
         if (state.errorMessage.isNotBlank()) {
             Text(
                 state.errorMessage,
@@ -762,7 +812,7 @@ fun RoleplayChatDetailScreen(
 
         // The shared prompt window — same bar as the RPG adventure and Novel
         // editor. Media attach stays on the mic-hold menu via the + button.
-        UnifiedPromptBar(
+        if (!editorOnly) UnifiedPromptBar(
             value = state.input,
             onValueChange = viewModel::onInputChange,
             placeholder = "Message ${state.title.ifBlank { "chat" }}",
@@ -829,6 +879,94 @@ fun RoleplayChatDetailScreen(
             },
             onDismiss = { modelsOpen = false },
         )
+    }
+}
+
+/**
+ * A compact, always-visible editor rail for imported manga.  The reader stays
+ * the primary surface; this dock exposes the common actions without opening the
+ * general AI prompt window.  More actions expand in place so the canvas keeps
+ * its context.
+ */
+@Composable
+private fun StoryboardEditorDock(
+    onBack: () -> Unit,
+    onAddPage: () -> Unit,
+    onApplyTemplate: (String) -> Unit,
+    onExport: () -> Unit,
+    onTranslate: () -> Unit,
+    onColor: () -> Unit,
+    onMediaAction: (MediaEditAction) -> Unit,
+    hasSelection: Boolean,
+) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(inkTokens().panel)
+            .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+        ) {
+            InkTextButton(label = "Back", onClick = onBack, compact = true)
+            InkTextButton(label = "Page", onClick = { expanded = !expanded }, compact = true)
+            InkTextButton(
+                label = "Art",
+                onClick = { onMediaAction(MediaEditAction.EditImage) },
+                enabled = hasSelection,
+                compact = true,
+            )
+            InkTextButton(
+                label = "Text",
+                onClick = { onMediaAction(MediaEditAction.AddTextOverlay) },
+                enabled = hasSelection,
+                compact = true,
+            )
+            InkTextButton(label = "Translate", onClick = onTranslate, compact = true)
+            InkTextButton(label = "Color", onClick = onColor, compact = true)
+            InkTextButton(
+                label = if (expanded) "Less" else "More",
+                onClick = { expanded = !expanded },
+                compact = true,
+            )
+        }
+        if (expanded) {
+            Text(
+                if (hasSelection) "Selected panel tools" else "Select a panel for art tools",
+                style = MaterialTheme.typography.labelSmall,
+                color = inkTokens().secondaryText,
+                modifier = Modifier.padding(top = 2.dp, bottom = 2.dp),
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+            ) {
+                InkTextButton(label = "Add page", onClick = onAddPage, compact = true)
+                InkTextButton(label = "Template", onClick = { onApplyTemplate("classic-6") }, compact = true)
+                InkTextButton(label = "Export PNG", onClick = onExport, compact = true)
+                InkTextButton(
+                    label = "Separate panels",
+                    onClick = { onMediaAction(MediaEditAction.SeparatePanels) },
+                    enabled = hasSelection,
+                    compact = true,
+                )
+                InkTextButton(
+                    label = "AI separate",
+                    onClick = { onMediaAction(MediaEditAction.SeparatePanelsAuto) },
+                    enabled = hasSelection,
+                    compact = true,
+                )
+                InkTextButton(
+                    label = "Delete",
+                    onClick = { onMediaAction(MediaEditAction.Delete) },
+                    enabled = hasSelection,
+                    compact = true,
+                )
+            }
+        }
     }
 }
 

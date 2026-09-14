@@ -121,6 +121,8 @@ import com.ihy2ln.weaverse.feature.roleplay.presets.PresetsScreen
 import com.ihy2ln.weaverse.feature.search.GlobalSearchScreen
 import com.ihy2ln.weaverse.feature.search.SearchResultType
 import com.ihy2ln.weaverse.feature.settings.SettingsScreen
+import com.ihy2ln.weaverse.feature.storyboard.MangaEditRequest
+import com.ihy2ln.weaverse.feature.storyboard.MangaReaderReturnTarget
 import com.ihy2ln.weaverse.feature.storyboard.StoryboardMangaHubScreen
 import java.io.File
 
@@ -138,6 +140,12 @@ fun AppShell(
     var chatDest by rememberSaveable { mutableStateOf(ChattingDestination.Chats.name) }
     var storyboardDest by rememberSaveable { mutableStateOf(StoryboardDestination.Window.name) }
     var storyboardChatId by rememberSaveable { mutableStateOf<String?>(null) }
+    var mangaEditorOnly by rememberSaveable { mutableStateOf(false) }
+    var mangaEditorPageId by rememberSaveable { mutableStateOf<String?>(null) }
+    var mangaEditorAction by rememberSaveable { mutableStateOf<String?>(null) }
+    var mangaEditorChapterId by rememberSaveable { mutableStateOf<String?>(null) }
+    var mangaReaderChapterId by rememberSaveable { mutableStateOf<String?>(null) }
+    var mangaReaderPageIndex by rememberSaveable { mutableStateOf(0) }
     // + Storyboard: choose between a fresh storyboard and importing a whole file.
     var storyboardPlusMenu by rememberSaveable { mutableStateOf(false) }
     var mangaImportUri by rememberSaveable { mutableStateOf<String?>(null) }
@@ -219,6 +227,10 @@ fun AppShell(
                     when (vocabulary) {
                         CreateWorkVocabulary.Storyboard -> {
                             mode = AppMode.Storyboard.name
+                            mangaEditorOnly = false
+                            mangaEditorPageId = null
+                            mangaEditorAction = null
+                            mangaEditorChapterId = null
                             storyboardChatId = chatId
                             storyboardDest = if (
                                 details.tense.equals("Comic", true) ||
@@ -356,6 +368,10 @@ fun AppShell(
                             ) { _, chatId ->
                                 showLibrary = false
                                 mode = AppMode.Storyboard.name
+                                mangaEditorOnly = false
+                                mangaEditorPageId = null
+                                mangaEditorAction = null
+                                mangaEditorChapterId = null
                                 storyboardChatId = chatId
                                 storyboardDest = StoryboardDestination.Manga.name
                             }
@@ -527,7 +543,13 @@ fun AppShell(
                     chromeTool != null -> chromeTool = null
                     selectedRpChatId != null -> { selectedRpChatId = null; rpDest = RoleplayDestination.Chats.name }
                     selectedGameSessionId != null -> selectedGameSessionId = null
-                    storyboardChatId != null -> storyboardChatId = null
+                    storyboardChatId != null -> {
+                        storyboardChatId = null
+                        mangaEditorOnly = false
+                        mangaEditorPageId = null
+                        mangaEditorAction = null
+                        mangaEditorChapterId = null
+                    }
                     currentMode == AppMode.Novel && novelDest != NovelDestination.Bookshelf.name -> novelDest = NovelDestination.Bookshelf.name
                     currentMode == AppMode.Roleplay && rpDest != RoleplayDestination.Campaign.name -> rpDest = RoleplayDestination.Campaign.name
                     currentMode == AppMode.Chatting && chatDest != ChattingDestination.Chats.name -> chatDest = ChattingDestination.Chats.name
@@ -978,11 +1000,27 @@ fun AppShell(
                                 if (storyboardDestinationOf(sd) == StoryboardDestination.Window) {
                                     StoryboardMangaHubScreen(
                                         onCreateProject = { storyboardPlusMenu = true },
-                                        onEditChapter = { chapterId ->
+                                        readerReturnTarget = mangaReaderChapterId?.let { chapterId ->
+                                            MangaReaderReturnTarget(chapterId, mangaReaderPageIndex)
+                                        },
+                                        onReaderReturnConsumed = {
+                                            mangaReaderChapterId = null
+                                            mangaReaderPageIndex = 0
+                                        },
+                                        onEditChapter = { request: MangaEditRequest ->
+                                            if (request.returnToReader) {
+                                                mangaReaderChapterId = request.chapterId
+                                                mangaReaderPageIndex = request.pageIndex ?: 0
+                                            }
                                             shellViewModel.createMangaEditorFromChapter(
-                                                chapterId = chapterId,
-                                                onCreated = { bookId, chatId ->
+                                                chapterId = request.chapterId,
+                                                focusPageIndex = request.pageIndex,
+                                                onCreated = { bookId, chatId, pageId ->
                                                     shellViewModel.setSelectedBookId(bookId)
+                                                    mangaEditorOnly = true
+                                                    mangaEditorPageId = pageId
+                                                    mangaEditorAction = request.action.name
+                                                    mangaEditorChapterId = request.chapterId
                                                     storyboardChatId = chatId
                                                     storyboardDest = StoryboardDestination.Manga.name
                                                 },
@@ -990,6 +1028,10 @@ fun AppShell(
                                         },
                                         onOpenProject = { card ->
                                             card.bookId?.let(shellViewModel::setSelectedBookId)
+                                            mangaEditorOnly = false
+                                            mangaEditorPageId = null
+                                            mangaEditorAction = null
+                                            mangaEditorChapterId = null
                                             storyboardChatId = card.chatId
                                             storyboardDest = card.preferredStoryboardMode
                                         },
@@ -998,6 +1040,10 @@ fun AppShell(
                                     RoleplayChatDetailScreen(
                                         chatId = boardId,
                                         onBack = {
+                                            mangaEditorOnly = false
+                                            mangaEditorPageId = null
+                                            mangaEditorAction = null
+                                            mangaEditorChapterId = null
                                             storyboardChatId = null
                                             rpChrome = null
                                             storyboardDest = StoryboardDestination.Window.name
@@ -1010,6 +1056,10 @@ fun AppShell(
                                         forceDisplayMode = "roleplay",
                                         showModeSwitcher = false,
                                         rightToLeft = storyboardDestinationOf(sd) == StoryboardDestination.Manga,
+                                        editorOnly = mangaEditorOnly,
+                                        initialPageId = mangaEditorPageId,
+                                        initialEditorAction = mangaEditorAction,
+                                        initialMangaChapterId = mangaEditorChapterId,
                                     )
                                 } else {
                                     WorkShelfScreen(

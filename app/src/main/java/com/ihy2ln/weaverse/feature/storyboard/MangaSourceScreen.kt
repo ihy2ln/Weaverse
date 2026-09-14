@@ -12,6 +12,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
@@ -96,6 +98,7 @@ data class MangaSourceUiState(
     val linkPreview: WebLinkSnapshot? = null,
     val readerChapter: MangaChapterEntity? = null,
     val readerPagePaths: List<String> = emptyList(),
+    val readerPageIndex: Int = 0,
     val busy: Boolean = false,
     val status: String = "",
 )
@@ -390,7 +393,7 @@ class MangaSourceViewModel @Inject constructor(
             .onFailure { local.value = local.value.copy(status = it.message ?: "Retry failed.") }
     }
 
-    fun openReader(chapterId: String) = viewModelScope.launch {
+    fun openReader(chapterId: String, pageIndex: Int = 0) = viewModelScope.launch {
         // Downloads are supplied by the Room flow in uiState. The local input state intentionally
         // does not mirror that database list, so looking there made every completed item unreadable.
         val chapter = uiState.value.downloads.firstOrNull { it.id == chapterId }
@@ -405,6 +408,7 @@ class MangaSourceViewModel @Inject constructor(
                     busy = false,
                     readerChapter = chapter.takeIf { pages.isNotEmpty() },
                     readerPagePaths = pages,
+                    readerPageIndex = pageIndex.coerceIn(0, (pages.size - 1).coerceAtLeast(0)),
                     status = if (pages.isEmpty()) {
                         "The download record is complete, but no page files were found. Retry the chapter download."
                     } else {
@@ -416,7 +420,7 @@ class MangaSourceViewModel @Inject constructor(
     }
 
     fun closeReader() {
-        local.value = local.value.copy(readerChapter = null, readerPagePaths = emptyList())
+        local.value = local.value.copy(readerChapter = null, readerPagePaths = emptyList(), readerPageIndex = 0)
     }
 
     private fun readCustomWebsites(): List<MangaWebsite> = websitePreferences
@@ -628,12 +632,30 @@ fun MangaSourceDialog(
     )
 }
 
+enum class MangaReaderAction {
+    EditPage,
+    EditChapter,
+    TranslatePage,
+    TranslateChapter,
+    ColorPage,
+    ColorChapter,
+}
+
 @Composable
 fun MangaChapterReader(
     chapter: MangaChapterEntity,
     pagePaths: List<String>,
     onDismiss: () -> Unit,
+    initialPageIndex: Int = 0,
+    onAction: (MangaReaderAction, chapterId: String, pageIndex: Int) -> Unit = { _, _, _ -> },
 ) {
+    val listState = rememberLazyListState()
+    val currentPage = listState.firstVisibleItemIndex.coerceIn(0, (pagePaths.size - 1).coerceAtLeast(0))
+    androidx.compose.runtime.LaunchedEffect(initialPageIndex, pagePaths.size) {
+        if (pagePaths.isNotEmpty()) {
+            listState.scrollToItem(initialPageIndex.coerceIn(0, pagePaths.lastIndex))
+        }
+    }
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -657,7 +679,8 @@ fun MangaChapterReader(
                 }
                 HorizontalDivider()
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    state = listState,
+                    modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     items(pagePaths.size, key = { it }) { index ->
@@ -673,6 +696,27 @@ fun MangaChapterReader(
                                 contentScale = ContentScale.FillWidth,
                                 modifier = Modifier.fillMaxWidth(),
                             )
+                        }
+                    }
+                }
+                HorizontalDivider()
+                Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
+                        Text(
+                            "Page ${currentPage + 1} of ${pagePaths.size}",
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 4.dp),
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            TextButton(onClick = { onAction(MangaReaderAction.EditPage, chapter.id, currentPage) }) { Text("Edit page") }
+                            TextButton(onClick = { onAction(MangaReaderAction.EditChapter, chapter.id, currentPage) }) { Text("Edit chapter") }
+                            TextButton(onClick = { onAction(MangaReaderAction.TranslatePage, chapter.id, currentPage) }) { Text("Translate page") }
+                            TextButton(onClick = { onAction(MangaReaderAction.TranslateChapter, chapter.id, currentPage) }) { Text("Translate all") }
+                            TextButton(onClick = { onAction(MangaReaderAction.ColorPage, chapter.id, currentPage) }) { Text("Color page") }
+                            TextButton(onClick = { onAction(MangaReaderAction.ColorChapter, chapter.id, currentPage) }) { Text("Color all") }
                         }
                     }
                 }

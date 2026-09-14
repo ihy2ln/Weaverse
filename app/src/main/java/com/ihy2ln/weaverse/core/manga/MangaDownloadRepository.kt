@@ -381,16 +381,33 @@ class MangaDownloadRepository @Inject constructor(
         }
     }
 
+    data class MangaStoryboardImportResult(
+        val importedCount: Int,
+        val pageIds: List<String>,
+    )
+
     /** MCP/CLI-safe import: one original page becomes one editable full-page panel. */
-    suspend fun importChapterToStoryboard(chatId: String, chapterId: String): Int = withContext(Dispatchers.IO) {
+    suspend fun importChapterToStoryboard(chatId: String, chapterId: String): Int =
+        importChapterToStoryboardResult(chatId, chapterId).importedCount
+
+    /**
+     * Same import as [importChapterToStoryboard], but also returns the generated page ids.
+     * The editor uses these ids to reopen the exact page the reader was editing.
+     */
+    suspend fun importChapterToStoryboardResult(
+        chatId: String,
+        chapterId: String,
+    ): MangaStoryboardImportResult = withContext(Dispatchers.IO) {
         val chat = db.roleplayDao().getChat(chatId) ?: error("Storyboard chat not found: $chatId")
         val chapter = db.mangaDao().getChapter(chapterId) ?: error("Chapter not found: $chapterId")
         if (chapter.status != "completed") error("Chapter is not fully downloaded")
         val media = importChapterPages(chapterId)
         if (media.isEmpty()) error("No downloaded pages are available")
         val pages = decodePages(chat.pagesJson).toMutableList()
+        val importedPageIds = mutableListOf<String>()
         val blocks = media.mapIndexed { index, item ->
             val pageId = "page-${java.util.UUID.randomUUID()}"
+            importedPageIds += pageId
             pages += RpPageMeta(
                 id = pageId,
                 order = (pages.maxOfOrNull { it.order } ?: -1) + 1,
@@ -426,7 +443,10 @@ class MangaDownloadRepository @Inject constructor(
                 displayMode = "roleplay",
             ),
         )
-        media.size
+        MangaStoryboardImportResult(
+            importedCount = media.size,
+            pageIds = importedPageIds,
+        )
     }
 
     private suspend fun updateProgress(

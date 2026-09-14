@@ -28,6 +28,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -72,11 +73,25 @@ private val HubColors = darkColorScheme(
     onSurfaceVariant = HubMuted,
 )
 
+data class MangaEditRequest(
+    val chapterId: String,
+    val pageIndex: Int? = null,
+    val returnToReader: Boolean = false,
+    val action: MangaReaderAction = MangaReaderAction.EditPage,
+)
+
+data class MangaReaderReturnTarget(
+    val chapterId: String,
+    val pageIndex: Int,
+)
+
 @Composable
 fun StoryboardMangaHubScreen(
     onCreateProject: () -> Unit,
     onOpenProject: (WorkShelfCard) -> Unit,
-    onEditChapter: (String) -> Unit,
+    onEditChapter: (MangaEditRequest) -> Unit,
+    readerReturnTarget: MangaReaderReturnTarget? = null,
+    onReaderReturnConsumed: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: MangaSourceViewModel = hiltViewModel(),
 ) {
@@ -84,8 +99,24 @@ fun StoryboardMangaHubScreen(
     var tabName by rememberSaveable { mutableStateOf(MangaHubTab.Library.name) }
     val tab = runCatching { MangaHubTab.valueOf(tabName) }.getOrDefault(MangaHubTab.Library)
 
+    LaunchedEffect(readerReturnTarget) {
+        readerReturnTarget?.let {
+            viewModel.openReader(it.chapterId, it.pageIndex)
+            onReaderReturnConsumed()
+        }
+    }
+
     state.readerChapter?.let { chapter ->
-        MangaChapterReader(chapter, state.readerPagePaths, viewModel::closeReader)
+        MangaChapterReader(
+            chapter = chapter,
+            pagePaths = state.readerPagePaths,
+            onDismiss = viewModel::closeReader,
+            initialPageIndex = state.readerPageIndex,
+            onAction = { action, chapterId, pageIndex ->
+                viewModel.closeReader()
+                onEditChapter(MangaEditRequest(chapterId, pageIndex, returnToReader = true, action = action))
+            },
+        )
         return
     }
 
@@ -152,7 +183,7 @@ fun StoryboardMangaHubScreen(
 private fun HubLibrary(
     state: MangaSourceUiState,
     viewModel: MangaSourceViewModel,
-    onEditChapter: (String) -> Unit,
+    onEditChapter: (MangaEditRequest) -> Unit,
     onOpenFavorite: (MangaSearchResult) -> Unit,
 ) {
     var categoryId by rememberSaveable { mutableStateOf("downloads") }
@@ -201,7 +232,7 @@ private fun HubLibrary(
                 downloads = series,
                 coverPaths = state.coverPaths,
                 onSelectChapter = viewModel::openReader,
-                onEditChapter = onEditChapter,
+                onEditChapter = { chapterId -> onEditChapter(MangaEditRequest(chapterId)) },
                 compact = false,
                 modifier = Modifier.fillMaxSize().padding(top = 10.dp),
             )
@@ -252,7 +283,7 @@ private fun HubBrowse(state: MangaSourceUiState, viewModel: MangaSourceViewModel
 private fun HubDownloads(
     state: MangaSourceUiState,
     viewModel: MangaSourceViewModel,
-    onEditChapter: (String) -> Unit,
+    onEditChapter: (MangaEditRequest) -> Unit,
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item { Text("Downloads", color = HubText, style = MaterialTheme.typography.titleLarge) }
@@ -266,7 +297,7 @@ private fun HubDownloads(
                 when (chapter.status) {
                     "completed" -> Row {
                         TextButton(onClick = { viewModel.openReader(chapter.id) }) { Text("Read") }
-                        TextButton(onClick = { onEditChapter(chapter.id) }) { Text("Edit") }
+                        TextButton(onClick = { onEditChapter(MangaEditRequest(chapter.id)) }) { Text("Edit") }
                     }
                     "queued", "downloading" -> TextButton(onClick = { viewModel.stop(chapter) }) { Text("Stop") }
                     "failed", "stopped" -> TextButton(onClick = { viewModel.retry(chapter) }) { Text("Retry") }

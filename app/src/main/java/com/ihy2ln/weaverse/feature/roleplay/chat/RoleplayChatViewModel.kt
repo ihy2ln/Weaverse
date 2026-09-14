@@ -798,6 +798,18 @@ class RoleplayChatViewModel @Inject constructor(
         _uiState.update { it.copy(selectedMediaKey = key) }
     }
 
+    /** Selects the first image on the current comic page for the reader's edit dock. */
+    fun selectFirstMangaPanel() {
+        val panel = _uiState.value.mediaPanels.firstOrNull { !it.isAudio } ?: return
+        selectMedia(panel.messageId, panel.blockId)
+    }
+
+    /** Opens the first image on the current comic page in the existing non-destructive editor. */
+    fun openFirstMangaPanelEditor() {
+        val panel = _uiState.value.mediaPanels.firstOrNull { !it.isAudio } ?: return
+        openImageEditor(panel.messageId, panel.blockId)
+    }
+
     fun editMessage(messageId: String, newText: String) {
         viewModelScope.launch {
             val current = rawMessages.find { it.id == messageId } ?: return@launch
