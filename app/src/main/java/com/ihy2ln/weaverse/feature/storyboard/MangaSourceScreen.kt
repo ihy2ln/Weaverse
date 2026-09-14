@@ -674,7 +674,21 @@ fun MangaSourceDialog(
                 }
                 state.selected?.let { selected ->
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(selected.title, style = MaterialTheme.typography.titleSmall)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(selected.title, style = MaterialTheme.typography.titleSmall)
+                            mangaMetadataLine(selected)?.let { metadata ->
+                                Text(metadata, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            mangaCreditsLine(selected)?.let { credits ->
+                                Text(credits, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            selected.tags.takeIf { it.isNotEmpty() }?.let { tags ->
+                                Text("Tags: ${tags.joinToString(" · ")}", style = MaterialTheme.typography.labelSmall)
+                            }
+                            selected.description.takeIf(String::isNotBlank)?.let { description ->
+                                Text(description, style = MaterialTheme.typography.bodySmall, maxLines = 3)
+                            }
+                        }
                         Row {
                             TextButton(onClick = viewModel::clearSelection) { Text("Back") }
                             TextButton(onClick = { viewModel.select(selected) }) { Text("Refresh") }
@@ -889,8 +903,27 @@ private fun MangaSearchCoverCard(result: MangaSearchResult, onClick: () -> Unit)
                 .aspectRatio(0.68f),
         )
         Text(result.title, style = MaterialTheme.typography.labelLarge, maxLines = 2)
+        result.tags.takeIf { it.isNotEmpty() }?.let { tags ->
+            Text(tags.take(3).joinToString(" · "), style = MaterialTheme.typography.labelSmall, maxLines = 2)
+        }
+        mangaMetadataLine(result)?.let { metadata ->
+            Text(metadata, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        }
     }
 }
+
+private fun mangaMetadataLine(result: MangaSearchResult): String? = buildList {
+    result.languages.takeIf { it.isNotEmpty() }?.let { add("Lang: ${it.joinToString(", ")}") }
+    result.type.takeIf(String::isNotBlank)?.let { add(it) }
+    result.status.takeIf(String::isNotBlank)?.let { add(it) }
+    result.year.takeIf(String::isNotBlank)?.let { add(it) }
+    result.rating.takeIf(String::isNotBlank)?.let { add("★ $it") }
+}.joinToString(" · ").takeIf(String::isNotBlank)
+
+private fun mangaCreditsLine(result: MangaSearchResult): String? = buildList {
+    result.authors.takeIf { it.isNotEmpty() }?.let { add("Author: ${it.joinToString(", ")}") }
+    result.artists.takeIf { it.isNotEmpty() }?.let { add("Artist: ${it.joinToString(", ")}") }
+}.joinToString(" · ").takeIf(String::isNotBlank)
 
 @Composable
 fun MangaLibraryCoverGrid(

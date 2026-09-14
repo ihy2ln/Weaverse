@@ -225,10 +225,7 @@ fun PanelImageEditor(
     LaunchedEffect(editor.pendingCleanup, editor.busy, editor.regions) {
         if (!editor.pendingCleanup || editor.busy) return@LaunchedEffect
         pushUndo()
-        ImageOps.inpaintTextGlyphsInRects(
-            bitmap,
-            editor.regions.map { region -> RectF(region.x, region.y, region.x + region.w, region.y + region.h) },
-        )
+        ImageOps.replaceTextRegions(bitmap, editor.regions.cleanableRects())
         version++
         onConsumeCleanup()
     }
@@ -261,14 +258,9 @@ fun PanelImageEditor(
             InkFilledButton(
                 label = "Save copy",
                 onClick = {
-                    if (editor.regions.isNotEmpty()) {
-                        ImageOps.inpaintTextGlyphsInRects(
-                            bitmap,
-                            editor.regions.map { region ->
-                                RectF(region.x, region.y, region.x + region.w, region.y + region.h)
-                            },
-                        )
-                    }
+                    // saveEditedPanel performs the cleanup and typesetting once on the
+                    // final bitmap. Repeating the inpaint here would soften artwork a
+                    // second time after the preview cleanup has already run.
                     onSave(bitmap)
                 },
             )
@@ -1081,6 +1073,11 @@ private fun newTextLayer(x: Float, y: Float, w: Float, h: Float): PanelTextRegio
         translation = "Text",
         edited = true,
     )
+
+private fun List<PanelTextRegion>.cleanableRects(): List<RectF> =
+    filter { region ->
+        region.visible && (region.original.isNotBlank() || (!region.edited && region.translation.isNotBlank()))
+    }.map { region -> RectF(region.x, region.y, region.x + region.w, region.y + region.h) }
 
 private fun hitRegion(pos: Offset, viewSize: IntSize, regions: List<PanelTextRegion>): PanelTextRegion? {
     if (viewSize.width == 0 || viewSize.height == 0) return null

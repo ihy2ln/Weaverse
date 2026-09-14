@@ -5038,7 +5038,7 @@ class RoleplayChatViewModel @Inject constructor(
             RectF(region.x, region.y, region.x + region.w, region.y + region.h)
         }
         if (textRects.isEmpty()) return
-        ImageOps.inpaintTextGlyphsInRects(bitmap, textRects)
+        ImageOps.replaceTextRegions(bitmap, textRects)
         // Measured after cleanup so the outward walk is not stopped by the source lettering.
         val frames = ImageOps.bubbleFrames(bitmap, textRects)
         ImageOps.typesetLayers(

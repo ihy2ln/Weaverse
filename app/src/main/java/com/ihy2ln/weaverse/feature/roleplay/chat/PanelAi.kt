@@ -165,9 +165,13 @@ object PanelAi {
             path = path,
             instruction = "Find every region of this comic page that contains written language (speech bubbles, " +
                 "captions, sound effects). For each region return its bounding box on a 0-1000 scale, the exact " +
-                "original text, and a natural translation into $targetLanguage. " +
+                "original text, and a natural translation into $targetLanguage. The box MUST surround the source " +
+                "characters that are visibly printed in the image, including every character in vertical writing; " +
+                "it is not the preferred destination for the translation. Include a small 2-3% safety margin so " +
+                "anti-aliased edges are covered, and keep separate source text regions separate. " +
                 "Return ONLY a JSON array: [{\"x\":0,\"y\":0,\"w\":100,\"h\":40,\"original\":\"...\",\"translation\":\"...\"}]. " +
-                "Use an empty original when a region is decorative. Do not merge separate bubbles.",
+                "Use an empty original when a region is decorative. Do not merge separate bubbles or place the " +
+                "box around a blank area merely to make the translated text fit.",
         ) ?: return null
         return parseTranslatedRegions(raw)
     }

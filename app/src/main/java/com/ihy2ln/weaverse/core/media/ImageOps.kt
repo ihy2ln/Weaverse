@@ -151,6 +151,26 @@ object ImageOps {
         if (mask.any { it }) inpaintMasked(target, mask)
     }
 
+    /**
+     * Removes source lettering before a replacement is painted. The glyph pass is
+     * artwork-friendly, but its contrast heuristic can miss antialiased or
+     * screentoned characters. Follow it with a nearly-full box reconstruction so
+     * a source glyph cannot survive underneath the English replacement.
+     */
+    fun replaceTextRegions(target: Bitmap, rects: List<RectF>) {
+        if (rects.isEmpty()) return
+        val padded = rects.map { rect ->
+            RectF(
+                (rect.left - 0.012f).coerceIn(0f, 1f),
+                (rect.top - 0.012f).coerceIn(0f, 1f),
+                (rect.right + 0.012f).coerceIn(0f, 1f),
+                (rect.bottom + 0.012f).coerceIn(0f, 1f),
+            )
+        }
+        inpaintTextGlyphsInRects(target, padded)
+        inpaintNormalizedRects(target, padded, insetFraction = 0.02f)
+    }
+
     fun inpaintMasked(target: Bitmap, mask: BooleanArray) {
         if (mask.size < target.width * target.height) return
         val pixels = IntArray(target.width * target.height)

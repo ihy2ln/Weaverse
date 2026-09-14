@@ -46,6 +46,15 @@ data class MangaSearchResult(
     val description: String = "",
     val coverUrl: String? = null,
     val canonicalUrl: String = "",
+    /** Normalized catalog metadata. Public HTML adapters fill these from page/JSON-LD data. */
+    val tags: List<String> = emptyList(),
+    val languages: List<String> = emptyList(),
+    val authors: List<String> = emptyList(),
+    val artists: List<String> = emptyList(),
+    val status: String = "",
+    val type: String = "",
+    val year: String = "",
+    val rating: String = "",
 )
 
 data class MangaChapter(
@@ -156,6 +165,12 @@ class MangaDexSource @Inject constructor(
             val attributes = obj.obj("attributes")
             val title = attributes?.obj("title")?.firstValue() ?: "Untitled manga"
             val description = attributes?.obj("description")?.firstValue().orEmpty()
+            val tags = attributes?.jsonArray("tags")?.mapNotNull { tag ->
+                tag.jsonObject.obj("attributes")?.obj("name")?.firstValue()
+            }.orEmpty()
+            val languages = attributes?.jsonArray("availableTranslatedLanguages")
+                ?.mapNotNull { it.jsonPrimitive.contentOrNull }
+                .orEmpty()
             val coverFileName = obj["relationships"]?.jsonArray.orEmpty()
                 .firstOrNull { it.jsonObject.string("type") == "cover_art" }
                 ?.jsonObject?.obj("attributes")?.string("fileName")
@@ -167,6 +182,8 @@ class MangaDexSource @Inject constructor(
                 description = description,
                 coverUrl = cover,
                 canonicalUrl = "https://mangadex.org/title/$id",
+                tags = tags,
+                languages = languages,
             )
         }
     }
@@ -235,6 +252,7 @@ class MangaDexSource @Inject constructor(
 
 private fun JsonObject.string(key: String): String? = this[key]?.jsonPrimitive?.contentOrNull
 private fun JsonObject.obj(key: String): JsonObject? = this[key] as? JsonObject
+private fun JsonObject.jsonArray(key: String): JsonArray? = this[key] as? JsonArray
 private fun JsonObject.firstValue(): String? = values.firstOrNull()?.jsonPrimitive?.contentOrNull
 private fun JsonArray.orEmpty(): JsonArray = this
 private val kotlinx.serialization.json.JsonPrimitive.contentOrNull: String?
