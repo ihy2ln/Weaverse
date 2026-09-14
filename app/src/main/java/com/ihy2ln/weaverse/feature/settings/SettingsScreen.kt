@@ -76,6 +76,7 @@ import com.ihy2ln.weaverse.feature.novel.codex.CodexBang
 import com.ihy2ln.weaverse.feature.novel.codex.CodexEntryKind
 import com.ihy2ln.weaverse.feature.novel.codex.effectiveBangCommands
 import com.ihy2ln.weaverse.feature.roleplay.chat.RpgTurnCommands
+import com.ihy2ln.weaverse.core.mcp.McpHarnessConfig
 
 
 
@@ -833,7 +834,10 @@ fun SettingsScreen(
         ) {
 
             Text(
-                "Default: ${state.prefs.defaultModelRef}. Writing lists every OpenRouter text model after Refresh (search to filter).",
+                "Writing: ${state.prefs.defaultModelRef}\n" +
+                    "Vision/OCR: ${state.prefs.mangaVisionModelRef.ifBlank { "Auto" }}\n" +
+                    "Image editing: ${state.prefs.mangaImageModelRef.ifBlank { "Auto" }}\n" +
+                    "Each tab now saves its own model; selecting an image model will not replace the writing model.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -858,6 +862,8 @@ fun SettingsScreen(
 
                     SegmentedOption(ModelListTab.Writing.name, "Writing"),
 
+                    SegmentedOption(ModelListTab.Vision.name, "Vision"),
+
                     SegmentedOption(ModelListTab.ImageGeneration.name, "Image generation"),
 
                     SegmentedOption(ModelListTab.TextToSpeech.name, "Text to speech"),
@@ -869,6 +875,8 @@ fun SettingsScreen(
                 selectedId = state.modelTab.name,
 
                 onSelect = { viewModel.onModelTab(ModelListTab.valueOf(it)) },
+
+                scrollable = true,
 
             )
 
@@ -890,6 +898,8 @@ fun SettingsScreen(
 
                 ModelListTab.Writing -> state.writingModels
 
+                ModelListTab.Vision -> state.visionModels
+
                 ModelListTab.ImageGeneration -> state.imageModels
 
                 ModelListTab.TextToSpeech -> state.ttsModels
@@ -904,7 +914,13 @@ fun SettingsScreen(
             }
             if (list.isEmpty()) {
                 Text(
-                    "No models cached. Save a valid OpenRouter key, then tap Refresh models.",
+                    if (state.models.isEmpty()) {
+                        "No models cached. Save a valid OpenRouter key, then tap Refresh models."
+                    } else if (state.modelSearch.isNotBlank()) {
+                        "No ${state.modelTab.name.replace(Regex("([a-z])([A-Z])"), "$1 $2").lowercase()} models match ‘${state.modelSearch}’."
+                    } else {
+                        "No ${state.modelTab.name.replace(Regex("([a-z])([A-Z])"), "$1 $2").lowercase()} models were reported by OpenRouter."
+                    },
                     modifier = Modifier.padding(top = InkSpacing.sm),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -918,8 +934,12 @@ fun SettingsScreen(
                 list.forEach { model ->
                     ModelRow(
                         model = model,
-                        selected = state.prefs.defaultModelRef.endsWith(model.id),
-                        onClick = { viewModel.selectDefaultModel(model.id, model.available) },
+                        selected = when (state.modelTab) {
+                            ModelListTab.Vision -> state.prefs.mangaVisionModelRef.endsWith(model.id)
+                            ModelListTab.ImageGeneration -> state.prefs.mangaImageModelRef.endsWith(model.id)
+                            else -> state.prefs.defaultModelRef.endsWith(model.id)
+                        },
+                        onClick = { viewModel.selectModelForCurrentTab(model.id, model.available) },
                     )
                 }
             }
@@ -1183,14 +1203,75 @@ fun SettingsScreen(
                 modifier = Modifier.padding(top = InkSpacing.lg),
             )
             Text(
-                "Let Claude Code, OpenCode, Codex CLI or any MCP client read your library. " +
-                    "Turn on the web hub above, then add the endpoint below to your harness. " +
-                    "Auth uses the same password as pairing (Bearer token).",
+                "Let Cursor, Claude Code, OpenCode, Codex CLI or any MCP client read your library. " +
+                    "Codex is built in as an explicit access switch. Turning it on starts the local " +
+                    "hub and opens MCP until you turn it off. Cursor IDE and Cursor CLI (`agent`) " +
+                    "share ~/.cursor/mcp.json.",
                 style = MaterialTheme.typography.bodySmall,
                 color = inkTokens().secondaryText,
             )
             val clipboardMcp = LocalClipboardManager.current
             val mcpEndpoint = "http://${state.sync.lanAddress.ifBlank { "<device-ip>" }}:${state.sync.port}/mcp"
+            InkCard(modifier = Modifier.fillMaxWidth().padding(top = InkSpacing.sm)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(InkSpacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Codex", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                        Text(
+                            McpHarnessConfig.CODEX_EMULATOR_ENDPOINT,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = inkTokens().secondaryText,
+                        )
+                        Text(
+                            when {
+                                state.prefs.codexMcpEnabled && state.sync.hosting -> "Enabled · MCP server is running"
+                                state.prefs.codexMcpEnabled -> "Enabled · starting MCP server"
+                                else -> "Disabled · MCP requests are rejected"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = inkTokens().secondaryText,
+                        )
+                    }
+                    if (state.prefs.codexMcpEnabled) {
+                        InkOutlinedButton(
+                            label = "Turn off",
+                            onClick = { viewModel.setCodexMcpEnabled(false) },
+                        )
+                    } else {
+                        InkConfirmButton(
+                            label = "Turn on",
+                            contentDescription = "Enable the built-in Codex MCP connection",
+                            onClick = { viewModel.setCodexMcpEnabled(true) },
+                        )
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        McpHarnessConfig.codexAddCommand,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = inkTokens().secondaryText,
+                        maxLines = 2,
+                        modifier = Modifier.weight(1f),
+                    )
+                    InkOutlinedButton(
+                        label = "Copy setup",
+                        onClick = { clipboardMcp.setText(AnnotatedString(McpHarnessConfig.codexAddCommand)) },
+                        modifier = Modifier.padding(start = InkSpacing.xs),
+                    )
+                }
+            }
+            Text(
+                "Only leave Codex MCP enabled on a network you trust. Download and Storyboard-writing " +
+                    "tools still require their normal confirmation flow.",
+                style = MaterialTheme.typography.labelSmall,
+                color = inkTokens().secondaryText,
+                modifier = Modifier.padding(top = InkSpacing.xs),
+            )
             Text(
                 "Endpoint: $mcpEndpoint",
                 style = MaterialTheme.typography.bodySmall,
@@ -1200,8 +1281,8 @@ fun SettingsScreen(
             listOf(
                 "Claude Code" to "claude mcp add --transport http weaverse $mcpEndpoint",
                 "OpenCode" to "opencode mcp add weaverse --url $mcpEndpoint",
-                "ChatGPT / Codex CLI" to "codex mcp add weaverse --url $mcpEndpoint",
-                "CursorAI" to "Cursor Settings → MCP → New MCP Server · name: weaverse · url: $mcpEndpoint",
+                "Cursor IDE" to "Cursor Settings → MCP → New MCP Server · name: weaverse · type: http · url: $mcpEndpoint · header Authorization: Bearer <sync-password>",
+                "Cursor CLI" to "{\"mcpServers\":{\"weaverse\":{\"url\":\"$mcpEndpoint\",\"type\":\"http\",\"headers\":{\"Authorization\":\"Bearer <sync-password>\"}}}} then: agent mcp enable weaverse",
             ).forEach { (harness, command) ->
                 Row(
                     modifier = Modifier
@@ -1212,7 +1293,7 @@ fun SettingsScreen(
                     Text(
                         harness,
                         style = MaterialTheme.typography.labelMedium,
-                        modifier = Modifier.width(120.dp),
+                        modifier = Modifier.width(132.dp),
                     )
                     Text(
                         command,
@@ -1231,7 +1312,9 @@ fun SettingsScreen(
             }
             Text(
                 "Tools exposed: list_works, list_scenes, read_scene, search_codex, " +
-                    "read_codex_entry, list_notes, read_note.",
+                    "read_codex_entry, list_notes, read_note, find_scene_media, search_manga, " +
+                    "list_manga_chapters, queue_manga_download, download_manga_web_link, " +
+                    "manga_download_status, import_manga_chapter_to_storyboard.",
                 style = MaterialTheme.typography.labelSmall,
                 color = inkTokens().secondaryText,
             )

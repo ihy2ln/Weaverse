@@ -21,9 +21,10 @@ import javax.inject.Singleton
 
 /**
  * Minimal MCP (Model Context Protocol) tool server for CLI harnesses such as
- * Claude Code, OpenCode, and Codex CLI. Implements the JSON-RPC methods those
- * harnesses speak over streamable HTTP: `initialize`, `tools/list`,
- * `tools/call`, and `ping`. Tools are read-only views of the library.
+ * Cursor (IDE and `agent` CLI), Claude Code, OpenCode, and Codex CLI. Implements
+ * the JSON-RPC methods those harnesses speak over streamable HTTP: `initialize`,
+ * `tools/list`, `tools/call`, and `ping`. Tools are library views plus confirmed
+ * manga download helpers.
  */
 @Singleton
 class McpTools @Inject constructor(
@@ -178,7 +179,7 @@ class McpTools @Inject constructor(
                     val chapters = mangaDownloads.loadChapters(manga)
                     text(chapters.joinToString("\n") {
                         "${it.title} · remoteId=${it.remoteId} · ${it.language} · ${it.canonicalUrl}"
-                    }.ifBlank { "No English chapters found." })
+                    }.ifBlank { "No chapters found." })
                 }
                 "queue_manga_download" -> {
                     if (!confirmed(args)) return text("This downloads remote pages into the local library. Repeat with confirm=true after the user approves it.", isErr = true)
@@ -200,6 +201,14 @@ class McpTools @Inject constructor(
                     )
                     mangaDownloads.enqueue(entity)
                     text("Queued ${entity.mangaTitle} · ${entity.title} · chapterId=${entity.id}")
+                }
+                "download_manga_web_link" -> {
+                    if (!confirmed(args)) return text("This downloads remote pages into the local library. Repeat with confirm=true after the user approves it.", isErr = true)
+                    val url = (args["url"] as? JsonPrimitive)?.content.orEmpty().trim()
+                    if (url.isBlank()) return text("url is required.", isErr = true)
+                    val title = (args["title"] as? JsonPrimitive)?.content.orEmpty()
+                    val entity = mangaDownloads.enqueueWebLink(url, title)
+                    text("Queued ${entity.mangaTitle} · ${entity.title} · chapterId=${entity.id} · ${entity.pageCount} page(s)")
                 }
                 "manga_download_status" -> {
                     val chapters = mangaDownloads.observeChapters().first()
@@ -263,9 +272,10 @@ class McpTools @Inject constructor(
                 ),
                 required = setOf("scene"),
             ),
-            tool("search_manga", "Search the authorized MangaDex connector", mapOf("query" to "Manga title", "sourceId" to "Optional source id; defaults to mangadex"), required = setOf("query")),
+            tool("search_manga", "Search an installed manga source catalog", mapOf("query" to "Manga title", "sourceId" to "Optional source id such as mangadex, rawkuma, comix, atsumaru, mangafire, or mangadot; defaults to mangadex"), required = setOf("query")),
             tool("list_manga_chapters", "List chapters for a manga returned by search_manga", mapOf("mangaId" to "Remote manga id", "title" to "Manga title", "sourceId" to "Optional source id; defaults to mangadex"), required = setOf("mangaId")),
-            tool("queue_manga_download", "Queue an authorized chapter for local download; requires confirm=true", mapOf("chapterId" to "Remote chapter id", "mangaId" to "Remote manga id", "mangaTitle" to "Manga title", "title" to "Chapter title", "sourceId" to "Optional source id", "confirm" to "Must be true after explicit user approval"), required = setOf("chapterId", "mangaId", "confirm")),
+            tool("queue_manga_download", "Queue a catalog chapter for local download; requires confirm=true", mapOf("chapterId" to "Remote chapter id", "mangaId" to "Remote manga id", "mangaTitle" to "Manga title", "title" to "Chapter title", "sourceId" to "Optional source id", "url" to "Optional public chapter URL", "confirm" to "Must be true after explicit user approval"), required = setOf("chapterId", "mangaId", "confirm")),
+            tool("download_manga_web_link", "Queue a public chapter-reader URL the same way Browse → Download from web link does; requires confirm=true", mapOf("url" to "Public chapter URL", "title" to "Optional title override", "confirm" to "Must be true after explicit user approval"), required = setOf("url", "confirm")),
             tool("manga_download_status", "Read local manga download progress", mapOf("chapterId" to "Optional local chapter id"), required = emptySet()),
             tool("import_manga_chapter_to_storyboard", "Create editable Storyboard pages from a completed local chapter; requires confirm=true", mapOf("chapterId" to "Local chapter id", "chatId" to "Storyboard chat id", "confirm" to "Must be true after explicit user approval"), required = setOf("chapterId", "chatId", "confirm")),
         ),

@@ -47,6 +47,6 @@ class WritingModelSeedsTest {
     @Test
     fun noApiKeyHasHelpfulMessage() {
         val err = AIError.NoApiKey()
-        assertEquals("Configure OpenRouter API key in Settings → AI Connections", err.message)
+        assertEquals("Configure an API key in Settings → AI Connections", err.message)
     }
 }

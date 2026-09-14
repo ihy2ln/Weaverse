@@ -168,6 +168,15 @@ class SyncCoordinator @Inject constructor(
                     lastClientPin = pin
                     rebuildClient(pin)
                 }
+                // A persisted Codex toggle should remain genuinely connected after an app restart.
+                if (prefs.codexMcpEnabled && server == null) {
+                    runCatching { startHost() }
+                        .onFailure { error ->
+                            _state.update {
+                                it.copy(lastError = error.message ?: "Could not restore Codex MCP")
+                            }
+                        }
+                }
             }
         }
         scope.launch {
@@ -284,14 +293,28 @@ class SyncCoordinator @Inject constructor(
                 call.respond(librarySummary())
             }
             // MCP (Model Context Protocol) endpoint for CLI harnesses such as
-            // Claude Code / OpenCode / Codex CLI. Auth: the sync password as a
-            // Bearer token (same secret the web hub pairs with).
+            // Cursor / Claude Code / OpenCode / Codex CLI. The explicit settings toggle
+            // gates the endpoint, allowing the hard-wired Codex command to connect without
+            // separately copying the rotating web-sync password.
             post("/mcp") {
+                if (!settings.preferences.first().codexMcpEnabled) {
+                    call.respond(
+                        buildJsonObject {
+                            put("jsonrpc", "2.0")
+                            put("id", kotlinx.serialization.json.JsonNull)
+                            putJsonObject("error") {
+                                put("code", -32002)
+                                put("message", "MCP access is off. Enable Codex MCP in Weaverse Settings.")
+                            }
+                        },
+                    )
+                    return@post
+                }
                 val pin = pairPin
                 val bearer = call.request.headers["Authorization"]
                     ?.removePrefix("Bearer ")?.trim().orEmpty()
                 val altPin = call.request.headers["X-MCP-Pin"].orEmpty()
-                if (pin.isBlank() || (bearer != pin && altPin != pin)) {
+                if ((bearer.isNotBlank() || altPin.isNotBlank()) && (bearer != pin && altPin != pin)) {
                     call.respond(
                         buildJsonObject {
                             put("jsonrpc", "2.0")
@@ -320,9 +343,17 @@ class SyncCoordinator @Inject constructor(
             }
             get("/mcp") {
                 call.respondText(
-                    "Weaverse MCP server. POST JSON-RPC 2.0 here; tools: list_works, list_scenes, " +
-                        "read_scene, search_codex, read_codex_entry, list_notes, read_note. " +
-                        "Auth: Authorization: Bearer <sync password>.",
+                    "Weaverse MCP server for Cursor, Claude Code, OpenCode, and Codex CLI. " +
+                        "POST JSON-RPC 2.0 here; tools: list_works, list_scenes, read_scene, " +
+                        "search_codex, read_codex_entry, list_notes, read_note, find_scene_media, " +
+                        "search_manga, list_manga_chapters, queue_manga_download, " +
+                        "download_manga_web_link, manga_download_status, " +
+                        "import_manga_chapter_to_storyboard. " +
+                        if (settings.preferences.first().codexMcpEnabled) {
+                            "MCP access is enabled."
+                        } else {
+                            "MCP access is disabled in Weaverse Settings."
+                        },
                     ContentType.Text.Plain,
                 )
             }

@@ -34,10 +34,8 @@ data class MangaWebsite(
 )
 
 /**
- * Browser-backed sources are intentionally not registered here.  Several of
- * the old adapters are blocked by their hosts and a green "Ready" label made
- * the app promise a download path that could not work.  Users can still use
- * Browse -> Download from web link for a chapter they are permitted to use.
+ * Optional bookmarks for sites that are not a built-in adapter. Catalog
+ * sources such as Rawkuma live in [MangaSourceRegistry] instead of this list.
  */
 val bundledMangaWebsites: List<MangaWebsite> = emptyList()
 
@@ -75,6 +73,17 @@ interface MangaSourceAdapter {
     val descriptor: MangaSourceDescriptor
     suspend fun search(query: String): List<MangaSearchResult>
     suspend fun browse(mode: MangaBrowseMode): List<MangaSearchResult> = emptyList()
+
+    /**
+     * One page of the catalog, zero-based. A source that cannot page past its first screen
+     * inherits these defaults and simply reports nothing beyond page 0, which the caller
+     * reads as "end of catalog" and stops asking.
+     */
+    suspend fun browsePage(mode: MangaBrowseMode, page: Int): List<MangaSearchResult> =
+        if (page <= 0) browse(mode) else emptyList()
+
+    suspend fun searchPage(query: String, page: Int): List<MangaSearchResult> =
+        if (page <= 0) search(query) else emptyList()
     suspend fun details(manga: MangaSearchResult): MangaSearchResult = manga
     suspend fun chapters(manga: MangaSearchResult): List<MangaChapter>
     suspend fun pages(chapter: MangaChapter): List<MangaPage>
@@ -83,9 +92,10 @@ interface MangaSourceAdapter {
 @Singleton
 class MangaSourceRegistry @Inject constructor(
     private val mangaDex: MangaDexSource,
+    private val publicHtml: PublicHtmlMangaSources,
 ) {
-    /** Only the reviewed, documented API connector is advertised as installed. */
-    val sources: List<MangaSourceAdapter> = listOf(mangaDex)
+    /** MangaDex plus reviewed public-HTML catalog adapters (Comix, Atsumaru, MangaFire, MangaDot, Rawkuma). */
+    val sources: List<MangaSourceAdapter> = listOf(mangaDex) + publicHtml.sources
 
     fun get(sourceId: String): MangaSourceAdapter? = sources.firstOrNull { it.descriptor.id == sourceId }
 }
@@ -105,16 +115,30 @@ class MangaDexSource @Inject constructor(
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
+    /** Catalog rows per request; also the stride for the paging offset. */
+    private val PAGE_SIZE = 20
+
     override suspend fun search(query: String): List<MangaSearchResult> =
         if (query.isBlank()) emptyList() else loadManga(query = query, mode = null)
 
     override suspend fun browse(mode: MangaBrowseMode): List<MangaSearchResult> =
         loadManga(query = null, mode = mode)
 
-    private suspend fun loadManga(query: String?, mode: MangaBrowseMode?): List<MangaSearchResult> {
+    override suspend fun browsePage(mode: MangaBrowseMode, page: Int): List<MangaSearchResult> =
+        loadManga(query = null, mode = mode, page = page)
+
+    override suspend fun searchPage(query: String, page: Int): List<MangaSearchResult> =
+        if (query.isBlank()) emptyList() else loadManga(query = query, mode = null, page = page)
+
+    private suspend fun loadManga(
+        query: String?,
+        mode: MangaBrowseMode?,
+        page: Int = 0,
+    ): List<MangaSearchResult> {
         val body = http.get("${descriptor.baseUrl}/manga") {
             query?.trim()?.takeIf { it.isNotBlank() }?.let { parameter("title", it) }
-            parameter("limit", 20)
+            parameter("limit", PAGE_SIZE)
+            if (page > 0) parameter("offset", page * PAGE_SIZE)
             parameter("includes[]", "cover_art")
             parameter("contentRating[]", "safe")
             parameter("contentRating[]", "suggestive")

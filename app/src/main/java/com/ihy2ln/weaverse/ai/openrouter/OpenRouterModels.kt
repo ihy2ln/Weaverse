@@ -2,7 +2,11 @@ package com.ihy2ln.weaverse.ai.openrouter
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
 
 @Serializable
 data class OpenRouterKeyResponse(
@@ -135,22 +139,41 @@ data class OpenRouterSpeechRequest(
     @SerialName("response_format") val responseFormat: String = "mp3",
 )
 
+fun OpenRouterArchitecture?.inputSide(): String {
+    val modality = this?.modality.orEmpty().lowercase()
+    return modality.substringBefore("->", modality)
+}
+
+fun OpenRouterArchitecture?.outputSide(): String {
+    val modality = this?.modality.orEmpty().lowercase()
+    return if (modality.contains("->")) modality.substringAfter("->") else ""
+}
+
 fun OpenRouterModelDto.supportsImageInput(): Boolean {
     if (architecture?.inputModalities?.any { it.equals("image", ignoreCase = true) } == true) return true
-    val modality = architecture?.modality.orEmpty().lowercase()
-    return modality.contains("image")
+    // "modality" is a "in->out" string, e.g. "text->image" or "text+image->text". A bare
+    // .contains("image") also matches text->image (image-only OUTPUT, e.g. Flux/DALL-E),
+    // which falsely marks a pure text-to-image model as accepting an image to edit. Only the
+    // side left of "->" describes what the model accepts.
+    if (architecture.inputSide().contains("image")) return true
+    if (architecture != null) return false
+    val haystack = "$id ${name.orEmpty()}".lowercase()
+    return VISION_ID_HINTS.any { haystack.contains(it) }
 }
 
 /** True when the model generates images (text-to-image, e.g. Nano Banana, Flux). */
 fun OpenRouterModelDto.generatesImages(): Boolean {
     val outputs = architecture?.outputModalities.orEmpty()
     if (outputs.any { it.equals("image", ignoreCase = true) }) return true
+    if (architecture.outputSide().contains("image")) return true
     val id = id.lowercase()
     val modality = architecture?.modality.orEmpty().lowercase()
-    // "text->image" style modality strings.
-    if (modality.contains("->image") || modality.endsWith("-> image")) return true
-    val imageOnlyIds = listOf("flux", "dall-e", "dalle", "stable-diffusion", "sdxl", "imagen", "seedream", "recraft", "ideogram", "gpt-image")
-    return imageOnlyIds.any { id.contains(it) } && !modality.contains("text->text")
+    val imageOnlyIds = listOf(
+        "flux", "dall-e", "dalle", "stable-diffusion", "sdxl", "imagen",
+        "seedream", "recraft", "ideogram", "gpt-image", "nano-banana",
+    )
+    return imageOnlyIds.any { id.contains(it) } && !architecture.outputSide().contains("text") &&
+        !modality.contains("text->text")
 }
 
 fun OpenRouterModelDto.isSpeechOutput(): Boolean {
@@ -160,6 +183,9 @@ fun OpenRouterModelDto.isSpeechOutput(): Boolean {
     ) {
         return true
     }
+    if (architecture.outputSide().contains("speech") || architecture.outputSide().contains("audio")) {
+        return true
+    }
     val id = id.lowercase()
     val name = name.orEmpty().lowercase()
     val modality = architecture?.modality.orEmpty().lowercase()
@@ -167,27 +193,58 @@ fun OpenRouterModelDto.isSpeechOutput(): Boolean {
         id.contains("speech") ||
         name.contains("tts") ||
         name.contains("text-to-speech") ||
-        modality.contains("speech") ||
-        (modality.contains("audio") && !modality.contains("text->text"))
+        (modality.contains("speech") && architecture.outputSide().isNotEmpty()) ||
+        (modality.contains("audio") && !architecture.outputSide().contains("text"))
 }
 
-/** True when the model can generate writing text (not TTS-only). */
+/** True when the model can generate writing text (not TTS-only / image-only). */
 fun OpenRouterModelDto.isTextGeneration(): Boolean {
     val outputs = architecture?.outputModalities.orEmpty()
     if (outputs.isNotEmpty() && outputs.none { it.equals("text", ignoreCase = true) }) {
         return false
     }
-    val modality = architecture?.modality.orEmpty().lowercase()
-    if (modality.contains("->") && !modality.contains("->text") && modality.contains("speech")) {
+    val outputSide = architecture.outputSide()
+    if (outputSide.isNotEmpty() && !outputSide.contains("text")) {
         return false
     }
     if (isSpeechOutput() && outputs.none { it.equals("text", ignoreCase = true) } &&
-        !modality.contains("text->text")
+        !outputSide.contains("text")
     ) {
         return false
     }
     return true
 }
+
+/**
+ * OpenRouter's GET /models defaults to text output only. Parse the body per-model so one
+ * malformed catalog entry cannot empty Vision / Image generation.
+ */
+fun parseOpenRouterModelsBody(json: Json, body: String): OpenRouterModelsResponse {
+    val root = json.parseToJsonElement(body)
+    val obj = root as? JsonObject
+    val error = obj?.get("error")?.let { el ->
+        runCatching { json.decodeFromJsonElement(OpenRouterErrorBody.serializer(), el) }.getOrNull()
+    }
+    val dataElement = obj?.get("data") ?: root
+    val array = dataElement as? JsonArray ?: return OpenRouterModelsResponse(error = error)
+    val models = array.mapNotNull { el ->
+        runCatching { json.decodeFromJsonElement(OpenRouterModelDto.serializer(), el) }.getOrNull()
+    }
+    return OpenRouterModelsResponse(data = models, error = error)
+}
+
+private val VISION_ID_HINTS = listOf(
+    "gpt-5.6-luna",
+    "gpt-luna",
+    "-vision",
+    "vision-",
+    "pixtral",
+    "qwen-vl",
+    "qwen2-vl",
+    "qwen2.5-vl",
+    "gpt-4o",
+    "grok-2-vision",
+)
 
 fun OpenRouterChatMessage.textContent(): String = when (content) {
     is kotlinx.serialization.json.JsonPrimitive -> content.content

@@ -66,6 +66,14 @@ enum class ChattingDestination(val label: String) {
 
 /** The comic workspace — the same page canvas, read right-to-left or left-to-right. */
 enum class StoryboardDestination(val label: String) {
+    Library("Library"),
+    Browse("Browse"),
+    Downloads("Downloads"),
+    Extensions("Extensions"),
+    Projects("Projects"),
+    // Never shown — kept only so storyboardDestinationOf() can still name these old ids
+    // rather than throw. Each keeps its own historical label so it can never collide with
+    // a real, visible destination's label.
     Window("Window"),
     Manga("Manga"),
     Comic("Comic"),
@@ -92,8 +100,14 @@ fun gamesDestinationOf(id: String?): GamesDestination =
 fun chattingDestinationOf(id: String?): ChattingDestination =
     ChattingDestination.entries.firstOrNull { it.name == id } ?: ChattingDestination.Chats
 
-fun storyboardDestinationOf(id: String?): StoryboardDestination =
-    StoryboardDestination.entries.firstOrNull { it.name == id } ?: StoryboardDestination.Window
+fun storyboardDestinationOf(id: String?): StoryboardDestination = when (id) {
+    // Pre-Library-reorg saved state: route straight to the real replacement destination
+    // rather than through the dead Window/Manga/Comic placeholders, so a returning user's
+    // menu chip and content both land on the same, correct, visible tab.
+    "Window" -> StoryboardDestination.Library
+    "Manga", "Comic" -> StoryboardDestination.Projects
+    else -> StoryboardDestination.entries.firstOrNull { it.name == id } ?: StoryboardDestination.Library
+}
 
 fun novelDestinationOf(id: String?): NovelDestination =
     NovelDestination.entries.firstOrNull { it.name == id } ?: NovelDestination.Bookshelf

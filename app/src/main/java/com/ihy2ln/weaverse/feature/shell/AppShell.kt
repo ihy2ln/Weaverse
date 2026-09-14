@@ -139,7 +139,7 @@ fun AppShell(
     var novelDest by rememberSaveable { mutableStateOf(NovelDestination.Bookshelf.name) }
     var rpDest by rememberSaveable { mutableStateOf(RoleplayDestination.Campaign.name) }
     var chatDest by rememberSaveable { mutableStateOf(ChattingDestination.Chats.name) }
-    var storyboardDest by rememberSaveable { mutableStateOf(StoryboardDestination.Window.name) }
+    var storyboardDest by rememberSaveable { mutableStateOf(StoryboardDestination.Library.name) }
     var storyboardChatId by rememberSaveable { mutableStateOf<String?>(null) }
     var mangaEditorOnly by rememberSaveable { mutableStateOf(false) }
     var mangaEditorPageId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -476,7 +476,13 @@ fun AppShell(
                 AppMode.Roleplay -> RoleplayDestination.entries.map { SegmentedOption(it.name, it.label) }
                 AppMode.Games -> GamesDestination.entries.map { SegmentedOption(it.name, it.label) }
                 AppMode.Chatting -> ChattingDestination.entries.map { SegmentedOption(it.name, it.label) }
-                AppMode.Storyboard -> StoryboardDestination.entries.map { SegmentedOption(it.name, it.label) }
+                AppMode.Storyboard -> listOf(
+                    StoryboardDestination.Library,
+                    StoryboardDestination.Browse,
+                    StoryboardDestination.Downloads,
+                    StoryboardDestination.Extensions,
+                    StoryboardDestination.Projects,
+                ).map { SegmentedOption(it.name, it.label) }
                 AppMode.Notes -> NotesDestination.entries.map { SegmentedOption(it.name, it.label) }
             }
             val savedModeOrder = when (currentMode) {
@@ -554,7 +560,7 @@ fun AppShell(
                     currentMode == AppMode.Novel && novelDest != NovelDestination.Bookshelf.name -> novelDest = NovelDestination.Bookshelf.name
                     currentMode == AppMode.Roleplay && rpDest != RoleplayDestination.Campaign.name -> rpDest = RoleplayDestination.Campaign.name
                     currentMode == AppMode.Chatting && chatDest != ChattingDestination.Chats.name -> chatDest = ChattingDestination.Chats.name
-                    currentMode == AppMode.Storyboard && storyboardDest != StoryboardDestination.Window.name -> storyboardDest = StoryboardDestination.Window.name
+                    currentMode == AppMode.Storyboard && storyboardDest != StoryboardDestination.Library.name -> storyboardDest = StoryboardDestination.Library.name
                     else -> mode = AppMode.Novel.name
                 }
             }
@@ -630,7 +636,7 @@ fun AppShell(
                         AppMode.Roleplay.name -> rpDest = RoleplayDestination.Campaign.name
                         AppMode.Games.name -> { /* single destination */ }
                         AppMode.Chatting.name -> chatDest = ChattingDestination.Chats.name
-                        AppMode.Storyboard.name -> storyboardDest = StoryboardDestination.Window.name
+                        AppMode.Storyboard.name -> storyboardDest = StoryboardDestination.Library.name
                     }
                     if (next != AppMode.Notes.name) {
                         workspaceFocus = WorkspaceFocus.Story.name
@@ -656,7 +662,7 @@ fun AppShell(
                         }
                         AppMode.Storyboard -> {
                             storyboardDest = id
-                            if (id == StoryboardDestination.Window.name) storyboardChatId = null
+                            storyboardChatId = null
                         }
                         AppMode.Notes -> notesDetailOpen = false
                     }
@@ -998,8 +1004,9 @@ fun AppShell(
                                 )
                             }
                             AppMode.Storyboard.name -> {
-                                if (storyboardDestinationOf(sd) == StoryboardDestination.Window) {
+                                if (boardId == null) {
                                     StoryboardMangaHubScreen(
+                                        initialTab = storyboardDestinationOf(sd).name,
                                         onCreateProject = { storyboardPlusMenu = true },
                                         readerReturnTarget = mangaReaderChapterId?.let { chapterId ->
                                             MangaReaderReturnTarget(chapterId, mangaReaderPageIndex)
@@ -1037,7 +1044,7 @@ fun AppShell(
                                             storyboardDest = card.preferredStoryboardMode
                                         },
                                     )
-                                } else if (boardId != null) {
+                                } else {
                                     val closeStoryboardEditor = {
                                         mangaEditorOnly = false
                                         mangaEditorPageId = null
@@ -1045,7 +1052,7 @@ fun AppShell(
                                         mangaEditorChapterId = null
                                         storyboardChatId = null
                                         rpChrome = null
-                                        storyboardDest = StoryboardDestination.Window.name
+                                        storyboardDest = StoryboardDestination.Library.name
                                     }
                                     if (mangaEditorOnly) {
                                         ImportedMangaEditorScreen(
@@ -1071,12 +1078,6 @@ fun AppShell(
                                             storyboardCreator = true,
                                         )
                                     }
-                                } else {
-                                    WorkShelfScreen(
-                                        kind = WorkShelfKind.Storyboard,
-                                        onCreate = { storyboardPlusMenu = true },
-                                        onOpen = { card -> storyboardChatId = card.chatId },
-                                    )
                                 }
                             }
                             AppMode.Games.name -> {
@@ -1174,8 +1175,7 @@ fun AppShell(
                 selectedRpChatId != null
             AppMode.Games -> selectedGameSessionId != null
             AppMode.Chatting -> false
-            AppMode.Storyboard -> storyboardDestinationOf(storyboardDest) != StoryboardDestination.Window &&
-                storyboardChatId != null
+            AppMode.Storyboard -> storyboardChatId != null
             AppMode.Notes -> false
         }
         GlobalPromptOverlay(

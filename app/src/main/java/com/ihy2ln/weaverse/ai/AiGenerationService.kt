@@ -126,6 +126,7 @@ class AiGenerationService @Inject constructor(
     suspend fun generateImage(
         prompt: String,
         modelRef: String?,
+        imageAttachments: List<ImageAttachment> = emptyList(),
     ): Pair<ByteArray, String> {
         val model = resolveModelRef(modelRef)
         if (!model.startsWith("openrouter/")) {
@@ -140,6 +141,7 @@ class AiGenerationService @Inject constructor(
         return openRouterRepository.generateImage(
             modelId = model.removePrefix("openrouter/"),
             prompt = prompt,
+            imageAttachments = imageAttachments,
         )
     }
 

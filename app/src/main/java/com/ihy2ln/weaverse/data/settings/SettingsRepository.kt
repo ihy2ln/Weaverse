@@ -89,6 +89,12 @@ data class UserPreferences(
     /** Paper | Sepia | Night — dedicated reader palette, independent of app chrome. */
     val readerTheme: String = "Paper",
     val defaultModelRef: String = WritingModelSeeds.DEFAULT_MODEL_REF,
+    /** Model used for OCR/text-region understanding in the imported manga editor. */
+    val mangaVisionModelRef: String = "",
+    /** Model used for translation and proofreading in the imported manga editor. */
+    val mangaTextModelRef: String = "",
+    /** Image-to-image model used for imported manga colorization. */
+    val mangaImageModelRef: String = "",
     val launchMode: String = "novel",
     val colorCodingEnabled: Boolean = true,
     val selectedBookId: String = "book-adams-haven-1",
@@ -108,6 +114,8 @@ data class UserPreferences(
     val lastSyncAt: Long = 0L,
     val syncTlsEnabled: Boolean = false,
     val syncCertSha256: String = "",
+    /** Explicit gate for remote MCP/CLI access. Off keeps /mcp unavailable. */
+    val codexMcpEnabled: Boolean = false,
     val autoBackupEnabled: Boolean = false,
     val lastAutoBackupAt: Long = 0L,
     val usageYearMonth: String = "",
@@ -176,6 +184,9 @@ class SettingsRepository @Inject constructor(
             lineHeight = prefs[KEY_LINE_HEIGHT] ?: 1.6f,
             readerTheme = prefs[KEY_READER_THEME] ?: "Paper",
             defaultModelRef = prefs[KEY_DEFAULT_MODEL] ?: WritingModelSeeds.DEFAULT_MODEL_REF,
+            mangaVisionModelRef = prefs[KEY_MANGA_VISION_MODEL] ?: "",
+            mangaTextModelRef = prefs[KEY_MANGA_TEXT_MODEL] ?: "",
+            mangaImageModelRef = prefs[KEY_MANGA_IMAGE_MODEL] ?: "",
             launchMode = prefs[KEY_LAUNCH_MODE] ?: "novel",
             colorCodingEnabled = prefs[KEY_COLOR_CODING] ?: true,
             selectedBookId = prefs[KEY_SELECTED_BOOK] ?: "book-adams-haven-1",
@@ -203,6 +214,7 @@ class SettingsRepository @Inject constructor(
             lastSyncAt = prefs[KEY_LAST_SYNC_AT] ?: 0L,
             syncTlsEnabled = prefs[KEY_SYNC_TLS] ?: false,
             syncCertSha256 = prefs[KEY_SYNC_CERT_SHA] ?: "",
+            codexMcpEnabled = prefs[KEY_CODEX_MCP_ENABLED] ?: false,
             autoBackupEnabled = prefs[KEY_AUTO_BACKUP] ?: false,
             lastAutoBackupAt = prefs[KEY_LAST_AUTO_BACKUP_AT] ?: 0L,
             usageYearMonth = prefs[KEY_USAGE_YEAR_MONTH] ?: "",
@@ -357,6 +369,18 @@ class SettingsRepository @Inject constructor(
         context.dataStore.edit { it[KEY_DEFAULT_MODEL] = ref }
     }
 
+    suspend fun setMangaVisionModel(ref: String) {
+        context.dataStore.edit { it[KEY_MANGA_VISION_MODEL] = ref }
+    }
+
+    suspend fun setMangaTextModel(ref: String) {
+        context.dataStore.edit { it[KEY_MANGA_TEXT_MODEL] = ref }
+    }
+
+    suspend fun setMangaImageModel(ref: String) {
+        context.dataStore.edit { it[KEY_MANGA_IMAGE_MODEL] = ref }
+    }
+
     suspend fun setLaunchMode(mode: String) {
         context.dataStore.edit { it[KEY_LAUNCH_MODE] = mode }
     }
@@ -442,6 +466,10 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setSyncCertSha256(value: String) {
         context.dataStore.edit { it[KEY_SYNC_CERT_SHA] = value }
+    }
+
+    suspend fun setCodexMcpEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[KEY_CODEX_MCP_ENABLED] = enabled }
     }
 
     suspend fun setAutoBackupEnabled(enabled: Boolean) {
@@ -710,6 +738,9 @@ class SettingsRepository @Inject constructor(
         private val KEY_LINE_HEIGHT = floatPreferencesKey("line_height")
         private val KEY_READER_THEME = stringPreferencesKey("reader_theme")
         private val KEY_DEFAULT_MODEL = stringPreferencesKey("default_model")
+        private val KEY_MANGA_VISION_MODEL = stringPreferencesKey("manga_editor_vision_model")
+        private val KEY_MANGA_TEXT_MODEL = stringPreferencesKey("manga_editor_text_model")
+        private val KEY_MANGA_IMAGE_MODEL = stringPreferencesKey("manga_editor_image_model")
         private val KEY_LAUNCH_MODE = stringPreferencesKey("launch_mode")
         private val KEY_COLOR_CODING = booleanPreferencesKey("color_coding")
         private val KEY_SELECTED_BOOK = stringPreferencesKey("selected_book_id")
@@ -728,6 +759,7 @@ class SettingsRepository @Inject constructor(
         private val KEY_LAST_SYNC_AT = longPreferencesKey("last_sync_at")
         private val KEY_SYNC_TLS = booleanPreferencesKey("sync_tls_enabled")
         private val KEY_SYNC_CERT_SHA = stringPreferencesKey("sync_cert_sha256")
+        private val KEY_CODEX_MCP_ENABLED = booleanPreferencesKey("codex_mcp_enabled")
         private val KEY_AUTO_BACKUP = booleanPreferencesKey("auto_backup_enabled")
         private val KEY_LAST_AUTO_BACKUP_AT = longPreferencesKey("last_auto_backup_at")
         private val KEY_USAGE_YEAR_MONTH = stringPreferencesKey("usage_year_month")

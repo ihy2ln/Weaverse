@@ -35,7 +35,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-enum class ModelListTab { Writing, ImageGeneration, TextToSpeech, All }
+enum class ModelListTab { Writing, Vision, ImageGeneration, TextToSpeech, All }
 
 data class SettingsUiState(
     val prefs: UserPreferences = UserPreferences(),
@@ -50,6 +50,7 @@ data class SettingsUiState(
     val isRefreshingModels: Boolean = false,
     val models: List<ModelInfo> = emptyList(),
     val writingModels: List<ModelInfo> = emptyList(),
+    val visionModels: List<ModelInfo> = emptyList(),
     val ttsModels: List<ModelInfo> = emptyList(),
     val imageModels: List<ModelInfo> = emptyList(),
     val modelSearch: String = "",
@@ -126,8 +127,9 @@ class SettingsViewModel @Inject constructor(
                     it.copy(
                         models = modelCache.toModelInfo(models),
                         writingModels = modelCache.writingModels(models),
+                        visionModels = modelCache.visionModels(models),
                         ttsModels = modelCache.ttsModels(models),
-            imageModels = modelCache.toModelInfo(models).filter { it.generatesImages },
+                        imageModels = modelCache.imageModels(models),
                         modelsCachedAt = cachedAt,
                     )
                 }
@@ -144,6 +146,14 @@ class SettingsViewModel @Inject constructor(
                 runCatching { openRouterRepository.testStoredKey() }
                     .onSuccess { data -> _uiState.update { it.copy(openRouterKeyInfo = data) } }
                 runCatching { openRouterRepository.fetchModels(forceRefresh = false) }
+                    .onFailure { err ->
+                        _uiState.update {
+                            it.copy(
+                                keyStatus = err.message ?: "Could not load models",
+                                keyStatusIsError = true,
+                            )
+                        }
+                    }
             }
         }
     }
@@ -161,6 +171,21 @@ class SettingsViewModel @Inject constructor(
 
     fun stopSyncHost() {
         viewModelScope.launch { syncCoordinator.stopHost() }
+    }
+
+    fun setCodexMcpEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            settings.setCodexMcpEnabled(enabled)
+            if (enabled) {
+                runCatching { syncCoordinator.startHost() }
+                    .onFailure { err ->
+                        settings.setCodexMcpEnabled(false)
+                        _uiState.update {
+                            it.copy(sync = it.sync.copy(lastError = err.message ?: "Could not start Codex MCP"))
+                        }
+                    }
+            }
+        }
     }
 
     fun setSyncPeer(host: String, pin: String) {
@@ -360,6 +385,18 @@ class SettingsViewModel @Inject constructor(
         }
         viewModelScope.launch {
             settings.setDefaultModel(ref)
+        }
+    }
+
+    fun selectModelForCurrentTab(modelId: String, available: Boolean) {
+        if (!available) return
+        val ref = if (modelId.startsWith("openrouter/")) modelId else "openrouter/$modelId"
+        viewModelScope.launch {
+            when (_uiState.value.modelTab) {
+                ModelListTab.Vision -> settings.setMangaVisionModel(ref)
+                ModelListTab.ImageGeneration -> settings.setMangaImageModel(ref)
+                ModelListTab.Writing, ModelListTab.TextToSpeech, ModelListTab.All -> settings.setDefaultModel(ref)
+            }
         }
     }
 

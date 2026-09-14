@@ -92,7 +92,13 @@ class RailTabDefaultsTest {
         assertEquals(RoleplayDestination.Presets, roleplayDestinationOf("Presets"))
         assertEquals(RoleplayDestination.Codex, roleplayDestinationOf("Codex"))
         assertEquals(ChattingDestination.Chats, chattingDestinationOf("nonsense"))
-        assertEquals(StoryboardDestination.Window, storyboardDestinationOf("Pages"))
+        // Storyboard's Window/Manga/Comic tabs were replaced by Library/Browse/Downloads/
+        // Extensions/Projects; a stale saved id now lands on its real modern replacement
+        // instead of the dead placeholder, and an unrecognized id falls back to Library.
+        assertEquals(StoryboardDestination.Library, storyboardDestinationOf("Window"))
+        assertEquals(StoryboardDestination.Projects, storyboardDestinationOf("Manga"))
+        assertEquals(StoryboardDestination.Projects, storyboardDestinationOf("Comic"))
+        assertEquals(StoryboardDestination.Library, storyboardDestinationOf("Pages"))
         assertEquals(NovelDestination.Bookshelf, novelDestinationOf("gone"))
         assertEquals(NovelDestination.Write, novelDestinationOf("Write"))
     }

@@ -66,11 +66,40 @@ class MangaDownloadRepository @Inject constructor(
     suspend fun browse(sourceId: String, mode: MangaBrowseMode): List<MangaSearchResult> =
         registry.get(sourceId)?.browse(mode).orEmpty()
 
+    /** One zero-based catalog page; empty means the source has nothing further to give. */
+    suspend fun browsePage(sourceId: String, mode: MangaBrowseMode, page: Int): List<MangaSearchResult> =
+        registry.get(sourceId)?.browsePage(mode, page).orEmpty()
+
+    suspend fun searchPage(sourceId: String, query: String, page: Int): List<MangaSearchResult> =
+        registry.get(sourceId)?.searchPage(query, page).orEmpty()
+
     suspend fun loadChapters(manga: MangaSearchResult): List<MangaChapter> =
         registry.get(manga.sourceId)?.chapters(manga).orEmpty()
 
     suspend fun loadDetails(manga: MangaSearchResult): MangaSearchResult =
         registry.get(manga.sourceId)?.details(manga) ?: manga
+
+    suspend fun loadPages(chapter: MangaChapter): List<MangaPage> =
+        registry.get(chapter.sourceId)?.pages(chapter).orEmpty()
+
+    suspend fun deleteDownloadedSeries(chapter: MangaChapterEntity) = withContext(Dispatchers.IO) {
+        val dao = db.mangaDao()
+        val chapters = dao.getChaptersByManga(chapter.mangaId).ifEmpty { listOf(chapter) }
+        chapters.forEach { item ->
+            WorkManager.getInstance(context).cancelUniqueWork("manga-download-${item.id}")
+            dao.getPages(item.id).forEach { page ->
+                page.localPath.takeIf(String::isNotBlank)?.let { relative ->
+                    val file = File(context.filesDir, relative)
+                    if (file.isFile && file.canonicalPath.startsWith(context.filesDir.canonicalPath)) file.delete()
+                }
+            }
+            dao.deletePagesForChapter(item.id)
+            dao.deleteChapter(item.id)
+        }
+        val savedSeriesId = seriesId(chapter.sourceId, chapter.mangaId)
+        dao.removeAllFavorites(savedSeriesId)
+        dao.deleteSeries(savedSeriesId)
+    }
 
     suspend fun ensureDefaultFavoriteCategory() {
         if (db.mangaDao().favoriteCategoryCount() == 0) {

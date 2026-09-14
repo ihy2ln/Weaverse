@@ -470,6 +470,15 @@ interface MangaDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertChapter(entity: MangaChapterEntity)
 
+    @Query("SELECT * FROM manga_chapters WHERE mangaId = :mangaId")
+    suspend fun getChaptersByManga(mangaId: String): List<MangaChapterEntity>
+
+    @Query("DELETE FROM manga_pages WHERE chapterId = :chapterId")
+    suspend fun deletePagesForChapter(chapterId: String)
+
+    @Query("DELETE FROM manga_chapters WHERE id = :chapterId")
+    suspend fun deleteChapter(chapterId: String)
+
     @Query("SELECT * FROM manga_pages WHERE chapterId = :chapterId ORDER BY pageIndex")
     fun observePages(chapterId: String): Flow<List<MangaPageEntity>>
 
@@ -511,6 +520,12 @@ interface MangaDao {
 
     @Query("DELETE FROM manga_favorites WHERE seriesId = :seriesId AND categoryId = :categoryId")
     suspend fun removeFavorite(seriesId: String, categoryId: String)
+
+    @Query("DELETE FROM manga_favorites WHERE seriesId = :seriesId")
+    suspend fun removeAllFavorites(seriesId: String)
+
+    @Query("DELETE FROM manga_series WHERE id = :seriesId")
+    suspend fun deleteSeries(seriesId: String)
 }
 
 /** Flattened manuscript row for the Reader — one JOIN instead of acts→chapters→scenes. */

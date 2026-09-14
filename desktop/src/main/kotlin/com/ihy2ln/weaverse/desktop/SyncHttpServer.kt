@@ -139,7 +139,7 @@ class SyncHttpServer(
                     ),
                 )
             }
-            // MCP endpoint for Claude Code, OpenCode, Codex CLI, and other
+            // MCP endpoint for Cursor, Claude Code, OpenCode, Codex CLI, and other
             // clients. It uses the same pairing password as the sync hub.
             post("/mcp") {
                 val bearer = call.request.headers["Authorization"]
@@ -180,7 +180,7 @@ class SyncHttpServer(
             }
             get("/mcp") {
                 call.respondText(
-                    "Weaverse MCP server. POST JSON-RPC 2.0 here; auth uses Authorization: Bearer <sync password>.",
+                    "Weaverse MCP server for Cursor, Claude Code, OpenCode, and Codex CLI. POST JSON-RPC 2.0 here; auth uses Authorization: Bearer <sync password>.",
                     ContentType.Text.Plain,
                 )
             }

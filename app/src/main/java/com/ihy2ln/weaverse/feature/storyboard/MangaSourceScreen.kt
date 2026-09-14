@@ -3,6 +3,8 @@ package com.ihy2ln.weaverse.feature.storyboard
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -26,6 +28,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
@@ -99,8 +102,18 @@ data class MangaSourceUiState(
     val readerChapter: MangaChapterEntity? = null,
     val readerPagePaths: List<String> = emptyList(),
     val readerPageIndex: Int = 0,
+    val readerOnline: Boolean = false,
     val busy: Boolean = false,
     val status: String = "",
+    /** Browse mode the visible results came from, or null when they came from a search. */
+    val catalogMode: MangaBrowseMode? = null,
+    /** Query the visible results came from, for paging a search further. */
+    val catalogQuery: String = "",
+    /** Zero-based index of the last catalog page already appended to [results]. */
+    val catalogPage: Int = 0,
+    /** False once a page comes back empty, so the list stops asking for more. */
+    val canLoadMore: Boolean = false,
+    val loadingMore: Boolean = false,
 )
 
 private data class MangaFavoriteState(
@@ -312,9 +325,25 @@ class MangaSourceViewModel @Inject constructor(
         val sourceId = local.value.activeSourceId
         val sourceName = registry.get(sourceId)?.descriptor?.name ?: sourceId
         viewModelScope.launch {
-            local.value = local.value.copy(busy = true, status = "Searching $sourceName…", results = emptyList(), selected = null)
+            local.value = local.value.copy(
+                busy = true,
+                status = "Searching $sourceName…",
+                results = emptyList(),
+                selected = null,
+                catalogMode = null,
+                catalogQuery = query,
+                catalogPage = 0,
+                canLoadMore = false,
+            )
             runCatching { repository.search(sourceId, query) }
-                .onSuccess { local.value = local.value.copy(results = it, busy = false, status = if (it.isEmpty()) "No results found." else "Select a title to load chapters.") }
+                .onSuccess {
+                    local.value = local.value.copy(
+                        results = it,
+                        busy = false,
+                        canLoadMore = it.isNotEmpty(),
+                        status = if (it.isEmpty()) "No results found." else "Select a title to load chapters.",
+                    )
+                }
                 .onFailure { local.value = local.value.copy(busy = false, status = it.message ?: "Search failed.") }
         }
     }
@@ -327,6 +356,10 @@ class MangaSourceViewModel @Inject constructor(
                 busy = true,
                 selected = null,
                 chapters = emptyList(),
+                catalogMode = mode,
+                catalogQuery = "",
+                catalogPage = 0,
+                canLoadMore = false,
                 status = if (mode == MangaBrowseMode.Popular) "Loading popular $sourceName titles…" else "Loading latest $sourceName titles…",
             )
             runCatching { repository.browse(sourceId, mode) }
@@ -334,10 +367,53 @@ class MangaSourceViewModel @Inject constructor(
                     local.value = local.value.copy(
                         results = it,
                         busy = false,
+                        canLoadMore = it.isNotEmpty(),
                         status = if (it.isEmpty()) "No titles were returned." else "Select a cover to view chapters.",
                     )
                 }
                 .onFailure { local.value = local.value.copy(busy = false, status = it.message ?: "Browse failed.") }
+        }
+    }
+
+    /**
+     * Appends the next catalog page as the grid nears its end. A source that cannot page
+     * returns nothing for page 1, which clears [MangaSourceUiState.canLoadMore] so the grid
+     * settles instead of re-asking on every scroll.
+     */
+    fun loadMoreResults() {
+        val snapshot = local.value
+        if (snapshot.busy || snapshot.loadingMore || !snapshot.canLoadMore) return
+        if (snapshot.results.isEmpty() || snapshot.selected != null) return
+        val sourceId = snapshot.activeSourceId
+        val nextPage = snapshot.catalogPage + 1
+        viewModelScope.launch {
+            local.value = local.value.copy(loadingMore = true)
+            runCatching {
+                if (snapshot.catalogMode != null) {
+                    repository.browsePage(sourceId, snapshot.catalogMode, nextPage)
+                } else {
+                    repository.searchPage(sourceId, snapshot.catalogQuery, nextPage)
+                }
+            }
+                .onSuccess { more ->
+                    // Sources can repeat rows across pages; key off the identity the grid uses.
+                    val seen = local.value.results.mapTo(hashSetOf()) { "${it.sourceId}:${it.remoteId}" }
+                    val fresh = more.filterNot { "${it.sourceId}:${it.remoteId}" in seen }
+                    local.value = local.value.copy(
+                        results = local.value.results + fresh,
+                        catalogPage = nextPage,
+                        loadingMore = false,
+                        canLoadMore = fresh.isNotEmpty(),
+                        status = if (fresh.isEmpty()) "That is the end of this catalog." else local.value.status,
+                    )
+                }
+                .onFailure {
+                    local.value = local.value.copy(
+                        loadingMore = false,
+                        canLoadMore = false,
+                        status = it.message ?: "Could not load more titles.",
+                    )
+                }
         }
     }
 
@@ -382,6 +458,53 @@ class MangaSourceViewModel @Inject constructor(
         }
     }
 
+    fun openOnlineReader(chapter: MangaChapter, pageIndex: Int = 0) = viewModelScope.launch {
+        local.value = local.value.copy(busy = true, status = "Loading pages for online reading…")
+        runCatching { repository.loadPages(chapter).sortedBy { it.pageIndex } }
+            .onSuccess { pages ->
+                val readerChapter = MangaChapterEntity(
+                    id = "online-${chapter.sourceId}-${chapter.remoteId}",
+                    sourceId = chapter.sourceId,
+                    remoteId = chapter.remoteId,
+                    mangaId = chapter.mangaId,
+                    mangaTitle = chapter.mangaTitle,
+                    title = chapter.title,
+                    volume = chapter.volume,
+                    chapterNumber = chapter.chapterNumber,
+                    language = chapter.language,
+                    canonicalUrl = chapter.canonicalUrl,
+                    readingOrder = chapter.readingOrder,
+                    pageCount = pages.size,
+                    status = "online",
+                )
+                local.value = local.value.copy(
+                    busy = false,
+                    readerChapter = readerChapter.takeIf { pages.isNotEmpty() },
+                    readerPagePaths = pages.map { it.remoteUrl },
+                    readerPageIndex = pageIndex.coerceIn(0, (pages.size - 1).coerceAtLeast(0)),
+                    readerOnline = pages.isNotEmpty(),
+                    status = if (pages.isEmpty()) "This source returned no readable page images." else "",
+                )
+            }
+            .onFailure { local.value = local.value.copy(busy = false, status = it.message ?: "Could not stream this chapter.") }
+    }
+
+    fun deleteDownloadedSeries(chapter: MangaChapterEntity) = viewModelScope.launch {
+        runCatching { repository.deleteDownloadedSeries(chapter) }
+            .onSuccess { local.value = local.value.copy(status = "Deleted ${chapter.mangaTitle} and its local chapter files.") }
+            .onFailure { local.value = local.value.copy(status = it.message ?: "Could not delete this title.") }
+    }
+
+    fun favoriteDownloadedSeries(chapter: MangaChapterEntity) {
+        val manga = MangaSearchResult(
+            sourceId = chapter.sourceId,
+            remoteId = chapter.mangaId,
+            title = chapter.mangaTitle,
+            canonicalUrl = chapter.canonicalUrl,
+        )
+        toggleFavorite(manga, uiState.value.favoriteCategories.firstOrNull()?.id ?: "favorites")
+    }
+
     fun stop(chapter: MangaChapterEntity) = viewModelScope.launch {
         repository.stop(chapter)
         local.value = local.value.copy(status = "Download stopped; the original partial files were kept for retry.")
@@ -409,6 +532,7 @@ class MangaSourceViewModel @Inject constructor(
                     readerChapter = chapter.takeIf { pages.isNotEmpty() },
                     readerPagePaths = pages,
                     readerPageIndex = pageIndex.coerceIn(0, (pages.size - 1).coerceAtLeast(0)),
+                    readerOnline = false,
                     status = if (pages.isEmpty()) {
                         "The download record is complete, but no page files were found. Retry the chapter download."
                     } else {
@@ -420,7 +544,7 @@ class MangaSourceViewModel @Inject constructor(
     }
 
     fun closeReader() {
-        local.value = local.value.copy(readerChapter = null, readerPagePaths = emptyList(), readerPageIndex = 0)
+        local.value = local.value.copy(readerChapter = null, readerPagePaths = emptyList(), readerPageIndex = 0, readerOnline = false)
     }
 
     private fun readCustomWebsites(): List<MangaWebsite> = websitePreferences
@@ -462,6 +586,8 @@ fun MangaSourceDialog(
             chapter = chapter,
             pagePaths = state.readerPagePaths,
             onDismiss = viewModel::closeReader,
+            initialPageIndex = state.readerPageIndex,
+            online = state.readerOnline,
         )
         return
     }
@@ -516,11 +642,22 @@ fun MangaSourceDialog(
                 if (state.busy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 if (state.status.isNotBlank()) Text(state.status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 if (state.selected == null) {
-                    Text("MangaDex", style = MaterialTheme.typography.titleSmall)
+                    Text("Catalog", style = MaterialTheme.typography.titleSmall)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        state.sources.forEach { source ->
+                            FilterChip(
+                                selected = state.activeSourceId == source.id,
+                                onClick = { viewModel.selectSource(source.id) },
+                                label = { Text(source.name) },
+                            )
+                        }
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                         TextButton(onClick = { viewModel.browse(MangaBrowseMode.Popular) }) { Text("Popular") }
                         TextButton(onClick = { viewModel.browse(MangaBrowseMode.Latest) }) { Text("Latest") }
-                        TextButton(onClick = { viewModel.setStatus("Use Search title to filter MangaDex by name.") }) { Text("Filter") }
                     }
                 }
                 if (state.selected == null && state.results.isNotEmpty()) {
@@ -559,7 +696,10 @@ fun MangaSourceDialog(
                                     }
                                     "downloading", "queued" -> TextButton(onClick = { viewModel.stop(existing) }) { Text("Stop") }
                                     "failed", "stopped" -> TextButton(onClick = { viewModel.retry(existing) }) { Text("Retry") }
-                                    else -> TextButton(onClick = { viewModel.enqueue(chapter) }) { Text("Download") }
+                                    else -> Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        TextButton(onClick = { viewModel.openOnlineReader(chapter) }, enabled = !state.busy) { Text("Read") }
+                                        TextButton(onClick = { viewModel.enqueue(chapter) }) { Text("Download") }
+                                    }
                                 }
                             }
                         }
@@ -648,6 +788,7 @@ fun MangaChapterReader(
     onDismiss: () -> Unit,
     initialPageIndex: Int = 0,
     onAction: (MangaReaderAction, chapterId: String, pageIndex: Int) -> Unit = { _, _, _ -> },
+    online: Boolean = false,
 ) {
     val listState = rememberLazyListState()
     val currentPage = listState.firstVisibleItemIndex.coerceIn(0, (pagePaths.size - 1).coerceAtLeast(0))
@@ -670,7 +811,7 @@ fun MangaChapterReader(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(chapter.mangaTitle, style = MaterialTheme.typography.titleMedium, maxLines = 1)
                         Text(
-                            "${chapterLabel(chapter)} · ${pagePaths.size} pages · offline",
+                            "${chapterLabel(chapter)} · ${pagePaths.size} pages · ${if (online) "online" else "offline"}",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -691,7 +832,8 @@ fun MangaChapterReader(
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             )
                             AsyncImage(
-                                model = File(pagePaths[index]),
+                                model = pagePaths[index].takeIf { it.startsWith("http://") || it.startsWith("https://") }
+                                    ?: File(pagePaths[index]),
                                 contentDescription = "${chapter.mangaTitle} page ${index + 1}",
                                 contentScale = ContentScale.FillWidth,
                                 modifier = Modifier.fillMaxWidth(),
@@ -707,7 +849,13 @@ fun MangaChapterReader(
                             style = MaterialTheme.typography.labelSmall,
                             modifier = Modifier.padding(horizontal = 4.dp),
                         )
-                        Row(
+                        if (online) {
+                            Text(
+                                "Download this chapter to unlock Edit, Translate, and Color.",
+                                style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+                            )
+                        } else Row(
                             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(2.dp),
                         ) {
@@ -751,6 +899,7 @@ fun MangaLibraryCoverGrid(
     onSelectChapter: ((String) -> Unit)?,
     compact: Boolean,
     onEditChapter: ((String) -> Unit)? = null,
+    onLongPressChapter: ((MangaChapterEntity) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     if (downloads.isEmpty()) return
@@ -764,8 +913,11 @@ fun MangaLibraryCoverGrid(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(enabled = onSelectChapter != null && chapter.status == "completed") {
-                        onSelectChapter?.invoke(chapter.id)
+                    .pointerInput(chapter.id, onSelectChapter, onLongPressChapter) {
+                        detectTapGestures(
+                            onTap = { if (chapter.status == "completed") onSelectChapter?.invoke(chapter.id) },
+                            onLongPress = { onLongPressChapter?.invoke(chapter) },
+                        )
                     },
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -822,7 +974,7 @@ private fun CoverImage(model: Any?, contentDescription: String, modifier: Modifi
     }
 }
 
-private fun chapterLabel(chapter: MangaChapter): String = buildString {
+internal fun chapterLabel(chapter: MangaChapter): String = buildString {
     if (chapter.volume.isNotBlank()) append("Vol. ${chapter.volume} ")
     if (chapter.chapterNumber.isNotBlank()) append("Ch. ${chapter.chapterNumber} ")
     append(chapter.title)

@@ -27,8 +27,11 @@ fun main(args: Array<String>) {
         |Open the web version (sync hub):
         |  $scheme://127.0.0.1:${config.port}/
         |  $scheme://$lan:${config.port}/
-        |MCP endpoint for Claude Code / OpenCode / Codex CLI:
+        |MCP endpoint for Cursor / Claude Code / OpenCode / Codex CLI:
         |  $scheme://127.0.0.1:${config.port}/mcp
+        |Cursor IDE & CLI share ~/.cursor/mcp.json:
+        |  {"mcpServers":{"weaverse":{"url":"$scheme://127.0.0.1:${config.port}/mcp","type":"http","headers":{"Authorization":"Bearer <sync-password>"}}}}
+        |  then: agent mcp enable weaverse
         |
         |The single sync password is shown on that web page.
         |Import a Novelcrafter ZIP (novel.md or novel.docx) via Import on the hub, or drop it in:

@@ -1,6 +1,7 @@
 package com.ihy2ln.weaverse.feature.roleplay.chat
 
 import android.graphics.BitmapFactory
+import com.ihy2ln.weaverse.ai.ModelInfo
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -73,6 +74,22 @@ fun ImportedMangaEditorScreen(
     val state by viewModel.uiState.collectAsState()
     var initialActionApplied by rememberSaveable(chatId) { mutableStateOf(false) }
     var showOriginal by rememberSaveable(chatId) { mutableStateOf(false) }
+    var visionMenuOpen by rememberSaveable(chatId) { mutableStateOf(false) }
+    var translationMenuOpen by rememberSaveable(chatId) { mutableStateOf(false) }
+    var imageMenuOpen by rememberSaveable(chatId) { mutableStateOf(false) }
+    // The model pickers are set-once-and-forget, so they stay folded away and leave the
+    // page itself the room on screen. Arriving here to translate opens them, because that
+    // flow asks you to choose a model before it will spend tokens.
+    var aiModelsExpanded by rememberSaveable(chatId) {
+        mutableStateOf(initialEditorAction == "TranslatePage" || initialEditorAction == "TranslateChapter")
+    }
+    var statusExpanded by rememberSaveable(chatId) { mutableStateOf(false) }
+
+    LaunchedEffect(chatId) {
+        if (state.editorVisionModels.isEmpty() || state.editorTextModels.isEmpty() || state.editorImageModels.isEmpty()) {
+            viewModel.refreshEditorModels()
+        }
+    }
 
     LaunchedEffect(chatId, initialPageId, state.pages) {
         initialPageId?.takeIf { id -> state.pages.any { it.id == id } }?.let(viewModel::switchPage)
@@ -88,8 +105,8 @@ fun ImportedMangaEditorScreen(
         if (initialActionApplied || initialEditorAction == null || state.mediaPanels.isEmpty()) return@LaunchedEffect
         if (initialPageId != null && state.activePageId != initialPageId) return@LaunchedEffect
         when (initialEditorAction) {
-            "TranslatePage" -> viewModel.translateActiveMangaPageToEnglish()
-            "TranslateChapter" -> initialMangaChapterId?.let(viewModel::translateDownloadedChapter)
+            // Translation opens here first so the user can choose both models before spending tokens.
+            "TranslatePage", "TranslateChapter" -> Unit
             "ColorPage" -> viewModel.colorizeActiveMangaPage()
             "ColorChapter" -> initialMangaChapterId?.let(viewModel::colorizeDownloadedChapter)
         }
@@ -116,11 +133,19 @@ fun ImportedMangaEditorScreen(
     state.imageEditor?.let { editor ->
         PanelImageEditor(
             editor = editor,
+            visionModels = state.editorVisionModels,
+            textModels = state.editorTextModels,
+            visionModelRef = state.editorVisionModelRef,
+            textModelRef = state.editorTextModelRef,
+            onVisionModelSelected = viewModel::selectEditorVisionModel,
+            onTextModelSelected = viewModel::selectEditorTextModel,
             onSave = viewModel::saveEditedPanel,
             onClose = viewModel::closeImageEditor,
-            onFindText = viewModel::editorFindText,
+            onRunPipeline = viewModel::editorRunPipeline,
             onSetLanguage = viewModel::editorSetLanguage,
-            onApplyRegions = viewModel::applyTranslatedRegions,
+            onUpdateRegions = viewModel::editorUpdateRegions,
+            onSelectRegion = viewModel::editorSelectRegion,
+            onConsumeCleanup = viewModel::editorConsumeCleanup,
         )
         return
     }
@@ -146,39 +171,152 @@ fun ImportedMangaEditorScreen(
     val tokens = inkTokens()
 
     Column(modifier = Modifier.fillMaxSize().background(tokens.background)) {
+        // One line of chrome: back, which chapter, and the Original/Edited toggle. The
+        // screen's own name and the "originals stay intact" note moved into the models
+        // panel, so the page itself gets the height they were spending.
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = InkSpacing.md, vertical = InkSpacing.sm),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xxs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             InkTextButton(label = "‹ Library", onClick = onBack, compact = true)
-            Column(modifier = Modifier.weight(1f).padding(horizontal = InkSpacing.sm)) {
-                Text("Manga page editor", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(
-                    state.title.ifBlank { "Imported chapter" },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = tokens.secondaryText,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            FilterChip(
-                selected = showOriginal,
+            Text(
+                state.title.ifBlank { "Imported chapter" },
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).padding(horizontal = InkSpacing.xs),
+            )
+            InkTextButton(
+                label = if (showOriginal) "Original" else "Edited",
                 onClick = { showOriginal = !showOriginal },
-                label = { Text(if (showOriginal) "Original" else "Edited") },
+                compact = true,
             )
         }
-        Text(
-            "Full source pages stay intact. Translation, color and brush edits are saved as separate versions.",
-            style = MaterialTheme.typography.labelSmall,
-            color = tokens.secondaryText,
-            modifier = Modifier.padding(horizontal = InkSpacing.md, vertical = 2.dp),
-        )
+        Surface(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
+            color = tokens.panel,
+            shape = RoundedCornerShape(8.dp),
+            tonalElevation = 2.dp,
+        ) {
+            Column(modifier = Modifier.fillMaxWidth().padding(InkSpacing.sm)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { aiModelsExpanded = !aiModelsExpanded },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "AI models for this editor",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        if (!aiModelsExpanded) {
+                            Text(
+                                listOf(
+                                    editorModelLabel(state.editorVisionModels, state.editorVisionModelRef),
+                                    editorModelLabel(state.editorTextModels, state.editorTextModelRef),
+                                    editorModelLabel(state.editorImageModels, state.editorImageModelRef),
+                                ).joinToString(" · "),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = tokens.secondaryText,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    Text(
+                        if (aiModelsExpanded) "Hide ▾" else "Change ▸",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = InkSpacing.xs),
+                    )
+                }
+                if (aiModelsExpanded) {
+                Text(
+                    "Vision reads and locates the source lettering. Translation rewrites and proofreads it before English is placed back on the page. " +
+                        "Full source pages stay intact — translation, color and brush edits are saved as separate versions.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.secondaryText,
+                )
+                if (initialEditorAction == "TranslatePage" || initialEditorAction == "TranslateChapter") {
+                    Text(
+                        "Choose both models below, then tap Translate English or Translate chapter.",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = InkSpacing.xs),
+                    )
+                }
+                ModelChoice(
+                    label = "Vision / OCR",
+                    models = state.editorVisionModels,
+                    selectedRef = state.editorVisionModelRef,
+                    expanded = visionMenuOpen,
+                    onExpandedChange = { visionMenuOpen = it },
+                    onSelected = viewModel::selectEditorVisionModel,
+                )
+                ModelChoice(
+                    label = "Translation / proofread",
+                    models = state.editorTextModels,
+                    selectedRef = state.editorTextModelRef,
+                    expanded = translationMenuOpen,
+                    onExpandedChange = { translationMenuOpen = it },
+                    onSelected = viewModel::selectEditorTextModel,
+                )
+                ModelChoice(
+                    label = "Color / image edit",
+                    models = state.editorImageModels,
+                    selectedRef = state.editorImageModelRef,
+                    expanded = imageMenuOpen,
+                    onExpandedChange = { imageMenuOpen = it },
+                    onSelected = viewModel::selectEditorImageModel,
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    InkTextButton(
+                        label = if (state.editorModelsRefreshing) "Refreshing…" else "Refresh model list",
+                        onClick = viewModel::refreshEditorModels,
+                        enabled = !state.editorModelsRefreshing,
+                        compact = true,
+                    )
+                    if (state.editorModelsStatus.isNotBlank()) {
+                        Text(
+                            state.editorModelsStatus,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = tokens.secondaryText,
+                            modifier = Modifier.padding(start = InkSpacing.xs),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                if (!state.editorModelsRefreshing &&
+                    (state.editorVisionModels.isEmpty() ||
+                        state.editorTextModels.isEmpty() ||
+                        state.editorImageModels.isEmpty())
+                ) {
+                    Text(
+                        "No selectable models are cached. Save an OpenRouter key, then tap Refresh model list.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                }
+            }
+        }
         if (state.storyboardStatus.isNotBlank()) {
+            // Results can run several sentences; keep one line unless it is tapped, so a
+            // finished translation does not push the page it just produced off screen.
             Text(
                 state.storyboardStatus,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(horizontal = InkSpacing.md, vertical = 4.dp),
+                maxLines = if (statusExpanded) Int.MAX_VALUE else 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { statusExpanded = !statusExpanded }
+                    .padding(horizontal = InkSpacing.md, vertical = 2.dp),
             )
         }
         if (state.mangaEditBusy) {
@@ -242,36 +380,37 @@ fun ImportedMangaEditorScreen(
         Column(
             modifier = Modifier.fillMaxWidth().background(tokens.panel).padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
         ) {
-            Text(
-                "Page ${pageIndex + 1} of ${pages.size.coerceAtLeast(1)} · ${state.mediaPanels.size} editable picture(s)",
-                style = MaterialTheme.typography.labelSmall,
-                color = tokens.secondaryText,
-            )
+            // Counter folded into the action row so the bar costs one line, not two.
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                Text(
+                    "${pageIndex + 1}/${pages.size.coerceAtLeast(1)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.secondaryText,
+                )
                 InkTextButton(
-                    label = "Previous",
+                    label = "‹ Prev",
                     onClick = { pages.getOrNull(pageIndex - 1)?.let { viewModel.switchPage(it.id) } },
                     enabled = pageIndex > 0,
                     compact = true,
                 )
                 InkTextButton(
-                    label = "Next",
+                    label = "Next ›",
                     onClick = { pages.getOrNull(pageIndex + 1)?.let { viewModel.switchPage(it.id) } },
                     enabled = pageIndex < pages.lastIndex,
                     compact = true,
                 )
                 InkTextButton(
-                    label = "Translate English",
+                    label = "Translate",
                     onClick = viewModel::translateActiveMangaPageToEnglish,
                     enabled = !state.mangaEditBusy,
                     compact = true,
                 )
                 InkTextButton(
-                    label = "Colorize B&W",
+                    label = "Colorize",
                     onClick = viewModel::colorizeActiveMangaPage,
                     enabled = !state.mangaEditBusy,
                     compact = true,
@@ -294,7 +433,7 @@ fun ImportedMangaEditorScreen(
                 horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
             ) {
                 InkTextButton(
-                    label = "Brush / erase",
+                    label = "Page editor",
                     onClick = { selected?.let { viewModel.openImageEditor(it.messageId, it.blockId) } },
                     enabled = selected != null && !showOriginal,
                     compact = true,
@@ -371,6 +510,13 @@ private fun ImportedMangaPagePanel(
             }
         }
     }
+}
+
+/** Short name for one picked model, for the folded-up summary line. */
+private fun editorModelLabel(models: List<ModelInfo>, ref: String): String {
+    val id = ref.removePrefix("openrouter/")
+    if (id.isBlank()) return "Auto"
+    return models.firstOrNull { it.id == id }?.displayName ?: id.substringAfterLast('/')
 }
 
 private fun imageAspectRatio(path: String): Float {

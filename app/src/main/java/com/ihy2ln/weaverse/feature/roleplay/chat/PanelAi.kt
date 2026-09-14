@@ -10,6 +10,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlin.math.min
 
@@ -42,12 +43,16 @@ data class AiPanelDetection(
  */
 object PanelAi {
 
-    /** Downscale + encode for the vision request (long edge ≤ 1100 px). */
-    fun imageAttachmentFor(path: String): ImageAttachment? {
+    /**
+     * Downscale + encode for a vision/edit request. [maxDim] defaults to 1100 px, enough
+     * for reading lettering; a full-page edit (colorization) asks for more (see
+     * [RoleplayChatViewModel]'s colorize step) so fine line art survives the round trip.
+     */
+    fun imageAttachmentFor(path: String, maxDim: Int = 1100): ImageAttachment? {
         val file = File(path)
         if (!file.exists() || file.length() == 0L) return null
-        val bitmap: Bitmap = ImageOps.loadBitmap(path, maxDim = 1100) ?: return null
-        val bytes = ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.JPEG, 86, it) }.toByteArray()
+        val bitmap: Bitmap = ImageOps.loadBitmap(path, maxDim = maxDim) ?: return null
+        val bytes = ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.JPEG, 92, it) }.toByteArray()
         return ImageAttachment(mimeType = "image/jpeg", base64Data = Base64.encodeToString(bytes, Base64.NO_WRAP))
     }
 
@@ -173,20 +178,157 @@ object PanelAi {
         val decoded = runCatching {
             regionJson.decodeFromString(ListSerializer(RegionDto.serializer()), array)
         }.getOrNull() ?: return null
-        return decoded.mapNotNull { dto ->
+        return decoded.mapIndexedNotNull { index, dto ->
             val original = (dto.original.ifBlank { dto.text }).trim()
             val translation = dto.translation.trim()
-            if (original.isBlank() && translation.isBlank()) return@mapNotNull null
+            if (original.isBlank() && translation.isBlank()) return@mapIndexedNotNull null
+            val x = (dto.x / 1000f).coerceIn(0f, 1f)
+            val y = (dto.y / 1000f).coerceIn(0f, 1f)
+            val right = (x + (dto.w / 1000f).coerceAtLeast(0.01f)).coerceIn(0.01f, 1f)
+            val bottom = (y + (dto.h / 1000f).coerceAtLeast(0.01f)).coerceIn(0.01f, 1f)
             PanelTextRegion(
-                x = (dto.x / 1000f).coerceIn(0f, 1f),
-                y = (dto.y / 1000f).coerceIn(0f, 1f),
-                w = (dto.w / 1000f).coerceIn(0.01f, 1f),
-                h = (dto.h / 1000f).coerceIn(0.01f, 1f),
+                id = "t$index",
+                x = x.coerceAtMost(right - 0.01f),
+                y = y.coerceAtMost(bottom - 0.01f),
+                w = (right - x).coerceAtLeast(0.01f),
+                h = (bottom - y).coerceAtLeast(0.01f),
                 original = original,
                 translation = translation,
             )
         }.takeIf { it.isNotEmpty() }
     }
+
+    /** Boxes only — used when Detection is selected without OCR or translation. */
+    internal fun parseDetectedRegions(raw: String): List<PanelTextRegion>? {
+        val array = extractJsonArray(raw) ?: return null
+        val decoded = runCatching {
+            regionJson.decodeFromString(ListSerializer(RegionDto.serializer()), array)
+        }.getOrNull() ?: return null
+        return decoded.mapIndexedNotNull { index, dto ->
+            val w = (dto.w / 1000f).coerceIn(0.01f, 1f)
+            val h = (dto.h / 1000f).coerceIn(0.01f, 1f)
+            if (dto.w <= 0 || dto.h <= 0) return@mapIndexedNotNull null
+            PanelTextRegion(
+                id = "t$index",
+                x = (dto.x / 1000f).coerceIn(0f, 1f),
+                y = (dto.y / 1000f).coerceIn(0f, 1f),
+                w = w,
+                h = h,
+                original = (dto.original.ifBlank { dto.text }).trim(),
+                translation = dto.translation.trim(),
+            )
+        }.takeIf { it.isNotEmpty() }
+    }
+
+    suspend fun detectText(
+        ai: AiGenerationService,
+        modelRef: String,
+        path: String,
+    ): List<PanelTextRegion>? {
+        val raw = ask(
+            ai = ai,
+            modelRef = modelRef,
+            path = path,
+            instruction = "Find every region of this comic page that contains written language " +
+                "(speech bubbles, captions, sound effects). Return ONLY a JSON array of boxes on a " +
+                "0-1000 scale: [{\"x\":0,\"y\":0,\"w\":100,\"h\":40}]. Do not merge separate bubbles.",
+        ) ?: return null
+        return parseDetectedRegions(raw)
+    }
+
+    suspend fun translateTexts(
+        ai: AiGenerationService,
+        modelRef: String,
+        originals: List<String>,
+        targetLanguage: String,
+    ): List<String>? {
+        if (originals.isEmpty()) return emptyList()
+        val numbered = originals.mapIndexed { index, text -> "${index + 1}. $text" }.joinToString("\n")
+        val result = ai.complete(
+            userMessage = "Translate each numbered line into $targetLanguage. " +
+                "Return ONLY a JSON array of strings in the same order, no numbers, no commentary. " +
+                "When the target is English, use English letters only: never copy Japanese, Chinese, Korean, " +
+                "Arabic, Cyrillic, or any other source-script characters into the answer. Preserve names and " +
+                "sound effects as readable English transliteration when needed.\n\n$numbered",
+            assembled = AssembledPrompt(
+                systemBlocks = listOf(
+                    "You are a manga translator. Answer with a raw JSON array of strings only.",
+                ),
+                messages = emptyList(),
+                usedEntries = emptyList(),
+                tokenBreakdown = emptyList(),
+            ),
+            modelRef = modelRef,
+            maxTokens = 2048,
+            temperature = 0.2,
+        )
+        val array = extractJsonArray(result.text.trim()) ?: return null
+        val decoded = runCatching {
+            regionJson.decodeFromString(ListSerializer(String.serializer()), array)
+        }.getOrNull() ?: return null
+        return decoded.takeIf { it.size == originals.size }
+            ?.map { text -> if (targetLanguage.equals("English", ignoreCase = true)) normalizeEnglishText(text) else text.trim() }
+    }
+
+    suspend fun proofreadTexts(
+        ai: AiGenerationService,
+        modelRef: String,
+        translations: List<String>,
+        language: String,
+    ): List<String>? {
+        if (translations.isEmpty()) return emptyList()
+        val numbered = translations.mapIndexed { index, text -> "${index + 1}. $text" }.joinToString("\n")
+        val result = ai.complete(
+            userMessage = "Proofread these manga lines in $language. Preserve meaning, names, tone, and sound effects; " +
+                "make dialogue natural and concise enough to fit its original bubble. Return ONLY a JSON array of " +
+                "strings in the same order. When the language is English, output English letters only and never " +
+                "restore source-script characters.\n\n$numbered",
+            assembled = AssembledPrompt(
+                systemBlocks = listOf(
+                    "You are a professional manga translation editor and letterer. Return a raw JSON array only.",
+                ),
+                messages = emptyList(),
+                usedEntries = emptyList(),
+                tokenBreakdown = emptyList(),
+            ),
+            modelRef = modelRef,
+            maxTokens = 2048,
+            temperature = 0.15,
+        )
+        val array = extractJsonArray(result.text.trim()) ?: return null
+        return runCatching {
+            regionJson.decodeFromString(ListSerializer(String.serializer()), array)
+        }.getOrNull()?.takeIf { it.size == translations.size }
+            ?.map { text -> if (language.equals("English", ignoreCase = true)) normalizeEnglishText(text) else text.trim() }
+    }
+
+    /** Removes model wrappers that otherwise become visible as part of the lettering. */
+    internal fun normalizeEnglishText(text: String): String = text
+        .trim()
+        .replace(Regex("^\\s*(?:translation|english|answer)\\s*[:：-]\\s*", RegexOption.IGNORE_CASE), "")
+        .replace(Regex("^\\s*\\d+[.)]\\s*"), "")
+        .trim()
+        .trim('`', '"', '\'')
+        .replace(Regex("\\s+"), " ")
+        .trim()
+
+    /** Foreign scripts are not safe to paint when the requested output is English. */
+    internal fun containsForeignScript(text: String): Boolean = Regex(
+        "[\\u3040-\\u30ff\\u3400-\\u4dbf\\u4e00-\\u9fff\\uac00-\\ud7af" +
+            "\\u0400-\\u04ff\\u0600-\\u06ff\\u0590-\\u05ff\\u0900-\\u097f\\u0e00-\\u0e7f]",
+    ).containsMatchIn(text)
+
+    /** Returns source-region indexes that must not be erased or lettered yet. */
+    internal fun invalidEnglishRegionIndexes(regions: List<PanelTextRegion>): List<Int> =
+        regions.mapIndexedNotNull { index, region ->
+            val translated = normalizeEnglishText(region.translation)
+            val copiedSource = region.original.isNotBlank() && translated.isNotBlank() &&
+                translated.equals(normalizeEnglishText(region.original), ignoreCase = true)
+            if (!region.visible) return@mapIndexedNotNull null
+            if (containsForeignScript(translated) || copiedSource ||
+                (region.original.isNotBlank() && translated.isBlank())
+            ) index else null
+        }
 
     /** Smallest edge used for square-ish brush math in the editor. */
     fun minEdge(bitmap: Bitmap): Int = min(bitmap.width, bitmap.height)

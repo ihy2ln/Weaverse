@@ -11,7 +11,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import java.io.File
 
-/** Read-only MCP surface for the Windows/web hub. */
+/** Read-only MCP surface for the Windows/web hub (Cursor, Claude Code, OpenCode, Codex CLI). */
 class DesktopMcpTools(
     private val dataDir: File,
     private val version: String,

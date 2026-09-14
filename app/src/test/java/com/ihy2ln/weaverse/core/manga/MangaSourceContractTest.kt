@@ -2,6 +2,7 @@ package com.ihy2ln.weaverse.core.manga
 
 import com.ihy2ln.weaverse.data.db.entities.MangaChapterEntity
 import com.ihy2ln.weaverse.data.db.entities.MangaPageEntity
+import okhttp3.OkHttpClient
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -19,6 +20,17 @@ class MangaSourceContractTest {
         assertEquals("mangadex", descriptor.id)
         assertTrue(descriptor.authorized)
         assertTrue(descriptor.supportsDownloads)
+    }
+
+    @Test
+    fun publicHtmlCatalogIdsStayStableForExtensionsAndMcp() {
+        val sources = PublicHtmlMangaSources(OkHttpClient(), MangaWebLinkImporter(OkHttpClient())).sources
+        assertEquals(
+            listOf("comix", "atsumaru", "mangafire", "mangadot", "rawkuma"),
+            sources.map { it.descriptor.id },
+        )
+        assertTrue(sources.none { it.descriptor.authorized })
+        assertTrue(sources.all { it.descriptor.supportsDownloads })
     }
 
     @Test

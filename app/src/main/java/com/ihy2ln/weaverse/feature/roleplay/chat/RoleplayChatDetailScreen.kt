@@ -348,11 +348,19 @@ fun RoleplayChatDetailScreen(
     state.imageEditor?.let { editor ->
         PanelImageEditor(
             editor = editor,
+            visionModels = state.editorVisionModels,
+            textModels = state.editorTextModels,
+            visionModelRef = state.editorVisionModelRef,
+            textModelRef = state.editorTextModelRef,
+            onVisionModelSelected = viewModel::selectEditorVisionModel,
+            onTextModelSelected = viewModel::selectEditorTextModel,
             onSave = viewModel::saveEditedPanel,
             onClose = viewModel::closeImageEditor,
-            onFindText = viewModel::editorFindText,
+            onRunPipeline = viewModel::editorRunPipeline,
             onSetLanguage = viewModel::editorSetLanguage,
-            onApplyRegions = viewModel::applyTranslatedRegions,
+            onUpdateRegions = viewModel::editorUpdateRegions,
+            onSelectRegion = viewModel::editorSelectRegion,
+            onConsumeCleanup = viewModel::editorConsumeCleanup,
         )
         return
     }

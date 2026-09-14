@@ -330,6 +330,14 @@ object HelpContent {
                     "Add text drops a box you can drag and resize, as a plain caption or " +
                         "a manga speech bubble with a tail. It is not a panel.",
                 ),
+                HelpEntry(
+                    "Page editor",
+                    "Page editor is a phone workspace: Move, Text, Paint, Erase, Color, Clean, " +
+                        "and Hand along the bottom. Tap Find text, Read, Translate, and Clean art, " +
+                        "then Go. Source OCR and translation stay separate; the page shows " +
+                        "translation only. Clean rebuilds art under old lettering. Save copy writes " +
+                        "a new file and never overwrites the original — use Original / Edited to compare.",
+                ),
             ),
         ),
         HelpSection(

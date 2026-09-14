@@ -1,9 +1,15 @@
 package com.ihy2ln.weaverse.feature.roleplay.chat
 
+import android.graphics.RectF
 import com.ihy2ln.weaverse.ai.context.ContextMeterReading
 import com.ihy2ln.weaverse.ai.ModelInfo
+import com.ihy2ln.weaverse.core.media.TypesetAlign
+import com.ihy2ln.weaverse.core.media.TypesetLayer
+import com.ihy2ln.weaverse.core.media.TypesetWriting
+import com.ihy2ln.weaverse.core.media.hexToColorInt
 import com.ihy2ln.weaverse.core.text.CodexMentionTarget
 import com.ihy2ln.weaverse.core.text.TextOverlay
+import com.ihy2ln.weaverse.core.text.TextOverlayStyle
 import com.ihy2ln.weaverse.core.ui.components.NewWorkDetails
 import com.ihy2ln.weaverse.core.ui.components.WorkCharacterOption
 import com.ihy2ln.weaverse.data.db.entities.RpPageMeta
@@ -85,7 +91,11 @@ data class CaptureDialogState(
     val extraction: AdventureCapture.Extraction,
 )
 
-/** One text region the AI found in a picture, with its translation. */
+enum class MangaEditorTool { Select, Text, Brush, Eraser, ColorPicker, Remove, Pan }
+
+enum class MangaProcessStage { Detection, Ocr, Translation, Proofreading, Cleanup }
+
+/** One editable text layer on a manga page. Source OCR and translation stay separate. */
 data class PanelTextRegion(
     /** Normalized 0..1 box. */
     val x: Float,
@@ -94,6 +104,47 @@ data class PanelTextRegion(
     val h: Float,
     val original: String,
     val translation: String,
+    val id: String = "",
+    val visible: Boolean = true,
+    val autoFit: Boolean = true,
+    val fontSizePx: Float = 0f,
+    val fillHex: String = "#111111",
+    val strokeHex: String = "#FFFFFF",
+    val strokeWidth: Float = 0f,
+    val alignment: String = "Center",
+    val writingMode: String = "Horizontal",
+    val edited: Boolean = false,
+)
+
+fun PanelTextRegion.toEditableOverlay(index: Int = 0): TextOverlay = TextOverlay(
+    id = id.ifBlank { "manga-translation-$index" },
+    text = translation.trim(),
+    style = TextOverlayStyle.Plain,
+    xPercent = ((x + w / 2f) * 100f).coerceIn(0f, 100f),
+    yPercent = ((y + h / 2f) * 100f).coerceIn(0f, 100f),
+    widthPercent = (w * 100f).coerceIn(8f, 100f),
+    fontSizeSp = (if (fontSizePx > 0f) fontSizePx * 0.55f else h * 145f).coerceIn(9f, 34f),
+    colorHex = fillHex,
+    backgroundHex = null,
+    backgroundAlpha = 0f,
+    source = "manga-translation",
+)
+
+fun PanelTextRegion.toTypesetLayer(): TypesetLayer = TypesetLayer(
+    normalized = RectF(x, y, x + w, y + h),
+    text = translation,
+    fillColor = hexToColorInt(fillHex, android.graphics.Color.BLACK),
+    strokeColor = hexToColorInt(strokeHex, android.graphics.Color.WHITE),
+    strokeWidthPx = strokeWidth,
+    autoFit = autoFit,
+    fontSizePx = fontSizePx,
+    alignment = when (alignment) {
+        "Start" -> TypesetAlign.Start
+        "End" -> TypesetAlign.End
+        else -> TypesetAlign.Center
+    },
+    writing = if (writingMode == "Vertical") TypesetWriting.Vertical else TypesetWriting.Horizontal,
+    visible = visible,
 )
 
 /**
@@ -111,6 +162,8 @@ data class PanelEditorUi(
     /** AI-detected text regions (original + translation). */
     val regions: List<PanelTextRegion> = emptyList(),
     val targetLanguage: String = "English",
+    val selectedRegionId: String? = null,
+    val pendingCleanup: Boolean = false,
     /** Pending cropped panels waiting to be placed (separate-panels flow). */
     val pendingPanelCount: Int = 0,
 )
@@ -142,6 +195,15 @@ data class RoleplayChatUiState(
     val selectedModelRef: String = "",
     val defaultModelRef: String = "",
     val writingModels: List<ModelInfo> = emptyList(),
+    /** Per-editor choices; blank refs follow the best available/default model. */
+    val editorVisionModels: List<ModelInfo> = emptyList(),
+    val editorTextModels: List<ModelInfo> = emptyList(),
+    val editorImageModels: List<ModelInfo> = emptyList(),
+    val editorVisionModelRef: String = "",
+    val editorTextModelRef: String = "",
+    val editorImageModelRef: String = "",
+    val editorModelsRefreshing: Boolean = false,
+    val editorModelsStatus: String = "",
     /** Exact backend roll currently being animated for the submitted action. */
     val activeRoll: AdventureRoll? = null,
     val rollAnimationId: Long = 0L,

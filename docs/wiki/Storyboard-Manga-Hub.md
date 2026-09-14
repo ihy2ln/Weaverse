@@ -55,4 +55,19 @@ Preview shows the detected ordered page count before you confirm the download.
 
 Downloaded or imported pages remain immutable originals. Add selected pages to
 a Storyboard project to separate panels, translate Japanese/Korean/Chinese text,
-apply editable English overlays, color artwork, and export a derived page.
+clean source lettering, typeset a translation, color artwork, and export a
+derived page.
+
+**Page editor** (or **Art** on the manga canvas) opens a touch-first page
+editor inspired by Koharu's translation steps:
+
+- Bottom tools: Move, Text, Paint, Erase, Color, Clean, and Hand. Tap a
+  tool, then work on the page with your finger. There are no keyboard
+  shortcuts.
+- Tap **Find text**, **Read**, **Translate**, and **Clean art**, then
+  **Go**. Clean art rebuilds the drawing under the old lettering; the page
+  shows the translation, never the source OCR.
+- Type and Layers keep Source and Translation as separate fields, with
+  auto-fit, alignment, fill, stroke, and horizontal/vertical type.
+- **Save copy** writes a new picture file. The original page stays on disk.
+  Use Original / Edited to compare.

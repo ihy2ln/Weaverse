@@ -498,29 +498,30 @@ object WikiContent {
                 successful split is always written to a new page; the imported
                 original page remains unchanged.
 
-                **Translate English** detects Japanese, Korean, or Chinese text
-                and places editable white speech-bubble overlays over the source
-                lettering. **Colorize B&W** creates a local colorized copy while
-                retaining ink and white bubble areas. Page and whole-chapter
+                **Translate English** detects Japanese, Korean, or Chinese text,
+                removes the source lettering, and typesets the translation into
+                the cleaned bubbles. **Colorize B&W** creates a colorized copy
+                while retaining ink and white bubble areas. Page and whole-chapter
                 actions show progress and a Stop button; completed copies remain
                 saved if a batch is stopped.
 
                 ## Picture editor
 
-                **Edit picture** opens the page full-screen:
+                **Edit picture** / **Page editor** opens a touch-first page
+                editor on the phone:
 
-                - **Brush** erases text with a round tip (choose the size
-                  and the fill color — bubble white, ink black, page
-                  cream). **Rect** erases a dragged rectangle. **Undo**
-                  steps back; **Save** re-registers the picture so every
-                  reference updates.
-                - **Read & translate** sends the picture to a Vision model,
-                  which finds every text region, transcribes it, and
-                  translates it into the language you pick. Found regions
-                  are highlighted — tap one to erase the original text
-                  instantly, use the checklist to choose which to keep, and
-                  **Add translations** applies them as speech-bubble
-                  overlays with your new language.
+                - Bottom tools are **Move**, **Text**, **Paint**, **Erase**,
+                  **Color**, **Clean**, and **Hand**. Tap one, then use your
+                  finger on the page. There are no keyboard keys.
+                - Tap **Find text**, **Read**, **Translate**, and **Clean art**,
+                  then **Go**. Clean art rebuilds the drawing under old
+                  lettering. The page shows the translation; source OCR stays
+                  in Type.
+                - Type and Layers edit source, translation, auto-fit,
+                  alignment, fill, stroke, and writing direction.
+                - **Save copy** writes a new picture file and never overwrites
+                  the original. Use Original / Edited to compare. Undo and Redo
+                  cover paint, erase, and clean strokes.
 
                 ## Generate pictures with AI (cloud)
 
@@ -695,6 +696,13 @@ object WikiContent {
                 No account, no cloud. Start the desktop companion, read the
                 password off the web hub, then Settings → Open web sync on
                 the phone. Leave **Auto-sync** on.
+
+                ## MCP and CLI
+
+                Settings → Sync lists copy commands for **Cursor IDE**,
+                **Cursor CLI** (`agent mcp enable weaverse` after the same
+                `~/.cursor/mcp.json` entry), Claude Code, OpenCode, and Codex
+                CLI. Auth is the sync password as a Bearer token.
 
                 ## Troubleshooting
 

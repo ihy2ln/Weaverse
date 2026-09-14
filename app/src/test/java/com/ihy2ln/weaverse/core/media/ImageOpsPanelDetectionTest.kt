@@ -77,4 +77,56 @@ class ImageOpsPanelDetectionTest {
         assertTrue(result.boxes.isEmpty())
         assertTrue(result.message.contains("could not be read"))
     }
+
+    /**
+     * A page holding one white bubble on dark artwork, with a small block of lettering
+     * inside it. The frame used for typesetting should open out to the bubble and stop on
+     * its ink border, never crossing onto the artwork behind it.
+     */
+    @Test
+    fun textBoxGrowsOutToItsBubbleAndStopsAtTheBorder() {
+        val width = 100
+        val height = 100
+        val dark = 0xff101010.toInt()
+        val paper = 0xffffffff.toInt()
+        val pixels = IntArray(width * height) { index ->
+            val x = index % width
+            val y = index / width
+            val insideBubble = x in 20 until 80 && y in 20 until 80
+            val isLettering = x in 42 until 58 && y in 47 until 53
+            if (insideBubble && !isLettering) paper else dark
+        }
+
+        val frame = bubbleFrameArgb(
+            width = width,
+            height = height,
+            pixels = pixels,
+            box = NormalizedPanelBox(0.40f, 0.45f, 0.60f, 0.55f),
+        )
+
+        // Sideways the walk meets the bubble outline at x=20 and x=80.
+        assertEquals(0.20f, frame.left, 0.01f)
+        assertEquals(0.80f, frame.right, 0.01f)
+        // Vertically it runs out of allowance first, well inside the bubble.
+        assertTrue(frame.top < 0.45f, "frame should reach above the lettering")
+        assertTrue(frame.bottom > 0.55f, "frame should reach below the lettering")
+        assertTrue(frame.top >= 0.20f && frame.bottom <= 0.80f, "frame must stay inside the bubble")
+        assertTrue(frame.width > 0.20f, "bubble frame should be wider than the text box")
+    }
+
+    @Test
+    fun letteringOnOpenArtworkKeepsItsOwnBox() {
+        val width = 60
+        val height = 60
+        // No bubble anywhere: every neighbouring column and row is artwork.
+        val pixels = IntArray(width * height) { 0xff101010.toInt() }
+
+        val box = NormalizedPanelBox(0.40f, 0.40f, 0.60f, 0.60f)
+        val frame = bubbleFrameArgb(width = width, height = height, pixels = pixels, box = box)
+
+        assertEquals(box.left, frame.left, 0.01f)
+        assertEquals(box.right, frame.right, 0.01f)
+        assertEquals(box.top, frame.top, 0.01f)
+        assertEquals(box.bottom, frame.bottom, 0.01f)
+    }
 }
