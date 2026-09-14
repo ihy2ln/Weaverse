@@ -254,6 +254,16 @@ class RoleplayChatViewModel @Inject constructor(
         bindJob?.cancel()
         bindJob = viewModelScope.launch {
             launch {
+                workspaceHistory.state.collect { history ->
+                    _uiState.update {
+                        it.copy(
+                            canUndoStoryboard = history.canUndo,
+                            canRedoStoryboard = history.canRedo,
+                        )
+                    }
+                }
+            }
+            launch {
                 // Codex entries indexed for clickable mention links in adventure prose.
                 db.codexDao().observeAllEntries().collect { entries ->
                     val targets = entries.filter { !it.disabled && it.trackMentions && it.name.length >= 2 }
@@ -1087,6 +1097,14 @@ class RoleplayChatViewModel @Inject constructor(
         removeMedia(parts[0], parts[1])
     }
 
+    fun undoStoryboardEdit() {
+        viewModelScope.launch { workspaceHistory.undo() }
+    }
+
+    fun redoStoryboardEdit() {
+        viewModelScope.launch { workspaceHistory.redo() }
+    }
+
     /** Reorder media within a message by swapping with neighbor. */
     fun moveMedia(messageId: String, blockId: String, delta: Int) {
         if (delta == 0) return
@@ -1270,12 +1288,27 @@ class RoleplayChatViewModel @Inject constructor(
     // --- Text overlays --------------------------------------------------------
 
     fun addTextOverlay(messageId: String, blockId: String) {
+        addOverlay(messageId, blockId, TextOverlayStyle.Plain)
+    }
+
+    fun addSpeechBubbleOverlay(messageId: String, blockId: String) {
+        addOverlay(messageId, blockId, TextOverlayStyle.SpeechBubble)
+    }
+
+    private fun addOverlay(messageId: String, blockId: String, style: TextOverlayStyle) {
         viewModelScope.launch {
             val current = rawMessages.find { it.id == messageId } ?: return@launch
             val blocks = documentFromJson(current.contentJson).blocks.toMutableList()
             val index = blocks.indexOfFirst { it.id == blockId }
             if (index < 0) return@launch
-            val overlay = TextOverlay(id = "ov-${UUID.randomUUID()}", text = "Text")
+            val overlay = TextOverlay(
+                id = "ov-${UUID.randomUUID()}",
+                text = if (style == TextOverlayStyle.SpeechBubble) "Dialogue" else "Caption",
+                style = style,
+                colorHex = if (style == TextOverlayStyle.SpeechBubble) "#111111" else "#FFFFFF",
+                backgroundHex = if (style == TextOverlayStyle.SpeechBubble) "#FFFFFF" else "#000000",
+                backgroundAlpha = if (style == TextOverlayStyle.SpeechBubble) 0.96f else 0.65f,
+            )
             blocks[index] = when (val block = blocks[index]) {
                 is MediaBlock -> block.copy(overlays = block.overlays + overlay)
                 is MediaStackBlock -> block.copy(overlays = block.overlays + overlay)
@@ -1859,37 +1892,58 @@ class RoleplayChatViewModel @Inject constructor(
                     fileName = "gen-${System.currentTimeMillis()}.${if (mime == "image/png") "png" else "jpg"}",
                     mimeType = mime,
                 )
-                val doc = Document(
-                    blocks = listOf(
-                        MediaBlock(
-                            id = UUID.randomUUID().toString(),
+                val selected = state.selectedMediaKey?.split("::", limit = 2)?.takeIf { it.size == 2 }
+                val selectedMessage = selected?.let { rawMessages.find { message -> message.id == it[0] } }
+                if (selected != null && selectedMessage != null) {
+                    val blocks = documentFromJson(selectedMessage.contentJson).blocks.toMutableList()
+                    val index = blocks.indexOfFirst { it.id == selected[1] }
+                    val current = blocks.getOrNull(index)
+                    if (current is MediaBlock) {
+                        blocks[index] = current.copy(
                             mediaId = media.id,
                             kind = MediaRepository.kindForType(media.type),
-                            pageId = _uiState.value.activePageId,
+                            originalMediaId = current.originalMediaId ?: current.mediaId,
+                            variantKind = "generated",
+                        )
+                        persistMessageBlocks(selectedMessage, blocks)
+                    }
+                } else {
+                    val doc = Document(
+                        blocks = listOf(
+                            MediaBlock(
+                                id = UUID.randomUUID().toString(),
+                                mediaId = media.id,
+                                kind = MediaRepository.kindForType(media.type),
+                                pageId = _uiState.value.activePageId,
+                            ),
                         ),
-                    ),
-                )
-                val now = System.currentTimeMillis()
-                db.roleplayDao().upsertMessage(
-                    RpMessageEntity(
-                        id = "rpm-$now",
-                        chatId = state.chatId,
-                        swipeGroupId = "sw-$now",
-                        swipeIndex = 0,
-                        isActiveSwipe = true,
-                        role = "user",
-                        contentJson = doc.toJson(),
-                        createdAt = now,
-                        displayMode = currentDisplayMode(),
-                    ),
-                )
+                    )
+                    val now = System.currentTimeMillis()
+                    db.roleplayDao().upsertMessage(
+                        RpMessageEntity(
+                            id = "rpm-$now",
+                            chatId = state.chatId,
+                            swipeGroupId = "sw-$now",
+                            swipeIndex = 0,
+                            isActiveSwipe = true,
+                            role = "user",
+                            contentJson = doc.toJson(),
+                            createdAt = now,
+                            displayMode = currentDisplayMode(),
+                        ),
+                    )
+                }
             }.onSuccess {
                 _uiState.update {
                     it.copy(
                         showImageGen = false,
                         imageGenBusy = false,
                         imageGenPrompt = "",
-                        storyboardStatus = "AI picture added to the page.",
+                        storyboardStatus = if (state.selectedMediaKey != null) {
+                            "AI picture replaced the selected panel. Undo is available."
+                        } else {
+                            "AI picture added to this page."
+                        },
                     )
                 }
             }.onFailure { err ->

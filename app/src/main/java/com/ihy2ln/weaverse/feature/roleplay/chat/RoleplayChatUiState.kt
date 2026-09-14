@@ -147,6 +147,8 @@ data class RoleplayChatUiState(
     val rollAnimationId: Long = 0L,
     val selectedMediaKey: String? = null,
     val canPasteMedia: Boolean = false,
+    val canUndoStoryboard: Boolean = false,
+    val canRedoStoryboard: Boolean = false,
     val presetId: String = "preset-balanced",
     val showExtraPromptSurfaces: Boolean = false,
     val pages: List<RpPageMeta> = emptyList(),

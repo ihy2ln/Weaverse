@@ -1068,6 +1068,7 @@ fun AppShell(
                                             forceDisplayMode = "roleplay",
                                             showModeSwitcher = false,
                                             rightToLeft = storyboardDestinationOf(sd) == StoryboardDestination.Manga,
+                                            storyboardCreator = true,
                                         )
                                     }
                                 } else {

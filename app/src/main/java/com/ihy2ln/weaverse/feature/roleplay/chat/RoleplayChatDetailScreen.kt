@@ -135,6 +135,8 @@ fun RoleplayChatDetailScreen(
     rightToLeft: Boolean = false,
     /** Imported manga opens in a focused editor instead of the general prompt workspace. */
     editorOnly: Boolean = false,
+    /** Page-first creator chrome used by Storyboard projects. */
+    storyboardCreator: Boolean = false,
     initialPageId: String? = null,
     initialEditorAction: String? = null,
     initialMangaChapterId: String? = null,
@@ -183,6 +185,9 @@ fun RoleplayChatDetailScreen(
     var generatedReplaceTargetKey by remember { mutableStateOf<String?>(null) }
     var showMangaSources by rememberSaveable(chatId) { mutableStateOf(false) }
     var initialEditorActionApplied by rememberSaveable(chatId) { mutableStateOf(false) }
+    var storyboardTool by rememberSaveable(chatId) { mutableStateOf("Select") }
+    var storyboardPreview by rememberSaveable(chatId) { mutableStateOf(false) }
+    var storyboardPagesExpanded by rememberSaveable(chatId) { mutableStateOf(false) }
 
     LaunchedEffect(chatId, initialPageId, state.pages) {
         initialPageId?.let { pageId ->
@@ -456,7 +461,21 @@ fun RoleplayChatDetailScreen(
                         modifier = Modifier.padding(horizontal = InkSpacing.md, vertical = 2.dp),
                     )
                 }
-                if (!editorOnly) {
+                if (storyboardCreator) {
+                    StoryboardCreatorHeader(
+                        pageNumber = state.pages.indexOfFirst { it.id == state.activePageId }.coerceAtLeast(0) + 1,
+                        pageCount = state.pages.size.coerceAtLeast(1),
+                        preview = storyboardPreview,
+                        pagesExpanded = storyboardPagesExpanded,
+                        onBack = onBack,
+                        onTogglePreview = {
+                            storyboardPreview = !storyboardPreview
+                            viewModel.selectMedia(null, null)
+                            selectedEmptySlotIndex = null
+                        },
+                        onTogglePages = { storyboardPagesExpanded = !storyboardPagesExpanded },
+                    )
+                } else if (!editorOnly) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -504,7 +523,7 @@ fun RoleplayChatDetailScreen(
                         modifier = Modifier.padding(horizontal = InkSpacing.md, vertical = 4.dp),
                     )
                 }
-                PageStrip(
+                if (!storyboardCreator || storyboardPagesExpanded) PageStrip(
                     pages = state.pages,
                     activePageId = state.activePageId,
                     onSelect = { pageId ->
@@ -551,9 +570,15 @@ fun RoleplayChatDetailScreen(
                         compactStyle = compactStyle,
                         gridSize = MediaGrid.SIZE,
                         templateId = state.activeTemplateId,
+                        showTemplateSlots = !storyboardCreator || storyboardTool == "Panels",
+                        editable = !storyboardPreview,
                         selectedEmptySlotIndex = selectedEmptySlotIndex,
                         textEmphasis = false,
-                        emptyHint = "An empty page.\n\nUse Add pages for a PDF, CBZ, webtoon, or page image. Long-press a panel for picture tools.\nPress / for AI · \\ to write it yourself.",
+                        emptyHint = if (storyboardCreator) {
+                            "An empty comic page.\n\nOpen Panels to choose a layout, Art to add media, or AI to draft the page."
+                        } else {
+                            "An empty page.\n\nUse Add pages for a PDF, CBZ, webtoon, or page image. Long-press a panel for picture tools."
+                        },
                         onSelect = { msgId, blockId ->
                             selectedEmptySlotIndex = null
                             viewModel.selectMedia(msgId, blockId)
@@ -774,6 +799,69 @@ fun RoleplayChatDetailScreen(
             }
         }
 
+        if (storyboardCreator && state.displayMode == "roleplay") {
+            StoryboardCreatorDock(
+                activeTool = storyboardTool,
+                onTool = { storyboardTool = it },
+                preview = storyboardPreview,
+                onTogglePreview = {
+                    storyboardPreview = !storyboardPreview
+                    viewModel.selectMedia(null, null)
+                    selectedEmptySlotIndex = null
+                },
+                panels = state.mediaPanels,
+                selectedKey = state.selectedMediaKey,
+                canUndo = state.canUndoStoryboard,
+                canRedo = state.canRedoStoryboard,
+                onUndo = viewModel::undoStoryboardEdit,
+                onRedo = viewModel::redoStoryboardEdit,
+                onSelectPanel = { messageId, blockId -> viewModel.selectMedia(messageId, blockId) },
+                onMoveLayer = { delta ->
+                    state.selectedMediaKey?.split("::", limit = 2)?.takeIf { it.size == 2 }?.let {
+                        viewModel.moveMedia(it[0], it[1], delta)
+                    }
+                },
+                onSelectedAction = { action ->
+                    state.selectedMediaKey?.split("::", limit = 2)?.takeIf { it.size == 2 }?.let {
+                        viewModel.onMediaEditAction(it[0], it[1], action)
+                    }
+                },
+                onAddCaption = {
+                    state.selectedMediaKey?.split("::", limit = 2)?.takeIf { it.size == 2 }?.let {
+                        viewModel.addTextOverlay(it[0], it[1])
+                    }
+                },
+                onAddBubble = {
+                    state.selectedMediaKey?.split("::", limit = 2)?.takeIf { it.size == 2 }?.let {
+                        viewModel.addSpeechBubbleOverlay(it[0], it[1])
+                    }
+                },
+                onAddPage = viewModel::addPage,
+                onTogglePages = { storyboardPagesExpanded = !storyboardPagesExpanded },
+                onTemplate = { templateId ->
+                    selectedEmptySlotIndex = null
+                    viewModel.applyPanelTemplate(templateId)
+                },
+                onAddArt = {
+                    mediaPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+                },
+                onImportPages = {
+                    pagesPicker.launch(
+                        arrayOf(
+                            "application/pdf",
+                            "application/zip",
+                            "application/x-cbz",
+                            "application/vnd.comicbook+zip",
+                            "image/*",
+                        ),
+                    )
+                },
+                onGenerateArt = viewModel::openImageGen,
+                onCreateWithAi = { viewModel.openStoryboardGeneration(rightToLeft) },
+                onExport = viewModel::exportStoryboardPage,
+            )
+        }
+
         if (editorOnly && state.displayMode == "roleplay") {
             StoryboardEditorDock(
                 onBack = onBack,
@@ -813,7 +901,7 @@ fun RoleplayChatDetailScreen(
 
         // The shared prompt window — same bar as the RPG adventure and Novel
         // editor. Media attach stays on the mic-hold menu via the + button.
-        if (!editorOnly) UnifiedPromptBar(
+        if (!editorOnly && !storyboardCreator) UnifiedPromptBar(
             value = state.input,
             onValueChange = viewModel::onInputChange,
             placeholder = "Message ${state.title.ifBlank { "chat" }}",
@@ -880,6 +968,219 @@ fun RoleplayChatDetailScreen(
             },
             onDismiss = { modelsOpen = false },
         )
+    }
+}
+
+@Composable
+private fun StoryboardCreatorHeader(
+    pageNumber: Int,
+    pageCount: Int,
+    preview: Boolean,
+    pagesExpanded: Boolean,
+    onBack: () -> Unit,
+    onTogglePreview: () -> Unit,
+    onTogglePages: () -> Unit,
+) {
+    val tokens = inkTokens()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(tokens.panel)
+            .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+    ) {
+        InkTextButton(label = "‹ Projects", onClick = onBack, compact = true)
+        Column(modifier = Modifier.weight(1f)) {
+            Text("Storyboard creator", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text(
+                "Page $pageNumber of $pageCount",
+                style = MaterialTheme.typography.labelSmall,
+                color = tokens.secondaryText,
+            )
+        }
+        InkTextButton(
+            label = if (pagesExpanded) "Hide pages" else "Pages",
+            onClick = onTogglePages,
+            compact = true,
+        )
+        InkTextButton(
+            label = if (preview) "Edit" else "Preview",
+            onClick = onTogglePreview,
+            compact = true,
+        )
+    }
+}
+
+/** Bottom-owned tool workspace for original user/AI-created comic pages. */
+@Composable
+private fun StoryboardCreatorDock(
+    activeTool: String,
+    onTool: (String) -> Unit,
+    preview: Boolean,
+    onTogglePreview: () -> Unit,
+    panels: List<RpMediaRef>,
+    selectedKey: String?,
+    canUndo: Boolean,
+    canRedo: Boolean,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit,
+    onSelectPanel: (String, String) -> Unit,
+    onMoveLayer: (Int) -> Unit,
+    onSelectedAction: (MediaEditAction) -> Unit,
+    onAddCaption: () -> Unit,
+    onAddBubble: () -> Unit,
+    onAddPage: () -> Unit,
+    onTogglePages: () -> Unit,
+    onTemplate: (String) -> Unit,
+    onAddArt: () -> Unit,
+    onImportPages: () -> Unit,
+    onGenerateArt: () -> Unit,
+    onCreateWithAi: () -> Unit,
+    onExport: () -> Unit,
+) {
+    val tokens = inkTokens()
+    val hasSelection = selectedKey != null
+    val tools = listOf("Select", "Panels", "Art", "Text", "Bubble", "Layers", "AI", "Export")
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(tokens.panel)
+            .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+        ) {
+            tools.forEach { tool ->
+                Text(
+                    tool,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (activeTool == tool) tokens.activePillLabel else tokens.secondaryText,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(inkRadiusSm()))
+                        .background(if (activeTool == tool) tokens.activePill else Color.Transparent)
+                        .clickable { onTool(tool) }
+                        .padding(horizontal = 10.dp, vertical = 7.dp),
+                )
+            }
+        }
+        Text(
+            when {
+                preview -> "Preview mode · artwork and overlays are locked"
+                hasSelection -> "$activeTool · selected panel tools"
+                else -> "$activeTool · tap a panel to select it"
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = tokens.secondaryText,
+            modifier = Modifier.padding(top = 3.dp),
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            when (activeTool) {
+                "Select" -> {
+                    InkTextButton(label = "Undo", onClick = onUndo, enabled = canUndo, compact = true)
+                    InkTextButton(label = "Redo", onClick = onRedo, enabled = canRedo, compact = true)
+                    InkTextButton(
+                        label = "Copy",
+                        onClick = { onSelectedAction(MediaEditAction.Copy) },
+                        enabled = hasSelection && !preview,
+                        compact = true,
+                    )
+                    InkTextButton(
+                        label = "Paste",
+                        onClick = { onSelectedAction(MediaEditAction.Paste) },
+                        enabled = hasSelection && !preview,
+                        compact = true,
+                    )
+                    InkTextButton(
+                        label = "Stack",
+                        onClick = { onSelectedAction(MediaEditAction.Stack) },
+                        enabled = hasSelection && !preview,
+                        compact = true,
+                    )
+                    InkTextButton(
+                        label = "Delete",
+                        onClick = { onSelectedAction(MediaEditAction.Delete) },
+                        enabled = hasSelection && !preview,
+                        compact = true,
+                    )
+                    InkTextButton(label = if (preview) "Return to edit" else "Read preview", onClick = onTogglePreview, compact = true)
+                }
+                "Panels" -> {
+                    InkTextButton(label = "Pages", onClick = onTogglePages, compact = true)
+                    InkTextButton(label = "+ Page", onClick = onAddPage, enabled = !preview, compact = true)
+                    InkTextButton(
+                        label = "Split panel",
+                        onClick = { onSelectedAction(MediaEditAction.SeparatePanelsAuto) },
+                        enabled = hasSelection && !preview,
+                        compact = true,
+                    )
+                    InkTextButton(
+                        label = "AI panel split",
+                        onClick = { onSelectedAction(MediaEditAction.SeparatePanels) },
+                        enabled = hasSelection && !preview,
+                        compact = true,
+                    )
+                    PanelTemplates.all.forEach { template ->
+                        InkTextButton(
+                            label = template.label,
+                            onClick = { onTemplate(template.id) },
+                            enabled = !preview,
+                            compact = true,
+                        )
+                    }
+                }
+                "Art" -> {
+                    InkTextButton(label = "Add media", onClick = onAddArt, enabled = !preview, compact = true)
+                    InkTextButton(label = "Import pages", onClick = onImportPages, enabled = !preview, compact = true)
+                    InkTextButton(label = "Generate AI", onClick = onGenerateArt, enabled = !preview, compact = true)
+                    InkTextButton(
+                        label = "Retouch",
+                        onClick = { onSelectedAction(MediaEditAction.EditImage) },
+                        enabled = hasSelection && !preview,
+                        compact = true,
+                    )
+                }
+                "Text" -> {
+                    InkTextButton(label = "Add caption", onClick = onAddCaption, enabled = hasSelection && !preview, compact = true)
+                    Text("Tap an existing caption to edit its wording and style.", style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
+                }
+                "Bubble" -> {
+                    InkTextButton(label = "Add speech bubble", onClick = onAddBubble, enabled = hasSelection && !preview, compact = true)
+                    Text("Drag the bubble on the page; tap it for text, tail and colors.", style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
+                }
+                "Layers" -> {
+                    panels.forEachIndexed { index, panel ->
+                        val key = "${panel.messageId}::${panel.blockId}"
+                        val textCount = panel.overlays.size
+                        InkTextButton(
+                            label = buildString {
+                                if (key == selectedKey) append("✓ ")
+                                append("Layer ${index + 1}")
+                                if (textCount > 0) append(" · $textCount text")
+                            },
+                            onClick = { onSelectPanel(panel.messageId, panel.blockId) },
+                            compact = true,
+                        )
+                    }
+                    InkTextButton(label = "Send backward", onClick = { onMoveLayer(-1) }, enabled = hasSelection && !preview, compact = true)
+                    InkTextButton(label = "Bring forward", onClick = { onMoveLayer(1) }, enabled = hasSelection && !preview, compact = true)
+                }
+                "AI" -> {
+                    InkTextButton(label = "Draft complete page", onClick = onCreateWithAi, enabled = !preview, compact = true)
+                    InkTextButton(label = "Generate selected art", onClick = onGenerateArt, enabled = !preview, compact = true)
+                    Text("AI changes apply only to this page or the selected panel.", style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
+                }
+                "Export" -> {
+                    InkTextButton(label = "Export page PNG", onClick = onExport, compact = true)
+                    InkTextButton(label = "Preview first", onClick = onTogglePreview, compact = true)
+                }
+            }
+        }
     }
 }
 
@@ -1341,6 +1642,8 @@ private fun MangaSnapGrid(
     compactStyle: androidx.compose.ui.text.TextStyle,
     gridSize: Int = MediaGrid.SIZE,
     templateId: String = "",
+    showTemplateSlots: Boolean = true,
+    editable: Boolean = true,
     selectedEmptySlotIndex: Int? = null,
     textEmphasis: Boolean = false,
     emptyHint: String,
@@ -1382,16 +1685,24 @@ private fun MangaSnapGrid(
                 .clip(RoundedCornerShape(inkRadiusSm()))
                 .border(1.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f), RoundedCornerShape(inkRadiusSm()))
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
-                // Tapping bare canvas clears the selection, so nothing is stuck draggable.
-                .pointerInput(Unit) {
-                    detectTapGestures(onTap = { onClearSelection() })
-                },
+                // Preview mode locks the page; edit mode lets bare-canvas taps clear selection.
+                .then(
+                    if (editable) {
+                        Modifier.pointerInput(Unit) {
+                            detectTapGestures(onTap = { onClearSelection() })
+                        }
+                    } else {
+                        Modifier
+                    },
+                ),
         ) {
             val cellW = maxWidth / gridSize
             val cellH = maxHeight / gridSize
             // The chosen layout's slots, drawn as empty frames so the page reads as
             // a comic page before any media is dropped in.
-            val template = PanelTemplates.byId(templateId)?.takeIf { gridSize == MediaGrid.SIZE }
+            val template = PanelTemplates.byId(templateId)?.takeIf {
+                gridSize == MediaGrid.SIZE && showTemplateSlots
+            }
             val gridPanels = panels.map { panel ->
                 StoryboardGridItem(
                     panel.gridCol,
@@ -1541,6 +1852,7 @@ private fun MangaSnapGrid(
                     onOverlayTap = { overlayId ->
                         onOverlayTap(panel.messageId, panel.blockId, overlayId)
                     },
+                    editable = editable,
                 )
             }
         }
@@ -1576,6 +1888,7 @@ private fun MangaSnapPanel(
     onOverlayMove: (String, Float, Float) -> Unit,
     onOverlayResize: (String, Float) -> Unit,
     onOverlayTap: (String) -> Unit,
+    editable: Boolean = true,
 ) {
     var dragX by remember(panel.blockId) { mutableFloatStateOf(0f) }
     var dragY by remember(panel.blockId) { mutableFloatStateOf(0f) }
@@ -1637,6 +1950,7 @@ private fun MangaSnapPanel(
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
             .then(
                 when {
+                    !editable -> Modifier
                     // Pinch/pan belongs to the media itself while adjusting.
                     adjustMode -> Modifier
                     // Selected panels are directly draggable — no mode to enter first.
@@ -1748,10 +2062,12 @@ private fun MangaSnapPanel(
                     initialOffsetXPercent = panel.mediaOffsetXPercent,
                     initialOffsetYPercent = panel.mediaOffsetYPercent,
                     onTransformEnd = onMediaTransform,
-                    onLongPress = {
+                    onLongPress = if (editable) {
+                        {
                             onSelect()
                             menuOpen = true
-                        },
+                        }
+                    } else null,
                 )
                 if (panel.caption.isNotBlank() && panel.caption != "[media]") {
                     Text(
@@ -1779,10 +2095,12 @@ private fun MangaSnapPanel(
                 initialOffsetXPercent = panel.mediaOffsetXPercent,
                 initialOffsetYPercent = panel.mediaOffsetYPercent,
                 onTransformEnd = onMediaTransform,
-                onLongPress = {
+                onLongPress = if (editable) {
+                    {
                         onSelect()
                         menuOpen = true
-                    },
+                    }
+                } else null,
             )
         }
         if (!panel.collapsed && panel.overlays.isNotEmpty()) {
@@ -1790,13 +2108,13 @@ private fun MangaSnapPanel(
                 overlays = panel.overlays,
                 // Overlays stay draggable only once the panel itself is settled,
                 // so panel-drag and overlay-drag never compete for the same press.
-                editable = !selected,
+                editable = editable && !selected,
                 onMove = { id, x, y -> onOverlayMove(id, x, y) },
                 onResize = { id, w -> onOverlayResize(id, w) },
                 onTap = { id -> onOverlayTap(id) },
             )
         }
-        if (adjustMode) {
+        if (editable && adjustMode) {
             Text(
                 "Pinch/drag image · tap to finish",
                 style = MaterialTheme.typography.labelSmall,
@@ -1842,13 +2160,15 @@ private fun MangaSnapPanel(
                     .padding(horizontal = 4.dp, vertical = 2.dp),
             )
         }
-        InkTextButton(
-            label = "-",
-            onClick = onRemove,
-            modifier = Modifier.align(Alignment.TopEnd),
-        )
+        if (editable) {
+            InkTextButton(
+                label = "-",
+                onClick = onRemove,
+                modifier = Modifier.align(Alignment.TopEnd),
+            )
+        }
         // Resize grip only on the selected panel, so an unselected canvas stays clean.
-        if (!panel.collapsed && selected) {
+        if (editable && !panel.collapsed && selected) {
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
@@ -1887,7 +2207,7 @@ private fun MangaSnapPanel(
                     },
             )
         }
-        MediaEditPopup(
+        if (editable) MediaEditPopup(
             expanded = menuOpen,
             onDismiss = { menuOpen = false },
             config = MediaEditPopupConfig(
