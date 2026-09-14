@@ -59,7 +59,6 @@ import com.ihy2ln.weaverse.core.manga.MangaSourceDescriptor
 import com.ihy2ln.weaverse.core.manga.MangaSourceRegistry
 import com.ihy2ln.weaverse.core.manga.MangaWebsite
 import com.ihy2ln.weaverse.core.manga.WebLinkSnapshot
-import com.ihy2ln.weaverse.core.manga.bundledMangaWebsites
 import com.ihy2ln.weaverse.core.media.MediaRepository
 import com.ihy2ln.weaverse.data.db.entities.MangaChapterEntity
 import com.ihy2ln.weaverse.data.db.entities.MangaFavoriteCategoryEntity
@@ -101,6 +100,8 @@ data class MangaSourceUiState(
     val readerPageIndex: Int = 0,
     val busy: Boolean = false,
     val status: String = "",
+    val browseMode: MangaBrowseMode = MangaBrowseMode.Popular,
+    val browseShowingSources: Boolean = true,
 )
 
 private data class MangaFavoriteState(
@@ -173,13 +174,29 @@ class MangaSourceViewModel @Inject constructor(
     fun setFavoriteCategoryName(value: String) = local.value.let { local.value = it.copy(favoriteCategoryName = value) }
 
     fun selectSource(sourceId: String) {
-        val source = registry.get(sourceId)?.descriptor ?: return
+        if (registry.get(sourceId) == null) return
         local.value = local.value.copy(
             activeSourceId = sourceId,
+            browseShowingSources = false,
             results = emptyList(),
             selected = null,
             chapters = emptyList(),
-            status = "${source.name} selected. Choose Popular, Latest, or Search.",
+            status = "",
+        )
+    }
+
+    fun openSource(sourceId: String, mode: MangaBrowseMode = MangaBrowseMode.Popular) {
+        selectSource(sourceId)
+        browse(mode)
+    }
+
+    fun showSourceList() {
+        local.value = local.value.copy(
+            browseShowingSources = true,
+            selected = null,
+            chapters = emptyList(),
+            results = emptyList(),
+            status = "",
         )
     }
 
@@ -312,29 +329,36 @@ class MangaSourceViewModel @Inject constructor(
         val sourceId = local.value.activeSourceId
         val sourceName = registry.get(sourceId)?.descriptor?.name ?: sourceId
         viewModelScope.launch {
-            local.value = local.value.copy(busy = true, status = "Searching $sourceName…", results = emptyList(), selected = null)
+            local.value = local.value.copy(
+                busy = true,
+                browseShowingSources = false,
+                status = "Searching $sourceName…",
+                results = emptyList(),
+                selected = null,
+            )
             runCatching { repository.search(sourceId, query) }
-                .onSuccess { local.value = local.value.copy(results = it, busy = false, status = if (it.isEmpty()) "No results found." else "Select a title to load chapters.") }
+                .onSuccess { local.value = local.value.copy(results = it, busy = false, status = if (it.isEmpty()) "No results found." else "") }
                 .onFailure { local.value = local.value.copy(busy = false, status = it.message ?: "Search failed.") }
         }
     }
 
     fun browse(mode: MangaBrowseMode) {
         val sourceId = local.value.activeSourceId
-        val sourceName = registry.get(sourceId)?.descriptor?.name ?: sourceId
         viewModelScope.launch {
             local.value = local.value.copy(
                 busy = true,
+                browseShowingSources = false,
+                browseMode = mode,
                 selected = null,
                 chapters = emptyList(),
-                status = if (mode == MangaBrowseMode.Popular) "Loading popular $sourceName titles…" else "Loading latest $sourceName titles…",
+                status = "",
             )
             runCatching { repository.browse(sourceId, mode) }
                 .onSuccess {
                     local.value = local.value.copy(
                         results = it,
                         busy = false,
-                        status = if (it.isEmpty()) "No titles were returned." else "Select a cover to view chapters.",
+                        status = if (it.isEmpty()) "No titles were returned." else "",
                     )
                 }
                 .onFailure { local.value = local.value.copy(busy = false, status = it.message ?: "Browse failed.") }
@@ -343,7 +367,13 @@ class MangaSourceViewModel @Inject constructor(
 
     fun select(manga: MangaSearchResult) {
         viewModelScope.launch {
-            local.value = local.value.copy(selected = manga, chapters = emptyList(), busy = true, status = "Loading chapters…")
+            local.value = local.value.copy(
+                selected = manga,
+                chapters = emptyList(),
+                busy = true,
+                browseShowingSources = false,
+                status = "",
+            )
             runCatching {
                 val details = repository.loadDetails(manga)
                 details to repository.loadChapters(details)
@@ -356,7 +386,7 @@ class MangaSourceViewModel @Inject constructor(
                         status = if (chapters.isEmpty()) {
                             "${registry.get(manga.sourceId)?.descriptor?.name ?: "Source"} did not expose any chapter links for this title."
                         } else {
-                            "Found ${chapters.size} chapters. Choose one to download."
+                            ""
                         },
                     )
                 }
@@ -365,7 +395,7 @@ class MangaSourceViewModel @Inject constructor(
     }
 
     fun clearSelection() {
-        local.value = local.value.copy(selected = null, chapters = emptyList(), status = "Choose a title or search again.")
+        local.value = local.value.copy(selected = null, chapters = emptyList(), status = "")
     }
 
     fun enqueue(chapter: MangaChapter) {
@@ -516,11 +546,20 @@ fun MangaSourceDialog(
                 if (state.busy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 if (state.status.isNotBlank()) Text(state.status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 if (state.selected == null) {
-                    Text("MangaDex", style = MaterialTheme.typography.titleSmall)
+                    val activeName = state.sources.firstOrNull { it.id == state.activeSourceId }?.name ?: "Source"
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        state.sources.forEach { source ->
+                            TextButton(onClick = { viewModel.selectSource(source.id) }) {
+                                Text(if (source.id == state.activeSourceId) "• ${source.name}" else source.name)
+                            }
+                        }
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                        TextButton(onClick = { viewModel.browse(MangaBrowseMode.Popular) }) { Text("Popular") }
+                        TextButton(onClick = { viewModel.browse(MangaBrowseMode.Popular) }) { Text("$activeName Popular") }
                         TextButton(onClick = { viewModel.browse(MangaBrowseMode.Latest) }) { Text("Latest") }
-                        TextButton(onClick = { viewModel.setStatus("Use Search title to filter MangaDex by name.") }) { Text("Filter") }
                     }
                 }
                 if (state.selected == null && state.results.isNotEmpty()) {

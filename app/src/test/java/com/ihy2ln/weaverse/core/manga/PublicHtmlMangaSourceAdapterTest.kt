@@ -56,4 +56,43 @@ class PublicHtmlMangaSourceAdapterTest {
             assertEquals("rtl", chapters.first().readingOrder)
         }
     }
+
+    @Test
+    fun madaraNumericChapterPathsAreDetectedWithoutTheWordChapter() = runTest {
+        MockWebServer().use { server ->
+            val client = OkHttpClient()
+            val base = server.url("/").toString()
+            val adapter = PublicHtmlMangaSourceAdapter(
+                PublicHtmlSourceConfig(
+                    id = "fixture",
+                    name = "Fixture",
+                    baseUrl = base,
+                    popularPaths = listOf("/"),
+                    latestPaths = listOf("/"),
+                    searchPaths = listOf("/?s=%s"),
+                    seriesPathHints = listOf("/manga/"),
+                    language = "ja",
+                    readingOrder = "rtl",
+                ),
+                client,
+                MangaWebLinkImporter(client),
+            )
+            server.enqueue(
+                MockResponse().setBody("""<a href="/manga/example/"><img alt="Example Manga" src="/c.jpg"></a>"""),
+            )
+            val results = adapter.browse(MangaBrowseMode.Popular)
+            server.enqueue(
+                MockResponse().setBody(
+                    """
+                    <a href="/manga/example/38-2/">38.2</a>
+                    <a href="/manga/example/38-1/">38.1</a>
+                    """.trimIndent(),
+                ),
+            )
+            val chapters = adapter.chapters(results.single())
+            assertEquals(listOf("38.2", "38.1"), chapters.map { it.chapterNumber })
+            assertTrue(chapters.first().canonicalUrl.contains("/38-2"))
+            assertTrue(adapter.isChapterUrl(chapters.first().canonicalUrl))
+        }
+    }
 }
