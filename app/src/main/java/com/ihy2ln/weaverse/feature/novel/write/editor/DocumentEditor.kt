@@ -1,7 +1,9 @@
 package com.ihy2ln.weaverse.feature.novel.write.editor
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -24,12 +26,12 @@ import com.ihy2ln.weaverse.core.ui.components.EditTextPopupConfig
 import com.ihy2ln.weaverse.core.ui.components.InkConfirmButton
 import com.ihy2ln.weaverse.core.ui.components.MediaEditAction
 import com.ihy2ln.weaverse.core.ui.components.VoiceToTextField
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.InkAccentBlue
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
-import com.ihy2ln.weaverse.core.ui.util.ScrollGutterBackdrop
 import com.ihy2ln.weaverse.core.ui.util.alwaysScrollEndSpacer
-import com.ihy2ln.weaverse.core.ui.util.scrollGutterPadding
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -93,10 +95,10 @@ fun DocumentEditor(
     showContinuationBox: Boolean = false,
 ) {
     val tokens = inkTokens()
-    ScrollGutterBackdrop(modifier = modifier) {
+    Box(modifier = modifier) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = scrollGutterPadding(),
+            contentPadding = PaddingValues(horizontal = 10.dp),
         ) {
             itemsIndexed(blocks, key = { _, block -> block.id }) { index, block ->
                 when (block) {
@@ -195,7 +197,7 @@ private fun ContinuationInput(
     onSubmit: (String) -> Unit,
 ) {
     var text by remember { mutableStateOf("") }
-    val shape = RoundedCornerShape(InkSpacing.radiusMd)
+    val shape = RoundedCornerShape(inkRadiusMd())
     Column(
         modifier = Modifier
             .fillMaxWidth()

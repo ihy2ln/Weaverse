@@ -1,10 +1,10 @@
 package com.ihy2ln.weaverse.core.text
 
-/** Shared snap grid for Roleplay manga / Write media placement (default 6×6). */
+/** Shared snap grid for Roleplay manga / Write media placement (default 12×12). */
 object MediaGrid {
-    const val SIZE = 6
+    const val SIZE = 12
     /** Dungeon Master mode canvas. */
-    const val DM_SIZE = 3
+    const val DM_SIZE = 6
 
     fun clampCell(value: Int, gridSize: Int = SIZE): Int = value.coerceIn(0, gridSize - 1)
 

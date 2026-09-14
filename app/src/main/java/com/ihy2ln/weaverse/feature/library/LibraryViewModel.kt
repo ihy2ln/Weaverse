@@ -3,6 +3,7 @@ package com.ihy2ln.weaverse.feature.library
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ihy2ln.weaverse.core.ui.components.NewWorkDetails
 import com.ihy2ln.weaverse.core.media.MediaRepository
 import com.ihy2ln.weaverse.data.db.entities.BookEntity
 import com.ihy2ln.weaverse.data.db.entities.SeriesEntity
@@ -56,6 +57,8 @@ data class LibraryUiState(
     val status: String = "",
     val busy: Boolean = false,
     val hasIsekaiGacha: Boolean = false,
+    /** Most recently touched work shown inside each Home mode card. */
+    val activeWorkByMode: Map<String, LibraryBookCard> = emptyMap(),
 )
 
 @HiltViewModel
@@ -86,16 +89,17 @@ class LibraryViewModel @Inject constructor(
                 settings.preferences,
                 mediaRepository.observeAll(),
             ) { books, series, prefs, media ->
+                val novels = books.filter { it.workType == "novel" }
                 val groups = buildList {
                     series.forEach { s ->
-                        add(SeriesGroup(s, books.filter { it.seriesId == s.id }))
+                        add(SeriesGroup(s, novels.filter { it.seriesId == s.id }))
                     }
-                    val unassigned = books.filter { it.seriesId.isNullOrBlank() }
+                    val unassigned = novels.filter { it.seriesId.isNullOrBlank() }
                     if (unassigned.isNotEmpty()) {
                         add(SeriesGroup(null, unassigned))
                     }
                 }
-                val cards = books.map { book ->
+                val allCards = books.map { book ->
                     val cover = book.coverMediaId
                         ?.let { id -> media.find { it.id == id } }
                         ?.let { entity ->
@@ -107,9 +111,13 @@ class LibraryViewModel @Inject constructor(
                         coverPath = cover,
                     )
                 }
+                val cards = allCards.filter { it.book.workType == "novel" }
+                fun active(workType: String): LibraryBookCard? =
+                    allCards.firstOrNull { it.book.id == prefs.selectedBookId && it.book.workType == workType }
+                        ?: allCards.filter { it.book.workType == workType }.maxByOrNull { it.book.updatedAt }
                 LibraryUiState(
                     tab = _uiState.value.tab,
-                    books = books,
+                    books = novels,
                     cards = cards,
                     series = series,
                     seriesGroups = groups,
@@ -119,7 +127,12 @@ class LibraryViewModel @Inject constructor(
                     assignSeriesId = _uiState.value.assignSeriesId,
                     status = _uiState.value.status,
                     busy = _uiState.value.busy,
-                    hasIsekaiGacha = books.any { it.title.equals(SampleBookImporter.BOOK_TITLE, ignoreCase = true) },
+                    hasIsekaiGacha = novels.any { it.title.equals(SampleBookImporter.BOOK_TITLE, ignoreCase = true) },
+                    activeWorkByMode = buildMap {
+                        active("novel")?.let { put("Novel", it) }
+                        active("campaign")?.let { put("Roleplay", it) }
+                        active("storyboard")?.let { put("Storyboard", it) }
+                    },
                 )
             }.collect { _uiState.value = it }
         }
@@ -130,11 +143,22 @@ class LibraryViewModel @Inject constructor(
     fun onNewSeriesTitle(value: String) = _uiState.update { it.copy(newSeriesTitle = value) }
     fun onAssignSeriesId(value: String) = _uiState.update { it.copy(assignSeriesId = value) }
 
-    fun createBook(onOpened: (bookId: String, sceneId: String?) -> Unit = { _, _ -> }) {
+    fun createBook(
+        details: NewWorkDetails? = null,
+        onOpened: (bookId: String, sceneId: String?) -> Unit = { _, _ -> },
+    ) {
         viewModelScope.launch {
-            val title = _uiState.value.newBookTitle.ifBlank { "Untitled Book" }
+            val title = details?.title
+                ?: _uiState.value.newBookTitle.ifBlank { "Untitled Book" }
             val seriesId = _uiState.value.assignSeriesId.ifBlank { null }
-            val book = bookRepository.createBook(title, seriesId)
+            val book = bookRepository.createBook(
+                title = title,
+                seriesId = seriesId,
+                genre = details?.genre.orEmpty(),
+                pov = details?.pov.orEmpty(),
+                tense = details?.tense.orEmpty(),
+                styleGuide = details?.styleGuide.orEmpty(),
+            )
             settings.setSelectedBookId(book.id)
             val sceneId = bookRepository.firstSceneId(book.id)
             _uiState.update { it.copy(newBookTitle = "", assignSeriesId = "") }

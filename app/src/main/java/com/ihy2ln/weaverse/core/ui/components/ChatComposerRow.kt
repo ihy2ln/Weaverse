@@ -21,6 +21,8 @@ fun ChatComposerRow(
     maxLines: Int = 6,
     leading: @Composable (() -> Unit)? = null,
     onClear: (() -> Unit)? = null,
+    /** ⌫ press-and-hold undo of the last deletion. Null disables hold. */
+    onUndoClear: (() -> Unit)? = null,
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -41,10 +43,10 @@ fun ChatComposerRow(
             maxLines = maxLines,
         )
         if (onClear != null) {
-            InkModeCapsule(
-                label = "Clear Text",
+            InkClearIconButton(
                 onClick = onClear,
                 enabled = enabled && value.isNotBlank(),
+                onUndo = onUndoClear,
                 modifier = Modifier.padding(end = InkSpacing.sm),
             )
         }

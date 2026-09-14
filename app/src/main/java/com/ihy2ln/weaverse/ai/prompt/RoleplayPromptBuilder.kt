@@ -13,7 +13,7 @@ object RoleplayPromptBuilder {
         addAll(DefaultAiGuides.systemBlocks(com.ihy2ln.weaverse.feature.shell.AppMode.Roleplay, outputWords))
         character?.let { add(characterBlock(it)) }
         persona?.takeIf { it.name.isNotBlank() || it.description.isNotBlank() }?.let { add(personaBlock(it)) }
-    }
+    }.map { PromptAddOns.resolveBlocks(it) }
 
     fun characterBlock(character: RpCharacterEntity): String {
         val system = character.systemPrompt.trim().takeIf { it.isNotBlank() }

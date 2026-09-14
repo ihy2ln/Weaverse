@@ -15,6 +15,8 @@ working log, and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a from-the-
 ground-up description of how the app is built (detailed enough to rebuild it
 from scratch if this repo ever disappeared).
 
+New to the app? Start with the [in-depth helper guide](docs/GUIDE.md).
+
 ## Downloads
 
 | Platform | Where |
@@ -76,6 +78,21 @@ also become Roleplay cards with Messenger, DM, and manga chats.
 - Shared board — same notes in Novel, Roleplay, and Notes mode.
 - Mic speech-to-text.
 
+### Storyboard manga hub
+
+- **Library · Browse · Downloads · Extensions · Projects** in a dark, cover-first interface.
+- Built-in source adapters for MangaDex, Comix, Atsumaru, MangaFire, MangaDot,
+  and Rawkuma. Catalog adapters load public Popular/Latest/Search results,
+  metadata, chapter links, and page manifests without opening an external browser.
+- Resumable chapter downloads, offline reading, and direct public chapter-URL import.
+  Downloaded media opens in its own full-page Manga Editor (not the blank-panel
+  Storyboard composer), with Original/Edited switching, editable English overlays,
+  AI/offline panel separation, manual retouching, and page/chapter B&W colorization.
+- Persistent favorites and user-named Library sections. A title can belong to
+  several sections without being downloaded.
+- Sources that return a login, CAPTCHA, JavaScript, or anti-bot challenge report
+  a blocked state; Weaverse does not bypass access controls.
+
 ### Prompts & AI
 - **`/`** AI prompt · **`\`** manual entry · OpenRouter provider.
 - Compact **PROMPT** dock; **Models** picks any OpenRouter text model.
@@ -91,8 +108,13 @@ target — `:sync-core` and `:desktop` are pure JVM).
 ./gradlew :sync-core:test                  # shared sync-protocol tests
 ```
 
-- Android APK → `app/build/outputs/apk/debug/`
-- Desktop zip → `releases/desktop/Weaverse-Desktop-0.5.2.zip`
+- Android's intermediate APK → `app/build/outputs/apk/debug/`
+- Local test/beta deliverables → `S:\AI\Novel\Weaververse\Beta.Test.Build`
+  (run `scripts/copy-beta-build.ps1` after assembling)
+- Desktop zip → `releases/desktop/Weaverse-Desktop-v1.2.5-beta.zip`
+
+Tagged betas are also published through [GitHub Releases](https://github.com/ihy2ln/weaverse/releases);
+the local beta folder is the canonical on-PC handoff location.
 
 To build a release APK signed with your own key, set the `KEYSTORE_PATH` /
 `KEYSTORE_PASSWORD` / `KEY_ALIAS` / `KEY_PASSWORD` environment variables (CI
@@ -123,6 +145,13 @@ JUnit 5 + Turbine (app), a Go launcher for the Windows `.exe` shim.
 ## Docs
 
 - Build notes / working log: [BUILD_NOTES.md](BUILD_NOTES.md)
+- **User helper guide:** [docs/GUIDE.md](docs/GUIDE.md)
+- **Latest hard checkpoint:** [docs/CHECKPOINT-v1.4.9-STORYBOARD-MANGA-HUB.md](docs/CHECKPOINT-v1.4.9-STORYBOARD-MANGA-HUB.md)
+- **Storyboard Manga Hub wiki guide:** [docs/wiki/Storyboard-Manga-Hub.md](docs/wiki/Storyboard-Manga-Hub.md)
+- **Prompt Templates wiki guide:** [docs/wiki/Prompt-Templates-and-Add-Ons.md](docs/wiki/Prompt-Templates-and-Add-Ons.md)
+- Earlier Codex checkpoint: [docs/CHECKPOINT-v1.3.2-CODEX-NAVIGATION.md](docs/CHECKPOINT-v1.3.2-CODEX-NAVIGATION.md)
+- **RPG Adventure checkpoint:** [docs/CHECKPOINT-v1.3.2-RPG-ADVENTURE.md](docs/CHECKPOINT-v1.3.2-RPG-ADVENTURE.md)
+- Wiki-ready guide mirror: [docs/wiki/Home.md](docs/wiki/Home.md)
 - **Rebuild documentation** (architecture, data model, protocols — detailed
   enough to reconstruct this app from scratch): [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - Same content, wiki-formatted: the [repo Wiki](https://github.com/ihy2ln/weaverse/wiki)

@@ -26,6 +26,9 @@ class TtsService @Inject constructor(
 ) {
     fun speakLocal(text: String) = controller.speak(text)
 
+    fun speakParagraphs(paragraphs: List<String>, onProgress: (Int) -> Unit) =
+        controller.speakParagraphs(paragraphs, onProgress)
+
     fun stop() = controller.stop()
 
     suspend fun speak(text: String): String = withContext(Dispatchers.IO) {

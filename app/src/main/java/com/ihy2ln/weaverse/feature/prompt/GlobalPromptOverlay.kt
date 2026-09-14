@@ -6,13 +6,18 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -35,8 +40,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -44,25 +53,32 @@ import com.ihy2ln.weaverse.ai.ModelInfo
 import com.ihy2ln.weaverse.core.ui.components.InkCheckIconButton
 import com.ihy2ln.weaverse.core.ui.components.InkClearIconButton
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
-import com.ihy2ln.weaverse.core.ui.components.VoiceToTextField
+import com.ihy2ln.weaverse.core.ui.components.VoiceInputButton
+import com.ihy2ln.weaverse.core.ui.components.mergeSpokenText
+import com.ihy2ln.weaverse.core.ui.components.rememberSpeechToText
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.InkAccentBlue
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
-
-private const val PromptMaxHeightDp = 220f
-
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun GlobalPromptOverlay(
     context: PromptInsertContext,
     novelDest: String? = null,
     modifier: Modifier = Modifier,
     active: Boolean = true,
+    /** Battle focus: collapse the dock to just its header line while set. */
+    forceCollapsed: Boolean = false,
     viewModel: GlobalPromptViewModel = hiltViewModel(),
 ) {
     if (!active) return
     if (!PromptSurface.usesGlobalOverlay(context.mode, novelDest)) return
     val state by viewModel.uiState.collectAsState()
     val tokens = inkTokens()
+    val startDictate = rememberSpeechToText { spoken ->
+        viewModel.onTextChange(mergeSpokenText(state.text, spoken))
+    }
     LaunchedEffect(context) { viewModel.updateContext(context) }
 
     val imagePicker = rememberLauncherForActivityResult(
@@ -75,164 +91,102 @@ fun GlobalPromptOverlay(
     }
 
     val kind = state.kind
-    val expanded = kind != null
-    val label = when (kind) {
-        PromptEntryKind.Manual -> "MANUAL (\\)"
-        PromptEntryKind.Ai -> "SCENE BEAT (/)"
-        null -> "PROMPT"
-    }
     val placeholder = when (kind) {
         PromptEntryKind.Manual -> "Write ideas / brainstorm (no AI)…"
         PromptEntryKind.Ai -> "Describe the beat…"
         null -> "Continue…  / AI · \\ manual"
     }
     val acceptDescription = if (kind == PromptEntryKind.Ai) "Generate" else "Accept"
-    val canSubmit = state.text.isNotBlank() || state.imagePath != null
     val canClear = !state.isStreaming && (state.text.isNotBlank() || state.streamingText.isNotBlank())
     var modelsOpen by remember { mutableStateOf(false) }
     var modelSearch by rememberSaveable { mutableStateOf("") }
+    // Collapsed keeps the dock to a single header line, so it stops covering the
+    // page while still being one tap from writing.
+    var collapsed by rememberSaveable { mutableStateOf(false) }
+    var minimumWordsText by rememberSaveable { mutableStateOf(state.minimumOutputWords.toString()) }
+    var maximumWordsText by rememberSaveable { mutableStateOf(state.outputWords.toString()) }
+    LaunchedEffect(state.minimumOutputWords) {
+        if (minimumWordsText.toIntOrNull() != state.minimumOutputWords) {
+            minimumWordsText = state.minimumOutputWords.toString()
+        }
+    }
+    LaunchedEffect(state.outputWords) {
+        if (maximumWordsText.toIntOrNull() != state.outputWords) {
+            maximumWordsText = state.outputWords.toString()
+        }
+    }
+    val minimumWordsValue = minimumWordsText.toIntOrNull()
+    val maximumWordsValue = maximumWordsText.toIntOrNull()
+    val wordRangeValid = minimumWordsValue != null && maximumWordsValue != null &&
+        minimumWordsValue in PromptWordLimit.Minimum..PromptWordLimit.Maximum &&
+        maximumWordsValue in PromptWordLimit.Minimum..PromptWordLimit.Maximum &&
+        minimumWordsValue <= maximumWordsValue
+    val canSubmit = (state.text.isNotBlank() || state.imagePath != null) && wordRangeValid
+    // Insert-target chip only makes sense over the novel editor.
+    val targetVisible = context.mode == com.ihy2ln.weaverse.feature.shell.AppMode.Novel &&
+        context.sceneId != null
+    val targetLabel = when {
+        !targetVisible -> ""
+        state.insertAtCursor -> "⌖${state.anchorLabel.ifBlank { "¶?" }}"
+        else -> "→End"
+    }
     val activeModelRef = PromptModelSelection.effectiveModelRef(
         state.selectedModelRef,
         state.defaultModelRef,
     )
-    val shape = RoundedCornerShape(InkSpacing.radiusMd)
-    val fieldColors = OutlinedTextFieldDefaults.colors(
-        focusedBorderColor = Color.Transparent,
-        unfocusedBorderColor = Color.Transparent,
-        disabledBorderColor = Color.Transparent,
-        focusedTextColor = tokens.primaryText,
-        unfocusedTextColor = tokens.primaryText,
-        disabledTextColor = tokens.primaryText.copy(alpha = 0.7f),
-        cursorColor = tokens.primaryText,
-        focusedPlaceholderColor = tokens.secondaryText,
-        unfocusedPlaceholderColor = tokens.secondaryText,
-        disabledPlaceholderColor = tokens.secondaryText,
+    // The dock always spans the screen horizontally — collapsed keeps just the
+    // header line, expanded adds the composer — so it never shrinks to a pill.
+    val dockModifier = modifier
+        .fillMaxWidth()
+        .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xxs)
+    UnifiedPromptBar(
+        value = state.text,
+        onValueChange = viewModel::onTextChange,
+        placeholder = state.errorMessage.ifBlank { placeholder },
+        collapsed = collapsed,
+        onCollapsedChange = { collapsed = it },
+        contextLabel = state.contextMeterLabel,
+        minimumWords = minimumWordsText,
+        maximumWords = maximumWordsText,
+        onMinimumWordsChange = { value ->
+            minimumWordsText = value.filter(Char::isDigit).take(4)
+            minimumWordsText.toIntOrNull()?.let(viewModel::updateMinimumOutputWords)
+        },
+        onMaximumWordsChange = { value ->
+            maximumWordsText = value.filter(Char::isDigit).take(4)
+            maximumWordsText.toIntOrNull()?.let(viewModel::updateOutputWords)
+        },
+        wordRangeValid = wordRangeValid,
+        modelLabel = PromptModelSelection.shortLabel(activeModelRef, state.writingModels),
+        onModelClick = { modelsOpen = true },
+        aiMode = kind == PromptEntryKind.Ai,
+        onToggleMode = {
+            viewModel.selectEntryKind(
+                if (kind == PromptEntryKind.Ai) PromptEntryKind.Manual else PromptEntryKind.Ai,
+            )
+        },
+        streaming = state.isStreaming,
+        canSubmit = canSubmit,
+        canClear = canClear,
+        onSubmit = viewModel::submit,
+        onCancel = viewModel::cancelGeneration,
+        onClear = viewModel::clearText,
+        onUndoClear = viewModel::undoClearText,
+        onRetry = viewModel::retryPrompt,
+        onContinue = viewModel::continuePrompt,
+        showClear = false,
+        targetLabel = targetLabel,
+        onTargetClick = viewModel::toggleInsertTarget,
+        onMicTap = { if (!state.isStreaming) startDictate() },
+        onRoll = viewModel::rollDice,
+            compactSingleLine = true,
+            showCommandPopup = true,
+            forceCollapsed = forceCollapsed,
+        onSpoken = { viewModel.onTextChange(mergeSpokenText(state.text, it)) },
+        onAdd = if (kind == PromptEntryKind.Ai) viewModel::requestImage else null,
+        addSelected = state.imagePath != null,
+        modifier = dockModifier,
     )
-
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xxs)
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.97f))
-            .border(1.dp, InkAccentBlue, shape)
-            .heightIn(max = PromptMaxHeightDp.dp)
-            .padding(horizontal = InkSpacing.xs, vertical = InkSpacing.xxs),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xxs),
-        ) {
-            Text(
-                label,
-                style = MaterialTheme.typography.labelSmall,
-                fontSize = 10.sp,
-                color = InkAccentBlue,
-            )
-            Spacer(modifier = Modifier.weight(1f))
-            if (expanded) {
-                InkTextButton(label = "Hide", onClick = viewModel::dismiss, compact = true)
-            }
-            InkTextButton(
-                label = "Models",
-                onClick = { modelsOpen = true },
-                compact = true,
-                enabled = !state.isStreaming,
-            )
-            Text(
-                PromptModelSelection.shortLabel(activeModelRef, state.writingModels),
-                style = MaterialTheme.typography.labelSmall,
-                color = tokens.secondaryText,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-            )
-        }
-        VoiceToTextField(
-            value = state.text,
-            onValueChange = viewModel::onTextChange,
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = placeholder,
-            enabled = !state.isStreaming,
-            minLines = PromptBoxSizing.MinLines,
-            maxLines = PromptBoxSizing.MaxLines,
-            compact = true,
-            colors = fieldColors,
-            extraTrailing = {
-                if (state.isStreaming) {
-                    Text(
-                        "…",
-                        color = tokens.secondaryText,
-                        modifier = Modifier.padding(end = InkSpacing.xxs),
-                    )
-                } else {
-                    InkCheckIconButton(
-                        onClick = viewModel::submit,
-                        enabled = canSubmit,
-                        contentDescription = acceptDescription,
-                    )
-                }
-                InkClearIconButton(
-                    onClick = viewModel::clearText,
-                    enabled = canClear,
-                )
-            },
-        )
-        if (kind == PromptEntryKind.Ai) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = InkSpacing.xxs),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
-            ) {
-                Text("Words", style = MaterialTheme.typography.labelSmall, color = tokens.primaryText)
-                OutlinedTextField(
-                    value = state.outputWords.toString(),
-                    onValueChange = { raw ->
-                        val digits = raw.filter { it.isDigit() }.take(4)
-                        viewModel.updateOutputWords(digits.toIntOrNull() ?: 750)
-                    },
-                    modifier = Modifier
-                        .width(52.dp)
-                        .heightIn(max = 36.dp),
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.bodySmall.copy(color = tokens.primaryText),
-                )
-                InkTextButton(
-                    label = if (state.imagePath != null) "Image ✓" else "Add pic",
-                    onClick = viewModel::requestImage,
-                    compact = true,
-                    enabled = !state.isStreaming,
-                )
-            }
-        }
-        if (state.isStreaming) {
-            Text(
-                "Generating…",
-                style = MaterialTheme.typography.labelSmall,
-                color = tokens.secondaryText,
-                modifier = Modifier.padding(top = InkSpacing.xxs),
-            )
-        }
-        if (state.usageText.isNotBlank()) {
-            Text(
-                state.usageText,
-                style = MaterialTheme.typography.labelSmall,
-                color = tokens.secondaryText,
-                modifier = Modifier.padding(top = InkSpacing.xxs),
-            )
-        }
-        if (state.errorMessage.isNotBlank()) {
-            Text(
-                state.errorMessage,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(top = InkSpacing.xxs),
-            )
-        }
-    }
     if (modelsOpen) {
         PromptModelPickerDialog(
             models = state.writingModels,
@@ -254,7 +208,71 @@ fun GlobalPromptOverlay(
 }
 
 @Composable
-private fun PromptModelPickerDialog(
+private fun PromptKindSelector(
+    selectedKind: PromptEntryKind,
+    enabled: Boolean,
+    onSelect: (PromptEntryKind) -> Unit,
+) {
+    val tokens = inkTokens()
+    val aiSelected = selectedKind == PromptEntryKind.Ai
+    Text(
+        text = if (aiSelected) "/A" else "\\M",
+        modifier = Modifier
+            .clip(RoundedCornerShape(inkRadiusSm()))
+            .background(InkAccentBlue.copy(alpha = 0.14f))
+            .clickable(enabled = enabled) {
+                onSelect(if (aiSelected) PromptEntryKind.Manual else PromptEntryKind.Ai)
+            }
+            .semantics {
+                contentDescription = if (aiSelected) {
+                    "AI mode; tap for manual mode"
+                } else {
+                    "Manual mode; tap for AI mode"
+                }
+            }
+            .padding(horizontal = 4.dp, vertical = 7.dp),
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.Bold,
+        color = if (enabled) InkAccentBlue else tokens.secondaryText.copy(alpha = 0.5f),
+        maxLines = 1,
+    )
+}
+
+@Composable
+private fun CompactNumberField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    description: String,
+    enabled: Boolean,
+    valid: Boolean,
+) {
+    val tokens = inkTokens()
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        enabled = enabled,
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        textStyle = MaterialTheme.typography.labelSmall.copy(
+            color = if (enabled) tokens.primaryText else tokens.secondaryText,
+            textAlign = TextAlign.Center,
+        ),
+        modifier = Modifier.width(30.dp).semantics { contentDescription = description },
+        decorationBox = { inner ->
+            Box(
+                Modifier.border(
+                    1.dp,
+                    if (valid) tokens.hairline else MaterialTheme.colorScheme.error,
+                    RoundedCornerShape(6.dp),
+                ).padding(vertical = 4.dp),
+                contentAlignment = Alignment.Center,
+            ) { inner() }
+        },
+    )
+}
+
+@Composable
+fun PromptModelPickerDialog(
     models: List<ModelInfo>,
     search: String,
     onSearchChange: (String) -> Unit,

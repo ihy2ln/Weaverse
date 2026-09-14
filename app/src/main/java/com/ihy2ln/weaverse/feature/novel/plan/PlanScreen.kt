@@ -59,6 +59,8 @@ import com.ihy2ln.weaverse.core.ui.components.InkOutlinedButton
 import com.ihy2ln.weaverse.core.ui.components.InkSegmentedPill
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
 import com.ihy2ln.weaverse.core.ui.components.SegmentedOption
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.CodexCharacters
 import com.ihy2ln.weaverse.core.ui.theme.InkAccentBlue
 import com.ihy2ln.weaverse.core.ui.theme.InkAccentGold
@@ -73,6 +75,9 @@ import com.ihy2ln.weaverse.feature.shell.WriteJumpKind
 @Composable
 fun PlanScreen(
     onWrite: (sceneId: String, kind: WriteJumpKind) -> Unit = { _, _ -> },
+    vocabulary: PlanVocabulary = PlanVocabulary.Novel,
+    /** When set, an action to start a whole new work appears above the outline. */
+    onNewWork: (() -> Unit)? = null,
     viewModel: PlanViewModel = hiltViewModel(),
 ) {
     var viewMode by rememberSaveable { mutableStateOf(PlanViewMode.Grid.name) }
@@ -116,6 +121,16 @@ fun PlanScreen(
                 onDismiss = { pendingDeleteSceneId = null },
             )
         }
+        // RPG has no Library shelf to start a campaign from, so the outline offers it.
+        if (onNewWork != null) {
+            InkOutlinedButton(
+                label = "+ New ${vocabulary.book.lowercase()}",
+                onClick = onNewWork,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = InkSpacing.sm),
+            )
+        }
         InkSegmentedPill(
             options = PlanViewMode.entries.map { SegmentedOption(it.name, it.name) },
             selectedId = viewMode,
@@ -124,6 +139,7 @@ fun PlanScreen(
         )
         when (PlanViewMode.valueOf(viewMode)) {
             PlanViewMode.Grid -> PlanGridView(
+                vocabulary = vocabulary,
                 scenes = state.scenes,
                 outline = state.outline,
                 characters = state.characters,
@@ -150,6 +166,7 @@ fun PlanScreen(
                 },
             )
             PlanViewMode.Outline -> PlanOutlineView(
+                vocabulary = vocabulary,
                 outline = state.outline,
                 characters = state.characters,
                 selectedSceneId = selectedSceneId,
@@ -190,6 +207,7 @@ private fun firstSceneInChapter(outline: List<PlanOutlineNode>, chapterId: Strin
 @Composable
 private fun WriteJumpButton(
     sceneId: String?,
+    vocabulary: PlanVocabulary,
     chapterSceneId: String?,
     onWrite: (sceneId: String, kind: WriteJumpKind) -> Unit,
 ) {
@@ -199,7 +217,7 @@ private fun WriteJumpButton(
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             if (sceneId != null) {
                 DropdownMenuItem(
-                    text = { Text("Scene beat") },
+                    text = { Text(vocabulary.sceneBeat) },
                     onClick = {
                         open = false
                         onWrite(sceneId, WriteJumpKind.SceneBeat)
@@ -208,7 +226,7 @@ private fun WriteJumpButton(
             }
             if (chapterSceneId != null) {
                 DropdownMenuItem(
-                    text = { Text("Chapter") },
+                    text = { Text(vocabulary.chapter) },
                     onClick = {
                         open = false
                         onWrite(chapterSceneId, WriteJumpKind.Chapter)
@@ -222,6 +240,7 @@ private fun WriteJumpButton(
 @Composable
 private fun PlanGridView(
     scenes: List<SceneEntity>,
+    vocabulary: PlanVocabulary,
     outline: List<PlanOutlineNode>,
     characters: List<CodexEntryEntity>,
     selectedSceneId: String?,
@@ -248,12 +267,12 @@ private fun PlanGridView(
                     .fillMaxWidth()
                     .background(
                         MaterialTheme.colorScheme.surface,
-                        RoundedCornerShape(InkSpacing.radiusMd),
+                        RoundedCornerShape(inkRadiusMd()),
                     )
                     .border(
                         if (selected) 2.dp else 1.5.dp,
                         if (selected) InkAccentBlue else inkTokens().hairline,
-                        RoundedCornerShape(InkSpacing.radiusMd),
+                        RoundedCornerShape(inkRadiusMd()),
                     )
                     .clickable { onSelectScene(scene.id) }
                     .padding(InkSpacing.sm),
@@ -272,6 +291,7 @@ private fun PlanGridView(
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     WriteJumpButton(
+                        vocabulary = vocabulary,
                         sceneId = scene.id,
                         chapterSceneId = firstSceneInChapter(outline, scene.chapterId) ?: scene.id,
                         onWrite = onWrite,
@@ -291,6 +311,7 @@ private fun PlanGridView(
         }
         item(key = "__plan_add") {
             PlanAddTile(
+                vocabulary = vocabulary,
                 onNewScene = onAddNewScene,
                 onSceneBeat = onAddSceneBeat,
                 onNewChapter = onAddNewChapter,
@@ -303,6 +324,7 @@ private fun PlanGridView(
 @Composable
 private fun PlanOutlineView(
     outline: List<PlanOutlineNode>,
+    vocabulary: PlanVocabulary,
     characters: List<CodexEntryEntity>,
     selectedSceneId: String?,
     onSelectScene: (String) -> Unit,
@@ -333,6 +355,7 @@ private fun PlanOutlineView(
                             modifier = Modifier.weight(1f),
                         )
                         WriteJumpButton(
+                            vocabulary = vocabulary,
                             sceneId = chapterNode.scenes.firstOrNull()?.id,
                             chapterSceneId = chapterNode.scenes.firstOrNull()?.id,
                             onWrite = onWrite,
@@ -358,7 +381,7 @@ private fun PlanOutlineView(
                                     Modifier.border(
                                         2.dp,
                                         InkAccentGold,
-                                        RoundedCornerShape(InkSpacing.radiusMd),
+                                        RoundedCornerShape(inkRadiusMd()),
                                     )
                                 } else {
                                     Modifier
@@ -374,6 +397,7 @@ private fun PlanOutlineView(
                                 overflow = TextOverflow.Ellipsis,
                             )
                             WriteJumpButton(
+                                vocabulary = vocabulary,
                                 sceneId = scene.id,
                                 chapterSceneId = chapterNode.scenes.firstOrNull()?.id ?: scene.id,
                                 onWrite = onWrite,
@@ -399,6 +423,7 @@ private fun PlanOutlineView(
         }
         item(key = "__plan_add") {
             PlanAddTile(
+                vocabulary = vocabulary,
                 onNewScene = onAddNewScene,
                 onSceneBeat = onAddSceneBeat,
                 onNewChapter = onAddNewChapter,
@@ -414,10 +439,11 @@ private fun PlanAddTile(
     onNewScene: () -> Unit,
     onSceneBeat: () -> Unit,
     onNewChapter: () -> Unit,
+    vocabulary: PlanVocabulary,
     modifier: Modifier = Modifier,
 ) {
     var open by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(InkSpacing.radiusMd)
+    val shape = RoundedCornerShape(inkRadiusMd())
     Box(modifier = modifier.fillMaxWidth()) {
         Box(
             modifier = Modifier
@@ -445,7 +471,7 @@ private fun PlanAddTile(
                 },
             )
             DropdownMenuItem(
-                text = { Text("Scene beat") },
+                text = { Text(vocabulary.sceneBeat) },
                 onClick = {
                     open = false
                     onSceneBeat()
@@ -486,7 +512,7 @@ private fun SceneSummaryBox(
         SceneSummaryTone.Grid -> 64.dp
         SceneSummaryTone.Outline -> 96.dp
     }
-    val shape = RoundedCornerShape(InkSpacing.radiusSm)
+    val shape = RoundedCornerShape(inkRadiusSm())
     Box(
         modifier = modifier
             .fillMaxWidth()

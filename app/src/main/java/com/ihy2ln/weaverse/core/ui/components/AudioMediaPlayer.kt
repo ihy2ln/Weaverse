@@ -21,6 +21,8 @@ import androidx.compose.ui.unit.dp
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.InkHairline
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import java.io.File
@@ -58,8 +60,8 @@ fun AudioMediaPlayer(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .border(1.dp, InkHairline, RoundedCornerShape(InkSpacing.radiusSm))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f), RoundedCornerShape(InkSpacing.radiusSm))
+            .border(1.dp, InkHairline, RoundedCornerShape(inkRadiusSm()))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f), RoundedCornerShape(inkRadiusSm()))
             .padding(horizontal = InkSpacing.md, vertical = InkSpacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {

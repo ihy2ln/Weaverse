@@ -22,6 +22,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.CodexCategoryColors
 import com.ihy2ln.weaverse.core.ui.theme.InkHairline
 import com.ihy2ln.weaverse.core.ui.theme.InkPrimaryText
@@ -61,8 +63,8 @@ fun InkColorPicker(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(InkSpacing.radiusSm))
-                .border(1.dp, InkHairline, RoundedCornerShape(InkSpacing.radiusSm))
+                .clip(RoundedCornerShape(inkRadiusSm()))
+                .border(1.dp, InkHairline, RoundedCornerShape(inkRadiusSm()))
                 .padding(InkSpacing.md),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {

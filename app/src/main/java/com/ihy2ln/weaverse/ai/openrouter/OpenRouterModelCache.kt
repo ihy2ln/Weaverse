@@ -68,6 +68,50 @@ object WritingModelSeeds {
     }
 }
 
+/** Maps OpenRouter catalog rows onto Settings tabs. A model can appear in more than one tab. */
+object OpenRouterModelCatalog {
+    fun toModelInfo(dtos: List<OpenRouterModelDto>): List<ModelInfo> =
+        dtos.map { dto ->
+            val tts = dto.isSpeechOutput()
+            val vision = dto.supportsImageInput()
+            val imageGen = dto.generatesImages()
+            val tags = buildList {
+                if (tts) add("TTS")
+                if (vision) add("Vision")
+                if (imageGen) add("Image generation")
+            }
+            ModelInfo(
+                id = dto.id,
+                displayName = dto.name ?: dto.id,
+                contextLength = dto.contextLength,
+                promptPricePerMillion = dto.pricing?.prompt?.toDoubleOrNull()?.times(1_000_000),
+                completionPricePerMillion = dto.pricing?.completion?.toDoubleOrNull()?.times(1_000_000),
+                available = true,
+                isTts = tts,
+                supportsImages = vision,
+                generatesImages = imageGen,
+                tags = tags,
+            )
+        }
+
+    fun writingModels(dtos: List<OpenRouterModelDto>): List<ModelInfo> =
+        WritingModelSeeds.resolveAllWritingModels(
+            toModelInfo(dtos.filter { it.isTextGeneration() }),
+        )
+
+    fun visionModels(dtos: List<OpenRouterModelDto>): List<ModelInfo> =
+        toModelInfo(dtos).filter { it.supportsImages }.sortedBy { it.displayName.lowercase() }
+
+    fun imageModels(dtos: List<OpenRouterModelDto>): List<ModelInfo> =
+        toModelInfo(dtos).filter { it.generatesImages }.sortedBy { it.displayName.lowercase() }
+
+    fun ttsModels(dtos: List<OpenRouterModelDto>): List<ModelInfo> {
+        val tagged = toModelInfo(dtos).filter { it.isTts }
+        if (tagged.isNotEmpty()) return tagged.sortedBy { it.displayName.lowercase() }
+        return TtsModelSeeds.resolveTtsModels(toModelInfo(dtos))
+    }
+}
+
 object TtsModelSeeds {
     private val exactIds = listOf(
         "openai/gpt-4o-mini-tts",
@@ -110,7 +154,11 @@ object TtsModelSeeds {
 class OpenRouterModelCache @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+        coerceInputValues = true
+    }
 
     val models: Flow<List<OpenRouterModelDto>> = context.openRouterDataStore.data.map { prefs ->
         decodeModels(prefs[KEY_MODELS_JSON].orEmpty())
@@ -129,40 +177,31 @@ class OpenRouterModelCache @Inject constructor(
         context.openRouterDataStore.edit { prefs ->
             prefs[KEY_MODELS_JSON] = json.encodeToString(response.data)
             prefs[KEY_CACHED_AT] = System.currentTimeMillis()
+            prefs[KEY_CATALOG_VERSION] = CURRENT_CATALOG_VERSION
         }
+    }
+
+    suspend fun hasFullCatalog(): Boolean {
+        val prefs = context.openRouterDataStore.data.first()
+        val version = prefs[KEY_CATALOG_VERSION] ?: 0
+        return version >= CURRENT_CATALOG_VERSION &&
+            decodeModels(prefs[KEY_MODELS_JSON].orEmpty()).isNotEmpty()
     }
 
     fun toModelInfo(dtos: List<OpenRouterModelDto>): List<ModelInfo> =
-        dtos.map { dto ->
-            val tts = dto.isSpeechOutput()
-            val vision = dto.supportsImageInput()
-            val tags = buildList {
-                if (tts) add("TTS")
-                if (vision) add("Vision")
-            }
-            ModelInfo(
-                id = dto.id,
-                displayName = dto.name ?: dto.id,
-                contextLength = dto.contextLength,
-                promptPricePerMillion = dto.pricing?.prompt?.toDoubleOrNull()?.times(1_000_000),
-                completionPricePerMillion = dto.pricing?.completion?.toDoubleOrNull()?.times(1_000_000),
-                available = true,
-                isTts = tts,
-                supportsImages = vision,
-                tags = tags,
-            )
-        }
+        OpenRouterModelCatalog.toModelInfo(dtos)
 
     fun writingModels(dtos: List<OpenRouterModelDto>): List<ModelInfo> =
-        WritingModelSeeds.resolveAllWritingModels(
-            toModelInfo(dtos.filter { it.isTextGeneration() }),
-        )
+        OpenRouterModelCatalog.writingModels(dtos)
 
-    fun ttsModels(dtos: List<OpenRouterModelDto>): List<ModelInfo> {
-        val tagged = toModelInfo(dtos).filter { it.isTts }
-        if (tagged.isNotEmpty()) return tagged.sortedBy { it.displayName }
-        return TtsModelSeeds.resolveTtsModels(toModelInfo(dtos))
-    }
+    fun visionModels(dtos: List<OpenRouterModelDto>): List<ModelInfo> =
+        OpenRouterModelCatalog.visionModels(dtos)
+
+    fun imageModels(dtos: List<OpenRouterModelDto>): List<ModelInfo> =
+        OpenRouterModelCatalog.imageModels(dtos)
+
+    fun ttsModels(dtos: List<OpenRouterModelDto>): List<ModelInfo> =
+        OpenRouterModelCatalog.ttsModels(dtos)
 
     fun isKnownModel(modelId: String, dtos: List<OpenRouterModelDto>): Boolean =
         dtos.any { it.id == modelId }
@@ -172,12 +211,20 @@ class OpenRouterModelCache @Inject constructor(
         return dtos.firstOrNull { it.id == id }?.supportsImageInput() == true
     }
 
-    private fun decodeModels(raw: String): List<OpenRouterModelDto> =
-        if (raw.isBlank()) emptyList()
-        else runCatching { json.decodeFromString<List<OpenRouterModelDto>>(raw) }.getOrDefault(emptyList())
+    private fun decodeModels(raw: String): List<OpenRouterModelDto> {
+        if (raw.isBlank()) return emptyList()
+        runCatching { parseOpenRouterModelsBody(json, raw).data }
+            .getOrNull()
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { return it }
+        return runCatching { json.decodeFromString<List<OpenRouterModelDto>>(raw) }.getOrDefault(emptyList())
+    }
 
     companion object {
+        /** Bump when the fetch URL/shape changes so Settings refills Vision / Image tabs. */
+        const val CURRENT_CATALOG_VERSION = 2L
         private val KEY_MODELS_JSON = stringPreferencesKey("openrouter_models_json")
         private val KEY_CACHED_AT = longPreferencesKey("openrouter_cached_at")
+        private val KEY_CATALOG_VERSION = longPreferencesKey("openrouter_catalog_version")
     }
 }

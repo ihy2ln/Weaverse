@@ -43,6 +43,7 @@ import com.ihy2ln.weaverse.core.ui.components.InkConfirmButton
 import com.ihy2ln.weaverse.core.ui.components.InkFilledButton
 import com.ihy2ln.weaverse.core.ui.components.InkModeCapsule
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
+import com.ihy2ln.weaverse.core.ui.components.PromptActionMenuButton
 import com.ihy2ln.weaverse.core.ui.components.TextColorPickerDialog
 import com.ihy2ln.weaverse.core.ui.components.VoiceToTextField
 import com.ihy2ln.weaverse.core.ui.components.rememberSpeechToText
@@ -165,6 +166,16 @@ fun WriteScreen(
                         enabled = !state.isSummarizing,
                         compact = true,
                     )
+                    InkTextButton(
+                        label = "Find",
+                        onClick = viewModel::toggleFindReplace,
+                        compact = true,
+                    )
+                    InkTextButton(
+                        label = "History",
+                        onClick = viewModel::toggleHistory,
+                        compact = true,
+                    )
                     Box {
                         InkTextButton(
                             label = "Media",
@@ -200,12 +211,27 @@ fun WriteScreen(
                     }
                 }
                 Text(
-                    "${state.wordCount} words",
+                    buildString {
+                        append("${state.wordCount} words")
+                        state.contextMeter?.let { append(" · ${it.label}") }
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = tokens.secondaryText,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     softWrap = false,
+                )
+            }
+            if (state.findReplace.visible) {
+                FindReplaceBar(
+                    state = state.findReplace,
+                    onQuery = viewModel::updateFindQuery,
+                    onReplacement = viewModel::updateFindReplacement,
+                    onPrev = viewModel::findPrev,
+                    onNext = viewModel::findNext,
+                    onReplace = viewModel::replaceCurrent,
+                    onReplaceAll = viewModel::replaceAllInScene,
+                    onClose = viewModel::toggleFindReplace,
                 )
             }
             if (state.statusMessage.isNotBlank()) {
@@ -373,9 +399,9 @@ fun WriteScreen(
                     horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
                 ) {
                     InkFilledButton(
-                        label = if (overlay.isStreaming) "…" else "Generate",
-                        onClick = viewModel::runAiGeneration,
-                        enabled = !overlay.isStreaming,
+                        label = if (overlay.isStreaming) "Cancel" else "Generate",
+                        onClick = if (overlay.isStreaming) viewModel::cancelAiGeneration else viewModel::runAiGeneration,
+                        enabled = overlay.isStreaming || overlay.prompt.isNotBlank() || overlay.streamingText.isNotBlank() || true,
                     )
                     InkModeCapsule(
                         label = "Clear Text",
@@ -405,12 +431,10 @@ fun WriteScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
                     ) {
-                        InkConfirmButton(
-                            onClick = viewModel::acceptAiResult,
-                            label = "Accept",
-                            contentDescription = "Accept",
+                        PromptActionMenuButton(
+                            onConfirm = viewModel::acceptAiResult,
+                            onRetry = viewModel::retryAiGeneration,
                         )
-                        InkModeCapsule(label = "Retry", onClick = viewModel::retryAiGeneration)
                     }
                 }
                 if (overlay.errorMessage.isNotBlank()) {
@@ -429,6 +453,13 @@ fun WriteScreen(
                         modifier = Modifier.padding(top = InkSpacing.xs),
                     )
                 }
+                if (overlay.contextMeter != null) {
+                    Text(
+                        overlay.contextMeter!!.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tokens.secondaryText,
+                    )
+                }
                 if (overlay.usageLog.isNotBlank()) {
                     Text(
                         overlay.usageLog,
@@ -437,6 +468,100 @@ fun WriteScreen(
                     )
                 }
             }
+        }
+        if (state.showHistory) {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = viewModel::toggleHistory,
+                title = { Text("Scene history") },
+                text = {
+                    Column {
+                        InkTextButton(label = "Save snapshot now", onClick = viewModel::snapshotNow, compact = true)
+                        if (state.revisions.isEmpty()) {
+                            Text("No snapshots yet. Hourly copies are kept as you write.", color = tokens.secondaryText)
+                        } else {
+                            state.revisions.take(24).forEach { rev ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            java.text.SimpleDateFormat("MMM d, h:mm a", java.util.Locale.US)
+                                                .format(java.util.Date(rev.createdAt)),
+                                            style = MaterialTheme.typography.labelMedium,
+                                        )
+                                        Text(
+                                            "${rev.wordCount} words · ${rev.preview}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = tokens.secondaryText,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                    InkTextButton(
+                                        label = "Restore",
+                                        onClick = { viewModel.restoreRevision(rev.id) },
+                                        compact = true,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    InkTextButton(label = "Close", onClick = viewModel::toggleHistory, compact = true)
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun FindReplaceBar(
+    state: FindReplaceState,
+    onQuery: (String) -> Unit,
+    onReplacement: (String) -> Unit,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onReplace: () -> Unit,
+    onReplaceAll: () -> Unit,
+    onClose: () -> Unit,
+) {
+    val tokens = inkTokens()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = InkSpacing.sm),
+        verticalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = state.query,
+                onValueChange = onQuery,
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("Find") },
+                singleLine = true,
+            )
+            Text(
+                state.matchLabel,
+                style = MaterialTheme.typography.labelSmall,
+                color = tokens.secondaryText,
+                modifier = Modifier.padding(horizontal = InkSpacing.sm),
+            )
+            InkTextButton(label = "Prev", onClick = onPrev, compact = true)
+            InkTextButton(label = "Next", onClick = onNext, compact = true)
+            InkTextButton(label = "×", onClick = onClose, compact = true)
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = state.replacement,
+                onValueChange = onReplacement,
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("Replace") },
+                singleLine = true,
+            )
+            InkTextButton(label = "Replace", onClick = onReplace, compact = true)
+            InkTextButton(label = "All", onClick = onReplaceAll, compact = true)
         }
     }
 }

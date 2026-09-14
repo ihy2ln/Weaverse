@@ -55,6 +55,7 @@ class PlanViewModel @Inject constructor(
     private val codexRepository: CodexRepository,
     private val workspaceHistory: WorkspaceHistory,
     private val settings: SettingsRepository,
+    private val writeStamps: com.ihy2ln.weaverse.data.repo.SceneWriteStamps,
 ) : ViewModel() {
     private val bookIdFlow = settings.preferences.map { it.selectedBookId }
 
@@ -135,7 +136,7 @@ class PlanViewModel @Inject constructor(
             val characterName = scene.povCharacterId
                 ?.let { id -> uiState.value.characters.firstOrNull { it.id == id }?.name }
             val label = if (!characterName.isNullOrBlank()) "$pov – $characterName" else pov
-            val after = scene.copy(pov = label, updatedAt = System.currentTimeMillis())
+            val after = scene.copy(pov = label, updatedAt = writeStamps.next())
             manuscriptRepository.saveScene(after)
             workspaceHistory.record(
                 undo = { manuscriptRepository.saveScene(scene) },
@@ -153,7 +154,7 @@ class PlanViewModel @Inject constructor(
             val after = scene.copy(
                 pov = label,
                 povCharacterId = character?.id,
-                updatedAt = System.currentTimeMillis(),
+                updatedAt = writeStamps.next(),
             )
             manuscriptRepository.saveScene(after)
             workspaceHistory.record(

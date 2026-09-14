@@ -1,18 +1,25 @@
 package com.ihy2ln.weaverse.feature.novel.write.editor
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.unit.dp
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
+import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 
 data class SlashCommand(val id: String, val label: String, val description: String)
 
@@ -38,19 +45,24 @@ fun SlashCommandOverlay(
     } else {
         commands.filter { it.label.contains(filter, ignoreCase = true) || it.id.contains(filter, ignoreCase = true) }
     }
+    val tokens = inkTokens()
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(InkSpacing.radiusMd))
+            .shadow(8.dp, RoundedCornerShape(inkRadiusMd()))
+            .clip(RoundedCornerShape(inkRadiusMd()))
             .background(MaterialTheme.colorScheme.surface)
-            .padding(InkSpacing.sm),
+            .border(1.dp, tokens.hairline, RoundedCornerShape(inkRadiusMd()))
+            .heightIn(max = 260.dp)
+            .verticalScroll(rememberScrollState())
+            .padding(vertical = InkSpacing.xxs),
     ) {
         filtered.forEach { cmd ->
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { onSelect(cmd); onDismiss() }
-                    .padding(InkSpacing.md),
+                    .padding(horizontal = InkSpacing.md, vertical = InkSpacing.sm),
             ) {
                 Text(cmd.label, style = MaterialTheme.typography.titleSmall)
                 Text(cmd.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

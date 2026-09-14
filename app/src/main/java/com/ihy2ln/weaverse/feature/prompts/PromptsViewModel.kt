@@ -3,7 +3,10 @@ package com.ihy2ln.weaverse.feature.prompts
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ihy2ln.weaverse.ai.prompt.PromptMessage
+import com.ihy2ln.weaverse.ai.prompt.PromptAddOns
+import com.ihy2ln.weaverse.ai.prompt.PromptAgeRating
 import com.ihy2ln.weaverse.ai.prompt.PromptRole
+import com.ihy2ln.weaverse.ai.prompt.PromptingMode
 import com.ihy2ln.weaverse.ai.prompt.decodePromptMessages
 import com.ihy2ln.weaverse.ai.prompt.encodePromptMessages
 import com.ihy2ln.weaverse.data.db.entities.PromptEntity
@@ -54,11 +57,19 @@ data class PromptsUiState(
     val bias: String = "",
     val guidance: String = "",
     val newFolderName: String = "",
+    /** TEMPLATE-header add-ons. */
+    val ecchiOverlay: Boolean = true,
+    val promptAgeRating: PromptAgeRating = PromptAgeRating.X,
+    val promptingMode: PromptingMode = PromptingMode.Novel,
+    val selectedGenres: Set<String> = setOf(PromptAddOns.DefaultGenre),
+    /** Read-only snapshot rebuilt by the TEMPLATE refresh action. */
+    val effectiveInstructions: String = "",
 )
 
 @HiltViewModel
 class PromptsViewModel @Inject constructor(
     private val promptRepository: PromptRepository,
+    private val settings: com.ihy2ln.weaverse.data.settings.SettingsRepository,
     private val workspaceHistory: WorkspaceHistory,
 ) : ViewModel() {
     private val json = Json { ignoreUnknownKeys = true }
@@ -68,6 +79,18 @@ class PromptsViewModel @Inject constructor(
     private var hydratedSelection: String? = null
 
     init {
+        viewModelScope.launch {
+            settings.preferences.collect { prefs ->
+                _uiState.update {
+                    it.copy(
+                        ecchiOverlay = prefs.ecchiOverlay,
+                        promptAgeRating = prefs.promptAgeRating,
+                        promptingMode = prefs.promptingMode,
+                        selectedGenres = prefs.selectedGenres,
+                    )
+                }
+            }
+        }
         viewModelScope.launch {
             combine(
                 promptRepository.observeFolders(),
@@ -118,6 +141,7 @@ class PromptsViewModel @Inject constructor(
                 isDefault = prompt.isDefault,
                 bias = advanced.first,
                 guidance = advanced.second,
+                effectiveInstructions = "",
             )
         }
     }
@@ -157,6 +181,51 @@ class PromptsViewModel @Inject constructor(
     fun toggleFolder(folderId: String) {
         collapsedFolders.update { current ->
             if (folderId in current) current - folderId else current + folderId
+        }
+    }
+
+    /** TEMPLATE-header add-on toggles. */
+    fun setEcchiOverlay(enabled: Boolean) {
+        PromptAddOns.ecchiOverlay = enabled
+        _uiState.update { it.copy(ecchiOverlay = enabled, effectiveInstructions = "") }
+        viewModelScope.launch { settings.setEcchiOverlay(enabled) }
+    }
+
+    fun setPromptAgeRating(rating: PromptAgeRating) {
+        PromptAddOns.ageRating = rating
+        _uiState.update { it.copy(promptAgeRating = rating, effectiveInstructions = "") }
+        viewModelScope.launch { settings.setPromptAgeRating(rating) }
+    }
+
+    fun setPromptingMode(mode: PromptingMode) {
+        PromptAddOns.mode = mode
+        _uiState.update { it.copy(promptingMode = mode, effectiveInstructions = "") }
+        viewModelScope.launch { settings.setPromptingMode(mode) }
+    }
+
+    fun toggleGenre(genre: String) {
+        val current = _uiState.value.selectedGenres
+        val updated = if (genre in current) current - genre else current + genre
+        PromptAddOns.selectedGenres = updated
+        _uiState.update { it.copy(selectedGenres = updated, effectiveInstructions = "") }
+        viewModelScope.launch { settings.setSelectedGenres(updated) }
+    }
+
+    /** Rebuilds the exact global system stack used by the AI without changing the editable base prompt. */
+    fun refreshEffectiveInstructions() {
+        val state = _uiState.value
+        PromptAddOns.mode = state.promptingMode
+        PromptAddOns.ecchiOverlay = state.ecchiOverlay
+        PromptAddOns.ageRating = state.promptAgeRating
+        PromptAddOns.selectedGenres = state.selectedGenres
+        val baseSystem = state.messages
+            .filter { it.role.equals(PromptRole.System.name, ignoreCase = true) }
+            .map { it.content }
+        _uiState.update {
+            it.copy(
+                effectiveInstructions = PromptAddOns.applyTo(baseSystem).joinToString("\n\n"),
+                editorTab = PromptEditorTab.Instructions,
+            )
         }
     }
 
@@ -218,6 +287,12 @@ class PromptsViewModel @Inject constructor(
                 isDefault = state.isDefault,
                 createdAt = existing?.createdAt ?: System.currentTimeMillis(),
             )
+            if (entity.isDefault) {
+                state.folders
+                    .flatMap { it.prompts }
+                    .filter { it.id != entity.id && it.type == entity.type && it.isDefault }
+                    .forEach { promptRepository.upsert(it.copy(isDefault = false)) }
+            }
             promptRepository.upsert(entity)
             if (existing != null && existing != entity) {
                 workspaceHistory.record(

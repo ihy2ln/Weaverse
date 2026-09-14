@@ -5,6 +5,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -48,6 +50,11 @@ fun ExportImportScreen(
     ) { uri ->
         if (uri != null) viewModel.importUri(uri)
     }
+    val mediaPackLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) viewModel.installMediaPack(uri)
+    }
 
     Column(
         modifier = modifier
@@ -82,6 +89,43 @@ fun ExportImportScreen(
                 .fillMaxWidth()
                 .padding(bottom = InkSpacing.md),
         )
+        Text(
+            "Media packs",
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(top = InkSpacing.sm),
+        )
+        Text(
+            "Optional art downloads. The app ships playable with small pictures; a pack " +
+                "replaces them with the full-resolution set.",
+            color = tokens.secondaryText,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        InkOutlinedButton(
+            label = "Install media pack…",
+            onClick = { mediaPackLauncher.launch(arrayOf("application/zip", "*/*")) },
+            enabled = !state.busy,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = InkSpacing.xs),
+        )
+        state.installedPacks.forEach { pack ->
+            Text(
+                "· ${pack.name} v${pack.version} — ${pack.itemCount} pictures",
+                color = tokens.secondaryText,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = InkSpacing.xxs),
+            )
+        }
+        if (state.packStatus.isNotBlank()) {
+            Text(
+                state.packStatus,
+                color = tokens.secondaryText,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = InkSpacing.xs),
+            )
+        }
+        Spacer(Modifier.height(InkSpacing.md))
+
         InkSegmentedPill(
             options = listOf(
                 SegmentedOption(ExportTab.Novel.name, "Novel"),
@@ -185,6 +229,14 @@ fun ExportImportScreen(
                     modifier = Modifier.padding(bottom = InkSpacing.sm),
                 )
             }
+            if (state.format == ExportFormat.Epub) {
+                Text(
+                    "EPUB is a readable book for any reader app (prose + titles). Prefer JSON or Project ZIP for a full Weaverse round-trip.",
+                    color = tokens.secondaryText,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(bottom = InkSpacing.sm),
+                )
+            }
 
             Text("General options", style = MaterialTheme.typography.labelLarge)
             OptionCheck("Export Summaries", state.options.exportSummaries) {
@@ -270,6 +322,7 @@ fun ExportImportScreen(
         Text(
             "• Weaverse JSON / project ZIP — upserts matching IDs\n" +
                 "• Novelcrafter full ZIP — always creates a new book (codex, chats, snippets, manuscript)\n" +
+                "• SillyTavern ZIP / PNG card / JSONL chats — characters, world books, personas, chats\n" +
                 "• Word (.docx), HTML, Markdown — new book from manuscript\n" +
                 "• Notes JSON — restores the shared notes board\n" +
                 "• Legacy .doc — not supported (use .docx)",

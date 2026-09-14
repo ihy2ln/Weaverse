@@ -13,6 +13,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -87,5 +88,32 @@ class OpenRouterRepositoryTest {
         assertEquals("stored", result.label)
         val recorded = server.takeRequest()
         assertEquals("Bearer sk-stored", recorded.getHeader("Authorization"))
+    }
+
+    @Test
+    fun fetchModelsRequestsEveryOutputModality() = runTest {
+        every { settings.apiKey(SecureKeyStore.OPENROUTER) } returns "sk-stored"
+        coEvery { modelCache.hasFullCatalog() } returns false
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody(
+                    """
+                    {"data":[{
+                      "id":"openai/gpt-5.6-luna",
+                      "name":"GPT-5.6 Luna",
+                      "architecture":{
+                        "modality":"text+image+file->text",
+                        "input_modalities":["text","image","file"],
+                        "output_modalities":["text"]
+                      }
+                    }]}
+                    """.trimIndent(),
+                ),
+        )
+        repository.fetchModels(forceRefresh = true)
+        val recorded = server.takeRequest()
+        assertTrue(recorded.path.orEmpty().contains("output_modalities=all"))
+        assertTrue(recorded.path.orEmpty().startsWith("/api/v1/models"))
     }
 }

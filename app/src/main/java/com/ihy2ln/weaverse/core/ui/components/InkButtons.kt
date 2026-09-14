@@ -1,16 +1,28 @@
 package com.ihy2ln.weaverse.core.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Backspace
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -18,6 +30,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -25,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 
 private val ConfirmIconSize = 20.dp
+private val UnenabledTint @Composable get() = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
 
 /** Filled button with explicit onPrimary label color (fixes invisible text on dark fills). */
 @Composable
@@ -180,21 +197,28 @@ fun InkCheckIconButton(
     }
 }
 
-/** Compact X for Clear inside the prompt box. */
+/**
+ * Backspace button for deleting the prompt entry: tap deletes the text,
+ * press-and-hold undoes the last deletion when [onUndo] is provided.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun InkClearIconButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    contentDescription: String = "Clear",
+    contentDescription: String = "Delete entry — hold to undo",
+    onUndo: (() -> Unit)? = null,
 ) {
-    IconButton(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = modifier.size(PromptActionButtonSize),
+    Box(
+        modifier = modifier.size(PromptActionButtonSize).combinedClickable(
+            onClick = { if (enabled) onClick() },
+            onLongClick = { if (enabled && onUndo != null) onUndo() },
+        ),
+        contentAlignment = Alignment.Center,
     ) {
         Icon(
-            imageVector = Icons.Default.Close,
+            imageVector = Icons.AutoMirrored.Filled.Backspace,
             contentDescription = contentDescription,
             modifier = Modifier.size(PromptActionIconSize),
             tint = if (enabled) {
@@ -203,6 +227,178 @@ fun InkClearIconButton(
                 MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
             },
         )
+    }
+}
+
+/**
+ * Prompt ✓ action: tap confirms; long-press opens a symbol-only menu combining
+ * ✓ confirm, ↻ retry/resubmit, and » continue. Without extra actions it behaves
+ * as a plain ✓ button.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun PromptActionMenuButton(
+    onConfirm: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    onRetry: (() -> Unit)? = null,
+    onContinue: (() -> Unit)? = null,
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    val hasMenu = onRetry != null || onContinue != null
+    Box(modifier) {
+        Box(
+            modifier = Modifier
+                .size(PromptActionButtonSize)
+                .combinedClickable(
+                    onClick = { if (enabled) onConfirm() },
+                    // Hold opens the menu even when the box is empty, so continue
+                    // and retry stay reachable without typing first.
+                    onLongClick = { if (hasMenu) menuOpen = true },
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = if (hasMenu) {
+                    "Confirm — hold for retry and continue"
+                } else {
+                    "Confirm"
+                },
+                modifier = Modifier.size(PromptActionIconSize),
+                tint = if (enabled) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                },
+            )
+        }
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            Row(
+                modifier = Modifier.padding(horizontal = InkSpacing.xs, vertical = InkSpacing.xxs),
+                horizontalArrangement = Arrangement.spacedBy(InkSpacing.xxs),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = { menuOpen = false; onConfirm() }, enabled = enabled) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = "Confirm",
+                        tint = if (enabled) MaterialTheme.colorScheme.primary else UnenabledTint,
+                    )
+                }
+                if (onRetry != null) {
+                    IconButton(onClick = { menuOpen = false; onRetry() }) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Retry",
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+                if (onContinue != null) {
+                    IconButton(onClick = { menuOpen = false; onContinue() }) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowForward,
+                            contentDescription = "Continue",
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * RPG composer control: tap starts voice input; hold opens a symbol-only menu
+ * combining add-media (+), roll (dice), new roster character (👤+), new
+ * inventory item (bag), and microphone (🎤) into one spot.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun ComposerMenuButton(
+    onMicTap: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    onAdd: (() -> Unit)? = null,
+    onRoll: (() -> Unit)? = null,
+    onAddCharacter: (() -> Unit)? = null,
+    onAddItem: (() -> Unit)? = null,
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    val hasMenu = onAdd != null || onRoll != null || onAddCharacter != null || onAddItem != null
+    Box(modifier) {
+        Box(
+            modifier = Modifier
+                .size(PromptActionButtonSize)
+                .combinedClickable(
+                    onClick = { if (enabled) onMicTap() },
+                    onLongClick = { if (enabled && hasMenu) menuOpen = true },
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Default.Mic,
+                contentDescription = "Voice — hold for add media, roll, roster, and inventory",
+                modifier = Modifier.size(PromptActionIconSize),
+                tint = if (enabled) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    UnenabledTint
+                },
+            )
+        }
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            Row(
+                modifier = Modifier.padding(horizontal = InkSpacing.xs, vertical = InkSpacing.xxs),
+                horizontalArrangement = Arrangement.spacedBy(InkSpacing.xxs),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (onAdd != null) {
+                    IconButton(onClick = { menuOpen = false; onAdd() }) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Add media",
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+                if (onRoll != null) {
+                    IconButton(onClick = { menuOpen = false; onRoll() }) {
+                        Icon(
+                            imageVector = Icons.Default.Casino,
+                            contentDescription = "Roll",
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+                if (onAddCharacter != null) {
+                    IconButton(onClick = { menuOpen = false; onAddCharacter() }) {
+                        Icon(
+                            imageVector = Icons.Default.PersonAdd,
+                            contentDescription = "Add roster character",
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+                if (onAddItem != null) {
+                    IconButton(onClick = { menuOpen = false; onAddItem() }) {
+                        Icon(
+                            imageVector = Icons.Default.ShoppingBag,
+                            contentDescription = "Add inventory item",
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+                IconButton(onClick = { menuOpen = false; onMicTap() }) {
+                    Icon(
+                        imageVector = Icons.Default.Mic,
+                        contentDescription = "Voice",
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+        }
     }
 }
 

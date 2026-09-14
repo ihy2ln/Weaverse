@@ -1,0 +1,85 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scenes/Dungeon.gd" id="1"]
+
+[node name="Dungeon" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("1")
+
+[node name="BG" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.06, 0.08, 0.09, 1)
+
+[node name="Root" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 10.0
+offset_top = 8.0
+offset_right = -96.0
+offset_bottom = -8.0
+
+[node name="TopBar" type="HBoxContainer" parent="Root"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="Root/TopBar"]
+layout_mode = 2
+text = "SILVERWOOD FOREST"
+
+[node name="Spacer" type="Control" parent="Root/TopBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Back" type="Button" parent="Root/TopBar"]
+layout_mode = 2
+text = "← Town"
+
+[node name="Body" type="HBoxContainer" parent="Root"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="MapPanel" type="PanelContainer" parent="Root/Body"]
+custom_minimum_size = Vector2(560, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 1.7
+
+[node name="Map" type="Control" parent="Root/Body/MapPanel"]
+layout_mode = 2
+
+[node name="Side" type="VBoxContainer" parent="Root/Body"]
+custom_minimum_size = Vector2(400, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 1.0
+
+[node name="RoomShot" type="Control" parent="Root/Body/Side"]
+custom_minimum_size = Vector2(0, 260)
+layout_mode = 2
+mouse_filter = 2
+clip_contents = true
+
+[node name="Info" type="RichTextLabel" parent="Root/Body/Side"]
+layout_mode = 2
+size_flags_vertical = 3
+size_flags_stretch_ratio = 1.6
+bbcode_enabled = true
+
+[node name="ChoiceScroll" type="ScrollContainer" parent="Root/Body/Side"]
+custom_minimum_size = Vector2(0, 160)
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="Choices" type="VBoxContainer" parent="Root/Body/Side/ChoiceScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[connection signal="pressed" from="Root/TopBar/Back" to="." method="_on_back_pressed"]

@@ -13,13 +13,20 @@ import com.ihy2ln.weaverse.data.db.entities.CodexCategoryEntity
 import com.ihy2ln.weaverse.data.db.entities.CodexEntryEntity
 import com.ihy2ln.weaverse.data.db.entities.CodexEntryLoreEntity
 import com.ihy2ln.weaverse.data.db.entities.MediaEntity
+import com.ihy2ln.weaverse.data.db.entities.MangaChapterEntity
+import com.ihy2ln.weaverse.data.db.entities.MangaFavoriteCategoryEntity
+import com.ihy2ln.weaverse.data.db.entities.MangaFavoriteEntity
+import com.ihy2ln.weaverse.data.db.entities.MangaPageEntity
+import com.ihy2ln.weaverse.data.db.entities.MangaSeriesEntity
 import com.ihy2ln.weaverse.data.db.entities.PromptEntity
 import com.ihy2ln.weaverse.data.db.entities.PromptFolderEntity
 import com.ihy2ln.weaverse.data.db.entities.RpCharacterEntity
 import com.ihy2ln.weaverse.data.db.entities.RpChatEntity
 import com.ihy2ln.weaverse.data.db.entities.RpMessageEntity
 import com.ihy2ln.weaverse.data.db.entities.RpPersonaEntity
+import com.ihy2ln.weaverse.data.db.entities.RpgCampaignSaveEntity
 import com.ihy2ln.weaverse.data.db.entities.SceneEntity
+import com.ihy2ln.weaverse.data.db.entities.SceneRevisionEntity
 import com.ihy2ln.weaverse.data.db.entities.SeriesEntity
 import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
 import kotlinx.coroutines.flow.Flow
@@ -80,6 +87,9 @@ interface ManuscriptDao {
     @Query("SELECT * FROM chapters WHERE actId = :actId ORDER BY sortOrder")
     suspend fun getChapters(actId: String): List<ChapterEntity>
 
+    @Query("SELECT * FROM chapters WHERE id = :id LIMIT 1")
+    suspend fun getChapter(id: String): ChapterEntity?
+
     @Query("SELECT * FROM scenes WHERE chapterId = :chapterId ORDER BY sortOrder")
     fun observeScenes(chapterId: String): Flow<List<SceneEntity>>
 
@@ -91,6 +101,19 @@ interface ManuscriptDao {
 
     @Query("SELECT * FROM scenes WHERE id = :id LIMIT 1")
     suspend fun getScene(id: String): SceneEntity?
+
+    @Query(
+        """
+        SELECT s.id AS id, s.title AS title, s.plainText AS plainText, s.docJson AS docJson,
+               s.wordCount AS wordCount, c.id AS chapterId, c.title AS chapterTitle
+        FROM scenes s
+        INNER JOIN chapters c ON c.id = s.chapterId
+        INNER JOIN acts a ON a.id = c.actId
+        WHERE a.bookId = :bookId
+        ORDER BY a.sortOrder, c.sortOrder, s.sortOrder
+        """,
+    )
+    suspend fun getReaderScenes(bookId: String): List<ReaderSceneRow>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAct(entity: ActEntity)
@@ -106,6 +129,30 @@ interface ManuscriptDao {
 
     @Query("DELETE FROM chapters WHERE id = :id")
     suspend fun deleteChapter(id: String)
+
+    @Query("SELECT * FROM scene_revisions WHERE sceneId = :sceneId ORDER BY createdAt DESC")
+    fun observeRevisions(sceneId: String): Flow<List<SceneRevisionEntity>>
+
+    @Query("SELECT * FROM scene_revisions WHERE sceneId = :sceneId ORDER BY createdAt DESC")
+    suspend fun getRevisions(sceneId: String): List<SceneRevisionEntity>
+
+    @Query("SELECT * FROM scene_revisions WHERE id = :id LIMIT 1")
+    suspend fun getRevision(id: String): SceneRevisionEntity?
+
+    @Query("SELECT * FROM scene_revisions WHERE sceneId = :sceneId ORDER BY createdAt DESC LIMIT 1")
+    suspend fun latestRevision(sceneId: String): SceneRevisionEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertRevision(entity: SceneRevisionEntity)
+
+    @Query("DELETE FROM scene_revisions WHERE id = :id")
+    suspend fun deleteRevision(id: String)
+
+    @Query(
+        "DELETE FROM scene_revisions WHERE sceneId = :sceneId AND id NOT IN " +
+            "(SELECT id FROM scene_revisions WHERE sceneId = :sceneId ORDER BY createdAt DESC LIMIT :keep)",
+    )
+    suspend fun pruneRevisions(sceneId: String, keep: Int)
 }
 
 @Dao
@@ -259,10 +306,22 @@ interface WorkshopChatDao {
 
     @Query("DELETE FROM chat_messages WHERE id = :id")
     suspend fun deleteMessage(id: String)
+
+    @Query("DELETE FROM chat_messages WHERE threadId = :threadId")
+    suspend fun deleteMessagesForThread(threadId: String)
+
+    @Query("DELETE FROM chat_threads WHERE id = :threadId")
+    suspend fun deleteThread(threadId: String)
 }
 
 @Dao
 interface RoleplayDao {
+    @Query("SELECT * FROM rpg_campaign_saves WHERE campaignId = :campaignId LIMIT 1")
+    suspend fun getRpgCampaignSave(campaignId: String): RpgCampaignSaveEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertRpgCampaignSave(entity: RpgCampaignSaveEntity)
+
     @Query("SELECT * FROM rp_characters ORDER BY name")
     fun observeCharacters(): Flow<List<RpCharacterEntity>>
 
@@ -283,6 +342,38 @@ interface RoleplayDao {
 
     @Query("SELECT * FROM rp_chats ORDER BY updatedAt DESC")
     suspend fun getChats(): List<RpChatEntity>
+
+    /** Most recently touched chat for a character, if one exists. */
+    @Query("SELECT * FROM rp_chats WHERE characterId = :characterId ORDER BY updatedAt DESC LIMIT 1")
+    suspend fun getChatForCharacter(characterId: String): RpChatEntity?
+
+    /** Discord-style text/character rooms scoped to one work's server. */
+    @Query(
+        "SELECT * FROM rp_chats WHERE bookId = :bookId AND displayMode = 'messenger' " +
+            "AND roomKind IN ('channel', 'character') ORDER BY createdAt",
+    )
+    fun observeRoomsForBook(bookId: String): Flow<List<RpChatEntity>>
+
+    /** Direct messages: explicit DMs plus legacy messenger chats with no owning work. */
+    @Query(
+        "SELECT * FROM rp_chats WHERE roomKind = 'dm' OR (roomKind = '' AND " +
+            "displayMode = 'messenger' AND bookId IS NULL) ORDER BY updatedAt DESC",
+    )
+    fun observeDmChats(): Flow<List<RpChatEntity>>
+
+    /** Newest message across all modes, for friends-list previews. */
+    @Query("SELECT * FROM rp_messages WHERE chatId = :chatId ORDER BY createdAt DESC LIMIT 1")
+    suspend fun getLatestMessage(chatId: String): RpMessageEntity?
+
+    @Query("SELECT COUNT(*) FROM rp_characters")
+    suspend fun countCharacters(): Int
+
+    /** Character messages that arrived after the chat was last opened. */
+    @Query(
+        "SELECT COUNT(*) FROM rp_messages WHERE chatId = :chatId AND role != 'user' " +
+            "AND isActiveSwipe = 1 AND createdAt > :since",
+    )
+    suspend fun countUnread(chatId: String, since: Long): Int
 
     @Query(
         "SELECT * FROM rp_messages WHERE chatId = :chatId AND displayMode = :displayMode ORDER BY createdAt",
@@ -328,11 +419,17 @@ interface RoleplayDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertChat(entity: RpChatEntity)
 
+    @Query("DELETE FROM rp_chats WHERE id = :id")
+    suspend fun deleteChat(id: String)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertMessage(entity: RpMessageEntity)
 
     @Query("DELETE FROM rp_messages WHERE id = :id")
     suspend fun deleteMessage(id: String)
+
+    @Query("DELETE FROM rp_messages WHERE chatId = :chatId")
+    suspend fun deleteMessagesForChat(chatId: String)
 }
 
 @Dao
@@ -343,6 +440,102 @@ interface MediaDao {
     @Query("SELECT * FROM media ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<MediaEntity>>
 
+    @Query("SELECT * FROM media WHERE type = 'image' AND category = :category ORDER BY displayName, id")
+    suspend fun getImagesByCategory(category: String): List<MediaEntity>
+
+    @Query("SELECT * FROM media WHERE type = 'image' AND tags LIKE '%' || :tag || '%' ORDER BY displayName, id")
+    suspend fun getImagesByTag(tag: String): List<MediaEntity>
+
+    @Query("SELECT * FROM media WHERE type = :type AND tags LIKE '%' || :tag || '%' ORDER BY displayName, id")
+    suspend fun getByTypeAndTag(type: String, tag: String): List<MediaEntity>
+
+    @Query("SELECT DISTINCT category FROM media WHERE type = 'image' AND category != '' ORDER BY category")
+    suspend fun getImageCategories(): List<String>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: MediaEntity)
 }
+
+@Dao
+interface MangaDao {
+    @Query("SELECT * FROM manga_chapters ORDER BY updatedAt DESC, mangaTitle, chapterNumber")
+    fun observeChapters(): Flow<List<MangaChapterEntity>>
+
+    @Query("SELECT * FROM manga_chapters WHERE id = :id LIMIT 1")
+    suspend fun getChapter(id: String): MangaChapterEntity?
+
+    @Query("SELECT * FROM manga_chapters WHERE sourceId = :sourceId AND remoteId = :remoteId LIMIT 1")
+    suspend fun getChapterByRemoteId(sourceId: String, remoteId: String): MangaChapterEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertChapter(entity: MangaChapterEntity)
+
+    @Query("SELECT * FROM manga_chapters WHERE mangaId = :mangaId")
+    suspend fun getChaptersByManga(mangaId: String): List<MangaChapterEntity>
+
+    @Query("DELETE FROM manga_pages WHERE chapterId = :chapterId")
+    suspend fun deletePagesForChapter(chapterId: String)
+
+    @Query("DELETE FROM manga_chapters WHERE id = :chapterId")
+    suspend fun deleteChapter(chapterId: String)
+
+    @Query("SELECT * FROM manga_pages WHERE chapterId = :chapterId ORDER BY pageIndex")
+    fun observePages(chapterId: String): Flow<List<MangaPageEntity>>
+
+    @Query("SELECT * FROM manga_pages WHERE pageIndex = 0 ORDER BY updatedAt DESC")
+    fun observeCoverPages(): Flow<List<MangaPageEntity>>
+
+    @Query("SELECT * FROM manga_pages WHERE chapterId = :chapterId ORDER BY pageIndex")
+    suspend fun getPages(chapterId: String): List<MangaPageEntity>
+
+    @Query("SELECT * FROM manga_pages WHERE id = :id LIMIT 1")
+    suspend fun getPage(id: String): MangaPageEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertPage(entity: MangaPageEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertPages(entities: List<MangaPageEntity>)
+
+    @Query("SELECT * FROM manga_series ORDER BY title COLLATE NOCASE")
+    fun observeSeries(): Flow<List<MangaSeriesEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertSeries(entity: MangaSeriesEntity)
+
+    @Query("SELECT * FROM manga_favorite_categories ORDER BY sortOrder, name COLLATE NOCASE")
+    fun observeFavoriteCategories(): Flow<List<MangaFavoriteCategoryEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertFavoriteCategory(entity: MangaFavoriteCategoryEntity)
+
+    @Query("SELECT COUNT(*) FROM manga_favorite_categories")
+    suspend fun favoriteCategoryCount(): Int
+
+    @Query("SELECT * FROM manga_favorites ORDER BY addedAt DESC")
+    fun observeFavorites(): Flow<List<MangaFavoriteEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertFavorite(entity: MangaFavoriteEntity)
+
+    @Query("DELETE FROM manga_favorites WHERE seriesId = :seriesId AND categoryId = :categoryId")
+    suspend fun removeFavorite(seriesId: String, categoryId: String)
+
+    @Query("DELETE FROM manga_favorites WHERE seriesId = :seriesId")
+    suspend fun removeAllFavorites(seriesId: String)
+
+    @Query("DELETE FROM manga_series WHERE id = :seriesId")
+    suspend fun deleteSeries(seriesId: String)
+}
+
+/** Flattened manuscript row for the Reader — one JOIN instead of acts→chapters→scenes. */
+data class ReaderSceneRow(
+    val id: String,
+    val title: String,
+    val plainText: String,
+    val docJson: String,
+    val wordCount: Int,
+    val chapterId: String,
+    val chapterTitle: String,
+)
+
