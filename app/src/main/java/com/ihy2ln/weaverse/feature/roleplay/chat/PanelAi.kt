@@ -164,6 +164,11 @@ object PanelAi {
                 "Return ONLY a JSON array: [{\"x\":0,\"y\":0,\"w\":100,\"h\":40,\"original\":\"...\",\"translation\":\"...\"}]. " +
                 "Use an empty original when a region is decorative. Do not merge separate bubbles.",
         ) ?: return null
+        return parseTranslatedRegions(raw)
+    }
+
+    /** Pure parser kept separate so multilingual translation output is testable. */
+    internal fun parseTranslatedRegions(raw: String): List<PanelTextRegion>? {
         val array = extractJsonArray(raw) ?: return null
         val decoded = runCatching {
             regionJson.decodeFromString(ListSerializer(RegionDto.serializer()), array)

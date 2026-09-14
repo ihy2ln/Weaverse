@@ -36,6 +36,9 @@ data class RpMediaRef(
     val mediaOffsetYPercent: Float = 0f,
     val overlays: List<TextOverlay> = emptyList(),
     val panelRotationDeg: Float = 0f,
+    /** Resolved immutable source path when this panel points at a derived edit. */
+    val originalPath: String = "",
+    val variantKind: String = "original",
 )
 
 data class RpMessageUi(
@@ -182,6 +185,11 @@ data class RoleplayChatUiState(
     val imageEditor: PanelEditorUi? = null,
     /** Short status for the storyboard tools (panel separation results…). */
     val storyboardStatus: String = "",
+    /** Long-running imported-manga translation/colorization progress. */
+    val mangaEditBusy: Boolean = false,
+    val mangaEditAction: String = "",
+    val mangaEditCurrent: Int = 0,
+    val mangaEditTotal: Int = 0,
     /** Recoverable AI/offline storyboard page creation state. */
     val storyboardGeneration: StoryboardGenerationUiState = StoryboardGenerationUiState(),
     val storyboardGenerationOpen: Boolean = false,

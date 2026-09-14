@@ -107,6 +107,7 @@ import com.ihy2ln.weaverse.feature.roleplay.chat.AdventurePlayScreen
 import com.ihy2ln.weaverse.feature.chatting.DiscordChatScreen
 import com.ihy2ln.weaverse.feature.roleplay.chat.RoleplayChatChrome
 import com.ihy2ln.weaverse.feature.roleplay.chat.RoleplayChatDetailScreen
+import com.ihy2ln.weaverse.feature.roleplay.chat.ImportedMangaEditorScreen
 import com.ihy2ln.weaverse.feature.roleplay.chat.roleplayModeSubtitle
 import com.ihy2ln.weaverse.feature.roleplay.textgame.TextGamesScreen
 import com.ihy2ln.weaverse.feature.roleplay.friends.FriendsScreen
@@ -1037,30 +1038,38 @@ fun AppShell(
                                         },
                                     )
                                 } else if (boardId != null) {
-                                    RoleplayChatDetailScreen(
-                                        chatId = boardId,
-                                        onBack = {
-                                            mangaEditorOnly = false
-                                            mangaEditorPageId = null
-                                            mangaEditorAction = null
-                                            mangaEditorChapterId = null
-                                            storyboardChatId = null
-                                            rpChrome = null
-                                            storyboardDest = StoryboardDestination.Window.name
-                                        },
-                                        onChromeChange = { rpChrome = it },
-                                        onOpenAiPrompt = { shellViewModel.openPrompt(PromptEntryKind.Ai) },
-                                        onOpenManualPrompt = { shellViewModel.openPrompt(PromptEntryKind.Manual) },
-                                        promptOverlayOpen = promptOverlayOpen,
-                                        // Storyboard is always the comic canvas.
-                                        forceDisplayMode = "roleplay",
-                                        showModeSwitcher = false,
-                                        rightToLeft = storyboardDestinationOf(sd) == StoryboardDestination.Manga,
-                                        editorOnly = mangaEditorOnly,
-                                        initialPageId = mangaEditorPageId,
-                                        initialEditorAction = mangaEditorAction,
-                                        initialMangaChapterId = mangaEditorChapterId,
-                                    )
+                                    val closeStoryboardEditor = {
+                                        mangaEditorOnly = false
+                                        mangaEditorPageId = null
+                                        mangaEditorAction = null
+                                        mangaEditorChapterId = null
+                                        storyboardChatId = null
+                                        rpChrome = null
+                                        storyboardDest = StoryboardDestination.Window.name
+                                    }
+                                    if (mangaEditorOnly) {
+                                        ImportedMangaEditorScreen(
+                                            chatId = boardId,
+                                            onBack = closeStoryboardEditor,
+                                            onChromeChange = { rpChrome = it },
+                                            initialPageId = mangaEditorPageId,
+                                            initialEditorAction = mangaEditorAction,
+                                            initialMangaChapterId = mangaEditorChapterId,
+                                        )
+                                    } else {
+                                        RoleplayChatDetailScreen(
+                                            chatId = boardId,
+                                            onBack = closeStoryboardEditor,
+                                            onChromeChange = { rpChrome = it },
+                                            onOpenAiPrompt = { shellViewModel.openPrompt(PromptEntryKind.Ai) },
+                                            onOpenManualPrompt = { shellViewModel.openPrompt(PromptEntryKind.Manual) },
+                                            promptOverlayOpen = promptOverlayOpen,
+                                            // User/AI-created Storyboards keep the free panel canvas.
+                                            forceDisplayMode = "roleplay",
+                                            showModeSwitcher = false,
+                                            rightToLeft = storyboardDestinationOf(sd) == StoryboardDestination.Manga,
+                                        )
+                                    }
                                 } else {
                                     WorkShelfScreen(
                                         kind = WorkShelfKind.Storyboard,

@@ -84,8 +84,10 @@ also become Roleplay cards with Messenger, DM, and manga chats.
 - Built-in source adapters for MangaDex, Comix, Atsumaru, MangaFire, MangaDot,
   and Rawkuma. Catalog adapters load public Popular/Latest/Search results,
   metadata, chapter links, and page manifests without opening an external browser.
-- Resumable chapter downloads, offline reading, direct public chapter-URL import,
-  and Storyboard processing for panel separation, translation, and coloring.
+- Resumable chapter downloads, offline reading, and direct public chapter-URL import.
+  Downloaded media opens in its own full-page Manga Editor (not the blank-panel
+  Storyboard composer), with Original/Edited switching, editable English overlays,
+  AI/offline panel separation, manual retouching, and page/chapter B&W colorization.
 - Persistent favorites and user-named Library sections. A title can belong to
   several sections without being downloaded.
 - Sources that return a login, CAPTCHA, JavaScript, or anti-bot challenge report

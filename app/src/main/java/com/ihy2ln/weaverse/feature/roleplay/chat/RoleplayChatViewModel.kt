@@ -213,6 +213,7 @@ class RoleplayChatViewModel @Inject constructor(
     private var bindJob: Job? = null
     private var generateJob: Job? = null
     private var storyboardGenerationJob: Job? = null
+    private var mangaEditJob: Job? = null
     private var cyoaSuggestionJob: Job? = null
     private var rpgDraftSaveJob: Job? = null
     private var composerStatusJob: Job? = null
@@ -531,6 +532,11 @@ class RoleplayChatViewModel @Inject constructor(
                                     mediaOffsetYPercent = block.mediaOffsetYPercent,
                                     overlays = block.overlays,
                                     panelRotationDeg = block.panelRotationDeg,
+                                    originalPath = block.originalMediaId
+                                        ?.let { mediaRepository.getById(it) }
+                                        ?.let { mediaRepository.resolveFile(it).absolutePath }
+                                        .orEmpty(),
+                                    variantKind = block.variantKind,
                                 )
                             }
                         }
@@ -4264,137 +4270,236 @@ class RoleplayChatViewModel @Inject constructor(
      * media library; English is stored as editable overlays on the page.
      */
     fun translateActiveMangaPageToEnglish() {
-        val panels = _uiState.value.mediaPanels.filterNot { it.isAudio }
-        if (panels.isEmpty()) {
+        val pageId = _uiState.value.activePageId
+        if (pageId.isBlank()) {
             _uiState.update { it.copy(storyboardStatus = "Select an imported manga page first.") }
             return
         }
-        viewModelScope.launch {
-            val modelRef = visionModelRef()
-            if (modelRef == null) {
-                _uiState.update {
-                    it.copy(storyboardStatus = "English translation needs a Vision-capable model in Settings → Writing.")
-                }
-                return@launch
+        startMangaTranslation(setOf(pageId), "page")
+    }
+
+    /** Translates every editable page produced from one downloaded chapter. */
+    fun translateDownloadedChapter(chapterId: String) {
+        val pageIds = _uiState.value.pages
+            .filter { it.sourceChapterId == chapterId }
+            .mapTo(linkedSetOf()) { it.id }
+        if (pageIds.isEmpty()) {
+            _uiState.update { it.copy(storyboardStatus = "This downloaded chapter is not loaded in the manga editor.") }
+            return
+        }
+        startMangaTranslation(pageIds, "chapter")
+    }
+
+    private data class MangaEditTarget(
+        val message: RpMessageEntity,
+        val block: MediaBlock,
+        val path: String,
+    )
+
+    private suspend fun mangaEditTargets(pageIds: Set<String>): List<MangaEditTarget> =
+        rawMessages.flatMap { message ->
+            documentFromJson(message.contentJson).blocks.mapNotNull { candidate ->
+                val block = candidate as? MediaBlock ?: return@mapNotNull null
+                if (block.pageId !in pageIds || block.kind != MediaKind.Image) return@mapNotNull null
+                val entity = mediaRepository.getById(block.mediaId) ?: return@mapNotNull null
+                MangaEditTarget(message, block, mediaRepository.resolveFile(entity).absolutePath)
             }
-            val modelLabel = if (modelRef == MANGA_TRANSLATION_LUNA_REF) {
-                "GPT-5.6 Luna"
-            } else {
-                modelRef.removePrefix("openrouter/")
-            }
+        }
+
+    private fun startMangaTranslation(pageIds: Set<String>, scopeLabel: String) {
+        if (_uiState.value.mangaEditBusy) return
+        mangaEditJob = viewModelScope.launch {
+            var completed = 0
             var translatedPanels = 0
             var translatedRegions = 0
-            panels.forEachIndexed { index, panel ->
+            try {
+                val targets = mangaEditTargets(pageIds)
+                if (targets.isEmpty()) {
+                    _uiState.update { it.copy(storyboardStatus = "No imported manga pictures were found in this $scopeLabel.") }
+                    return@launch
+                }
                 _uiState.update {
                     it.copy(
-                        storyboardStatus =
-                            "Translating manga panel ${index + 1}/${panels.size} with $modelLabel to English…",
+                        mangaEditBusy = true,
+                        mangaEditAction = "Translating to English",
+                        mangaEditCurrent = 0,
+                        mangaEditTotal = targets.size,
                     )
                 }
-                val regions = PanelAi.readText(aiGeneration, modelRef, panel.path, "English")
-                    .orEmpty()
-                    .filter { it.translation.isNotBlank() || it.original.isNotBlank() }
-                if (regions.isEmpty()) return@forEachIndexed
-                val message = rawMessages.find { it.id == panel.messageId } ?: return@forEachIndexed
-                val blocks = documentFromJson(message.contentJson).blocks.toMutableList()
-                val blockIndex = blocks.indexOfFirst { it.id == panel.blockId }
-                val base = blocks.getOrNull(blockIndex) as? MediaBlock ?: return@forEachIndexed
-                val overlays = regions.map { region ->
-                    TextOverlay(
-                        id = "ov-${UUID.randomUUID()}",
-                        text = region.translation.ifBlank { region.original },
-                        style = TextOverlayStyle.SpeechBubble,
-                        xPercent = ((region.x + region.w / 2f) * 100f).coerceIn(5f, 95f),
-                        yPercent = ((region.y + region.h / 2f) * 100f).coerceIn(5f, 95f),
-                        widthPercent = (region.w * 130f).coerceIn(24f, 96f),
-                        fontSizeSp = (region.h * baseFontSize(base)).coerceIn(9f, 26f),
-                        colorHex = "#111111",
-                        backgroundHex = "#FFFFFF",
-                        backgroundAlpha = 0.92f,
+                val modelRef = visionModelRef()
+                if (modelRef == null) {
+                    _uiState.update {
+                        it.copy(storyboardStatus = "English translation needs a Vision-capable model in Settings → Writing.")
+                    }
+                    return@launch
+                }
+                val modelLabel = if (modelRef == MANGA_TRANSLATION_LUNA_REF) {
+                    "GPT-5.6 Luna"
+                } else {
+                    modelRef.removePrefix("openrouter/")
+                }
+                val workingBlocks = targets.map { it.message }.distinctBy { it.id }.associate { message ->
+                    message.id to documentFromJson(message.contentJson).blocks.toMutableList()
+                }
+                targets.forEachIndexed { index, target ->
+                    _uiState.update {
+                        it.copy(
+                            storyboardStatus =
+                                "Translating ${index + 1}/${targets.size} with $modelLabel…",
+                            mangaEditCurrent = index,
+                        )
+                    }
+                    val regions = PanelAi.readText(aiGeneration, modelRef, target.path, "English")
+                        .orEmpty()
+                        .filter { it.translation.isNotBlank() || it.original.isNotBlank() }
+                    completed = index + 1
+                    _uiState.update { it.copy(mangaEditCurrent = completed) }
+                    if (regions.isEmpty()) return@forEachIndexed
+                    val blocks = workingBlocks[target.message.id] ?: return@forEachIndexed
+                    val blockIndex = blocks.indexOfFirst { it.id == target.block.id }
+                    val base = blocks.getOrNull(blockIndex) as? MediaBlock ?: return@forEachIndexed
+                    val overlays = regions.map { region ->
+                        TextOverlay(
+                            id = "ov-${UUID.randomUUID()}",
+                            text = region.translation.ifBlank { region.original },
+                            style = TextOverlayStyle.SpeechBubble,
+                            xPercent = ((region.x + region.w / 2f) * 100f).coerceIn(5f, 95f),
+                            yPercent = ((region.y + region.h / 2f) * 100f).coerceIn(5f, 95f),
+                            widthPercent = (region.w * 130f).coerceIn(24f, 96f),
+                            fontSizeSp = (region.h * baseFontSize(base)).coerceIn(9f, 26f),
+                            colorHex = "#111111",
+                            backgroundHex = "#FFFFFF",
+                            backgroundAlpha = 0.92f,
+                            source = "manga-translation",
+                        )
+                    }
+                    blocks[blockIndex] = base.copy(
+                        overlays = base.overlays.filterNot { it.source == "manga-translation" } + overlays,
+                    )
+                    persistMessageBlocks(target.message, blocks)
+                    translatedPanels++
+                    translatedRegions += overlays.size
+                }
+                _uiState.update {
+                    it.copy(
+                        storyboardStatus = if (translatedPanels == 0) {
+                            "No readable text was returned for this $scopeLabel. The original art is unchanged."
+                        } else {
+                            "Added $translatedRegions editable English overlay(s) across $translatedPanels picture(s). Original files remain unchanged."
+                        },
                     )
                 }
-                blocks[blockIndex] = base.copy(overlays = base.overlays + overlays)
-                persistMessageBlocks(message, blocks)
-                translatedPanels++
-                translatedRegions += overlays.size
-            }
-            _uiState.update {
-                it.copy(
-                    storyboardStatus = if (translatedPanels == 0) {
-                        "No readable text was returned for this page. The original art is unchanged."
-                    } else {
-                        "Added $translatedRegions English text overlay(s) across $translatedPanels panel(s)."
-                    },
-                )
+            } catch (cancelled: CancellationException) {
+                _uiState.update {
+                    it.copy(storyboardStatus = "Translation stopped after $completed item(s). Saved edits were kept.")
+                }
+            } finally {
+                _uiState.update {
+                    it.copy(mangaEditBusy = false, mangaEditAction = "", mangaEditCurrent = 0, mangaEditTotal = 0)
+                }
             }
         }
     }
 
-    /** Translates every editable panel produced from one downloaded chapter. */
-    fun translateDownloadedChapter(chapterId: String) {
-        viewModelScope.launch {
-            val modelRef = visionModelRef()
-            if (modelRef == null) {
-                _uiState.update { it.copy(storyboardStatus = "Whole-chapter translation needs a Vision-capable model in Settings → Writing.") }
-                return@launch
-            }
-            val pageIds = _uiState.value.pages
-                .filter { it.sourceChapterId == chapterId }
-                .map { it.id }
-                .toSet()
-            val panels = rawMessages.flatMap { message ->
-                documentFromJson(message.contentJson).blocks.mapNotNull { block ->
-                    (block as? MediaBlock)?.takeIf { it.pageId in pageIds }?.let { block to message }
+    fun colorizeActiveMangaPage() {
+        val pageId = _uiState.value.activePageId
+        if (pageId.isBlank()) {
+            _uiState.update { it.copy(storyboardStatus = "Select an imported manga page first.") }
+            return
+        }
+        startMangaColorization(setOf(pageId), "page")
+    }
+
+    fun colorizeDownloadedChapter(chapterId: String) {
+        val pageIds = _uiState.value.pages
+            .filter { it.sourceChapterId == chapterId }
+            .mapTo(linkedSetOf()) { it.id }
+        if (pageIds.isEmpty()) {
+            _uiState.update { it.copy(storyboardStatus = "This downloaded chapter is not loaded in the manga editor.") }
+            return
+        }
+        startMangaColorization(pageIds, "chapter")
+    }
+
+    private fun startMangaColorization(pageIds: Set<String>, scopeLabel: String) {
+        if (_uiState.value.mangaEditBusy) return
+        mangaEditJob = viewModelScope.launch {
+            var completed = 0
+            var colorized = 0
+            var alreadyColor = 0
+            try {
+                val targets = mangaEditTargets(pageIds)
+                if (targets.isEmpty()) {
+                    _uiState.update { it.copy(storyboardStatus = "No imported manga pictures were found in this $scopeLabel.") }
+                    return@launch
                 }
-            }
-            if (panels.isEmpty()) {
-                _uiState.update { it.copy(storyboardStatus = "Add this downloaded chapter to the current Storyboard before translating it.") }
-                return@launch
-            }
-            var translatedPanels = 0
-            var translatedRegions = 0
-            panels.forEachIndexed { index, (panel, message) ->
                 _uiState.update {
-                    it.copy(storyboardStatus = "Translating chapter panel ${index + 1}/${panels.size} to English…")
-                }
-                if (panel.overlays.isNotEmpty()) return@forEachIndexed
-                val entity = mediaRepository.getById(panel.mediaId) ?: return@forEachIndexed
-                val regions = PanelAi.readText(aiGeneration, modelRef, mediaRepository.resolveFile(entity).absolutePath, "English")
-                    .orEmpty()
-                    .filter { it.translation.isNotBlank() || it.original.isNotBlank() }
-                if (regions.isEmpty()) return@forEachIndexed
-                val blocks = documentFromJson(message.contentJson).blocks.toMutableList()
-                val blockIndex = blocks.indexOfFirst { it.id == panel.id }
-                val current = blocks.getOrNull(blockIndex) as? MediaBlock ?: return@forEachIndexed
-                val overlays = regions.map { region ->
-                    TextOverlay(
-                        id = "ov-${UUID.randomUUID()}",
-                        text = region.translation.ifBlank { region.original },
-                        style = TextOverlayStyle.SpeechBubble,
-                        xPercent = ((region.x + region.w / 2f) * 100f).coerceIn(5f, 95f),
-                        yPercent = ((region.y + region.h / 2f) * 100f).coerceIn(5f, 95f),
-                        widthPercent = (region.w * 130f).coerceIn(24f, 96f),
-                        fontSizeSp = (region.h * baseFontSize(current)).coerceIn(9f, 26f),
-                        colorHex = "#111111",
-                        backgroundHex = "#FFFFFF",
-                        backgroundAlpha = 0.92f,
+                    it.copy(
+                        mangaEditBusy = true,
+                        mangaEditAction = "Colorizing black-and-white art",
+                        mangaEditCurrent = 0,
+                        mangaEditTotal = targets.size,
                     )
                 }
-                blocks[blockIndex] = current.copy(overlays = current.overlays + overlays)
-                persistMessageBlocks(message, blocks)
-                translatedPanels++
-                translatedRegions += overlays.size
-            }
-            _uiState.update {
-                it.copy(
-                    storyboardStatus = if (translatedPanels == 0) {
-                        "No new readable text was found in the downloaded chapter. Original art is unchanged."
-                    } else {
-                        "Added $translatedRegions English overlay(s) across $translatedPanels chapter panel(s). Originals remain preserved."
-                    },
-                )
+                val workingBlocks = targets.map { it.message }.distinctBy { it.id }.associate { message ->
+                    message.id to documentFromJson(message.contentJson).blocks.toMutableList()
+                }
+                targets.forEachIndexed { index, target ->
+                    _uiState.update {
+                        it.copy(
+                            storyboardStatus = "Checking and colorizing ${index + 1}/${targets.size}…",
+                            mangaEditCurrent = index,
+                        )
+                    }
+                    val bitmap = ImageOps.loadBitmap(target.path)
+                    if (bitmap != null) {
+                        try {
+                            if (ImageOps.isMostlyGrayscale(bitmap)) {
+                                ImageOps.applyMangaColorization(bitmap)
+                                val entity = mediaRepository.importFromBytes(
+                                    bytes = ImageOps.toPngBytes(bitmap),
+                                    fileName = "manga-color-${UUID.randomUUID()}.png",
+                                    mimeType = "image/png",
+                                )
+                                val blocks = workingBlocks[target.message.id] ?: return@forEachIndexed
+                                val blockIndex = blocks.indexOfFirst { it.id == target.block.id }
+                                val current = blocks.getOrNull(blockIndex) as? MediaBlock ?: return@forEachIndexed
+                                blocks[blockIndex] = current.copy(
+                                    mediaId = entity.id,
+                                    originalMediaId = current.originalMediaId ?: current.mediaId,
+                                    variantKind = "colorized",
+                                )
+                                persistMessageBlocks(target.message, blocks)
+                                colorized++
+                            } else {
+                                alreadyColor++
+                            }
+                        } finally {
+                            bitmap.recycle()
+                        }
+                    }
+                    completed = index + 1
+                    _uiState.update { it.copy(mangaEditCurrent = completed) }
+                }
+                _uiState.update {
+                    it.copy(
+                        storyboardStatus = "Colorized $colorized black-and-white picture(s); $alreadyColor already contained color. Original files remain unchanged.",
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                _uiState.update {
+                    it.copy(storyboardStatus = "Colorization stopped after $completed item(s). Saved colorized copies were kept.")
+                }
+            } finally {
+                _uiState.update {
+                    it.copy(mangaEditBusy = false, mangaEditAction = "", mangaEditCurrent = 0, mangaEditTotal = 0)
+                }
             }
         }
+    }
+
+    fun stopMangaEditProcessing() {
+        mangaEditJob?.cancel()
     }
 
     /**
@@ -4479,6 +4584,7 @@ class RoleplayChatViewModel @Inject constructor(
                     colorHex = "#111111",
                     backgroundHex = "#FFFFFF",
                     backgroundAlpha = 0.92f,
+                    source = "manga-translation",
                 )
             }
             blocks[index] = base.copy(overlays = base.overlays + overlays)
@@ -4506,7 +4612,11 @@ class RoleplayChatViewModel @Inject constructor(
             if (current != null) {
                 val blocks = documentFromJson(current.contentJson).blocks.map { block ->
                     if (block.id == editor.blockId && block is MediaBlock) {
-                        block.copy(mediaId = entity.id)
+                        block.copy(
+                            mediaId = entity.id,
+                            originalMediaId = block.originalMediaId ?: block.mediaId,
+                            variantKind = "edited",
+                        )
                     } else {
                         block
                     }

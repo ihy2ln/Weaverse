@@ -478,9 +478,10 @@ object WikiContent {
 
                 When creating a storyboard from the **+ Storyboard** button,
                 choose an optional whole comic file. You can also use **Add
-                pages** above any existing storyboard. Each imported page
-                lands as one full-page panel. Long-press the desired panel to
-                select it and open **Picture tools**:
+                pages** into the dedicated Manga Editor. Downloaded/imported
+                pages no longer open in the blank six-panel Storyboard composer.
+                Each source page stays full-size and can be viewed as **Original**
+                or **Edited**. Select a page or picture to use its bottom tools:
 
                 - **Separate panels (AI)** — a Vision model finds every
                   panel on the page; each one is cropped into its own
@@ -496,6 +497,13 @@ object WikiContent {
                 explains unreadable, zero-panel, and one-panel outcomes. A
                 successful split is always written to a new page; the imported
                 original page remains unchanged.
+
+                **Translate English** detects Japanese, Korean, or Chinese text
+                and places editable white speech-bubble overlays over the source
+                lettering. **Colorize B&W** creates a local colorized copy while
+                retaining ink and white bubble areas. Page and whole-chapter
+                actions show progress and a Stop button; completed copies remain
+                saved if a batch is stopped.
 
                 ## Picture editor
 

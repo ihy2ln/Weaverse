@@ -30,6 +30,8 @@ data class TextOverlay(
     val rotationDeg: Float = 0f,
     /** Direction the speech-bubble tail points, degrees; unused for Plain. */
     val tailAngleDeg: Float = 270f,
+    /** Optional durable origin marker, for example manga-translation. */
+    val source: String = "",
 )
 
 @Serializable
@@ -114,6 +116,10 @@ data class MediaBlock(
     val overlays: List<TextOverlay> = emptyList(),
     /** Tilts the whole panel frame — comic pages use slanted gutters for pace. */
     val panelRotationDeg: Float = 0f,
+    /** Immutable source media retained when the editor creates a derived bitmap. */
+    val originalMediaId: String? = null,
+    /** original | edited | colorized; additive for older serialized documents. */
+    val variantKind: String = "original",
 ) : Block
 
 @Serializable

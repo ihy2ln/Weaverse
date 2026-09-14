@@ -197,7 +197,8 @@ fun RoleplayChatDetailScreen(
         when (initialEditorAction) {
             "TranslatePage" -> viewModel.translateActiveMangaPageToEnglish()
             "TranslateChapter" -> initialMangaChapterId?.let(viewModel::translateDownloadedChapter)
-            "ColorPage", "ColorChapter" -> viewModel.openFirstMangaPanelEditor()
+            "ColorPage" -> viewModel.colorizeActiveMangaPage()
+            "ColorChapter" -> initialMangaChapterId?.let(viewModel::colorizeDownloadedChapter)
         }
         initialEditorActionApplied = true
     }

@@ -23,7 +23,15 @@ class StoryboardPagesTest {
         // Reproduce what older builds wrote by dropping every field added since,
         // rather than hand-writing the polymorphic discriminator.
         val addedSincePages =
-            setOf("pageId", "mediaScale", "mediaOffsetXPercent", "mediaOffsetYPercent", "overlays")
+            setOf(
+                "pageId",
+                "mediaScale",
+                "mediaOffsetXPercent",
+                "mediaOffsetYPercent",
+                "overlays",
+                "originalMediaId",
+                "variantKind",
+            )
         val current = Document(
             listOf(MediaBlock(id = "m1", mediaId = "img-a", kind = MediaKind.Image, gridCol = 2, gridRow = 3)),
         ).toJson()
@@ -41,6 +49,8 @@ class StoryboardPagesTest {
         assertEquals(3, block.gridRow)
         assertEquals(1f, block.mediaScale)
         assertTrue(block.overlays.isEmpty())
+        assertNull(block.originalMediaId)
+        assertEquals("original", block.variantKind)
     }
 
     @Test
@@ -51,6 +61,7 @@ class StoryboardPagesTest {
             style = TextOverlayStyle.SpeechBubble,
             xPercent = 30f,
             tailAngleDeg = 90f,
+            source = "manga-translation",
         )
         val original = Document(
             listOf(
@@ -62,6 +73,8 @@ class StoryboardPagesTest {
                     mediaScale = 1.8f,
                     mediaOffsetXPercent = -12f,
                     overlays = listOf(overlay),
+                    originalMediaId = "img-original",
+                    variantKind = "colorized",
                 ),
             ),
         )
@@ -70,6 +83,9 @@ class StoryboardPagesTest {
         assertEquals(1.8f, restored.mediaScale)
         assertEquals(-12f, restored.mediaOffsetXPercent)
         assertEquals(overlay, restored.overlays.single())
+        assertEquals("img-original", restored.originalMediaId)
+        assertEquals("colorized", restored.variantKind)
+        assertEquals("manga-translation", restored.overlays.single().source)
     }
 
     @Test

@@ -27,8 +27,35 @@ object ImageOps {
         var sample = 1
         val longEdge = max(opts.outWidth, opts.outHeight)
         while (longEdge / (sample * 2) >= maxDim / 2) sample *= 2
-        val decode = BitmapFactory.Options().apply { inSampleSize = sample }
+        val decode = BitmapFactory.Options().apply {
+            inSampleSize = sample
+            inMutable = true
+        }
         return BitmapFactory.decodeFile(path, decode)
+    }
+
+    /** True when nearly every opaque sampled pixel has no meaningful chroma. */
+    fun isMostlyGrayscale(target: Bitmap): Boolean {
+        val sample = scaleDown(target, 180)
+        val pixels = IntArray(sample.width * sample.height)
+        return try {
+            sample.getPixels(pixels, 0, sample.width, 0, 0, sample.width, sample.height)
+            isMostlyGrayscaleArgb(pixels)
+        } finally {
+            if (sample !== target) sample.recycle()
+        }
+    }
+
+    /**
+     * Gives monochrome manga a deterministic multi-hue base while retaining
+     * black ink, screentone values and white speech bubbles. This is the local,
+     * zero-cost fallback; users can refine the derived result with the brush.
+     */
+    fun applyMangaColorization(target: Bitmap) {
+        val pixels = IntArray(target.width * target.height)
+        target.getPixels(pixels, 0, target.width, 0, 0, target.width, target.height)
+        val colored = colorizeMangaArgb(target.width, target.height, pixels)
+        target.setPixels(colored, 0, target.width, 0, 0, target.width, target.height)
     }
 
     fun crop(src: Bitmap, rect: RectF): Bitmap {
@@ -121,6 +148,66 @@ object ImageOps {
         )
     }
 }
+
+internal fun isMostlyGrayscaleArgb(pixels: IntArray): Boolean {
+    var opaque = 0
+    var grayscale = 0
+    pixels.forEach { pixel ->
+        if ((pixel ushr 24 and 0xff) < 24) return@forEach
+        opaque++
+        val red = pixel ushr 16 and 0xff
+        val green = pixel ushr 8 and 0xff
+        val blue = pixel and 0xff
+        val maxChannel = maxOf(red, green, blue)
+        val minChannel = minOf(red, green, blue)
+        if (maxChannel - minChannel <= 14) grayscale++
+    }
+    return opaque > 0 && grayscale.toFloat() / opaque >= 0.94f
+}
+
+/** Pure counterpart used by JVM tests and the bitmap wrapper above. */
+internal fun colorizeMangaArgb(width: Int, height: Int, pixels: IntArray): IntArray {
+    require(width > 0 && height > 0 && pixels.size >= width * height)
+    val palette = arrayOf(
+        intArrayOf(219, 150, 127), // warm skin/foreground
+        intArrayOf(91, 145, 207),  // sky/cool shadow
+        intArrayOf(91, 164, 118),  // foliage
+        intArrayOf(177, 112, 185), // fabric/accent
+        intArrayOf(219, 171, 76),  // light/warm accent
+    )
+    return IntArray(width * height) { index ->
+        val source = pixels[index]
+        val alpha = source ushr 24 and 0xff
+        if (alpha == 0) return@IntArray source
+        val red = source ushr 16 and 0xff
+        val green = source ushr 8 and 0xff
+        val blue = source and 0xff
+        val gray = ((red * 30 + green * 59 + blue * 11) / 100)
+        // Keep line art neutral and speech bubbles/page gutters almost white.
+        if (gray <= 28 || gray >= 247) {
+            packArgb(alpha, gray, gray, gray)
+        } else {
+            val x = index % width
+            val y = index / width
+            val paletteIndex = ((x * 3 / width) + (y * 2 / height)) % palette.size
+            val tint = palette[paletteIndex]
+            val strength = when {
+                gray < 80 -> 0.18f
+                gray > 225 -> 0.10f
+                else -> 0.34f
+            }
+            fun channel(value: Int): Int = (gray * (1f - strength) + value * strength)
+                .roundToInt().coerceIn(0, 255)
+            packArgb(alpha, channel(tint[0]), channel(tint[1]), channel(tint[2]))
+        }
+    }
+}
+
+private fun packArgb(alpha: Int, red: Int, green: Int, blue: Int): Int =
+    (alpha.coerceIn(0, 255) shl 24) or
+        (red.coerceIn(0, 255) shl 16) or
+        (green.coerceIn(0, 255) shl 8) or
+        blue.coerceIn(0, 255)
 
 data class NormalizedPanelBox(
     val left: Float,
