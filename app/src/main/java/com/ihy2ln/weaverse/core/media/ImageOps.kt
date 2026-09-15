@@ -103,6 +103,32 @@ object ImageOps {
     }
 
     /**
+     * Keeps typeset lettering away from the curved edge of a detected bubble.
+     *
+     * Bubble frames are rectangular bounds around an often elliptical or
+     * rounded speech balloon.  Text fitted to the complete bounds can touch
+     * the top and bottom curves even when the measured text itself fits.
+     */
+    fun insetNormalizedRect(
+        rect: RectF,
+        widthFraction: Float = 0.84f,
+        heightFraction: Float = 0.78f,
+    ): RectF {
+        val width = rect.width().coerceAtLeast(0f)
+        val height = rect.height().coerceAtLeast(0f)
+        val safeWidth = width * widthFraction.coerceIn(0.1f, 1f)
+        val safeHeight = height * heightFraction.coerceIn(0.1f, 1f)
+        val centerX = rect.centerX()
+        val centerY = rect.centerY()
+        return RectF(
+            (centerX - safeWidth / 2f).coerceIn(0f, 1f),
+            (centerY - safeHeight / 2f).coerceIn(0f, 1f),
+            (centerX + safeWidth / 2f).coerceIn(0f, 1f),
+            (centerY + safeHeight / 2f).coerceIn(0f, 1f),
+        )
+    }
+
+    /**
      * Reconstructs artwork under normalized boxes. The boxes are inset so
      * bubble borders and panel frames stay intact.
      */
