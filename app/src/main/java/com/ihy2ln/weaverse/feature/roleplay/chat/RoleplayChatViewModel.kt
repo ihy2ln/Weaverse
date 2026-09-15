@@ -5041,11 +5041,16 @@ class RoleplayChatViewModel @Inject constructor(
         ImageOps.replaceTextRegions(bitmap, textRects)
         // Measured after cleanup so the outward walk is not stopped by the source lettering.
         val frames = ImageOps.bubbleFrames(bitmap, textRects)
+        val placedEnglishRegions = lettered.mapIndexed { index, region ->
+            // The detected frame is the bubble's rectangular bounds. Keep the
+            // lettering inside the usable center of curved/elliptical bubbles.
+            region.toTypesetLayer().copy(
+                normalized = ImageOps.insetNormalizedRect(frames[index]),
+            )
+        }
         ImageOps.typesetLayers(
             bitmap,
-            lettered.mapIndexed { index, region ->
-                region.toTypesetLayer().copy(normalized = frames[index])
-            },
+            placedEnglishRegions,
         )
     }
 

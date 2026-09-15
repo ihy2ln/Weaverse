@@ -28,7 +28,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -90,6 +93,14 @@ private fun OverlayItem(
     val bg = parseHexColor(overlay.backgroundHex, Color.Black).copy(alpha = overlay.backgroundAlpha)
     val fg = parseHexColor(overlay.colorHex, Color.White)
     val widthDp = with(density) { widthPx.toDp() }
+    val fittedFontSize = rememberFittedFontSize(
+        text = overlay.text,
+        initialSp = overlay.fontSizeSp,
+        maxWidthPx = (widthPx - with(density) { 16.dp.toPx() }).roundToInt(),
+        maxHeightPx = (
+            if (overlay.style == TextOverlayStyle.SpeechBubble) widthPx * 0.78f else panelHpx
+            ).roundToInt(),
+    )
 
     Box(
         modifier = Modifier
@@ -137,7 +148,7 @@ private fun OverlayItem(
         Text(
             text = overlay.text,
             color = fg,
-            fontSize = overlay.fontSizeSp.sp,
+            fontSize = fittedFontSize.sp,
             textAlign = TextAlign.Center,
             modifier = Modifier
                 .then(
@@ -173,6 +184,50 @@ private fun OverlayItem(
                     },
             )
         }
+    }
+}
+
+/**
+ * Finds the largest size that fits both dimensions of the overlay.
+ *
+ * Text's default measurement is allowed to grow vertically, so merely
+ * constraining the parent width does not stop a long translation from
+ * spilling out of a speech balloon.  Measuring and binary-searching here
+ * keeps the preview consistent with the burned-in lettering path.
+ */
+@Composable
+private fun rememberFittedFontSize(
+    text: String,
+    initialSp: Float,
+    maxWidthPx: Int,
+    maxHeightPx: Int,
+): Float {
+    val textMeasurer = rememberTextMeasurer()
+    return remember(text, initialSp, maxWidthPx, maxHeightPx) {
+        val minimumSp = 8f
+        val maximumSp = initialSp.coerceIn(minimumSp, 96f)
+        if (text.isBlank() || maxWidthPx <= 0 || maxHeightPx <= 0) return@remember maximumSp
+        var low = minimumSp
+        var high = maximumSp
+        var best = minimumSp
+        repeat(9) {
+            val candidate = (low + high) / 2f
+            val layout = textMeasurer.measure(
+                text = text,
+                style = TextStyle(fontSize = candidate.sp),
+                constraints = Constraints(
+                    maxWidth = maxWidthPx.coerceAtLeast(1),
+                    maxHeight = maxHeightPx.coerceAtLeast(1),
+                ),
+            )
+            if (!layout.didOverflowWidth && !layout.didOverflowHeight) {
+                best = candidate
+                low = candidate
+            } else {
+                high = candidate
+            }
+        }
+        best
     }
 }
 

@@ -129,4 +129,27 @@ class ImageOpsPanelDetectionTest {
         assertEquals(box.top, frame.top, 0.01f)
         assertEquals(box.bottom, frame.bottom, 0.01f)
     }
+
+    @Test
+    fun typesetInsetLeavesRoomInsideCurvedBubbleBounds() {
+        val safe = ImageOps.insetNormalizedBox(
+            NormalizedPanelBox(0.10f, 0.20f, 0.90f, 0.80f),
+        )
+
+        assertEquals(0.164f, safe.left, 0.001f)
+        assertEquals(0.266f, safe.top, 0.001f)
+        assertEquals(0.836f, safe.right, 0.001f)
+        assertEquals(0.734f, safe.bottom, 0.001f)
+    }
+
+    @Test
+    fun typesetInsetClampsExpandedFrameToPage() {
+        val safe = ImageOps.insetNormalizedBox(
+            NormalizedPanelBox(-0.10f, -0.10f, 1.10f, 1.10f),
+        )
+
+        assertTrue(safe.left >= 0f && safe.top >= 0f)
+        assertTrue(safe.right <= 1f && safe.bottom <= 1f)
+        assertTrue(safe.width <= 1f && safe.height <= 1f)
+    }
 }
