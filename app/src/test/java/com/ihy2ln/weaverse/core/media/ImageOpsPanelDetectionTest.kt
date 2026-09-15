@@ -150,6 +150,6 @@ class ImageOpsPanelDetectionTest {
 
         assertTrue(safe.left >= 0f && safe.top >= 0f)
         assertTrue(safe.right <= 1f && safe.bottom <= 1f)
-        assertTrue(safe.width() < 1f && safe.height() < 1f)
+        assertTrue(safe.width < 1f && safe.height < 1f)
     }
 }
