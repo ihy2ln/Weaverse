@@ -113,14 +113,25 @@ object ImageOps {
         rect: RectF,
         widthFraction: Float = 0.84f,
         heightFraction: Float = 0.78f,
-    ): RectF {
-        val width = rect.width().coerceAtLeast(0f)
-        val height = rect.height().coerceAtLeast(0f)
+    ): RectF = insetNormalizedBox(
+        NormalizedPanelBox(rect.left, rect.top, rect.right, rect.bottom),
+        widthFraction,
+        heightFraction,
+    ).toRectF()
+
+    /** Pure counterpart used by JVM tests and non-Android geometry code. */
+    fun insetNormalizedBox(
+        box: NormalizedPanelBox,
+        widthFraction: Float = 0.84f,
+        heightFraction: Float = 0.78f,
+    ): NormalizedPanelBox {
+        val width = box.width.coerceAtLeast(0f)
+        val height = box.height.coerceAtLeast(0f)
         val safeWidth = width * widthFraction.coerceIn(0.1f, 1f)
         val safeHeight = height * heightFraction.coerceIn(0.1f, 1f)
-        val centerX = rect.centerX()
-        val centerY = rect.centerY()
-        return RectF(
+        val centerX = (box.left + box.right) / 2f
+        val centerY = (box.top + box.bottom) / 2f
+        return NormalizedPanelBox(
             (centerX - safeWidth / 2f).coerceIn(0f, 1f),
             (centerY - safeHeight / 2f).coerceIn(0f, 1f),
             (centerX + safeWidth / 2f).coerceIn(0f, 1f),

@@ -132,8 +132,8 @@ class ImageOpsPanelDetectionTest {
 
     @Test
     fun typesetInsetLeavesRoomInsideCurvedBubbleBounds() {
-        val safe = ImageOps.insetNormalizedRect(
-            android.graphics.RectF(0.10f, 0.20f, 0.90f, 0.80f),
+        val safe = ImageOps.insetNormalizedBox(
+            NormalizedPanelBox(0.10f, 0.20f, 0.90f, 0.80f),
         )
 
         assertEquals(0.164f, safe.left, 0.001f)
@@ -144,8 +144,8 @@ class ImageOpsPanelDetectionTest {
 
     @Test
     fun typesetInsetClampsExpandedFrameToPage() {
-        val safe = ImageOps.insetNormalizedRect(
-            android.graphics.RectF(-0.10f, -0.10f, 1.10f, 1.10f),
+        val safe = ImageOps.insetNormalizedBox(
+            NormalizedPanelBox(-0.10f, -0.10f, 1.10f, 1.10f),
         )
 
         assertTrue(safe.left >= 0f && safe.top >= 0f)
