@@ -2,6 +2,7 @@ package com.ihy2ln.weaverse
 
 import android.app.Application
 import android.content.Context
+import android.util.Log
 import androidx.work.Configuration
 import androidx.work.ListenableWorker
 import androidx.work.WorkerFactory
@@ -68,7 +69,12 @@ class WeaverseApp : Application(), Configuration.Provider {
         crashLog.install()
         appScope.launch {
             seeder.seedIfEmpty()
-            sampleBookImporter.importBundledIsekaiGachaIfMissing()
+            runCatching { sampleBookImporter.importBundledIsekaiGachaIfMissing() }
+                .onFailure {
+                    // A malformed or legacy optional sample must not prevent
+                    // the app and the user's own library from opening.
+                    Log.w("WeaverseApp", "Bundled sample import skipped", it)
+                }
             syncCoordinator.suggestedWebUrl()
             runCatching { dailyCharacterGenerator.generateIfDue() }
             runCatching { backupManager.maybeAutoBackup() }
