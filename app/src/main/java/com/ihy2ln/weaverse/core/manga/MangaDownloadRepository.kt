@@ -1,6 +1,7 @@
 package com.ihy2ln.weaverse.core.manga
 
 import android.content.Context
+import androidx.room.withTransaction
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
@@ -28,6 +29,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import eu.kanade.tachiyomi.source.model.FilterList
 import okhttp3.OkHttpClient
@@ -81,14 +83,14 @@ class MangaDownloadRepository @Inject constructor(
         registry.get(manga.sourceId)?.chapters(manga).orEmpty()
 
     suspend fun loadDetails(manga: MangaSearchResult): MangaSearchResult =
-        registry.get(manga.sourceId)?.details(manga) ?: manga
+        (registry.get(manga.sourceId)?.details(manga) ?: manga).also { saveSeriesMetadata(it) }
 
     suspend fun loadPages(chapter: MangaChapter): List<MangaPage> =
         registry.get(chapter.sourceId)?.pages(chapter).orEmpty()
 
     suspend fun deleteDownloadedSeries(chapter: MangaChapterEntity) = withContext(Dispatchers.IO) {
         val dao = db.mangaDao()
-        val chapters = dao.getChaptersByManga(chapter.mangaId).ifEmpty { listOf(chapter) }
+        val chapters = dao.getChaptersByManga(chapter.mangaId).filter { it.sourceId == chapter.sourceId }.ifEmpty { listOf(chapter) }
         chapters.forEach { item ->
             WorkManager.getInstance(context).cancelUniqueWork("manga-download-${item.id}")
             dao.getPages(item.id).forEach { page ->
@@ -128,28 +130,74 @@ class MangaDownloadRepository @Inject constructor(
 
     suspend fun setFavorite(manga: MangaSearchResult, categoryId: String, favorite: Boolean) {
         val seriesId = seriesId(manga.sourceId, manga.remoteId)
-        db.mangaDao().upsertSeries(
-            MangaSeriesEntity(
-                id = seriesId,
-                sourceId = manga.sourceId,
-                remoteId = manga.remoteId,
-                title = manga.title,
-                description = manga.description,
-                coverUrl = manga.coverUrl.orEmpty(),
-                canonicalUrl = manga.canonicalUrl,
-                updatedAt = System.currentTimeMillis(),
-                authors = manga.authors.joinToString("\u001f"),
-                artists = manga.artists.joinToString("\u001f"),
-                tags = manga.tags.joinToString("\u001f"),
-                languages = manga.languages.joinToString("\u001f"),
-                publicationStatus = manga.status,
-            ),
-        )
+        saveSeriesMetadata(manga)
         if (favorite) {
             db.mangaDao().upsertFavorite(MangaFavoriteEntity(seriesId, categoryId, System.currentTimeMillis()))
         } else {
             db.mangaDao().removeFavorite(seriesId, categoryId)
         }
+    }
+
+    suspend fun saveSeriesMetadata(manga: MangaSearchResult) = db.withTransaction {
+        val existing = db.mangaDao().getSeries(manga.sourceId, manga.remoteId)
+        db.mangaDao().upsertSeries(
+            MangaSeriesEntity(
+                id = existing?.id ?: seriesId(manga.sourceId, manga.remoteId),
+                sourceId = manga.sourceId,
+                remoteId = manga.remoteId,
+                title = manga.title.takeUnless { it.isBlank() || it.lowercase() in setOf("last updates", "latest updates", "manga", "series page") } ?: existing?.title ?: manga.title,
+                description = manga.description.ifBlank { existing?.description.orEmpty() },
+                coverUrl = manga.coverUrl.orEmpty().ifBlank { existing?.coverUrl.orEmpty() },
+                canonicalUrl = manga.canonicalUrl.ifBlank { existing?.canonicalUrl.orEmpty() },
+                updatedAt = System.currentTimeMillis(),
+                authors = manga.authors.joinToString("\u001f").ifBlank { existing?.authors.orEmpty() },
+                artists = manga.artists.joinToString("\u001f").ifBlank { existing?.artists.orEmpty() },
+                tags = manga.tags.joinToString("\u001f").ifBlank { existing?.tags.orEmpty() },
+                languages = manga.languages.joinToString("\u001f").ifBlank { existing?.languages.orEmpty() },
+                publicationStatus = manga.status.ifBlank { existing?.publicationStatus.orEmpty() },
+                publicationType = manga.type.ifBlank { existing?.publicationType.orEmpty() },
+                releaseYear = manga.year.ifBlank { existing?.releaseYear.orEmpty() },
+                contentRating = manga.rating.ifBlank { existing?.contentRating.orEmpty() },
+                catalogScore = manga.score.ifBlank { existing?.catalogScore.orEmpty() },
+            ),
+        )
+        if (manga.title.isNotBlank() && manga.title.lowercase() !in setOf("last updates", "latest updates", "manga", "series page")) {
+            db.mangaDao().updateSeriesTitle(manga.sourceId, manga.remoteId, manga.title)
+        }
+    }
+
+    /** Repairs metadata only. Chapter IDs, pages, reading state and editor links remain untouched. */
+    suspend fun repairInvalidLibraryTitles(onlyInvalid: Boolean = true): Int {
+        var repaired = 0
+        val candidates = if (onlyInvalid) db.mangaDao().getChaptersWithInvalidTitle() else observeChapters().first()
+        candidates.distinctBy { it.sourceId to it.mangaId }.forEach { chapter ->
+            try {
+                val saved = db.mangaDao().getSeries(chapter.sourceId, chapter.mangaId)
+                val adapter = registry.get(chapter.sourceId) ?: return@forEach
+                val details = adapter.seriesForChapter(chapter.toModel()) ?: if (saved?.canonicalUrl?.isNotBlank() == true) adapter.details(
+                    MangaSearchResult(saved.sourceId, saved.remoteId, saved.title, canonicalUrl = saved.canonicalUrl),
+                ) else null
+                if (details != null && details.title.lowercase() !in setOf("last updates", "latest updates", "manga", "series page")) {
+                    saveSeriesMetadata(details.copy(remoteId = chapter.mangaId))
+                    val chapters = adapter.chapters(details)
+                    val existing = db.mangaDao().getChaptersByManga(chapter.mangaId).filter { it.sourceId == chapter.sourceId }
+                    db.withTransaction {
+                        existing.forEach { savedChapter ->
+                            val actual = chapters.firstOrNull { it.remoteId == savedChapter.remoteId || it.canonicalUrl.trimEnd('/') == savedChapter.canonicalUrl.trimEnd('/') }
+                            if (actual != null) db.mangaDao().upsertChapter(savedChapter.copy(
+                                mangaTitle = details.title, title = actual.title, chapterNumber = actual.chapterNumber,
+                                volume = actual.volume, dateUpload = actual.dateUpload, scanlator = actual.scanlator,
+                            ))
+                        }
+                    }
+                    repaired++
+                }
+            } catch (failure: Exception) {
+                if (failure is kotlinx.coroutines.CancellationException) throw failure
+                // Offline/blocked sources leave existing records intact and can be retried later.
+            }
+        }
+        return repaired
     }
 
     suspend fun previewWebLink(url: String): WebLinkSnapshot = webLinkImporter.inspect(url)

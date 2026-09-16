@@ -69,9 +69,11 @@ fun TextOverlayLayer(
     onSelected: (String) -> Unit = {},
     selectionResetKey: Int = 0,
     onSelectionCleared: () -> Unit = {},
+    externalSelectedId: String? = null,
 ) {
     if (overlays.isEmpty()) return
     var selectedId by remember(editable, selectionResetKey) { mutableStateOf<String?>(null) }
+    androidx.compose.runtime.LaunchedEffect(externalSelectedId) { selectedId = externalSelectedId }
     BoxWithConstraints(modifier = modifier.fillMaxSize().then(
         if (editable) Modifier.pointerInput(Unit) {
             detectTapGestures(onTap = { selectedId = null; onSelectionCleared() })
@@ -155,8 +157,9 @@ private fun OverlayItem(
             .then(
                 if (editable) {
                     Modifier
-                        .pointerInput(overlay.id, panelWpx, panelHpx) {
-                            detectDragGestures(
+                        .pointerInput(overlay.id, panelWpx, panelHpx, selected) {
+                            // An unselected passage must not steal chapter scrolling in Edit mode.
+                            if (selected) detectDragGestures(
                                 onDragStart = { currentOnSelect() },
                                 onDragEnd = {
                                     val moved = OverlayGeometry.move(currentFrame, dragXPx, dragYPx,

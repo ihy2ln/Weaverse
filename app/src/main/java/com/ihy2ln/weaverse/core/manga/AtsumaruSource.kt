@@ -6,6 +6,8 @@ import kotlinx.serialization.json.*
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import eu.kanade.tachiyomi.source.model.Filter
+import eu.kanade.tachiyomi.source.model.FilterList
 
 /** Public catalog/reader endpoints used by Atsumaru's own website, not its empty SPA shell. */
 internal class AtsumaruSource(
@@ -13,7 +15,54 @@ internal class AtsumaruSource(
     private val baseUrl: String = "https://atsu.moe/",
 ) : MangaSourceAdapter {
     override val descriptor = MangaSourceDescriptor("atsumaru", "Atsumaru", baseUrl,
-        "Public manga catalog, chapters and image pages", authorized = false)
+        "Public manga catalog, chapters and image pages", authorized = false, supportsNativeFilters = true)
+
+    private var options: JsonObject? = null
+    override suspend fun loadNativeFilters(): FilterList {
+        if (options == null) options = get("api/explore/availableFilters", emptyMap())
+        return nativeFilters()
+    }
+    override fun nativeFilters(): FilterList {
+        val source = options ?: return FilterList()
+        fun choices(key: String) = source.array(key).map { it.jsonObject }.map { WebsiteOption(it.string("id"), it.string("name")) }
+        val tags = source.array("tags").map { it.jsonObject }.filter { it["adult"]?.jsonPrimitive?.booleanOrNull != true }
+        return FilterList(listOf(
+            WebsiteSelect("sort", "Sort by", listOf("views:desc" to "Popularity", "title:asc" to "Title", "trending:desc" to "Trending", "dateAdded:desc" to "Recently added", "releaseDate:desc" to "Release date", "mbRating:desc" to "Top rated").map { WebsiteOption(it.first, it.second) }),
+            WebsiteGroup("genreIds", "Genres", choices("genres"), "genreIds"),
+            WebsiteGroup("type", "Type", choices("types")),
+            WebsiteGroup("status", "Publishing status", choices("statuses")),
+            WebsiteText("chapterCount", "Minimum chapters"),
+        ) + tags.groupBy { it.string("group").ifBlank { "Other" } }.map { (group, items) ->
+            WebsiteGroup("tagIds", "Tags · $group", items.map { WebsiteOption(it.string("id"), it.string("name")) }, "tagIds")
+        })
+    }
+
+    override suspend fun searchPage(query: String, page: Int, filters: FilterList): List<MangaSearchResult> {
+        require(page >= 0)
+        val terms = mutableListOf("hidden:!=true", "isAdult:=false", "medium:=Comic", "mbContentRating:=[Safe,Suggestive]")
+        fun escaped(value: String) = "`" + value.replace("`", "\\`") + "`"
+        filters.filterIsInstance<WebsiteGroup>().forEach { group ->
+            val checked = group.state.filterIsInstance<WebsiteCheck>().filter { it.state }.map { escaped(it.value) }
+            if (checked.isNotEmpty()) terms += "${group.parameter}:=[${checked.joinToString(",")}]"
+            group.state.filterIsInstance<WebsiteTri>().forEach { option -> when (option.state) {
+                Filter.TriState.STATE_INCLUDE -> terms += "${group.parameter}:=${escaped(option.value)}"
+                Filter.TriState.STATE_EXCLUDE -> terms += "${group.parameter}:!=${escaped(option.value)}"
+                else -> Unit
+            } }
+        }
+        filters.filterIsInstance<WebsiteText>().forEach { filter ->
+            if (filter.state.isNotBlank()) {
+                val count = filter.state.toIntOrNull()
+                require(count != null && count >= 0) { "${filter.name} must be a positive whole number." }
+                terms += "${filter.parameter}:>=$count"
+            }
+        }
+        val sort = filters.filterIsInstance<WebsiteSelect>().firstOrNull()?.let { it.options[it.state].value } ?: "views:desc"
+        val params = mutableMapOf("q" to query.trim().ifBlank { "*" }, "query_by" to "title,englishTitle,otherNames,authors,acronyms",
+            "query_by_weights" to "4,3,2,2,1", "page" to "${page + 1}", "per_page" to "40", "filter_by" to terms.joinToString(" && "))
+        if (query.isBlank()) params["sort_by"] = sort
+        return get("collections/manga/documents/search", params).array("hits").map { manga(it.jsonObject.getValue("document").jsonObject) }
+    }
 
     override suspend fun browse(mode: MangaBrowseMode) = browsePage(mode, 0)
     override suspend fun search(query: String) = searchPage(query, 0)
@@ -38,6 +87,9 @@ internal class AtsumaruSource(
 
     override suspend fun details(manga: MangaSearchResult): MangaSearchResult =
         manga(get("api/manga/page", mapOf("id" to manga.remoteId)).getValue("mangaPage").jsonObject)
+
+    override suspend fun seriesForChapter(chapter: MangaChapter): MangaSearchResult =
+        details(MangaSearchResult(descriptor.id, chapter.mangaId, chapter.mangaTitle))
 
     override suspend fun chapters(manga: MangaSearchResult): List<MangaChapter> =
         get("api/manga/allChapters", mapOf("mangaId" to manga.remoteId)).array("chapters").map {
@@ -65,8 +117,10 @@ internal class AtsumaruSource(
         val id = item.string("id").also { require(it.isNotBlank()) { "Missing Atsumaru manga ID" } }
         return MangaSearchResult(descriptor.id, id, item.string("title"), description = item.string("synopsis"),
             coverUrl = image(cover), canonicalUrl = "${baseUrl}manga/$id", tags = names("genres") + names("tags"),
-            languages = listOf("en"), authors = names("authors"), status = item.string("status"),
-            type = item.string("type"), year = item.string("year"), rating = item.string("mbRating"))
+            languages = listOf("en"), authors = names("authors"), artists = names("artists"),
+            status = when (val status = item.string("status").lowercase()) { "canceled" -> "cancelled"; else -> status },
+            type = item.string("type").let { if (it == "Manwha") "Manhwa" else it },
+            year = item.string("year").ifBlank { item.string("releaseYear") }, rating = item.string("mbContentRating"), score = item.string("mbRating"))
     }
 
     private fun image(path: String): String? = path.takeIf(String::isNotBlank)?.let {

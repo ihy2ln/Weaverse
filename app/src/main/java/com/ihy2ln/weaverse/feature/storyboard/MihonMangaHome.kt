@@ -185,6 +185,7 @@ private data class MihonLibraryEntry(
     val chapter: MangaChapterEntity? = null,
     val favorite: MangaSearchResult? = null,
     val chapterCount: Int = 0,
+    val chapters: List<MangaChapterEntity> = emptyList(),
 )
 
 @Composable
@@ -356,30 +357,36 @@ private fun MihonLibraryScreen(
     var sortDescending by rememberSaveable { mutableStateOf(false) }
     var showFilters by rememberSaveable { mutableStateOf(false) }
     var overflow by remember { mutableStateOf(false) }
+    var openedSeriesKey by rememberSaveable { mutableStateOf<String?>(null) }
     val display = runCatching { LibraryDisplay.valueOf(displayName) }.getOrDefault(LibraryDisplay.Grid)
-    val downloadedEntries = remember(state.downloads, state.coverPaths) {
-        state.downloads.groupBy { it.mangaId.ifBlank { it.mangaTitle } }.map { (key, chapters) ->
+    val downloadedEntries = remember(state.downloads, state.coverPaths, state.favoriteSeries) {
+        com.ihy2ln.weaverse.core.manga.groupLibraryChapters(state.downloads).map { (key, chapters) ->
             val representative = chapters.firstOrNull { it.status == "completed" } ?: chapters.first()
+            val metadata = state.favoriteSeries.firstOrNull { it.sourceId == representative.sourceId && it.remoteId == representative.mangaId }
             MihonLibraryEntry(
-                key = "download-$key",
-                title = representative.mangaTitle.ifBlank { representative.title },
-                cover = state.coverPaths[representative.id],
+                key = key,
+                title = metadata?.title ?: representative.mangaTitle.ifBlank { representative.title },
+                cover = metadata?.coverUrl?.takeIf(String::isNotBlank) ?: state.coverPaths[representative.id],
                 chapter = representative,
                 chapterCount = chapters.count { it.status == "completed" },
+                chapters = chapters,
+                favorite = metadata?.toMihonSearchResult(),
             )
         }
     }
     val favoriteCategoryIds = state.favorites.filter { categoryId == "all" || it.categoryId == categoryId }.mapTo(hashSetOf()) { it.seriesId }
     val favoriteEntries = state.favoriteSeries.filter { it.id in favoriteCategoryIds }.map { series ->
         MihonLibraryEntry(
-            key = "favorite-${series.id}",
+            key = com.ihy2ln.weaverse.core.manga.mangaLibraryKey(series.sourceId, series.remoteId),
             title = series.title,
             cover = series.coverUrl,
             favorite = series.toMihonSearchResult(),
         )
     }
-    val entries = ((if (categoryId == "all") downloadedEntries else emptyList()) + if (downloadedOnly) emptyList() else favoriteEntries)
-        .distinctBy { it.title.lowercase() }
+    val visibleDownloads = downloadedEntries.filter { categoryId == "all" || favoriteEntries.any { favorite -> favorite.key == it.key } }
+    val entries = (visibleDownloads + if (downloadedOnly) emptyList() else favoriteEntries)
+        .map { entry -> downloadedEntries.firstOrNull { it.key == entry.key } ?: entry }
+        .distinctBy { it.key }
         .filter { query.isBlank() || it.title.contains(query, ignoreCase = true) }
         .let { list -> if (sortDescending) list.sortedByDescending { it.title.lowercase() } else list.sortedBy { it.title.lowercase() } }
 
@@ -417,13 +424,13 @@ private fun MihonLibraryScreen(
                 Box {
                     IconButton(onClick = { overflow = true }) { Icon(Icons.Outlined.MoreVert, "More options") }
                     DropdownMenu(expanded = overflow, onDismissRequest = { overflow = false }) {
-                        DropdownMenuItem(text = { Text("Update library") }, onClick = {
+                        DropdownMenuItem(text = { Text("Repair title metadata") }, onClick = {
                             overflow = false
-                            viewModel.setStatus("Library update started")
+                            viewModel.repairLibraryTitles()
                         }, leadingIcon = { Icon(Icons.Outlined.Refresh, null) })
                         DropdownMenuItem(text = { Text("Open random manga") }, onClick = {
                             overflow = false
-                            entries.randomOrNull()?.let { entry -> entry.chapter?.let { viewModel.openReader(it.id) } ?: entry.favorite?.let(onOpenFavorite) }
+                            entries.randomOrNull()?.let { entry -> if (entry.chapters.isNotEmpty()) openedSeriesKey = entry.key else entry.favorite?.let(onOpenFavorite) }
                         })
                     }
                 }
@@ -457,8 +464,7 @@ private fun MihonLibraryScreen(
             ) {
                 items(entries, key = { it.key }) { entry ->
                     MihonLibraryGridItem(entry) {
-                        entry.chapter?.takeIf { it.status == "completed" }?.let { viewModel.openReader(it.id) }
-                            ?: entry.favorite?.let(onOpenFavorite)
+                        if (entry.chapters.isNotEmpty()) openedSeriesKey = entry.key else entry.favorite?.let(onOpenFavorite)
                     }
                 }
             }
@@ -466,14 +472,45 @@ private fun MihonLibraryScreen(
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 4.dp)) {
                 lazyItems(entries, key = { it.key }) { entry ->
                     MihonLibraryListItem(entry) {
-                        entry.chapter?.takeIf { it.status == "completed" }?.let { viewModel.openReader(it.id) }
-                            ?: entry.favorite?.let(onOpenFavorite)
+                        if (entry.chapters.isNotEmpty()) openedSeriesKey = entry.key else entry.favorite?.let(onOpenFavorite)
                     }
                 }
             }
         }
     }
 
+    downloadedEntries.firstOrNull { it.key == openedSeriesKey }?.let { entry ->
+        AlertDialog(
+            onDismissRequest = { openedSeriesKey = null },
+            title = { Text(entry.title) },
+            text = {
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 480.dp)) {
+                    item { Text("${entry.chapters.size} chapters · ${entry.chapter?.sourceId.orEmpty()}", color = MihonMuted) }
+                    lazyItems(entry.chapters, key = { it.id }) { chapter ->
+                        Column(Modifier.fillMaxWidth().clickable(enabled = chapter.status == "completed") {
+                            openedSeriesKey = null
+                            viewModel.openReader(chapter.id)
+                        }.padding(vertical = 12.dp)) {
+                            val chapterLabel = buildString {
+                                if (chapter.volume.isNotBlank()) append("Vol. ${chapter.volume} · ")
+                                if (chapter.chapterNumber.isNotBlank()) append("Chapter ${chapter.chapterNumber}")
+                                if (chapter.title.isNotBlank() && !chapter.title.equals(chapter.mangaTitle, true) &&
+                                    !chapter.title.equals("Chapter ${chapter.chapterNumber}", true)) {
+                                    if (isNotBlank()) append(" · ")
+                                    append(chapter.title)
+                                }
+                            }.ifBlank { chapter.title }
+                            Text(chapterLabel)
+                            Text("${chapter.language} · ${chapter.pageCount} pages · ${if (chapter.read) "Read" else chapter.status}", style = MaterialTheme.typography.bodySmall, color = MihonMuted)
+                            if (chapter.status != "completed") MihonDownloadAction(chapter, viewModel)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { openedSeriesKey = null }) { Text("Close") } },
+            dismissButton = { entry.favorite?.let { manga -> TextButton(onClick = { openedSeriesKey = null; onOpenFavorite(manga) }) { Text("Source details") } } },
+        )
+    }
     if (showFilters) {
         AlertDialog(
             onDismissRequest = { showFilters = false },
@@ -506,7 +543,7 @@ private fun MihonLibraryGridItem(entry: MihonLibraryEntry, onClick: () -> Unit) 
     Column(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         Box {
             AsyncImage(
-                model = entry.cover,
+                model = entry.favorite?.let { mangaCoverRequest(it) } ?: entry.cover,
                 contentDescription = entry.title,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxWidth().aspectRatio(0.68f).clip(RoundedCornerShape(8.dp)).background(MihonSurfaceHigh),
@@ -530,7 +567,7 @@ private fun MihonLibraryListItem(entry: MihonLibraryEntry, onClick: () -> Unit) 
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AsyncImage(entry.cover, entry.title, contentScale = ContentScale.Crop, modifier = Modifier.size(48.dp, 72.dp).clip(RoundedCornerShape(5.dp)).background(MihonSurfaceHigh))
+        AsyncImage(entry.favorite?.let { mangaCoverRequest(it) } ?: entry.cover, entry.title, contentScale = ContentScale.Crop, modifier = Modifier.size(48.dp, 72.dp).clip(RoundedCornerShape(5.dp)).background(MihonSurfaceHigh))
         Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
             Text(entry.title, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
             if (entry.chapterCount > 0) Text("${entry.chapterCount} downloaded chapters", color = MihonMuted, style = MaterialTheme.typography.bodySmall)
@@ -1068,6 +1105,9 @@ private fun MihonCatalogScreen(
     if (showingFilters) {
         MihonNativeFiltersDialog(
             filters = state.nativeFilters.list,
+            sourceTags = state.results.flatMap { it.tags },
+            refinements = state.catalogRefinements,
+            onRefinements = viewModel::setCatalogRefinements,
             globalTag = state.globalTagFilter,
             matchAny = state.globalMatchAny,
             sort = state.catalogSort,
@@ -1094,6 +1134,9 @@ private fun MihonCatalogScreen(
 @Composable
 private fun MihonNativeFiltersDialog(
     filters: List<Filter<*>>,
+    sourceTags: List<String>,
+    refinements: com.ihy2ln.weaverse.core.manga.CatalogRefinements,
+    onRefinements: (com.ihy2ln.weaverse.core.manga.CatalogRefinements) -> Unit,
     globalTag: String,
     matchAny: Boolean,
     sort: String,
@@ -1121,12 +1164,21 @@ private fun MihonNativeFiltersDialog(
         },
         text = {
             Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState())) {
-                Text("Weaverse filters", style = MaterialTheme.typography.titleSmall, color = MihonPrimary)
+                if (filters.isNotEmpty()) {
+                    Text("Website / extension filters", style = MaterialTheme.typography.titleSmall, color = MihonPrimary)
+                    Text("These search the source catalog, including pages not yet loaded.", style = MaterialTheme.typography.bodySmall)
+                    filters.forEach { MihonNativeFilterRow(it, onChanged) }
+                    HorizontalDivider(Modifier.padding(vertical = 10.dp))
+                }
+                CatalogFilterSection("Additional filters · loaded results only") {
+                Text("These refine returned pages, not the website's entire catalog. Unknown metadata is not treated as a match.", style = MaterialTheme.typography.bodySmall)
                 CatalogFilterChoice("Sort by", sort, com.ihy2ln.weaverse.core.manga.CatalogSort.options, onSort)
-                Text("Popular/Latest use source listings. Other sorts order loaded results only; missing scores/years appear last. Use extension-native sorting below for source-wide search ordering.", style = MaterialTheme.typography.bodySmall)
+                Text("Popular/Latest use source listings. Other sorts order loaded results only; missing scores/years appear last. Use website filters above for source-wide searching.", style = MaterialTheme.typography.bodySmall)
                 Text("Tap once to include ✓, twice to exclude ✕, again to clear. Missing catalog metadata is loaded from title details. AND requires all included tags; OR matches any. Exclusions always apply.", style = MaterialTheme.typography.bodySmall)
                 CatalogFilterChoice("Match", if (matchAny) "any" else "all", listOf("All (AND)" to "all", "Any (OR)" to "any")) { onMatchAny(it == "any") }
-                CatalogTagSection("Genres", listOf("Action", "Adult", "Adventure", "Boys Love", "Comedy", "Crime", "Drama", "Ecchi", "Fantasy", "Girls Love", "Harem", "Hentai", "Historical", "Horror", "Isekai", "Magical Girls", "Martial Arts", "Mature", "Mecha", "Medical", "Mystery", "Philosophical", "Psychological", "Romance", "Sci-Fi", "Slice of Life", "Smut", "Sports", "Superhero", "Supernatural", "Thriller", "Tragedy", "Wuxia"), globalTag, onGlobalTag)
+                CatalogTagSection("Genres", com.ihy2ln.weaverse.core.manga.MediaTagCatalog.genres, globalTag, onGlobalTag)
+                CatalogTagSection("Tags", com.ihy2ln.weaverse.core.manga.MediaTagCatalog.options(sourceTags, globalTag), globalTag, onGlobalTag,
+                    groups = com.ihy2ln.weaverse.core.manga.MediaTagCatalog.groups)
                 CatalogTagSection("Type", listOf("Manga", "Manhwa", "Manhua", "Other"), globalTag, onGlobalTag)
                 CatalogTagSection("Formats", listOf("4-Koma", "Adaptation", "Anthology", "Award Winning", "Doujinshi", "Full Color", "Long Strip", "Oneshot", "Web Comic"), globalTag, onGlobalTag)
                 CatalogTagSection("Demographic", listOf("Josei", "Seinen", "Shoujo", "Shounen"), globalTag, onGlobalTag)
@@ -1135,6 +1187,19 @@ private fun MihonNativeFiltersDialog(
                 }
                 CatalogFilterChoice("Language", globalLanguage, listOf("Any" to "", "English" to "en", "Japanese" to "ja", "Korean" to "ko", "Chinese" to "zh", "Spanish" to "es", "French" to "fr", "German" to "de", "Portuguese" to "pt", "Russian" to "ru", "Indonesian" to "id"), onGlobalLanguage)
                 CatalogFilterChoice("Publication status", globalStatus, listOf("Any" to "", "Ongoing" to "ongoing", "Completed" to "completed", "Hiatus" to "hiatus", "Cancelled" to "cancelled"), onGlobalStatus)
+                CatalogFilterChoice("Content rating", refinements.contentRating, listOf("Any allowed by source" to "", "Safe" to "safe", "Suggestive" to "suggestive", "Erotica" to "erotica", "Pornographic" to "pornographic")) {
+                    onRefinements(refinements.copy(contentRating = it))
+                }
+                CatalogFilterChoice("Minimum rating · out of 10", refinements.minimumScore.toString(), listOf("Any" to "0") + (5..9).map { "★ $it+" to it.toString() }) {
+                    onRefinements(refinements.copy(minimumScore = it.toInt()))
+                }
+                CatalogFilterChoice("Minimum chapters", refinements.minimumChapters.toString(), listOf("Any" to "0") + listOf(10, 25, 50, 100).map { "$it+" to it.toString() }) {
+                    onRefinements(refinements.copy(minimumChapters = it.toInt()))
+                }
+                CatalogFilterChoice("Volumes", refinements.volumes, listOf("Any" to "", "Has volume labels" to "yes", "No volume labels" to "no")) {
+                    onRefinements(refinements.copy(volumes = it))
+                }
+                Text("Chapter/volume filters read the source's chapter list and may take longer. Counts reflect available entries, not a claim of the work's complete publication history. Unknown ratings do not match a minimum score.", style = MaterialTheme.typography.bodySmall)
                 Row(
                     Modifier.fillMaxWidth().clickable { onLibraryOnly(!libraryOnly) }.padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -1142,11 +1207,7 @@ private fun MihonNativeFiltersDialog(
                     Checkbox(libraryOnly, onCheckedChange = onLibraryOnly)
                     Text("In my library", modifier = Modifier.padding(start = 8.dp))
                 }
-                if (filters.isNotEmpty()) {
-                    HorizontalDivider(Modifier.padding(vertical = 10.dp))
-                    Text("Source filters", style = MaterialTheme.typography.titleSmall, color = MihonPrimary)
                 }
-                filters.forEach { MihonNativeFilterRow(it, onChanged) }
             }
         },
         confirmButton = {},
@@ -1159,7 +1220,12 @@ private fun MihonNativeFiltersDialog(
 }
 
 @Composable
-private fun MihonNativeFilterRow(filter: Filter<*>, onChanged: () -> Unit) {
+internal fun MihonNativeFilterRow(filter: Filter<*>, onFilterChanged: () -> Unit) {
+    // Extension ABI filters are mutable Java-style objects, not Compose state. A copied
+    // FilterList can compare equal and never emit; redraw the edited row explicitly.
+    var renderRevision by remember(filter) { mutableStateOf(0) }
+    @Suppress("UNUSED_VARIABLE") val observedRevision = renderRevision
+    val onChanged: () -> Unit = { renderRevision++; onFilterChanged() }
     when (filter) {
         is Filter.Header -> Text(
             filter.name,
@@ -1183,22 +1249,37 @@ private fun MihonNativeFilterRow(filter: Filter<*>, onChanged: () -> Unit) {
             Text(filter.name, modifier = Modifier.padding(start = 8.dp))
         }
         is Filter.TriState -> {
-            Text(filter.name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(vertical = 4.dp)) {
-                listOf("Any" to Filter.TriState.STATE_IGNORE, "Include" to Filter.TriState.STATE_INCLUDE, "Exclude" to Filter.TriState.STATE_EXCLUDE).forEach { (label, value) ->
-                    FilterChip(
-                        selected = filter.state == value,
-                        onClick = { filter.state = value; onChanged() },
-                        label = { Text(label) },
-                    )
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable {
+                filter.state = when (filter.state) {
+                    Filter.TriState.STATE_IGNORE -> Filter.TriState.STATE_INCLUDE
+                    Filter.TriState.STATE_INCLUDE -> Filter.TriState.STATE_EXCLUDE
+                    else -> Filter.TriState.STATE_IGNORE
                 }
+                onChanged()
+            }, verticalAlignment = Alignment.CenterVertically) {
+                if (filter.state == Filter.TriState.STATE_EXCLUDE) Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                    Text("✕", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.titleLarge)
+                } else Checkbox(filter.state == Filter.TriState.STATE_INCLUDE, onCheckedChange = null)
+                Text(filter.name, modifier = Modifier.padding(start = 12.dp))
+                Text(when (filter.state) { Filter.TriState.STATE_INCLUDE -> "Included"; Filter.TriState.STATE_EXCLUDE -> "Excluded"; else -> "" },
+                    style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = 8.dp))
             }
         }
         is Filter.Select<*> -> MihonSelectFilter(filter, onChanged)
         is Filter.Sort -> MihonSortFilter(filter, onChanged)
         is Filter.Group<*> -> {
             CatalogFilterSection(filter.name) {
-                filter.state.filterIsInstance<Filter<*>>().forEach { nested ->
+                val children = filter.state.filterIsInstance<Filter<*>>()
+                if (children.size > 12) {
+                    var query by remember(filter) { mutableStateOf("") }
+                    OutlinedTextField(query, { query = it }, label = { Text("Search ${filter.name.lowercase()}") },
+                        singleLine = true, modifier = Modifier.fillMaxWidth())
+                    val matching = children.filter { com.ihy2ln.weaverse.core.manga.MediaTagCatalog.search(listOf(it.name), query).isNotEmpty() }
+                    Text("${matching.size} of ${children.size}", style = MaterialTheme.typography.labelSmall)
+                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 280.dp)) {
+                        lazyItems(matching) { nested -> MihonNativeFilterRow(nested, onChanged) }
+                    }
+                } else children.forEach { nested ->
                     MihonNativeFilterRow(nested, onChanged)
                 }
             }
@@ -1207,6 +1288,7 @@ private fun MihonNativeFilterRow(filter: Filter<*>, onChanged: () -> Unit) {
 }
 
 @Composable
+@androidx.compose.runtime.NonSkippableComposable
 private fun MihonSelectFilter(filter: Filter.Select<*>, onChanged: () -> Unit) {
     CatalogFilterChoice(filter.name, filter.state.toString(), filter.values.mapIndexed { index, value -> value.toString() to index.toString() }) {
         filter.state = it.toInt()
@@ -1215,6 +1297,7 @@ private fun MihonSelectFilter(filter: Filter.Select<*>, onChanged: () -> Unit) {
 }
 
 @Composable
+@androidx.compose.runtime.NonSkippableComposable
 private fun MihonSortFilter(filter: Filter.Sort, onChanged: () -> Unit) {
     val selected = filter.state
     CatalogFilterSection(filter.name) {
@@ -1559,13 +1642,22 @@ private fun MihonEmptyState(face: String, message: String, action: String? = nul
     }
 }
 
-private fun MangaSeriesEntity.toMihonSearchResult() = MangaSearchResult(
+internal fun MangaSeriesEntity.toMihonSearchResult() = MangaSearchResult(
     sourceId = sourceId,
     remoteId = remoteId,
     title = title,
     description = description,
     coverUrl = coverUrl,
     canonicalUrl = canonicalUrl,
+    tags = tags.split('\u001f').filter(String::isNotBlank),
+    authors = authors.split('\u001f').filter(String::isNotBlank),
+    artists = artists.split('\u001f').filter(String::isNotBlank),
+    languages = languages.split('\u001f').filter(String::isNotBlank),
+    status = publicationStatus,
+    type = publicationType,
+    year = releaseYear,
+    rating = contentRating,
+    score = catalogScore,
 )
 
 private fun mihonChapterLabel(chapter: MangaChapter): String = buildString {

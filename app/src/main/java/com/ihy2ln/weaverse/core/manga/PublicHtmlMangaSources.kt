@@ -16,6 +16,9 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonNull
+import eu.kanade.tachiyomi.source.model.FilterList
+import okhttp3.HttpUrl.Companion.toHttpUrl
 
 /**
  * Built-in public website adapters. JavaScript-only catalogs use the site's normal WebView UI;
@@ -76,9 +79,9 @@ class PublicHtmlMangaSources @Inject constructor(
                 id = "rawkuma",
                 name = "Rawkuma",
                 baseUrl = "https://rawkuma.net/",
-                popularPaths = listOf("/manga/?order=popular", "/library/?sort=popular", "/"),
-                latestPaths = listOf("/manga/?order=update", "/library/?sort=updated", "/"),
-                searchPaths = listOf("/?s=%s&post_type=wp-manga", "/manga/?s=%s", "/?s=%s"),
+                popularPaths = listOf("/manga/?the_orderby=popular"),
+                latestPaths = listOf("/manga/?the_orderby=date"),
+                searchPaths = listOf("/manga/?search_term=%s"),
                 seriesPathHints = listOf("/manga/", "/series/"),
                 language = "ja",
                 readingOrder = "rtl",
@@ -127,18 +130,37 @@ internal class PublicHtmlMangaSourceAdapter(
         description = "Browsable public catalog with series metadata, chapters, and page downloads.",
         authorized = false,
         language = config.language,
+        supportsNativeFilters = config.id in setOf("rawkuma", "comix", "mangafire"),
     )
+
+    private var filterHtml: String? = null
+    override fun nativeFilters(): FilterList = filterHtml?.let {
+        when (config.id) { "rawkuma" -> WebsiteCatalogFilters.rawkuma(it); "comix" -> WebsiteCatalogFilters.comix(it); "mangafire" -> WebsiteCatalogFilters.mangaFire(it); else -> FilterList() }
+    } ?: FilterList()
+
+    override suspend fun loadNativeFilters(): FilterList {
+        if (!descriptor.supportsNativeFilters) return nativeFilters()
+        if (filterHtml == null) filterHtml = fetch(resolve(config.baseUrl, when (config.id) { "rawkuma" -> "/manga/"; "mangafire" -> "/api/filter-options"; else -> "/browse" })!!)
+        return nativeFilters()
+    }
+
+    override suspend fun searchPage(query: String, page: Int, filters: FilterList): List<MangaSearchResult> {
+        if (!descriptor.supportsNativeFilters) return searchPage(query, page)
+        val url = WebsiteCatalogFilters.url(config.baseUrl, config.id, query, page, filters)
+        return if (config.id == "rawkuma") rawkumaPage("filters:${url.substringBefore("&page=")}", page, url)
+        else fetchCatalog(listOf(url))
+    }
 
     override suspend fun search(query: String): List<MangaSearchResult> {
         val clean = query.trim()
         if (clean.isBlank()) return emptyList()
-        if (config.id == "rawkuma") return searchPage(clean, 0)
+        if (descriptor.supportsNativeFilters) return searchPage(clean, 0)
         val encoded = URLEncoder.encode(clean, StandardCharsets.UTF_8.name())
         val results = fetchCatalog(config.searchPaths.map { it.replace("%s", encoded) })
         return results.filter { it.title.contains(clean, ignoreCase = true) }.ifEmpty { results }
     }
 
-    override suspend fun browse(mode: MangaBrowseMode): List<MangaSearchResult> = if (config.id == "rawkuma") browsePage(mode, 0) else fetchCatalog(
+    override suspend fun browse(mode: MangaBrowseMode): List<MangaSearchResult> = if (descriptor.supportsNativeFilters) browsePage(mode, 0) else fetchCatalog(
         when (mode) {
             MangaBrowseMode.Popular -> config.popularPaths
             MangaBrowseMode.Latest -> config.latestPaths
@@ -146,13 +168,15 @@ internal class PublicHtmlMangaSourceAdapter(
     )
 
     override suspend fun browsePage(mode: MangaBrowseMode, page: Int): List<MangaSearchResult> {
+        if (config.id in setOf("comix", "mangafire")) return fetchCatalog(listOf("/browse?sort=${if (mode == MangaBrowseMode.Popular) "follows_total%3Adesc" else "chapter_updated_at%3Adesc"}&page=${page + 1}"))
         if (config.id != "rawkuma") return super.browsePage(mode, page)
-        return rawkumaPage("browse:$mode", page, "manga/?order=${if (mode == MangaBrowseMode.Popular) "popular" else "update"}")
+        return rawkumaPage("browse:$mode", page, "manga/?the_orderby=${if (mode == MangaBrowseMode.Popular) "popular" else "date"}")
     }
 
     override suspend fun searchPage(query: String, page: Int): List<MangaSearchResult> {
+        if (config.id in setOf("comix", "mangafire")) return searchPage(query, page, FilterList())
         if (config.id != "rawkuma") return super.searchPage(query, page)
-        return rawkumaPage("search:$query", page, "?s=${URLEncoder.encode(query.trim(), StandardCharsets.UTF_8.name())}&post_type=wp-manga")
+        return rawkumaPage("search:$query", page, "manga/?search_term=${URLEncoder.encode(query.trim(), StandardCharsets.UTF_8.name())}")
     }
 
     private val rawkumaNext = java.util.concurrent.ConcurrentHashMap<String, String>()
@@ -171,18 +195,48 @@ internal class PublicHtmlMangaSourceAdapter(
                 (URI(href).path.orEmpty().endsWith("/page/$nextNumber/") ||
                     Regex("[?&]paged=$nextNumber(?:&|$)").containsMatchIn(href))
         }?.absUrl("href")
-        if (next != null) rawkumaNext["$key:${page + 1}"] = next
+        if (next != null) {
+            // Some pagination links omit active form fields. Carry those values to every page.
+            val nextUrl = next.toHttpUrl().newBuilder()
+            val firstUrl = resolve(config.baseUrl, firstPath)!!.toHttpUrl()
+            firstUrl.queryParameterNames.filter { it != "paged" }.forEach { name ->
+                nextUrl.setQueryParameter(name, firstUrl.queryParameter(name))
+            }
+            rawkumaNext["$key:${page + 1}"] = nextUrl.build().toString()
+        }
         else rawkumaNext.remove("$key:${page + 1}")
         return parseCatalog(url, html)
     }
 
     override suspend fun details(manga: MangaSearchResult): MangaSearchResult {
         var html = fetch(manga.canonicalUrl)
+        if (config.id == "rawkuma") return rawkumaDetails(manga, html)
         if (Jsoup.parse(html).selectFirst("script#initial-data") != null) {
             parseCatalog(manga.canonicalUrl, html).firstOrNull { it.remoteId == manga.remoteId || it.title.equals(manga.title, true) }
                 ?.let { return it.copy(remoteId = manga.remoteId) }
         }
         if (heading(html).isBlank() && renderedLoader != null) html = renderedLoader.invoke(manga.canonicalUrl)
+        if (config.id == "mangafire") {
+            val doc = Jsoup.parse(html, manga.canonicalUrl)
+            val name = doc.selectFirst("h1.title-detail__title")?.text().orEmpty()
+            if (name.isNotBlank()) {
+                val badges = doc.select(".title-detail__badges .badge")
+                val status = doc.selectFirst(".title-detail__badges .badge--status")?.text().orEmpty()
+                return manga.copy(title = name,
+                    description = doc.selectFirst(".title-detail__synopsis p")?.text().orEmpty(),
+                    coverUrl = doc.selectFirst(".title-detail__poster img")?.absUrl("src")?.takeIf(String::isNotBlank) ?: manga.coverUrl,
+                    tags = doc.select("a.title-detail__tag").map { it.text() }.distinct(),
+                    authors = doc.select(".title-detail__credits a[href*=authors]").map { it.text() },
+                    artists = doc.select(".title-detail__credits a[href*=artists]").map { it.text() },
+                    type = badges.firstOrNull()?.text().orEmpty(),
+                    status = when (status.lowercase()) { "releasing" -> "ongoing"; "finished" -> "completed"; "on hiatus" -> "hiatus"; else -> status.lowercase() },
+                    year = badges.firstOrNull { it.text().matches(Regex("[0-9]{4}")) }?.text().orEmpty(),
+                    rating = doc.selectFirst(".title-detail__badges .badge--rating")?.text().orEmpty(),
+                    score = doc.selectFirst(".title-detail__stat:has(.title-detail__stat-star) strong")?.text().orEmpty(),
+                )
+            }
+            error("MangaFire did not load this title's metadata. Open its website or retry.")
+        }
         val metadata = extractMetadata(manga.canonicalUrl, html)
         return manga.copy(
             title = meta(html, "og:title").ifBlank { heading(html).ifBlank { manga.title } },
@@ -204,11 +258,25 @@ internal class PublicHtmlMangaSourceAdapter(
         if (extractAnchors(manga.canonicalUrl, html).none { isChapterUrl(it.first) } && renderedLoader != null) {
             html = renderedLoader.invoke(manga.canonicalUrl)
         }
+        if (config.id == "rawkuma") {
+            val document = Jsoup.parse(html, manga.canonicalUrl)
+            val area = document.selectFirst("#tabpanel-chapters") ?: document
+            return area.select("a[href]").filter { isChapterUrl(it.absUrl("href")) }
+                .distinctBy { it.absUrl("href") }.mapNotNull { link ->
+                    val label = Regex("(?i)chapter\\s+([0-9]+(?:\\.[0-9]+)?)").find(link.text()) ?: return@mapNotNull null
+                    val url = link.absUrl("href")
+                    MangaChapter(config.id, stableId(url), manga.remoteId, manga.title, label.value,
+                        chapterNumber = label.groupValues[1], language = config.language, canonicalUrl = url,
+                        readingOrder = config.readingOrder,
+                        dateUpload = link.selectFirst("time[datetime]")?.attr("datetime")?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() } ?: 0L)
+                }.sortedByDescending { it.chapterNumber.toDoubleOrNull() }
+        }
         val links = extractAnchors(manga.canonicalUrl, html)
             .filter { (url, _) -> isChapterUrl(url) }
             .distinctBy { it.first.substringBefore('#').trimEnd('/') }
         return links.mapIndexed { index, (url, label) ->
-            val number = CHAPTER_NUMBER.find("$label $url")?.groupValues?.getOrNull(2).orEmpty()
+            val number = CHAPTER_NUMBER.find(label)?.groupValues?.getOrNull(2)
+                ?: CHAPTER_NUMBER.find(URI(url).path.orEmpty())?.groupValues?.getOrNull(2).orEmpty()
             MangaChapter(
                 sourceId = descriptor.id,
                 remoteId = stableId(url),
@@ -244,7 +312,7 @@ internal class PublicHtmlMangaSourceAdapter(
                 when (element) {
                     is JsonArray -> element.forEach(::visit)
                     is JsonObject -> {
-                        fun value(key: String) = (element[key] as? JsonPrimitive)?.content.orEmpty()
+                        fun value(key: String) = (element[key] as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content.orEmpty()
                         fun labels(key: String) = (element[key] as? JsonArray).orEmpty().mapNotNull {
                             ((it as? JsonObject)?.get("title") as? JsonPrimitive)?.content
                         }
@@ -257,7 +325,7 @@ internal class PublicHtmlMangaSourceAdapter(
                                 sourceId = config.id, remoteId = stableId(url), title = title,
                                 canonicalUrl = url, description = value("synopsis"),
                                 coverUrl = (poster?.get("medium") as? JsonPrimitive)?.content,
-                                languages = listOf(config.language, value("originalLanguage")).filter(String::isNotBlank).distinct(),
+                                languages = listOf(config.language),
                                 status = when (value("status")) { "releasing" -> "ongoing"; "on_hiatus" -> "hiatus"; "finished" -> "completed"; else -> value("status") },
                                 type = value("type"), year = value("year"), rating = value("contentRating"), score = value("ratedAvg"),
                                 tags = (labels("genres") + labels("demographics") + labels("formats") + labels("tags")).distinct(),
@@ -271,6 +339,20 @@ internal class PublicHtmlMangaSourceAdapter(
             visit(root)
             if (results.isNotEmpty()) return results.distinctBy { it.remoteId }
         }
+        // Rendered Comix/MangaFire cards have separate title/poster links. Scope every
+        // field to its own card, never a substring that can include adjacent covers.
+        val document = Jsoup.parse(html, baseUrl)
+        val cards = document.select(".lrow, .card, a.title-rows__link").mapNotNull { card ->
+            val link = if (card.tagName() == "a") card else card.selectFirst("a.lrow__title-link, a.card__title, a[href^=/title/]") ?: return@mapNotNull null
+            val url = link.absUrl("href")
+            if (!isSeriesUrl(url)) return@mapNotNull null
+            val title = card.selectFirst(".lrow__title, .card__title, .title-row-card__title, h3")?.text()
+                ?.takeIf(String::isNotBlank) ?: link.attr("aria-label").ifBlank { link.text() }
+            if (title.isBlank()) return@mapNotNull null
+            MangaSearchResult(config.id, stableId(url), title, canonicalUrl = url,
+                coverUrl = imageUrl(baseUrl, card.outerHtml()), languages = listOf(config.language))
+        }
+        if (cards.isNotEmpty()) return cards.distinctBy { it.remoteId }
         val anchors = extractAnchors(baseUrl, html)
         return anchors.mapNotNull { (url, label) ->
             if (!isSeriesUrl(url)) return@mapNotNull null
@@ -301,6 +383,61 @@ internal class PublicHtmlMangaSourceAdapter(
                 rating = metadata.rating,
             )
         }.distinctBy { it.canonicalUrl.trimEnd('/').lowercase() }.take(40)
+    }
+
+    internal fun rawkumaDetails(manga: MangaSearchResult, html: String): MangaSearchResult {
+        val document = Jsoup.parse(html, manga.canonicalUrl)
+        val structured = document.select("script[type=application/ld+json]").mapNotNull { script ->
+            runCatching { Json.parseToJsonElement(script.data()) as? JsonObject }.getOrNull()
+        }.firstOrNull { obj ->
+            val type = obj["@type"].toString()
+            type.contains("ComicSeries") || type.contains("Book")
+        }
+        fun value(key: String) = (structured?.get(key) as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content.orEmpty()
+        fun labels(element: JsonElement?): List<String> = when (element) {
+            is JsonArray -> element.flatMap { labels(it) }
+            is JsonObject -> labels(element["name"])
+            is JsonPrimitive -> if (element is JsonNull) emptyList() else listOf(element.content)
+            else -> emptyList()
+        }
+        val coverNode = structured?.get("image")
+        val cover = when (coverNode) {
+            is JsonObject -> (coverNode["url"] as? JsonPrimitive)?.content
+            is JsonPrimitive -> coverNode.takeUnless { it is JsonNull }?.content
+            else -> null
+        } ?: document.selectFirst("[itemprop=image] img")?.let { imageUrl(manga.canonicalUrl, it.outerHtml()) }
+        // The first h1 is a sidebar heading called Last Updates, not the series name.
+        val title = document.selectFirst("h1[itemprop=name]")?.text()?.takeIf(String::isNotBlank)
+            ?: value("name").takeIf(String::isNotBlank) ?: manga.title
+        return manga.copy(title = title, coverUrl = cover?.let { resolve(manga.canonicalUrl, it) } ?: manga.coverUrl,
+            description = value("description").ifBlank { manga.description },
+            tags = labels(structured?.get("genre")).ifEmpty { document.select("a[itemprop=genre]").map { it.text() } },
+            authors = labels(structured?.get("author")).ifEmpty { manga.authors },
+            artists = labels(structured?.get("artist")).ifEmpty { manga.artists },
+            languages = listOf(config.language), // Website locale en_US does not describe Japanese chapter pages.
+            status = value("creativeWorkStatus").lowercase().ifBlank { manga.status },
+            year = value("datePublished").take(4).ifBlank { manga.year },
+            score = ((structured?.get("aggregateRating") as? JsonObject)?.get("ratingValue") as? JsonPrimitive)?.content ?: manga.score,
+        )
+    }
+
+    override suspend fun seriesForChapter(chapter: MangaChapter): MangaSearchResult? {
+        val uri = URI(chapter.canonicalUrl)
+        if (config.id in setOf("comix", "mangafire")) {
+            val titlePath = Regex("^(/title/[^/]+)/").find(uri.path.orEmpty())?.groupValues?.get(1) ?: return null
+            return details(MangaSearchResult(config.id, chapter.mangaId, chapter.mangaTitle, canonicalUrl = uri.resolve(titlePath).toString()))
+        }
+        if (config.id != "rawkuma") return null
+        val parent = Regex("^(/manga/[^/]+/)(?:chapter|chap-)").find(uri.path.orEmpty())?.groupValues?.get(1)
+        if (parent != null) return details(MangaSearchResult(config.id, chapter.mangaId, chapter.mangaTitle,
+            canonicalUrl = uri.resolve(parent).toString()))
+        val document = Jsoup.parse(fetch(chapter.canonicalUrl), chapter.canonicalUrl)
+        val links = document.select("a[href]")
+        val link = links.firstOrNull { it.attr("itemprop") == "item" && isSeriesUrl(it.absUrl("href")) }
+            ?: links.firstOrNull { it.text().contains("Series", true) && isSeriesUrl(it.absUrl("href")) }
+            ?: return null
+        val url = link.absUrl("href")
+        return details(MangaSearchResult(config.id, chapter.mangaId, chapter.mangaTitle, canonicalUrl = url))
     }
 
     private fun parseRawkumaCatalog(baseUrl: String, html: String): List<MangaSearchResult> {

@@ -512,6 +512,15 @@ interface MangaDao {
     @Query("SELECT * FROM manga_series ORDER BY title COLLATE NOCASE")
     fun observeSeries(): Flow<List<MangaSeriesEntity>>
 
+    @Query("SELECT * FROM manga_series WHERE sourceId = :sourceId AND remoteId = :remoteId LIMIT 1")
+    suspend fun getSeries(sourceId: String, remoteId: String): MangaSeriesEntity?
+
+    @Query("SELECT * FROM manga_chapters WHERE sourceId NOT IN ('local', 'weblink') AND (LOWER(mangaTitle) IN ('last updates', 'latest updates', 'manga', 'series page') OR NOT EXISTS (SELECT 1 FROM manga_series WHERE manga_series.sourceId = manga_chapters.sourceId AND manga_series.remoteId = manga_chapters.mangaId AND manga_series.coverUrl != ''))")
+    suspend fun getChaptersWithInvalidTitle(): List<MangaChapterEntity>
+
+    @Query("UPDATE manga_chapters SET mangaTitle = :title WHERE sourceId = :sourceId AND mangaId = :remoteId")
+    suspend fun updateSeriesTitle(sourceId: String, remoteId: String, title: String)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertSeries(entity: MangaSeriesEntity)
 

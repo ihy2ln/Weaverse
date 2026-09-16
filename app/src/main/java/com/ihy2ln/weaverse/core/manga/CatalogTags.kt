@@ -8,6 +8,10 @@ object CatalogTags {
         "shoujoai", "yuri", "girlslove" -> "girlslove"
         "shounenai", "yaoi", "boyslove" -> "boyslove"
         "sciencefiction" -> "scifi"
+        "femaleprotagonist", "femalelead" -> "femalelead"
+        "maleprotagonist", "malelead" -> "malelead"
+        "mahoushoujo", "magicalgirl", "magicalgirls" -> "magicalgirls"
+        "longstrip", "longscroll" -> "longstrip"
         "webtoon", "webcomic" -> "webcomic"
         "oneshot" -> "oneshot"
         else -> key

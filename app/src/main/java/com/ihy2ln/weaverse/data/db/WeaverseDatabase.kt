@@ -80,7 +80,7 @@ import com.ihy2ln.weaverse.data.db.entities.RpgCampaignSaveEntity
         TextGameSaveEntity::class,
         RpgCampaignSaveEntity::class,
     ],
-    version = 21,
+    version = 22,
     exportSchema = false,
 )
 @TypeConverters(InkTypeConverters::class)
@@ -98,6 +98,14 @@ abstract class WeaverseDatabase : RoomDatabase() {
     abstract fun textGameSaveDao(): TextGameSaveDao
 
     companion object {
+        val MIGRATION_21_22 = object : Migration(21, 22) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                listOf("publicationType", "releaseYear", "contentRating", "catalogScore").forEach { column ->
+                    db.execSQL("ALTER TABLE manga_series ADD COLUMN $column TEXT NOT NULL DEFAULT ''")
+                }
+            }
+        }
+
         val MIGRATION_20_21 = object : Migration(20, 21) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE manga_series ADD COLUMN authors TEXT NOT NULL DEFAULT ''")

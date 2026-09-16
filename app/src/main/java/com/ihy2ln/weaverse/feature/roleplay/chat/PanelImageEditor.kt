@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -54,6 +55,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -166,9 +168,13 @@ fun PanelImageEditor(
     onUpdateRegions: (List<PanelTextRegion>) -> Unit,
     onSelectRegion: (String?) -> Unit,
     onConsumeCleanup: () -> Unit,
+    startWithCleanup: Boolean = false,
 ) {
     val bitmap = remember(editor.path) { ImageOps.loadBitmap(editor.path) }
     var optionsOpen by remember(editor.path) { mutableStateOf(false) }
+    var aiOptions by remember(editor.path) { mutableStateOf(false) }
+    var pickingCleanupColor by remember { mutableStateOf(false) }
+    var customColorOpen by remember { mutableStateOf(false) }
     var confirmClose by remember { mutableStateOf(false) }
     val initialRegions = remember(editor.path) { editor.regions }
     var version by remember(editor.path) { mutableIntStateOf(0) }
@@ -185,15 +191,12 @@ fun PanelImageEditor(
         confirmButton = { TextButton(onClick = { confirmClose = false; onClose() }) { Text("Discard edits") } },
         dismissButton = { TextButton(onClick = { confirmClose = false }) { Text("Keep editing") } },
     )
-    val undoStack = remember(editor.path) { mutableStateListOf<Bitmap>() }
-    val redoStack = remember(editor.path) { mutableStateListOf<Bitmap>() }
-    val regionUndo = remember(editor.path) { mutableStateListOf<List<PanelTextRegion>>() }
-    val regionRedo = remember(editor.path) { mutableStateListOf<List<PanelTextRegion>>() }
+
     var editingTextId by remember(editor.path) { mutableStateOf<String?>(null) }
-    var tool by remember { mutableStateOf(MangaEditorTool.Select) }
-    var brushSize by remember { mutableFloatStateOf(28f) }
+    var tool by remember { mutableStateOf(if (startWithCleanup) MangaEditorTool.Remove else MangaEditorTool.Select) }
+    var brushSize by remember { mutableFloatStateOf(3f) }
     var eraseColor by remember { mutableStateOf(android.graphics.Color.WHITE) }
-    var paintColor by remember { mutableStateOf(android.graphics.Color.rgb(210, 72, 64)) }
+    var paintColor by remember { mutableStateOf(if (startWithCleanup) android.graphics.Color.WHITE else android.graphics.Color.rgb(210, 72, 64)) }
     var viewSize by remember { mutableStateOf(IntSize.Zero) }
     var pan by remember { mutableStateOf(Offset.Zero) }
     var zoom by remember { mutableFloatStateOf(1f) }
@@ -240,20 +243,12 @@ fun PanelImageEditor(
 
     val cleanupDraft = remember(editor.path, editor.originalPath) { CleanupDraft(bitmap, editor.originalPath) }
 
-    fun snapshot(): Bitmap = bitmap.copy(bitmap.config ?: Bitmap.Config.ARGB_8888, false)
+    val history = remember(editor.path) { PageEditHistory(bitmap, cleanupDraft.mask) }
+    androidx.compose.runtime.DisposableEffect(history) { onDispose { history.dispose() } }
+    fun pushUndo() { history.checkpoint(editor.regions); version++ }
+    fun undoEdit() { history.undo(editor.regions)?.let { onUpdateRegions(it); cleanupDraft.revision++; version++ } }
+    fun redoEdit() { history.redo(editor.regions)?.let { onUpdateRegions(it); cleanupDraft.revision++; version++ } }
 
-    fun restore(source: Bitmap) {
-        android.graphics.Canvas(bitmap).drawBitmap(source, 0f, 0f, null)
-        version++
-    }
-
-    fun pushUndo() {
-        undoStack.add(snapshot())
-        regionUndo.add(editor.regions)
-        if (undoStack.size > 12) { undoStack.removeAt(0); regionUndo.removeAt(0) }
-        redoStack.clear()
-        regionRedo.clear()
-    }
 
     fun updateLettering(id: String, update: (TextOverlay) -> TextOverlay) {
         pushUndo()
@@ -281,42 +276,24 @@ fun PanelImageEditor(
 
     val selected = editor.regions.firstOrNull { it.id == editor.selectedRegionId }
 
+    MaterialTheme(colorScheme = MaterialTheme.colorScheme.copy(primary = EditorAccent, onSurface = Color.White,
+        onSurfaceVariant = Color.LightGray, surface = EditorPanel)) {
     Box(modifier = Modifier.fillMaxSize().background(EditorBg)) {
     Column(modifier = Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(EditorPanel)
-                .padding(horizontal = InkSpacing.md, vertical = InkSpacing.xs),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            InkTextButton(label = "Back", onClick = ::closeEditor)
-            InkTextButton(label = "Options", onClick = { optionsOpen = true })
-            Column(modifier = Modifier.weight(1f).padding(horizontal = InkSpacing.sm)) {
-                Text("Page editor", style = MaterialTheme.typography.titleSmall, color = Color.White)
-                Text(
-                    when {
-                        editor.busy -> editor.status.ifBlank { "Working…" }
-                        else -> editor.status.ifBlank { "Tap a tool below, then work on the page with your finger." }
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = EditorMuted,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+        androidx.compose.material3.Surface(color = Color.White, contentColor = Color.Black) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = ::closeEditor) { Text("Read", color = Color.Black) }
+                Text("EDIT", color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                TextButton(onClick = ::undoEdit, enabled = history.canUndo && !editor.busy,
+                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = Color.Black, disabledContentColor = Color.Gray)) { Text("Undo") }
+                TextButton(onClick = ::redoEdit, enabled = history.canRedo && !editor.busy,
+                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = Color.Black, disabledContentColor = Color.Gray)) { Text("Redo") }
+                TextButton(onClick = { onSave(bitmap) }, enabled = !editor.busy,
+                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = Color.Black)) { Text("Save") }
             }
-            InkFilledButton(
-                label = "Save copy",
-                onClick = {
-                    // saveEditedPanel performs the cleanup and typesetting once on the
-                    // final bitmap. Repeating the inpaint here would soften artwork a
-                    // second time after the preview cleanup has already run.
-                    onSave(bitmap)
-                },
-            )
         }
 
-        Box(
+        BoxWithConstraints(
             modifier = Modifier
                 .weight(1f)
                 // Whiteout, brush and drag all happen here, so the page keeps a workable
@@ -336,7 +313,7 @@ fun PanelImageEditor(
                             scaleX = zoom
                             scaleY = zoom
                         }
-                        .fillMaxWidth()
+                        .width(minOf(maxWidth, maxHeight * (bitmap.width.toFloat() / bitmap.height)))
                         .aspectRatio(bitmap.width.toFloat() / bitmap.height.toFloat())
                         .onSizeChanged { viewSize = it },
                 ) {
@@ -354,10 +331,11 @@ fun PanelImageEditor(
                             onResize = { id, x, y, w, h -> updateLettering(id) {
                                 it.copy(xPercent = x, yPercent = y, widthPercent = w, heightPercent = h)
                             } },
-                            onTap = { editingTextId = it }, onSelected = onSelectRegion)
+                            onTap = { editingTextId = it }, onSelected = onSelectRegion,
+                            externalSelectedId = editor.selectedRegionId, onSelectionCleared = { onSelectRegion(null) })
                     }
                     editor.regions.forEach { region ->
-                        if (tool == MangaEditorTool.Select && !region.reviewRequired) return@forEach
+                        if (tool == MangaEditorTool.Select) return@forEach
                         if (!region.visible) return@forEach
                         val selectedLayer = region.id == editor.selectedRegionId
                         Box(
@@ -429,7 +407,7 @@ fun PanelImageEditor(
                             }
                         }
                     }
-                    if (tool == MangaEditorTool.Remove) CleanupMaskLayer(cleanupDraft, viewSize, brushRadius())
+                    if (tool == MangaEditorTool.Remove) CleanupMaskLayer(cleanupDraft, viewSize, brushRadius(), beforeStroke = ::pushUndo)
                     if (tool != MangaEditorTool.Select && tool != MangaEditorTool.Remove) EditorGestureLayer(
                         tool = tool,
                         brushSize = brushSize,
@@ -455,6 +433,8 @@ fun PanelImageEditor(
                             val top = min(s.y, e.y) / viewSize.height
                             val width = abs(e.x - s.x) / viewSize.width
                             val height = abs(e.y - s.y) / viewSize.height
+                            pushUndo()
+                            tool = MangaEditorTool.Select
                             if (width < 0.02f || height < 0.02f) {
                                 val nx = (s.x / viewSize.width).coerceIn(0.05f, 0.85f)
                                 val ny = (s.y / viewSize.height).coerceIn(0.05f, 0.85f)
@@ -469,17 +449,11 @@ fun PanelImageEditor(
                         },
                         onSampleColor = { color ->
                             paintColor = color
-                            selected?.let { region ->
-                                onUpdateRegions(
-                                    editor.regions.map {
-                                        if (it.id == region.id) {
-                                            it.copy(fillHex = colorToHex(color), edited = true)
-                                        } else {
-                                            it
-                                        }
-                                    },
-                                )
-                            }
+                            if (pickingCleanupColor) {
+                                pickingCleanupColor = false
+                                tool = MangaEditorTool.Remove
+                                optionsOpen = false
+                            } else { tool = MangaEditorTool.Brush }
                         },
                         onRemovePreview = { removePreview = it },
                         bitmapOffset = ::bitmapOffset,
@@ -488,129 +462,107 @@ fun PanelImageEditor(
                 }
             }
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(EditorPanel)
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = InkSpacing.sm, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
-        ) {
-            InkTextButton(
-                label = "Undo",
-                onClick = {
-                    undoStack.removeLastOrNull()?.let {
-                        redoStack.add(snapshot())
-                        regionRedo.add(editor.regions)
-                        regionUndo.removeLastOrNull()?.let(onUpdateRegions)
-                        restore(it)
+        // Tool properties stay next to the canvas, not on a separate screen.
+        Column(Modifier.fillMaxWidth().background(EditorPanel)) {
+            if (tool in listOf(MangaEditorTool.Brush, MangaEditorTool.Whiteout, MangaEditorTool.Eraser, MangaEditorTool.Remove)) {
+                CompactPaintControls(
+                    color = if (tool == MangaEditorTool.Eraser) eraseColor else paintColor, size = brushSize,
+                    onColor = { if (tool == MangaEditorTool.Eraser) eraseColor = it else paintColor = it },
+                    onSize = { brushSize = it }, onCustomColor = { customColorOpen = true })
+                if (tool == MangaEditorTool.Remove) CleanupMaskTools(cleanupDraft, paintColor,
+                    before = ::pushUndo, changed = { version++ }, cleanupRects = editor.regions.cleanableRects(), unifiedHistory = true)
+            } else {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                    TextButton(onClick = {
+                        pushUndo()
+                        val created = newTextLayer(.35f, .4f, .3f, .15f)
+                        onUpdateRegions(editor.regions + created); onSelectRegion(created.id)
+                        tool = MangaEditorTool.Select; editingTextId = created.id
+                    }) { Text("Add text", color = Color.White) }
+                    TextButton(enabled = selected != null, onClick = { editingTextId = selected?.id }) { Text("Format text", color = if (selected != null) Color.White else EditorMuted) }
+                    TextButton(onClick = { pan = Offset.Zero; zoom = 1f }) { Text("Fit page", color = Color.White) }
+                    TextButton(onClick = { zoom = (zoom / 1.15f).coerceIn(.4f, 4f) }) { Text("−", color = Color.White) }
+                    TextButton(onClick = { zoom = (zoom * 1.15f).coerceIn(.4f, 4f) }) { Text("+", color = Color.White) }
+                }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                listOf(EditorTool.Select, EditorTool.Brush, EditorTool.Remove, EditorTool.Pan).forEach { item ->
+                    val active = tool == item.tool
+                    Column(Modifier.weight(1f).heightIn(min = 56.dp)
+                        .background(if (active) Color(0x33E8C872) else Color.Transparent)
+                        .clickable { tool = item.tool; onSelectRegion(null) }.padding(vertical = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(item.icon, contentDescription = null, tint = if (active) EditorAccent else Color.White, modifier = Modifier.size(22.dp))
+                        Text(item.label, color = if (active) EditorAccent else Color.White, fontSize = 12.sp)
                     }
-                },
-            )
-            InkTextButton(
-                label = "Redo",
-                onClick = {
-                    redoStack.removeLastOrNull()?.let {
-                        undoStack.add(snapshot())
-                        regionUndo.add(editor.regions)
-                        regionRedo.removeLastOrNull()?.let(onUpdateRegions)
-                        restore(it)
-                    }
-                },
-            )
-            InkTextButton(
-                label = "Fit page",
-                onClick = {
-                    pan = Offset.Zero
-                    zoom = 1f
-                },
-            )
-            Spacer(Modifier.weight(1f))
-            InkTextButton(label = "−", onClick = { zoom = (zoom / 1.15f).coerceIn(0.4f, 4f) })
-            Text("${(zoom * 100).roundToInt()}%", color = EditorMuted, fontSize = 13.sp)
-            InkTextButton(label = "+", onClick = { zoom = (zoom * 1.15f).coerceIn(0.4f, 4f) })
-            EditorTool.entries.forEach { item ->
-                val active = tool == item.tool
-                Column(
-                    modifier = Modifier
-                        .widthIn(min = 64.dp)
-                        .heightIn(min = 56.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(if (active) Color(0x33E8C872) else Color(0xFF2A2A2A))
-                        .clickable { tool = item.tool; if (tool == MangaEditorTool.Remove) optionsOpen = true }
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Icon(
-                        item.icon,
-                        contentDescription = item.label,
-                        tint = if (active) EditorAccent else Color.White,
-                        modifier = Modifier.size(22.dp),
-                    )
-                    Text(
-                        item.label,
-                        color = if (active) EditorAccent else Color.White,
-                        fontSize = 11.sp,
-                        maxLines = 1,
-                    )
+                }
+                TextButton(onClick = { aiOptions = false; optionsOpen = true }, modifier = Modifier.weight(1f).heightIn(min = 56.dp)) {
+                    Text(if (editor.regions.any { it.reviewRequired }) "Layers !" else "Layers", color = Color.White, fontSize = 12.sp)
                 }
             }
         }
-
-
         }
 
+        if (customColorOpen) androidx.compose.material3.AlertDialog(
+            onDismissRequest = { customColorOpen = false },
+            containerColor = EditorPanel,
+            title = { Text("Brush color & size", color = Color.White) },
+            text = {
+                Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
+                    CleanupBrushControls(if (tool == MangaEditorTool.Eraser) eraseColor else paintColor, brushSize,
+                        onColor = { if (tool == MangaEditorTool.Eraser) eraseColor = it else paintColor = it },
+                        onSize = { brushSize = it }, onEyedropper = {
+                            pickingCleanupColor = tool == MangaEditorTool.Remove
+                            tool = MangaEditorTool.ColorPicker; customColorOpen = false
+                        })
+                }
+            },
+            confirmButton = { TextButton(onClick = { customColorOpen = false }) { Text("Done") } })
 
         if (optionsOpen) {
-            androidx.compose.material3.ModalBottomSheet(
-                onDismissRequest = { optionsOpen = false },
+            androidx.compose.material3.ModalBottomSheet(onDismissRequest = { optionsOpen = false },
                 sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true),
-                containerColor = EditorPanel,
-            ) {
-                Column(Modifier.fillMaxWidth().heightIn(max = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp * .75f)
-                    .verticalScroll(rememberScrollState())) {
-                    TextButton(onClick = { optionsOpen = false }) { Text("Return to canvas") }
-        // Verification flags are actionable review items, not just a status label. Keep them
-        // visible while editing so a user can jump directly to the source region that needs
-        // whiteout/cleanup instead of guessing which red outline the banner referred to.
-        val flaggedRegions = editor.regions.filter { it.visible && it.reviewRequired }
-        if (flaggedRegions.isNotEmpty()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(EditorReview.copy(alpha = 0.12f))
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = InkSpacing.md, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
-            ) {
-                Text(
-                    "Needs review (${flaggedRegions.size})",
-                    color = EditorReview,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    "Select a flagged area, then use Whiteout or Remove.",
-                    color = EditorMuted,
-                    style = MaterialTheme.typography.labelSmall,
-                )
-                flaggedRegions.forEachIndexed { index, region ->
-                    InkTextButton(
-                        label = "${index + 1}",
-                        compact = true,
-                        onClick = {
-                            onSelectRegion(region.id)
-                            tool = MangaEditorTool.Select
-                        },
-                    )
-                }
-            }
-        }
-
-        Row(
+                containerColor = EditorPanel) {
+                Column(Modifier.fillMaxWidth().heightIn(max = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp * .65f)
+                    .verticalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Layers & review", color = Color.White, modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                        TextButton(onClick = ::undoEdit, enabled = history.canUndo) { Text("Undo") }
+                        TextButton(onClick = { optionsOpen = false }) { Text("Close") }
+                    }
+                    if (editor.status.isNotBlank()) Text(editor.status, color = EditorMuted, fontSize = 12.sp)
+                    Text("Translated and added text use the same layers. Tap a layer to move it on the page, or Format to change its wording and style.",
+                        color = EditorMuted, fontSize = 12.sp)
+                    editor.regions.forEachIndexed { index, region ->
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(onClick = {
+                                onSelectRegion(region.id); tool = MangaEditorTool.Select; optionsOpen = false
+                            }, modifier = Modifier.weight(1f)) {
+                                Text((if (region.reviewRequired) "⚠ " else "") + region.translation.ifBlank { region.original.ifBlank { "Text ${index + 1}" } },
+                                    color = if (region.reviewRequired) EditorReview else Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            }
+                            TextButton(onClick = { onSelectRegion(region.id); editingTextId = region.id; optionsOpen = false }) { Text("Format") }
+                            if (region.reviewRequired) TextButton(onClick = {
+                                pushUndo(); onUpdateRegions(editor.regions.map { if (it.id == region.id) it.copy(reviewRequired = false, edited = true) else it })
+                            }) { Text("Reviewed") }
+                        }
+                    }
+                    Row(Modifier.horizontalScroll(rememberScrollState())) {
+                        TextButton(enabled = selected != null, onClick = {
+                            pushUndo()
+                            val adjusted = MangaLetteringPlacement.constrain(editor.regions.map {
+                                it.copy(edited = it.id != selected?.id)
+                            }, bitmap.width.toFloat() / bitmap.height)
+                            onUpdateRegions(editor.regions.map { region ->
+                                if (region.id == selected?.id) adjusted.first { it.id == region.id }.copy(edited = true) else region
+                            })
+                        }) { Text("Re-layout selected text") }
+                        TextButton(onClick = { tool = MangaEditorTool.Whiteout; optionsOpen = false }) { Text("Whiteout") }
+                        TextButton(onClick = { tool = MangaEditorTool.Eraser; optionsOpen = false }) { Text("Erase / fill") }
+                        TextButton(onClick = { tool = MangaEditorTool.Text; optionsOpen = false }) { Text("Draw text box") }
+                        TextButton(onClick = { aiOptions = !aiOptions }) { Text("AI tools") }
+                    }
+        if (aiOptions) Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(EditorPanel)
@@ -677,297 +629,6 @@ fun PanelImageEditor(
                 enabled = !editor.busy && stages.isNotEmpty(),
             )
         }
-
-        if (tool == MangaEditorTool.Remove) CleanupMaskTools(cleanupDraft, paintColor,
-            before = ::pushUndo, changed = { version++ }, cleanupRects = editor.regions.cleanableRects())
-
-
-        if (tool == MangaEditorTool.Brush || tool == MangaEditorTool.Whiteout ||
-            tool == MangaEditorTool.Eraser || tool == MangaEditorTool.Remove
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(EditorPanel)
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = InkSpacing.md, vertical = InkSpacing.xs),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
-            ) {
-                if (tool == MangaEditorTool.Brush) {
-                    listOf(
-                        android.graphics.Color.rgb(210, 72, 64),
-                        android.graphics.Color.rgb(55, 115, 190),
-                        android.graphics.Color.rgb(54, 145, 90),
-                        android.graphics.Color.rgb(220, 160, 48),
-                        android.graphics.Color.BLACK,
-                        android.graphics.Color.WHITE,
-                    ).forEach { color ->
-                        ColorSwatch(color = color, selected = paintColor == color) { paintColor = color }
-                    }
-                }
-                if (tool == MangaEditorTool.Eraser) {
-                    listOf(
-                        android.graphics.Color.WHITE to "White",
-                        android.graphics.Color.BLACK to "Black",
-                        android.graphics.Color.rgb(242, 230, 204) to "Cream",
-                    ).forEach { (color, _) ->
-                        ColorSwatch(color = color, selected = eraseColor == color) { eraseColor = color }
-                    }
-                }
-                if (tool == MangaEditorTool.Whiteout) {
-                    InkTextButton(
-                        label = "Whiteout selected",
-                        onClick = {
-                            selected?.let { region ->
-                                pushUndo()
-                                val rect = region.cleanupRect()
-                                ImageOps.eraseRect(
-                                    bitmap,
-                                    RectF(
-                                        rect.left * bitmap.width,
-                                        rect.top * bitmap.height,
-                                        rect.right * bitmap.width,
-                                        rect.bottom * bitmap.height,
-                                    ),
-                                    android.graphics.Color.WHITE,
-                                )
-                                version++
-                            }
-                        },
-                        enabled = selected != null,
-                    )
-                    Text("Brush over any missed source characters.", color = EditorMuted, fontSize = 13.sp)
-                }
-                if (tool == MangaEditorTool.Remove) {
-                    Text("Paint over the old lettering, then lift your finger to rebuild the art.", color = EditorMuted, fontSize = 13.sp)
-                }
-                Text("Size ${brushSize.roundToInt()}", color = EditorMuted, fontSize = 13.sp)
-                Slider(
-                    value = brushSize,
-                    onValueChange = { brushSize = it },
-                    valueRange = 1f..90f,
-                    modifier = Modifier.width(160.dp).heightIn(min = 44.dp),
-                )
-            }
-        } else {
-            Text(
-                when (tool) {
-                    MangaEditorTool.Select -> "Drag a box to move it. The large corner handle resizes."
-                    MangaEditorTool.Text -> "Tap or drag on the page to add a text box."
-                    MangaEditorTool.ColorPicker -> "Tap the page to pick a color for paint or text."
-                    MangaEditorTool.Pan -> "Drag with one finger to move the page. Fit page resets the view."
-                    else -> ""
-                },
-                color = EditorMuted,
-                fontSize = 13.sp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(EditorPanel)
-                    .padding(horizontal = InkSpacing.md, vertical = 6.dp),
-            )
-        }
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = 200.dp)
-                .background(EditorPanel)
-                .padding(horizontal = InkSpacing.md, vertical = InkSpacing.xs),
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
-                modifier = Modifier.padding(bottom = 4.dp),
-            ) {
-                Text(
-                    "Type",
-                    color = if (inspectorTab == "type") EditorAccent else EditorMuted,
-                    fontSize = 15.sp,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable { inspectorTab = "type" }
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                )
-                Text(
-                    "Layers (${editor.regions.size})",
-                    color = if (inspectorTab == "layers") EditorAccent else EditorMuted,
-                    fontSize = 15.sp,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable { inspectorTab = "layers" }
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                )
-            }
-            if (inspectorTab == "layers") {
-                if (editor.regions.isEmpty()) {
-                    Text("No text layers yet. Run Detection or use the Text tool.", color = EditorMuted, fontSize = 12.sp)
-                } else {
-                    LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 180.dp)) {
-                        itemsIndexed(editor.regions, key = { _, region -> region.id }) { index, region ->
-                            val active = region.id == editor.selectedRegionId
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(if (active) Color(0x22E8C872) else Color.Transparent)
-                                    .clickable { onSelectRegion(region.id) }
-                                    .padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    if (region.visible) "●" else "○",
-                                    color = if (region.visible) EditorAccent else EditorMuted,
-                                    modifier = Modifier
-                                        .clickable {
-                                            onUpdateRegions(
-                                                editor.regions.map {
-                                                    if (it.id == region.id) it.copy(visible = !it.visible) else it
-                                                },
-                                            )
-                                        }
-                                        .padding(end = 8.dp),
-                                )
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        region.translation.ifBlank { region.original.ifBlank { "Text ${index + 1}" } },
-                                        color = Color.White,
-                                        fontSize = 12.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    Text(
-                                        if (region.original.isBlank()) "Text" else region.original,
-                                        color = EditorMuted,
-                                        fontSize = 10.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
-                val region = selected
-                if (region == null) {
-                    Text("Select a text layer to edit source, translation, and type.", color = EditorMuted, fontSize = 12.sp)
-                } else {
-                    Column(
-                        modifier = Modifier.verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        OutlinedTextField(
-                            value = region.original,
-                            onValueChange = { value ->
-                                onUpdateRegions(
-                                    editor.regions.map {
-                                        if (it.id == region.id) it.copy(original = value, edited = true) else it
-                                    },
-                                )
-                            },
-                            label = { Text("Source", fontSize = 11.sp) },
-                            textStyle = MaterialTheme.typography.bodySmall.copy(color = Color.White),
-                            modifier = Modifier.fillMaxWidth(),
-                            minLines = 1,
-                            maxLines = 3,
-                        )
-                        OutlinedTextField(
-                            value = region.translation,
-                            onValueChange = { value ->
-                                onUpdateRegions(
-                                    editor.regions.map {
-                                        if (it.id == region.id) it.copy(translation = value, edited = true) else it
-                                    },
-                                )
-                            },
-                            label = { Text("Translation", fontSize = 11.sp) },
-                            textStyle = MaterialTheme.typography.bodySmall.copy(color = Color.White),
-                            modifier = Modifier.fillMaxWidth(),
-                            minLines = 1,
-                            maxLines = 3,
-                        )
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            FilterChip(
-                                selected = region.autoFit,
-                                onClick = {
-                                    onUpdateRegions(
-                                        editor.regions.map {
-                                            if (it.id == region.id) it.copy(autoFit = !it.autoFit, edited = true) else it
-                                        },
-                                    )
-                                },
-                                label = { Text("Auto-fit", fontSize = 11.sp) },
-                            )
-                            listOf("Start", "Center", "End").forEach { align ->
-                                FilterChip(
-                                    selected = region.alignment == align,
-                                    onClick = {
-                                        onUpdateRegions(
-                                            editor.regions.map {
-                                                if (it.id == region.id) it.copy(alignment = align, edited = true) else it
-                                            },
-                                        )
-                                    },
-                                    label = { Text(align, fontSize = 11.sp) },
-                                )
-                            }
-                            FilterChip(
-                                selected = region.writingMode == "Vertical",
-                                onClick = {
-                                    val next = if (region.writingMode == "Vertical") "Horizontal" else "Vertical"
-                                    onUpdateRegions(
-                                        editor.regions.map {
-                                            if (it.id == region.id) it.copy(writingMode = next, edited = true) else it
-                                        },
-                                    )
-                                },
-                                label = { Text(if (region.writingMode == "Vertical") "Vertical" else "Horizontal", fontSize = 11.sp) },
-                            )
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Fill", color = EditorMuted, fontSize = 11.sp, modifier = Modifier.padding(end = 6.dp))
-                            listOf("#111111", "#FFFFFF", "#C45C5C", "#E8C872").forEach { hex ->
-                                ColorSwatch(
-                                    color = android.graphics.Color.parseColor(hex),
-                                    selected = region.fillHex.equals(hex, ignoreCase = true),
-                                ) {
-                                    onUpdateRegions(
-                                        editor.regions.map {
-                                            if (it.id == region.id) it.copy(fillHex = hex, edited = true) else it
-                                        },
-                                    )
-                                }
-                            }
-                            Spacer(Modifier.width(8.dp))
-                            Text("Stroke", color = EditorMuted, fontSize = 11.sp, modifier = Modifier.padding(end = 6.dp))
-                            FilterChip(
-                                selected = region.strokeWidth > 0f,
-                                onClick = {
-                                    val next = if (region.strokeWidth > 0f) 0f else 3f
-                                    onUpdateRegions(
-                                        editor.regions.map {
-                                            if (it.id == region.id) it.copy(strokeWidth = next, edited = true) else it
-                                        },
-                                    )
-                                },
-                                label = { Text(if (region.strokeWidth > 0f) "On" else "Off", fontSize = 11.sp) },
-                            )
-                            Spacer(Modifier.weight(1f))
-                            InkTextButton(
-                                label = "Delete",
-                                onClick = {
-                                    onUpdateRegions(editor.regions.filterNot { it.id == region.id })
-                                    onSelectRegion(null)
-                                },
-                                compact = true,
-                            )
-                        }
-                    }
-                }
-            }
-        }
                 }
             }
         }
@@ -981,6 +642,7 @@ fun PanelImageEditor(
             }
         }
     }
+    }
 }
 
 private enum class EditorTool(
@@ -988,13 +650,13 @@ private enum class EditorTool(
     val label: String,
     val icon: ImageVector,
 ) {
-    Select(MangaEditorTool.Select, "Move", Icons.Filled.NearMe),
+    Select(MangaEditorTool.Select, "Text", Icons.Filled.TextFields),
     Text(MangaEditorTool.Text, "Text", Icons.Filled.TextFields),
     Brush(MangaEditorTool.Brush, "Paint", Icons.Filled.Brush),
     Whiteout(MangaEditorTool.Whiteout, "Whiteout", Icons.Filled.FormatColorReset),
     Eraser(MangaEditorTool.Eraser, "Erase", Icons.Filled.FormatColorReset),
     Picker(MangaEditorTool.ColorPicker, "Color", Icons.Filled.Colorize),
-    Remove(MangaEditorTool.Remove, "Clean", Icons.Filled.AutoFixHigh),
+    Remove(MangaEditorTool.Remove, "Cleanup", Icons.Filled.AutoFixHigh),
     Pan(MangaEditorTool.Pan, "Hand", Icons.Filled.PanTool),
 }
 
@@ -1032,6 +694,7 @@ private fun EditorGestureLayer(
     bitmapOffset: (Offset) -> Offset,
     brushRadius: () -> Float,
 ) {
+    val pushUndoNow by rememberUpdatedState(onPushUndo)
     when (tool) {
         MangaEditorTool.Pan -> {
             Box(
@@ -1048,7 +711,7 @@ private fun EditorGestureLayer(
                 modifier = Modifier.fillMaxSize().pointerInput(paintColor, brushSize) {
                     detectDragGestures(
                         onDragStart = { pos ->
-                            onPushUndo()
+                            pushUndoNow()
                             val p = bitmapOffset(pos)
                             ImageOps.paintCircle(bitmap, p.x, p.y, brushRadius(), paintColor)
                             onMutated()
@@ -1068,7 +731,7 @@ private fun EditorGestureLayer(
                 modifier = Modifier.fillMaxSize().pointerInput(brushSize) {
                     detectDragGestures(
                         onDragStart = { pos ->
-                            onPushUndo()
+                            pushUndoNow()
                             val p = bitmapOffset(pos)
                             ImageOps.eraseCircle(bitmap, p.x, p.y, brushRadius(), android.graphics.Color.WHITE)
                             onMutated()
@@ -1088,7 +751,7 @@ private fun EditorGestureLayer(
                 modifier = Modifier.fillMaxSize().pointerInput(eraseColor, brushSize) {
                     detectDragGestures(
                         onDragStart = { pos ->
-                            onPushUndo()
+                            pushUndoNow()
                             val p = bitmapOffset(pos)
                             ImageOps.eraseCircle(bitmap, p.x, p.y, brushRadius(), eraseColor)
                             onMutated()
@@ -1110,7 +773,7 @@ private fun EditorGestureLayer(
                 modifier = Modifier.fillMaxSize().pointerInput(brushSize) {
                     detectDragGestures(
                         onDragStart = { pos ->
-                            onPushUndo()
+                            pushUndoNow()
                             mask = BooleanArray(bitmap.width * bitmap.height)
                             preview = listOf(pos)
                             onRemovePreview(preview)
@@ -1223,6 +886,7 @@ private fun newTextLayer(x: Float, y: Float, w: Float, h: Float): PanelTextRegio
         translation = "Text",
         cleanupEnabled = false,
         edited = true,
+        backingOverlay = TextOverlay(id = "", text = "Text", source = "page-editor", backgroundHex = null, backgroundAlpha = 0f, cleanupEnabled = false),
     )
 
 private fun List<PanelTextRegion>.cleanableRects(): List<RectF> =

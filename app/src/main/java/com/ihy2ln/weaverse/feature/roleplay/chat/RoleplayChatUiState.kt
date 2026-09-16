@@ -45,6 +45,7 @@ data class RpMediaRef(
     /** Resolved immutable source path when this panel points at a derived edit. */
     val originalPath: String = "",
     val variantKind: String = "original",
+    val pageId: String = "",
 )
 
 data class RpMessageUi(
@@ -128,6 +129,8 @@ data class PanelTextRegion(
     val cleanupW: Float = -1f,
     val cleanupH: Float = -1f,
     val reviewRequired: Boolean = false,
+    /** Retain non-lettering presentation metadata when all text is edited in one workspace. */
+    val backingOverlay: TextOverlay? = null,
 )
 
 fun PanelTextRegion.cleanupRect(): RectF = RectF(
@@ -137,20 +140,26 @@ fun PanelTextRegion.cleanupRect(): RectF = RectF(
     (if (cleanupY >= 0f) cleanupY else y) + (if (cleanupH > 0f) cleanupH else h),
 )
 
-fun PanelTextRegion.toEditableOverlay(index: Int = 0): TextOverlay = TextOverlay(
+fun PanelTextRegion.toEditableOverlay(index: Int = 0): TextOverlay {
+    // Painting a page must not reflow untouched legacy text (including auto-height boxes).
+    if (backingOverlay != null && copy(reviewRequired = false) == backingOverlay.toPanelTextRegion().copy(reviewRequired = false)) {
+        return backingOverlay
+    }
+    return TextOverlay(
     id = id.ifBlank { "manga-translation-$index" },
     text = translation.trim(),
     bold = bold, italic = italic, fontFamily = fontFamily,
-    style = TextOverlayStyle.Plain,
+    style = backingOverlay?.style ?: TextOverlayStyle.Plain,
     xPercent = ((x + w / 2f) * 100f).coerceIn(0f, 100f),
     yPercent = ((y + h / 2f) * 100f).coerceIn(0f, 100f),
     widthPercent = (w * 100f).coerceIn(1f, 100f),
     heightPercent = (h * 100f).coerceIn(1f, 100f),
     fontSizeSp = if (fontSizePx > 0f) fontSizePx * .55f else 15.4f,
     colorHex = fillHex,
-    backgroundHex = null,
-    backgroundAlpha = 0f,
-    source = "manga-translation",
+    backgroundHex = backingOverlay?.backgroundHex,
+    backgroundAlpha = backingOverlay?.backgroundAlpha ?: 0f,
+    tailAngleDeg = backingOverlay?.tailAngleDeg ?: 270f,
+    source = backingOverlay?.source ?: "manga-translation",
     manuallyAdjusted = edited,
     autoFit = autoFit,
     alignment = alignment,
@@ -167,12 +176,14 @@ fun PanelTextRegion.toEditableOverlay(index: Int = 0): TextOverlay = TextOverlay
     cleanupWidthPercent = (if (cleanupW > 0f) cleanupW else w) * 100f,
     cleanupHeightPercent = (if (cleanupH > 0f) cleanupH else h) * 100f,
 )
+}
 
 fun TextOverlay.toPanelTextRegion(): PanelTextRegion {
     val width = (widthPercent / 100f).coerceIn(0.01f, 1f)
     val height = ((if (heightPercent > 0f) heightPercent else 12f) / 100f).coerceIn(0.01f, 1f)
     return PanelTextRegion(
         id = id,
+        backingOverlay = this,
         x = (xPercent / 100f - width / 2f).coerceIn(0f, 1f - width),
         y = (yPercent / 100f - height / 2f).coerceIn(0f, 1f - height),
         w = width,
@@ -251,6 +262,8 @@ data class RoleplayChatUiState(
     val input: String = "",
     val messages: List<RpMessageUi> = emptyList(),
     val mediaPanels: List<RpMediaRef> = emptyList(),
+    /** Lightweight references for continuous imported-manga scrolling; bitmaps remain lazy. */
+    val mangaPagePanels: List<RpMediaRef> = emptyList(),
     val displayMode: String = "messenger",
     val streamingText: String = "",
     val isStreaming: Boolean = false,

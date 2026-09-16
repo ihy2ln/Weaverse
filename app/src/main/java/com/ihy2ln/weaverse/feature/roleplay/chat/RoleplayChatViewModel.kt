@@ -497,8 +497,6 @@ class RoleplayChatViewModel @Inject constructor(
         val panels = mutableListOf<RpMediaRef>()
         val statePages = _uiState.value.pages
         val defaultPageId = statePages.firstOrNull()?.id ?: "page-1"
-        val activePageId = _uiState.value.activePageId.ifBlank { defaultPageId }
-        fun onActivePage(pageId: String?): Boolean = (pageId ?: defaultPageId) == activePageId
         val ui = active.map { m ->
             val groupCount = rawMessages.count { it.swipeGroupId == m.swipeGroupId && it.role == m.role }
             val doc = documentFromJson(m.contentJson)
@@ -531,8 +529,9 @@ class RoleplayChatViewModel @Inject constructor(
                 when (block) {
                     is MediaBlock -> {
                         if (block.mediaId == DM_TEXT_TILE_MEDIA_ID) {
-                            if (onActivePage(block.pageId)) {
+                            run {
                                 panels += RpMediaRef(
+                                    pageId = block.pageId ?: defaultPageId,
                                     messageId = m.id,
                                     blockId = block.id,
                                     path = "",
@@ -559,8 +558,9 @@ class RoleplayChatViewModel @Inject constructor(
                             blockIds += block.id
                             isAudioFlags += audio
                             collapsedMap[block.id] = block.collapsed
-                            if (onActivePage(block.pageId)) {
+                            run {
                                 panels += RpMediaRef(
+                                    pageId = block.pageId ?: defaultPageId,
                                     messageId = m.id,
                                     blockId = block.id,
                                     path = path,
@@ -600,8 +600,9 @@ class RoleplayChatViewModel @Inject constructor(
                             isAudioFlags += false
                             stackPaths[block.id] = resolved
                             collapsedMap[block.id] = block.collapsed
-                            if (onActivePage(block.pageId)) {
+                            run {
                                 panels += RpMediaRef(
+                                    pageId = block.pageId ?: defaultPageId,
                                     messageId = m.id,
                                     blockId = block.id,
                                     path = resolved[idx],
@@ -665,7 +666,8 @@ class RoleplayChatViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 messages = ui,
-                mediaPanels = panels,
+                mediaPanels = panels.filter { panel -> panel.pageId == it.activePageId.ifBlank { defaultPageId } },
+                mangaPagePanels = panels.filter { !it.isAudio && !it.isTextTile },
                 canPasteMedia = mediaClipboard.hasPayload,
                 adventureStartupPhase = startupPhase,
                 sceneNumber = targetScene,
@@ -1185,6 +1187,19 @@ class RoleplayChatViewModel @Inject constructor(
             it.copy(activePageId = pageId, activeTemplateId = template, selectedMediaKey = null)
         }
         viewModelScope.launch { publishMessages() }
+    }
+
+    /** Scrolling imported pages selects cached metadata; it must not re-query every image. */
+    fun focusImportedMangaPage(pageId: String) {
+        _uiState.update { state ->
+            if (state.activePageId == pageId || state.pages.none { it.id == pageId }) state else {
+                val panels = state.mangaPagePanels.filter { it.pageId == pageId }
+                state.copy(activePageId = pageId,
+                    activeTemplateId = state.pages.first { it.id == pageId }.templateId,
+                    mediaPanels = panels,
+                    selectedMediaKey = panels.firstOrNull()?.let { "${it.messageId}::${it.blockId}" })
+            }
+        }
     }
 
     fun addPage() {
@@ -4381,7 +4396,6 @@ class RoleplayChatViewModel @Inject constructor(
             ?.filterIsInstance<MediaBlock>()
             ?.find { it.id == blockId }
             ?.overlays
-            ?.filter { it.source == "manga-translation" }
             ?.map(TextOverlay::toPanelTextRegion)
             .orEmpty()
         val reviewRegions = _uiState.value.mangaTranslationReviewRegions[blockId].orEmpty()
@@ -4393,7 +4407,9 @@ class RoleplayChatViewModel @Inject constructor(
                     mediaId = panel.mediaId,
                     path = panel.path,
                     originalPath = panel.originalPath,
-                    regions = if (reviewRegions.isNotEmpty()) reviewRegions else persistedRegions,
+                    regions = if (reviewRegions.isNotEmpty()) reviewRegions + persistedRegions.filter {
+                        it.backingOverlay?.source != "manga-translation" && reviewRegions.none { draft -> draft.id == it.id }
+                    } else persistedRegions,
                     selectedRegionId = (reviewRegions.ifEmpty { persistedRegions }).firstOrNull()?.id,
                     status = if (reviewRegions.isNotEmpty()) {
                         "Automatic translation was not applied: " +
@@ -5466,8 +5482,10 @@ class RoleplayChatViewModel @Inject constructor(
         // Brush and whiteout edits are pixels and belong in the saved picture; the English
         // is saved alongside them as layers, so wording and position stay editable.
         val pending = editor.regions.filter { it.visible && it.translation.isNotBlank() }
-        val safePending = validatedEnglishRegions(pending)
-        if (pending.isNotEmpty() && safePending == null) {
+        val translated = pending.filter { it.backingOverlay?.source?.let { source -> source == "manga-translation" } ?: true }
+        val validated = validatedEnglishRegions(translated)
+        val safePending = if (validated == null) null else pending.map { region -> validated.find { it.id == region.id } ?: region }
+        if (translated.isNotEmpty() && safePending == null) {
             _uiState.update {
                 it.copy(
                     storyboardStatus =
@@ -5498,8 +5516,7 @@ class RoleplayChatViewModel @Inject constructor(
                             mediaId = entity.id,
                             originalMediaId = block.originalMediaId ?: block.mediaId,
                             variantKind = "edited",
-                            overlays = block.overlays.filterNot { it.source == "manga-translation" } +
-                                safePending.orEmpty()
+                            overlays = safePending.orEmpty()
                                     .mapIndexed { layerIndex, region -> region.toEditableOverlay(layerIndex) },
                         )
                     } else {

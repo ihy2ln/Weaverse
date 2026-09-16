@@ -74,7 +74,7 @@ internal class CleanupDraft(val target: Bitmap, originalPath: String) {
 
 @Composable
 internal fun CleanupMaskTools(draft: CleanupDraft, sampledColor: Int, before: () -> Unit, changed: () -> Unit,
-    cleanupRects: List<android.graphics.RectF>) {
+    cleanupRects: List<android.graphics.RectF>, unifiedHistory: Boolean = false) {
     var confirmRebuild by remember { mutableStateOf(false) }
     if (confirmRebuild) AlertDialog(onDismissRequest = { confirmRebuild = false },
         title = { Text("Rebuild cleanup from original?") },
@@ -88,18 +88,21 @@ internal fun CleanupMaskTools(draft: CleanupDraft, sampledColor: Int, before: ()
         FilterChip(!draft.subtract, { draft.subtract = false }, label = { Text("Add mask") })
         FilterChip(draft.subtract, { draft.subtract = true }, label = { Text("Subtract mask") })
         FilterChip(draft.preview, { draft.preview = !draft.preview }, label = { Text("Preview mask") })
-        TextButton(onClick = { draft.undo() }) { Text("Undo mask") }
-        TextButton(onClick = { draft.redo() }) { Text("Redo mask") }
-        TextButton(onClick = { before(); draft.fill(sampledColor); changed() }) { Text("Fill sampled color") }
+        if (!unifiedHistory) {
+            TextButton(onClick = { draft.undo() }) { Text("Undo mask") }
+            TextButton(onClick = { draft.redo() }) { Text("Redo mask") }
+        }
+        TextButton(onClick = { before(); draft.fill(sampledColor); changed() }) { Text("Fill chosen color") }
         TextButton(onClick = { before(); ImageOps.inpaintMasked(draft.target, draft.selection()); changed() }) { Text("Repair masked art") }
         TextButton(enabled = draft.original != null, onClick = { before(); draft.fill(0, restore = true); changed() }) { Text("Restore original in mask") }
-        TextButton(onClick = { draft.push(); draft.clear() }) { Text("Clear mask") }
+        TextButton(onClick = { if (unifiedHistory) before() else draft.push(); draft.clear() }) { Text("Clear mask") }
         TextButton(enabled = draft.original != null, onClick = { confirmRebuild = true }) { Text("Rebuild from original") }
     }
 }
 
 @Composable
-internal fun CleanupMaskLayer(draft: CleanupDraft, viewSize: IntSize, radius: Float) {
+internal fun CleanupMaskLayer(draft: CleanupDraft, viewSize: IntSize, radius: Float, beforeStroke: (() -> Unit)? = null) {
+    val currentBefore by rememberUpdatedState(beforeStroke)
     val revision = draft.revision
     if (draft.preview) key(revision) {
         Image(draft.mask.asImageBitmap(), "Cleanup mask preview", Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
@@ -108,7 +111,7 @@ internal fun CleanupMaskLayer(draft: CleanupDraft, viewSize: IntSize, radius: Fl
         fun point(p: Offset) = Offset(p.x * draft.target.width / viewSize.width.coerceAtLeast(1),
             p.y * draft.target.height / viewSize.height.coerceAtLeast(1))
         var last = Offset.Zero
-        detectDragGestures(onDragStart = { p -> draft.push(); last = point(p); draft.stroke(last, last, radius) },
+        detectDragGestures(onDragStart = { p -> currentBefore?.invoke() ?: draft.push(); last = point(p); draft.stroke(last, last, radius) },
             onDrag = { change, _ -> change.consume(); val next = point(change.position); draft.stroke(last, next, radius); last = next })
     })
 }

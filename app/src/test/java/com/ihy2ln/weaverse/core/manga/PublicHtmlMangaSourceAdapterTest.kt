@@ -71,7 +71,7 @@ class PublicHtmlMangaSourceAdapterTest {
             }
             assertTrue(adapter.browsePage(MangaBrowseMode.Popular, 2).isEmpty())
             server.takeRequest()
-            assertEquals("/manga/page/2/", server.takeRequest().path)
+            assertEquals("/manga/page/2/?the_orderby=popular", server.takeRequest().path)
             assertEquals(2, server.requestCount)
         }
     }

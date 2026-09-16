@@ -1,6 +1,7 @@
 package com.ihy2ln.weaverse.data.db.entities
 
 import androidx.room.Entity
+import androidx.room.ColumnInfo
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import kotlinx.serialization.Serializable
@@ -467,6 +468,10 @@ data class MangaSeriesEntity(
     val tags: String = "",
     val languages: String = "",
     val publicationStatus: String = "",
+    @ColumnInfo(defaultValue = "''") val publicationType: String = "",
+    @ColumnInfo(defaultValue = "''") val releaseYear: String = "",
+    @ColumnInfo(defaultValue = "''") val contentRating: String = "",
+    @ColumnInfo(defaultValue = "''") val catalogScore: String = "",
 )
 
 /** Provider-neutral tracker binding. Authentication secrets live in encrypted preferences, never here. */

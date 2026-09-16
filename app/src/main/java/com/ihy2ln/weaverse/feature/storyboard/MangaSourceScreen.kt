@@ -139,6 +139,7 @@ data class MangaSourceUiState(
     val globalLanguageFilter: String = "",
     val globalStatusFilter: String = "",
     val globalLibraryOnly: Boolean = false,
+    val catalogRefinements: com.ihy2ln.weaverse.core.manga.CatalogRefinements = com.ihy2ln.weaverse.core.manga.CatalogRefinements(),
     val pinnedSourceIds: Set<String> = emptySet(),
 )
 
@@ -213,6 +214,13 @@ class MangaSourceViewModel @Inject constructor(
 
     init {
         viewModelScope.launch { repository.ensureDefaultFavoriteCategory() }
+        viewModelScope.launch { repository.repairInvalidLibraryTitles() }
+        viewModelScope.launch {
+            val sourceId = local.value.activeSourceId
+            runCatching { registry.get(sourceId)?.loadNativeFilters() }.onSuccess { filters ->
+                if (filters != null && local.value.activeSourceId == sourceId) local.value = local.value.copy(nativeFilters = filters)
+            }
+        }
     }
 
     fun setQuery(value: String) = local.value.let { local.value = it.copy(query = value) }
@@ -220,6 +228,14 @@ class MangaSourceViewModel @Inject constructor(
     fun setLink(value: String) = local.value.let { local.value = it.copy(link = value) }
 
     fun setStatus(value: String) = local.value.let { local.value = it.copy(status = value) }
+
+    fun repairLibraryTitles() = viewModelScope.launch {
+        local.value = local.value.copy(busy = true, status = "Checking saved title metadata…")
+        try {
+            val count = repository.repairInvalidLibraryTitles(onlyInvalid = false)
+            local.value = local.value.copy(status = "Repaired $count title records. Unavailable sources were left unchanged; reconnect and retry if a title still needs repair.")
+        } finally { local.value = local.value.copy(busy = false) }
+    }
 
     fun setIncognito(value: Boolean) {
         readerPreferences.edit().putBoolean("incognito", value).apply()
@@ -253,6 +269,14 @@ class MangaSourceViewModel @Inject constructor(
             chapters = emptyList(),
             status = "${source.name} selected. Choose Popular, Latest, or Search.",
         )
+        viewModelScope.launch {
+            runCatching { adapter.loadNativeFilters() }.onSuccess { filters ->
+                if (local.value.activeSourceId == sourceId) local.value = local.value.copy(nativeFilters = filters)
+            }.onFailure { failure ->
+                if (failure is kotlinx.coroutines.CancellationException) throw failure
+                if (local.value.activeSourceId == sourceId) local.value = local.value.copy(status = "Source filters unavailable: ${failure.message}. Retry by reopening this source.")
+            }
+        }
     }
 
     fun resetNativeFilters() {
@@ -266,6 +290,9 @@ class MangaSourceViewModel @Inject constructor(
     }
 
     fun setGlobalTagFilter(value: String) { local.value = local.value.copy(globalTagFilter = value) }
+    fun setCatalogRefinements(value: com.ihy2ln.weaverse.core.manga.CatalogRefinements) {
+        local.value = local.value.copy(catalogRefinements = value)
+    }
     fun setGlobalMatchAny(value: Boolean) { local.value = local.value.copy(globalMatchAny = value) }
     fun setCatalogSort(value: String) { local.value = local.value.copy(catalogSort = value) }
     fun setGlobalLanguageFilter(value: String) { local.value = local.value.copy(globalLanguageFilter = value) }
@@ -280,12 +307,14 @@ class MangaSourceViewModel @Inject constructor(
             globalLanguageFilter = "",
             globalStatusFilter = "",
             globalLibraryOnly = false,
+            catalogRefinements = com.ihy2ln.weaverse.core.manga.CatalogRefinements(),
         )
     }
 
     fun applyCatalogFilters() {
         val snapshot = local.value
-        if (snapshot.catalogSort == "latest") browse(MangaBrowseMode.Latest)
+        if (snapshot.nativeFilters.isNotEmpty()) search()
+        else if (snapshot.catalogSort == "latest") browse(MangaBrowseMode.Latest)
         else if (snapshot.catalogSort == "popular") browse(MangaBrowseMode.Popular)
         else if (snapshot.query.isBlank() && snapshot.nativeFilters.isEmpty()) browse(snapshot.catalogMode ?: MangaBrowseMode.Popular) else search()
     }
@@ -299,12 +328,17 @@ class MangaSourceViewModel @Inject constructor(
         val requestedTags = filters.globalTagFilter.split(',').map(String::trim).filter(String::isNotBlank)
         val language = filters.globalLanguageFilter.trim()
         val status = filters.globalStatusFilter.trim()
-        val saved = uiState.value.favoriteSeries.mapTo(hashSetOf()) { "${it.sourceId}:${it.remoteId}" }
+        val favoriteIds = uiState.value.favorites.mapTo(hashSetOf()) { it.seriesId }
+        val saved = uiState.value.favoriteSeries.filter { it.id in favoriteIds }.mapTo(hashSetOf()) { "${it.sourceId}:${it.remoteId}" }
         val failures = java.util.concurrent.atomic.AtomicInteger()
         val enriched = coroutineScope {
             items.map { manga -> async {
-                val needsDetails = (requestedTags.isNotEmpty() && manga.tags.isEmpty()) ||
-                    (status.isNotBlank() && (manga.status.isBlank() || manga.status == "Unknown"))
+                // Catalog cards can have a nonempty but incomplete tag subset. Always use
+                // cached/full detail metadata for local tag matching, not that preview subset.
+                val needsDetails = requestedTags.isNotEmpty() ||
+                    (status.isNotBlank() && (manga.status.isBlank() || manga.status == "Unknown")) ||
+                    (filters.catalogRefinements.minimumScore > 0 && manga.score.isBlank()) ||
+                    (filters.catalogRefinements.contentRating.isNotBlank() && manga.rating.isBlank())
                 if (!needsDetails) manga else metadataSlots.withPermit {
                     val key = "${manga.sourceId}:${manga.remoteId}"
                     catalogMetadata[key] ?: try {
@@ -317,8 +351,19 @@ class MangaSourceViewModel @Inject constructor(
                 }
             } }.awaitAll().filterNotNull()
         }
+        val refined = coroutineScope {
+            enriched.map { manga -> async {
+                val chapters = if (filters.catalogRefinements.needsChapters) metadataSlots.withPermit {
+                    try {
+                        registry.get(manga.sourceId)?.chapters(manga)
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (error: Exception) { failures.incrementAndGet(); null }
+                } else null
+                manga.takeIf { filters.catalogRefinements.matches(it, chapters) }
+            } }.awaitAll().filterNotNull()
+        }
         filterMetadataWarning = if (failures.get() == 0) "" else " ${failures.get()} titles skipped because their filter metadata could not load. Retry to check them."
-        return enriched.filter { manga ->
+        return refined.filter { manga ->
             CatalogTags.matches(manga.tags + manga.type.takeIf(String::isNotBlank).let { listOfNotNull(it) }, filters.globalTagFilter, filters.globalMatchAny) &&
                 (language.isBlank() || manga.languages.any { it.equals(language, true) || it.contains(language, true) }) &&
                 (status.isBlank() || manga.status.contains(status, true)) &&
@@ -450,7 +495,7 @@ class MangaSourceViewModel @Inject constructor(
         val query = local.value.query.trim()
         if (query.isBlank() && local.value.nativeFilters.isEmpty() &&
             local.value.globalTagFilter.isBlank() && local.value.globalLanguageFilter.isBlank() &&
-            local.value.globalStatusFilter.isBlank() && !local.value.globalLibraryOnly
+            local.value.globalStatusFilter.isBlank() && !local.value.globalLibraryOnly && !local.value.catalogRefinements.active
         ) {
             local.value = local.value.copy(status = "Enter a manga title to search.")
             return
@@ -629,11 +674,11 @@ class MangaSourceViewModel @Inject constructor(
     }
 
     fun favoriteDownloadedSeries(chapter: MangaChapterEntity) {
-        val manga = MangaSearchResult(
+        val manga = uiState.value.favoriteSeries.firstOrNull { it.sourceId == chapter.sourceId && it.remoteId == chapter.mangaId }?.toMihonSearchResult() ?: MangaSearchResult(
             sourceId = chapter.sourceId,
             remoteId = chapter.mangaId,
             title = chapter.mangaTitle,
-            canonicalUrl = chapter.canonicalUrl,
+            canonicalUrl = "", // A chapter URL is not a series URL.
         )
         toggleFavorite(manga, uiState.value.favoriteCategories.firstOrNull()?.id ?: "favorites")
     }

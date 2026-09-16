@@ -2,6 +2,8 @@ package com.ihy2ln.weaverse.core.media
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
@@ -19,6 +21,21 @@ import org.junit.Test
 
 class OverlayGestureDeviceTest {
     @get:Rule val compose = createComposeRule()
+    @Test fun unselectedTextLetsEditModeScrollInsteadOfMoving() {
+        val scroll = ScrollState(0)
+        var moved = false
+        compose.setContent { MaterialTheme {
+            Box(Modifier.size(300.dp, 300.dp).verticalScroll(scroll)) {
+                Box(Modifier.size(300.dp, 800.dp)) {
+                    TextOverlayLayer(listOf(TextOverlay(id = "scroll", text = "Scroll over this passage",
+                        xPercent = 50f, yPercent = 25f, widthPercent = 60f, heightPercent = 20f)), true,
+                        onMove = { _, _, _ -> moved = true }, onResize = { _, _, _, _, _ -> }, onTap = {})
+                }
+            }
+        } }
+        compose.onNodeWithTag("overlay-scroll").performTouchInput { swipe(center, center - Offset(0f, 240f), 600) }
+        compose.runOnIdle { assertTrue(scroll.value > 0); assertFalse(moved) }
+    }
     @Test fun readingDisablesEditingAndBackClearsHandles() {
         val editing = mutableStateOf(true)
         val reset = mutableStateOf(0)
@@ -54,6 +71,7 @@ class OverlayGestureDeviceTest {
                     onTap = {}, modifier = Modifier.testTag("overlay-layer"))
             } }
         }
+        compose.onNodeWithTag("overlay-fixture").performTouchInput { click(center) }
         compose.onNodeWithTag("overlay-fixture").performTouchInput { swipe(center, center + Offset(45f, 20f), 500) }
         compose.runOnIdle { assertTrue("Drag did not persist: ${overlay.value}", overlay.value.xPercent > 50f && overlay.value.yPercent > 50f) }
         val beforeMove = overlay.value

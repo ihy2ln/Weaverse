@@ -13,6 +13,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import com.ihy2ln.weaverse.core.manga.extension.MangaExtensionManager
 import com.ihy2ln.weaverse.core.manga.extension.MihonExtensionSourceAdapter
 import eu.kanade.tachiyomi.source.model.FilterList
+import eu.kanade.tachiyomi.source.model.Filter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -112,6 +113,9 @@ interface MangaSourceAdapter {
     suspend fun searchPage(query: String, page: Int): List<MangaSearchResult> =
         if (page <= 0) search(query) else emptyList()
     fun nativeFilters(): FilterList = FilterList()
+    /** Website-backed option IDs must be loaded before constructing their controls. */
+    suspend fun loadNativeFilters(): FilterList = nativeFilters()
+    suspend fun seriesForChapter(chapter: MangaChapter): MangaSearchResult? = null
     suspend fun searchPage(query: String, page: Int, filters: FilterList): List<MangaSearchResult> =
         searchPage(query, page)
     suspend fun details(manga: MangaSearchResult): MangaSearchResult = manga
@@ -149,12 +153,56 @@ class MangaDexSource @Inject constructor(
         baseUrl = "https://api.mangadex.org",
         description = "Authorized API connector with language and chapter metadata.",
         authorized = true,
+        supportsNativeFilters = true,
     )
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
     /** Catalog rows per request; also the stride for the paging offset. */
     private val PAGE_SIZE = 20
+    private var tagOptions: List<Pair<String, WebsiteOption>> = emptyList()
+
+    override suspend fun loadNativeFilters(): FilterList {
+        if (tagOptions.isEmpty()) {
+            val root = json.parseToJsonElement(http.get("${descriptor.baseUrl}/manga/tag").body<String>()).jsonObject
+            tagOptions = root["data"]?.jsonArray.orEmpty().mapNotNull { item ->
+                val obj = item.jsonObject
+                val a = obj.obj("attributes") ?: return@mapNotNull null
+                a.string("group").orEmpty() to WebsiteOption(obj.string("id") ?: return@mapNotNull null, a.obj("name")?.firstValue().orEmpty())
+            }
+        }
+        return nativeFilters()
+    }
+
+    override fun nativeFilters(): FilterList = FilterList(listOf(
+        WebsiteSelect("order", "Sort by", listOf("followedCount" to "Most followed", "latestUploadedChapter" to "Latest update", "rating" to "Highest rated", "title" to "Title (A–Z)", "createdAt" to "Recently added", "year" to "Year (newest)", "relevance" to "Best match").map { WebsiteOption(it.first, it.second) }),
+        WebsiteGroup("status[]", "Publication status", listOf("ongoing", "completed", "hiatus", "cancelled").map { WebsiteOption(it, it.replaceFirstChar(Char::uppercase)) }),
+        WebsiteGroup("publicationDemographic[]", "Demographic", listOf("shounen", "shoujo", "josei", "seinen").map { WebsiteOption(it, it.replaceFirstChar(Char::uppercase)) }),
+        WebsiteGroup("contentRating[]", "Content rating", listOf("safe", "suggestive", "erotica", "pornographic").map { WebsiteOption(it, it.replaceFirstChar(Char::uppercase)) }).apply {
+            state.filterIsInstance<WebsiteCheck>().forEach { it.state = it.value in setOf("safe", "suggestive") }
+        },
+        WebsiteGroup("availableTranslatedLanguage[]", "Chapter language", listOf("en" to "English", "ja" to "Japanese", "ko" to "Korean", "zh" to "Chinese", "es" to "Spanish", "fr" to "French", "de" to "German", "pt-br" to "Portuguese (BR)").map { WebsiteOption(it.first, it.second) }),
+        WebsiteSelect("includedTagsMode", "Match included tags", listOf(WebsiteOption("AND", "All (AND)"), WebsiteOption("OR", "Any (OR)"))),
+    ) + tagOptions.groupBy { it.first }.map { (group, tags) -> WebsiteGroup("includedTags[]", group.replaceFirstChar(Char::uppercase), tags.map { it.second }, "excludedTags[]") })
+
+    override suspend fun searchPage(query: String, page: Int, filters: FilterList): List<MangaSearchResult> =
+        loadManga(query, null, page, filters)
+
+    override suspend fun details(manga: MangaSearchResult): MangaSearchResult {
+        val details = loadManga(null, null, id = manga.remoteId).singleOrNull() ?: manga
+        return try {
+            val root = json.parseToJsonElement(http.get("${descriptor.baseUrl}/statistics/manga/${manga.remoteId}").body<String>()).jsonObject
+            details.copy(score = root.obj("statistics")?.obj(manga.remoteId)?.obj("rating")?.string("bayesian").orEmpty())
+        } catch (failure: Exception) {
+            if (failure is kotlinx.coroutines.CancellationException) throw failure
+            details
+        }
+    }
+
+    override suspend fun seriesForChapter(chapter: MangaChapter): MangaSearchResult? =
+        if (runCatching { java.util.UUID.fromString(chapter.mangaId) }.isSuccess) details(
+            MangaSearchResult(descriptor.id, chapter.mangaId, chapter.mangaTitle, canonicalUrl = "https://mangadex.org/title/${chapter.mangaId}"),
+        ) else null
 
     override suspend fun search(query: String): List<MangaSearchResult> =
         if (query.isBlank()) emptyList() else loadManga(query = query, mode = null)
@@ -172,16 +220,42 @@ class MangaDexSource @Inject constructor(
         query: String?,
         mode: MangaBrowseMode?,
         page: Int = 0,
+        filters: FilterList = FilterList(),
+        id: String? = null,
     ): List<MangaSearchResult> {
         val body = http.get("${descriptor.baseUrl}/manga") {
             query?.trim()?.takeIf { it.isNotBlank() }?.let { parameter("title", it) }
             parameter("limit", PAGE_SIZE)
             if (page > 0) parameter("offset", page * PAGE_SIZE)
             parameter("includes[]", "cover_art")
-            parameter("contentRating[]", "safe")
-            parameter("contentRating[]", "suggestive")
-            parameter("contentRating[]", "erotica")
-            parameter("contentRating[]", "pornographic")
+            parameter("includes[]", "author")
+            parameter("includes[]", "artist")
+            id?.let { parameter("ids[]", it) }
+            if (filters.isEmpty()) {
+                parameter("contentRating[]", "safe")
+                parameter("contentRating[]", "suggestive")
+                if (id != null) {
+                    parameter("contentRating[]", "erotica")
+                    parameter("contentRating[]", "pornographic")
+                }
+            }
+            filters.forEach { filter -> when (filter) {
+                is WebsiteSelect -> {
+                    val value = filter.options[filter.state].value
+                    if (filter.parameter == "order") parameter("order[$value]", if (value == "title") "asc" else "desc")
+                    else parameter(filter.parameter, value)
+                }
+                is WebsiteGroup -> filter.state.forEach { option -> when (option) {
+                    is WebsiteCheck -> if (option.state) parameter(filter.parameter, option.value)
+                    is WebsiteTri -> when (option.state) {
+                        Filter.TriState.STATE_INCLUDE -> parameter(filter.parameter, option.value)
+                        Filter.TriState.STATE_EXCLUDE -> filter.excludeParameter?.let { parameter(it, option.value) }
+                        else -> Unit
+                    }
+                    else -> Unit
+                } }
+                else -> Unit
+            } }
             when (mode) {
                 MangaBrowseMode.Popular -> parameter("order[followedCount]", "desc")
                 MangaBrowseMode.Latest -> parameter("order[latestUploadedChapter]", "desc")
@@ -213,6 +287,8 @@ class MangaDexSource @Inject constructor(
                 canonicalUrl = "https://mangadex.org/title/$id",
                 tags = tags + listOfNotNull(attributes?.string("publicationDemographic")?.takeUnless { it == "null" }),
                 languages = languages,
+                authors = obj["relationships"]?.jsonArray.orEmpty().filter { it.jsonObject.string("type") == "author" }.mapNotNull { it.jsonObject.obj("attributes")?.string("name") },
+                artists = obj["relationships"]?.jsonArray.orEmpty().filter { it.jsonObject.string("type") == "artist" }.mapNotNull { it.jsonObject.obj("attributes")?.string("name") },
                 status = attributes?.string("status").orEmpty(),
                 year = attributes?.string("year").orEmpty(),
                 rating = attributes?.string("contentRating").orEmpty(),
@@ -285,7 +361,7 @@ class MangaDexSource @Inject constructor(
 private fun JsonObject.string(key: String): String? = this[key]?.jsonPrimitive?.contentOrNull
 private fun JsonObject.obj(key: String): JsonObject? = this[key] as? JsonObject
 private fun JsonObject.jsonArray(key: String): JsonArray? = this[key] as? JsonArray
-private fun JsonObject.firstValue(): String? = values.firstOrNull()?.jsonPrimitive?.contentOrNull
+private fun JsonObject.firstValue(): String? = string("en") ?: values.firstOrNull()?.jsonPrimitive?.contentOrNull
 private fun JsonArray.orEmpty(): JsonArray = this
 private val kotlinx.serialization.json.JsonPrimitive.contentOrNull: String?
-    get() = if (isString || content.isNotBlank()) content else null
+    get() = if (this is kotlinx.serialization.json.JsonNull) null else if (isString || content.isNotBlank()) content else null
