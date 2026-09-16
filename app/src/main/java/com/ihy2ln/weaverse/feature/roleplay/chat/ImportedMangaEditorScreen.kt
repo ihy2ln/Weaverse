@@ -153,8 +153,12 @@ fun ImportedMangaEditorScreen(
     LaunchedEffect(state.imageEditor) { if (state.imageEditor != null) focusMode = true }
     // Explicit translation entrypoints configure only; they never launch a paid job.
     LaunchedEffect(initialEditorAction) {
-        if (initialEditorAction in listOf("TranslatePage", "TranslateChapter", "ColorPage", "ColorChapter")) {
-            aiAction = if (initialEditorAction?.startsWith("Color") == true) "Colorize" else "Translate"
+        if (initialEditorAction in listOf("TranslatePage", "TranslateChapter", "ColorPage", "ColorChapter", "ColorTranslateChapter")) {
+            aiAction = when {
+                initialEditorAction == "ColorTranslateChapter" -> "Colorize + Translate"
+                initialEditorAction?.startsWith("Color") == true -> "Colorize"
+                else -> "Translate"
+            }
             focusMode = false
             sheet = "AI"
             chapterScope = initialEditorAction?.endsWith("Chapter") == true

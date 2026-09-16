@@ -288,6 +288,15 @@ class MangaDownloadRepository @Inject constructor(
     suspend fun enqueueWebSnapshot(snapshot: WebLinkSnapshot, title: String = ""): MangaChapterEntity {
         val remoteId = "url-${sha256(snapshot.url.toByteArray()).take(24)}"
         val existing = db.mangaDao().getChapterByRemoteId("weblink", remoteId)
+        // Re-selecting a download treatment must not reset original paths, media links,
+        // reading progress or an in-flight manifest. Resume incomplete saved manifests.
+        if (existing != null) {
+            if (existing.status in listOf("completed", "queued", "downloading")) return existing
+            if (db.mangaDao().getPages(existing.id).isNotEmpty()) {
+                enqueue(existing)
+                return existing.copy(status = "queued", errorMessage = "")
+            }
+        }
         val chapter = MangaChapterEntity(
             id = existing?.id ?: "manga-chapter-weblink-$remoteId",
             sourceId = "weblink",

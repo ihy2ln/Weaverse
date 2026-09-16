@@ -82,6 +82,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -139,6 +141,9 @@ data class MangaSourceUiState(
     val globalLanguageFilter: String = "",
     val globalStatusFilter: String = "",
     val globalLibraryOnly: Boolean = false,
+    val downloadChoice: MangaChapter? = null,
+    val linkDownloadChoice: Boolean = false,
+    val downloadTreatments: Map<String, com.ihy2ln.weaverse.core.manga.MangaDownloadTreatment> = emptyMap(),
     val catalogRefinements: com.ihy2ln.weaverse.core.manga.CatalogRefinements = com.ihy2ln.weaverse.core.manga.CatalogRefinements(),
     val pinnedSourceIds: Set<String> = emptySet(),
 )
@@ -159,9 +164,11 @@ class MangaSourceViewModel @Inject constructor(
 ) : ViewModel() {
     private val websitePreferences = context.getSharedPreferences("manga-source-websites", Context.MODE_PRIVATE)
     private val readerPreferences = context.getSharedPreferences("manga-reader-settings", Context.MODE_PRIVATE)
+    private val downloadPlans = com.ihy2ln.weaverse.core.manga.MangaDownloadPlanStore(readerPreferences)
     private val local = MutableStateFlow(
         MangaSourceUiState(
             websites = readCustomWebsites(),
+            downloadTreatments = downloadPlans.read(),
             sources = registry.sources.map { it.descriptor },
             nativeFilters = registry.sources.firstOrNull()?.nativeFilters() ?: FilterList(),
             incognito = readerPreferences.getBoolean("incognito", false),
@@ -456,13 +463,23 @@ class MangaSourceViewModel @Inject constructor(
     fun downloadLink() = previewLink()
 
     fun confirmLinkDownload() {
+        if (local.value.linkPreview != null) local.value = local.value.copy(linkDownloadChoice = true)
+    }
+
+    fun confirmLinkDownloadWithTreatment(mode: com.ihy2ln.weaverse.core.manga.MangaDownloadTreatment) {
         val preview = local.value.linkPreview ?: return
+        if (local.value.busy) return
         viewModelScope.launch {
-            local.value = local.value.copy(busy = true, status = "Queueing ${preview.pages.size} pages…")
-            runCatching { repository.enqueueWebSnapshot(preview) }
+            local.value = local.value.copy(busy = true, linkDownloadChoice = false, status = "Queueing ${preview.pages.size} original pages…")
+            runCatching {
+                repository.enqueueWebSnapshot(preview).also { chapter ->
+                    withContext(Dispatchers.IO) { downloadPlans.save(chapter.id, mode) }
+                }
+            }
                 .onSuccess { chapter ->
                     local.value = local.value.copy(
                         busy = false,
+                        downloadTreatments = downloadPlans.read(),
                         link = "",
                         linkPreview = null,
                         status = "Queued ${chapter.mangaTitle} · ${chapter.pageCount} pages for offline download.",
@@ -633,13 +650,39 @@ class MangaSourceViewModel @Inject constructor(
     }
 
     fun enqueue(chapter: MangaChapter) {
+        local.value = local.value.copy(downloadChoice = chapter)
+    }
+
+    fun downloadOptions(chapter: MangaChapterEntity) = enqueue(MangaChapter(
+        sourceId = chapter.sourceId, remoteId = chapter.remoteId, mangaId = chapter.mangaId,
+        mangaTitle = chapter.mangaTitle, title = chapter.title, volume = chapter.volume,
+        chapterNumber = chapter.chapterNumber, language = chapter.language, canonicalUrl = chapter.canonicalUrl,
+        readingOrder = chapter.readingOrder, dateUpload = chapter.dateUpload, scanlator = chapter.scanlator,
+    ))
+
+    fun dismissDownloadOptions() { local.value = local.value.copy(downloadChoice = null, linkDownloadChoice = false) }
+
+    fun removeDownloadTreatment(chapterId: String) = viewModelScope.launch {
+        runCatching { withContext(Dispatchers.IO) { downloadPlans.save(chapterId, com.ihy2ln.weaverse.core.manga.MangaDownloadTreatment.Original) } }
+            .onSuccess { local.value = local.value.copy(downloadTreatments = downloadPlans.read()) }
+            .onFailure { local.value = local.value.copy(status = it.message ?: "Could not remove the AI follow-up.") }
+    }
+
+    fun confirmDownload(mode: com.ihy2ln.weaverse.core.manga.MangaDownloadTreatment) {
+        val chapter = local.value.downloadChoice ?: return
+        if (local.value.busy) return
         viewModelScope.launch {
-            local.value = local.value.copy(busy = true, status = "Preparing chapter download…")
+            local.value = local.value.copy(busy = true, downloadChoice = null, status = "Preparing original chapter download…")
             runCatching {
                 val entity = repository.addDiscoveredChapter(chapter)
-                repository.enqueue(entity)
+                withContext(Dispatchers.IO) { downloadPlans.save(entity.id, mode) }
+                local.value = local.value.copy(downloadTreatments = downloadPlans.read())
+                // Completed originals and all edited versions remain untouched when choosing AI.
+                if (entity.status != "completed") repository.enqueue(entity)
             }.onSuccess {
-                local.value = local.value.copy(busy = false, status = "Download queued. It can resume after the app is closed.")
+                local.value = local.value.copy(busy = false, status = if (mode.editorAction == null)
+                    "Original pages kept. Any queued download can resume after the app is closed."
+                    else "Originals download first. Open AI ready when complete, review settings, then Run ${mode.label}. Original pages are kept.")
             }.onFailure {
                 local.value = local.value.copy(busy = false, status = it.message ?: "Could not queue chapter.")
             }
@@ -801,6 +844,7 @@ fun MangaSourceDialog(
     viewModel: MangaSourceViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
+    MangaDownloadOptionsHost(state, viewModel)
     state.readerChapter?.let { chapter ->
         MangaChapterReader(
             chapter = chapter,
@@ -1014,6 +1058,7 @@ enum class MangaReaderAction {
     TranslateChapter,
     ColorPage,
     ColorChapter,
+    ColorTranslateChapter,
 }
 
 @Composable

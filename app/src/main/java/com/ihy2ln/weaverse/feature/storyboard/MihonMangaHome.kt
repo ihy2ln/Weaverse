@@ -272,7 +272,9 @@ internal fun MihonMangaHome(
                 }
             },
         ) { padding ->
-            Box(Modifier.fillMaxSize().padding(padding)) {
+            Column(Modifier.fillMaxSize().padding(padding)) {
+            MangaDownloadFollowUps(state, viewModel, onEditChapter)
+            Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (destination) {
                     MihonDestination.Library -> MihonLibraryScreen(
                         state = state,
@@ -339,7 +341,9 @@ internal fun MihonMangaHome(
                 }
                 if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter))
             }
+            }
         }
+        MangaDownloadOptionsHost(state, viewModel)
     }
 }
 
@@ -502,7 +506,7 @@ private fun MihonLibraryScreen(
                             }.ifBlank { chapter.title }
                             Text(chapterLabel)
                             Text("${chapter.language} · ${chapter.pageCount} pages · ${if (chapter.read) "Read" else chapter.status}", style = MaterialTheme.typography.bodySmall, color = MihonMuted)
-                            if (chapter.status != "completed") MihonDownloadAction(chapter, viewModel)
+                            MihonDownloadAction(chapter, viewModel)
                         }
                     }
                 }
@@ -1387,7 +1391,7 @@ private fun MihonMangaDetail(state: MangaSourceUiState, viewModel: MangaSourceVi
                 when (existing?.status) {
                     "completed" -> {
                         IconButton(onClick = { onEditChapter(MangaEditRequest(existing.id)) }) { Icon(Icons.Outlined.Edit, "Edit") }
-                        Icon(Icons.Outlined.CheckCircle, "Downloaded", tint = MihonPrimary)
+                        IconButton(onClick = { viewModel.downloadOptions(existing) }) { Icon(Icons.Outlined.CheckCircle, "Download / AI options", tint = MihonPrimary) }
                     }
                     "queued", "downloading" -> IconButton(onClick = { viewModel.stop(existing) }) { Icon(Icons.Outlined.GetApp, "Stop", tint = MihonPrimary) }
                     "failed", "stopped" -> IconButton(onClick = { viewModel.retry(existing) }) { Icon(Icons.Outlined.Refresh, "Retry", tint = MihonError) }
@@ -1611,7 +1615,7 @@ private fun MihonChapterRow(
 @Composable
 private fun MihonDownloadAction(chapter: MangaChapterEntity, viewModel: MangaSourceViewModel) {
     when (chapter.status) {
-        "completed" -> Icon(Icons.Outlined.CheckCircle, "Downloaded", tint = MihonPrimary)
+        "completed" -> IconButton(onClick = { viewModel.downloadOptions(chapter) }) { Icon(Icons.Outlined.CheckCircle, "Download / AI options", tint = MihonPrimary) }
         "queued", "downloading" -> IconButton(onClick = { viewModel.stop(chapter) }) { Icon(Icons.Outlined.GetApp, "Stop", tint = MihonPrimary) }
         "failed", "stopped" -> IconButton(onClick = { viewModel.retry(chapter) }) { Icon(Icons.Outlined.ErrorOutline, "Retry", tint = MihonError) }
         else -> Icon(Icons.Outlined.GetApp, "Queued", tint = MihonMuted)
