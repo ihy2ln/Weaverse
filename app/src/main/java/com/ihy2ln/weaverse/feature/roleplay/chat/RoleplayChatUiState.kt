@@ -45,6 +45,8 @@ data class RpMediaRef(
     /** Resolved immutable source path when this panel points at a derived edit. */
     val originalPath: String = "",
     val variantKind: String = "original",
+    val mangaVersions: List<com.ihy2ln.weaverse.core.text.MangaPageVersion> = emptyList(),
+    val activeMangaVersionId: String = "",
     val pageId: String = "",
 )
 

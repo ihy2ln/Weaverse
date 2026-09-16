@@ -771,6 +771,8 @@ private fun MihonExtensionsScreen(
     var storeUrl by rememberSaveable { mutableStateOf("") }
     var uninstall by remember { mutableStateOf<InstalledExtension?>(null) }
     var details by remember { mutableStateOf<InstalledExtension?>(null) }
+    var gallerySettings by remember { mutableStateOf(false) }
+    if (gallerySettings) GalleryAccountSettings(viewModel.galleryAccount) { gallerySettings = false }
     val installMode = ExtensionInstallMode.valueOf(installModeName)
     val languages = (catalog.installed.map { it.language } + catalog.available.map { it.language })
         .filter(String::isNotBlank).distinct().sorted()
@@ -799,6 +801,11 @@ private fun MihonExtensionsScreen(
                     TextButton(onClick = { manageStores = true }) { Text("Extension stores") }
                 }
             }
+        }
+        if (matches("E-Hentai / ExHentai", "all")) {
+            item { MihonGroupHeader("Built-in sources") }
+            item { MihonPreferenceRow(Icons.Outlined.Extension, "E-Hentai / ExHentai", "18+ · Account and source settings",
+                trailing = { TextButton(onClick = { gallerySettings = true }) { Text("Settings / Login") } }, onClick = { gallerySettings = true }) }
         }
         val untrusted = catalog.installed.filter { !it.trusted && matches(it.name, it.language) }
         if (untrusted.isNotEmpty()) {
@@ -1024,6 +1031,8 @@ private fun MihonCatalogScreen(
     var searching by rememberSaveable { mutableStateOf(false) }
     var showingFilters by remember { mutableStateOf(false) }
     var sourceBrowserOpen by remember { mutableStateOf(false) }
+    var gallerySettings by remember { mutableStateOf(false) }
+    if (gallerySettings) GalleryAccountSettings(viewModel.galleryAccount) { gallerySettings = false }
     val gridState = rememberLazyGridState()
     var favoriteTarget by remember { mutableStateOf<MangaSearchResult?>(null) }
     LaunchedEffect(state.results.size, state.busy, state.loadingMore, state.catalogPage, state.selected) {
@@ -1051,6 +1060,7 @@ private fun MihonCatalogScreen(
             },
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back") } },
             actions = {
+                if (state.activeSourceId in setOf("ehentai", "exhentai")) IconButton(onClick = { gallerySettings = true }) { Icon(Icons.Outlined.Settings, "Source account / login") }
                 if (sourceUrl.isNotBlank()) IconButton(onClick = { sourceBrowserOpen = true }) { Icon(Icons.Outlined.Language, "Open source website") }
                 if (state.selected == null) {
                     IconButton(onClick = { if (searching && state.query.isNotBlank()) viewModel.search() else searching = !searching }) { Icon(Icons.Outlined.Search, "Search") }

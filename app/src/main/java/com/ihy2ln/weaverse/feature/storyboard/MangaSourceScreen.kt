@@ -160,6 +160,7 @@ class MangaSourceViewModel @Inject constructor(
     private val registry: MangaSourceRegistry,
     private val extensionManager: MangaExtensionManager,
     private val mediaRepository: MediaRepository,
+    val galleryAccount: com.ihy2ln.weaverse.core.manga.GalleryAccountManager,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
     private val websitePreferences = context.getSharedPreferences("manga-source-websites", Context.MODE_PRIVATE)
@@ -180,9 +181,9 @@ class MangaSourceViewModel @Inject constructor(
         repository.observeFavoriteCategories(),
         repository.observeFavorites(),
     ) { series, categories, favorites -> MangaFavoriteState(series, categories, favorites) }
-    private val localWithExtensions = combine(local, extensionManager.state) { state, extensions ->
+    private val localWithExtensions = combine(local, extensionManager.state, registry.sourcesFlow) { state, extensions, sources ->
         state.copy(
-            sources = registry.sources.map { it.descriptor },
+            sources = sources.map { it.descriptor },
             extensionCatalog = extensions,
             status = extensions.message.ifBlank { state.status },
         )

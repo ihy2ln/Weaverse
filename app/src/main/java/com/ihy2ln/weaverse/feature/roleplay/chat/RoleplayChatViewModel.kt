@@ -52,6 +52,8 @@ import com.ihy2ln.weaverse.core.text.Block
 import com.ihy2ln.weaverse.core.text.CodexMentionTarget
 import com.ihy2ln.weaverse.core.text.Document
 import com.ihy2ln.weaverse.core.text.MediaBlock
+import com.ihy2ln.weaverse.core.text.savedMangaVersions
+import com.ihy2ln.weaverse.core.text.selectMangaVersion
 import com.ihy2ln.weaverse.core.text.MediaKind
 import com.ihy2ln.weaverse.core.text.MediaStackBlock
 import com.ihy2ln.weaverse.core.text.Paragraph
@@ -585,6 +587,8 @@ class RoleplayChatViewModel @Inject constructor(
                                         ?.let { mediaRepository.resolveFile(it).absolutePath }
                                         .orEmpty(),
                                     variantKind = block.variantKind,
+                                    mangaVersions = block.mangaVersions,
+                                    activeMangaVersionId = block.activeMangaVersionId,
                                 )
                             }
                         }
@@ -4672,12 +4676,21 @@ class RoleplayChatViewModel @Inject constructor(
                 safePlacement
             }
             val placementProblems = MangaLetteringValidator.problems(placed, cleaned.width, cleaned.height)
-            if (placementProblems.isNotEmpty()) return MangaPageRender(MangaPageOutcome.Rejected,
-                placed.map { it.copy(reviewRequired = true) }, null, placementProblems.joinToString("\n"))
+            if (placementProblems.isNotEmpty()) {
+                retained = true
+                return MangaPageRender(MangaPageOutcome.Translated,
+                    placed, cleaned, placementProblems.joinToString("\n"))
+            }
             onStage("Verifying")
             val composite = compositeWithEnglish(cleaned, placed)
             val verification = try {
                 PanelAi.verifyNoForeignText(aiGeneration, visionModelRef, composite)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                retained = true
+                return MangaPageRender(MangaPageOutcome.Translated, placed, cleaned,
+                    "Automatic verification was unavailable. The generated version was kept.")
             } finally {
                 composite.recycle()
             }
@@ -4690,13 +4703,15 @@ class RoleplayChatViewModel @Inject constructor(
                     "",
                 )
             }
-            cleaned.recycle()
             residual = verification.residualRegions
             reason = verification.error
                 ?: "source lettering was still visible in ${residual.size} region(s)"
             // A verifier that could not run gives no boxes to widen, so a second pass would do
-            // exactly what the first did. Fail closed and keep the original page.
-            if (attempt == 1 || residual.isEmpty()) break
+            // exactly what the first did. Keep the candidate as a selectable version with a warning.
+            if (attempt == 1 || residual.isEmpty()) {
+                retained = true
+                return MangaPageRender(MangaPageOutcome.Translated, placed, cleaned, reason)
+            }
             cleanupBounds = MangaTranslationPlan.mergeCleanupBounds(
                 cleanupBounds,
                 MangaTranslationPlan.cleanupBounds(residual),
@@ -4871,8 +4886,25 @@ class RoleplayChatViewModel @Inject constructor(
                     } finally {
                         render.cleaned.recycle()
                     }
+                    val versionRun = UUID.randomUUID().toString()
+                    val savedVersions = base.savedMangaVersions()
+                    val runNumber = savedVersions.count { it.id.endsWith("-edited") } + 1
+                    val translationOnly = com.ihy2ln.weaverse.core.text.MangaPageVersion(
+                        "$versionRun-text", "Translation without cleanup · $runNumber",
+                        base.originalMediaId ?: base.mediaId,
+                        safeRegions.mapIndexed { i, region -> region.toEditableOverlay(i) },
+                    )
+                    val editedVersion = com.ihy2ln.weaverse.core.text.MangaPageVersion(
+                        "$versionRun-edited", "Translation with edits · $runNumber", entity.id,
+                        base.overlays.filterNot { it.source == "manga-translation" } +
+                            render.regions.filter { it.visible && it.translation.isNotBlank() }
+                                .mapIndexed { i, region -> region.toEditableOverlay(i) },
+                        render.reason,
+                    )
                     blocks[blockIndex] = base.copy(
                         mediaId = entity.id,
+                        mangaVersions = savedVersions + translationOnly + editedVersion,
+                        activeMangaVersionId = editedVersion.id,
                         originalMediaId = base.originalMediaId ?: base.mediaId,
                         variantKind = "translated",
                         // The stored picture is the cleaned plate. English stays a durable layer
@@ -6308,6 +6340,17 @@ class RoleplayChatViewModel @Inject constructor(
             undo = { db.roleplayDao().upsertMessage(before) },
             redo = { db.roleplayDao().upsertMessage(after) },
         )
+    }
+
+    fun chooseMangaVersion(messageId: String, blockId: String, versionId: String) {
+        if (_uiState.value.mangaEditBusy) return
+        viewModelScope.launch {
+            val message = rawMessages.firstOrNull { it.id == messageId } ?: return@launch
+            val blocks = documentFromJson(message.contentJson).blocks.map { block ->
+                if (block is MediaBlock && block.id == blockId) block.selectMangaVersion(versionId) else block
+            }
+            persistMessageBlocks(message, blocks)
+        }
     }
 
     private suspend fun persistMessageBlocks(

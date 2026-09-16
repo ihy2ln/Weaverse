@@ -293,12 +293,12 @@ fun ImportedMangaEditorScreen(
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                     MangaTool("${pageIndex + 1}/${pages.size.coerceAtLeast(1)}", { sheet = "Pages" })
                     MangaTool("Read", { focusMode = true })
-                    MangaTool(if (review) "Edit · review" else "Page editor", { selected?.let { viewModel.openImageEditor(it.messageId, it.blockId) } }, selected != null && !state.mangaEditBusy)
+                    MangaTool("Versions", { sheet = "Versions" }, selected != null && !state.mangaEditBusy)
                     MangaTool("AI", { sheet = "AI" })
                 }
             }
         }
-        if (!focusMode && (state.mangaEditBusy || review)) {
+        if (!focusMode && state.mangaEditBusy) {
             Surface(Modifier.align(Alignment.TopEnd).padding(top = 52.dp), shape = RoundedCornerShape(8.dp)) {
                 MangaTool(if (state.mangaEditBusy) "${state.mangaEditCurrent}/${state.mangaEditTotal} · Working" else "Edit · needs review", {
                     if (state.mangaEditBusy) sheet = "Status" else viewModel.openActiveMangaReview()
@@ -319,6 +319,22 @@ fun ImportedMangaEditorScreen(
             }
             Column(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(sheetScroll).padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(0.dp)) {
                 when (sheet) {
+                    "Versions" -> {
+                        Text("Versions are kept separately. Switching does not delete the original.", fontSize = 12.sp)
+                        selected?.let { panel ->
+                            if (panel.mangaVersions.isEmpty()) {
+                                MangaTool("Original", { showOriginal = true; sheet = null })
+                                MangaTool("Current edits", { showOriginal = false; sheet = null })
+                                Text("Older pages have no saved translation-only snapshot. New translations keep both versions.", fontSize = 12.sp)
+                            } else panel.mangaVersions.forEach { version ->
+                                MangaTool((if (version.id == panel.activeMangaVersionId && !showOriginal) "✓ " else "") + version.label, {
+                                    viewModel.chooseMangaVersion(panel.messageId, panel.blockId, version.id)
+                                    showOriginal = false; sheet = null
+                                }, !state.mangaEditBusy)
+                                if (version.warning.isNotBlank()) Text(version.warning, fontSize = 12.sp)
+                            }
+                        }
+                    }
                     "Settings" -> {
                 ModelChoice(
                     label = "Vision / OCR",
@@ -433,6 +449,7 @@ fun ImportedMangaEditorScreen(
                         FilterChip(selected = !chapterScope, onClick = { chapterScope = false }, label = { Text("Page", fontSize = 13.sp) })
                         FilterChip(selected = chapterScope, enabled = initialMangaChapterId != null, onClick = { chapterScope = true }, label = { Text("Chapter", fontSize = 13.sp) })
                         Button(enabled = !state.mangaEditBusy && (!chapterScope || initialMangaChapterId != null), onClick = {
+                            showOriginal = false
                             sheet = null
                             if (chapterScope) initialMangaChapterId?.let { id ->
                                 when (aiAction) {
@@ -450,7 +467,7 @@ fun ImportedMangaEditorScreen(
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             MangaTool("AI settings", { sheet = "Settings" }, modifier = Modifier.weight(1f))
                             MangaTool("Separate panels", { selected?.let { viewModel.separatePanels(it.messageId, it.blockId, useAi = true) }; sheet = null }, selected != null && !state.mangaEditBusy && !showOriginal, modifier = Modifier.weight(1f))
-                            MangaTool("Edit / review", { sheet = null; selected?.let { viewModel.openImageEditor(it.messageId, it.blockId) } }, selected != null && !state.mangaEditBusy, modifier = Modifier.weight(1f))
+                            MangaTool("Versions", { sheet = "Versions" }, selected != null && !state.mangaEditBusy, modifier = Modifier.weight(1f))
                         }
                     }
                     "Pages" -> FlowRow(Modifier.fillMaxWidth(), maxItemsInEachRow = 5) {

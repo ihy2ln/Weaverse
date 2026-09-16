@@ -111,6 +111,15 @@ data class Divider(
 ) : Block
 
 @Serializable
+data class MangaPageVersion(
+    val id: String,
+    val label: String,
+    val mediaId: String,
+    val overlays: List<TextOverlay> = emptyList(),
+    val warning: String = "",
+)
+
+@Serializable
 data class MediaBlock(
     override val id: String,
     val mediaId: String,
@@ -142,6 +151,8 @@ data class MediaBlock(
     val originalMediaId: String? = null,
     /** original | edited | colorized; additive for older serialized documents. */
     val variantKind: String = "original",
+    val mangaVersions: List<MangaPageVersion> = emptyList(),
+    val activeMangaVersionId: String = "",
 ) : Block
 
 @Serializable
