@@ -564,7 +564,10 @@ fun AppShell(
                     else -> mode = AppMode.Novel.name
                 }
             }
-            if (rpChrome?.hideWorkspaceChrome != true) WorkspaceChrome(
+            val inNovelWorkspace = mode == AppMode.Novel.name && novelDest != NovelDestination.Bookshelf.name &&
+                !showLibrary && !showSettings && !showSearch && !showExport && chromeTool == null &&
+                selectedCodexEntryId == null && workspaceFocus != WorkspaceFocus.Pictures.name
+            if (rpChrome?.hideWorkspaceChrome != true && !inNovelWorkspace) WorkspaceChrome(
                 bookTitle = chromeTitle,
                 seriesTitle = chromeSubtitle,
                 workspaceOptions = workspaceOptions,
@@ -828,7 +831,7 @@ fun AppShell(
                 )
             }
             Row(modifier = Modifier.fillMaxSize()) {
-                val hideSideRail = isPortrait || chromeTool != null || rpChrome?.hideWorkspaceChrome == true
+                val hideSideRail = inNovelWorkspace || isPortrait || chromeTool != null || rpChrome?.hideWorkspaceChrome == true
                 // Portrait must use railPortraitMin…Max — coerceIn(railMin, 220.dp) throws
                 // IllegalArgumentException (240 > 220) and crashes S25 portrait navigation.
                 val targetRailWidth = when {
@@ -957,22 +960,15 @@ fun AppShell(
                                         novelDest = NovelDestination.Plan.name
                                     },
                                 )
-                                NovelDestination.Plan -> PlanScreen(
-                                    onWrite = { sceneId, kind ->
-                                        selectedSceneId = sceneId
-                                        writeJumpKind = kind.name
-                                        novelDest = NovelDestination.Write.name
-                                        chromeTool = null
-                                    },
-                                )
-                                NovelDestination.Write -> WriteScreen(
-                                    sceneId = selectedSceneId,
-                                    jumpKind = writeJumpKind,
+                                else -> com.ihy2ln.weaverse.feature.novel.NovelWorkspaceScreen(
+                                    title = chromeTitle,
+                                    initialSceneId = selectedSceneId,
+                                    initialDestination = nd,
+                                    onSettings = { showSettings = true },
+                                    onExport = { showExport = true },
+                                    onExit = { novelDest = NovelDestination.Bookshelf.name },
                                     onOpenCodexEntry = { selectedCodexEntryId = it },
                                 )
-                                NovelDestination.Read -> ReaderScreen()
-                                NovelDestination.Chat -> WorkshopChatScreen(threadId = selectedThreadId)
-                                NovelDestination.Review -> ReviewScreen()
                             }
                             AppMode.Notes.name -> when (cd) {
                                 NotesDestination.Board.name -> NotesWorkspaceScreen(
@@ -1191,6 +1187,7 @@ fun AppShell(
             novelDest = novelDest,
             forceCollapsed = textGameBattleFocus,
             active = activeWritingDestination &&
+                mode != AppMode.Novel.name &&
                 !(mode == AppMode.Storyboard.name && mangaEditorOnly) &&
                 !(mode == AppMode.Roleplay.name && rpChrome?.displayMode == "dungeonMaster") &&
                 chromeTool == null &&

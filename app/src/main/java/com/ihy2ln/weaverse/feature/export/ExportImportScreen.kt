@@ -68,6 +68,8 @@ fun ExportImportScreen(
             color = tokens.secondaryText,
             modifier = Modifier.padding(bottom = InkSpacing.sm),
         )
+        Text("HTML includes in-story images (up to 8 MB each / 32 MB total), with notices for unavailable media. Other manuscript formats are text-focused. Audio/video and reference files require Settings → Backup for a complete copy.",
+            color = tokens.secondaryText, modifier = Modifier.padding(bottom = InkSpacing.sm))
         InkOutlinedButton(
             label = "Import file…",
             onClick = {

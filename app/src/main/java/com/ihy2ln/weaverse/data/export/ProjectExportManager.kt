@@ -49,6 +49,7 @@ class ProjectExportManager @Inject constructor(
     private val manuscriptFormatImporter: ManuscriptFormatImporter,
     private val sillyTavernImporter: SillyTavernImporter,
     private val mediaPackImporter: MediaPackImporter,
+    private val mediaRepository: com.ihy2ln.weaverse.core.media.MediaRepository,
 ) {
     private val json = Json {
         prettyPrint = true
@@ -474,20 +475,51 @@ class ProjectExportManager @Inject constructor(
         }
     }
 
-    private fun renderHtml(bundle: ProjectBundle, options: ExportOptions): String {
-        val body = renderManuscript(bundle, options, forMarkdown = false)
-            .split("\n\n")
-            .joinToString("\n") { para ->
-                val escaped = para
-                    .replace("&", "&amp;")
-                    .replace("<", "&lt;")
-                    .replace(">", "&gt;")
-                "<p>${escaped.replace("\n", "<br/>")}</p>"
+    private suspend fun renderHtml(bundle: ProjectBundle, options: ExportOptions): String {
+        val images = mutableMapOf<String, String>()
+        var remainingBytes = 32L * 1024 * 1024
+        if (options.exportProse) {
+            val ids = bundle.scenes.flatMap { scene ->
+                com.ihy2ln.weaverse.feature.novel.inlineNovelMediaIds(com.ihy2ln.weaverse.core.text.documentFromJson(scene.docJson).blocks)
+            }.distinct()
+            for (id in ids) {
+                val asset = mediaRepository.getById(id) ?: continue
+                if (asset.type != "image") continue
+                val file = mediaRepository.resolveFile(asset)
+                val mime = when (file.extension.lowercase()) { "png" -> "image/png"; "jpg", "jpeg" -> "image/jpeg"; "webp" -> "image/webp"; "gif" -> "image/gif"; else -> continue }
+                if (!file.isFile || file.length() !in 1..minOf(8L * 1024 * 1024, remainingBytes)) continue
+                val bytes = file.readBytes()
+                remainingBytes -= bytes.size
+                images[id] = "data:$mime;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
             }
-        val title = bundle.book?.title?.replace("<", "&lt;").orEmpty()
+        }
+        fun esc(text: String) = NovelHtmlRenderer.escape(text)
+        val body = buildString {
+            var firstScene = true
+            bundle.acts.sortedBy { it.sortOrder }.forEach { act ->
+                if (options.includeActTitles) append("<h2>${esc(act.title)}</h2>")
+                bundle.chapters.filter { it.actId == act.id }.sortedBy { it.sortOrder }.forEach { chapter ->
+                    append("<h3>${esc(chapter.title)}</h3>")
+                    if (options.exportSummaries) append("<p>${esc(chapter.summary)}</p>")
+                    bundle.scenes.filter { it.chapterId == chapter.id }.sortedBy { it.sortOrder }.forEach { scene ->
+                        if (!firstScene && options.sceneDivider != SceneDivider.None) append("<hr/>")
+                        firstScene = false
+                        if (options.includeSceneSubtitles) append("<h4>${esc(scene.title)}</h4>")
+                        if (options.exportSummaries) append("<p>${esc(scene.summary)}</p>")
+                        if (options.exportProse) {
+                            val blocks = com.ihy2ln.weaverse.core.text.documentFromJson(scene.docJson).blocks
+                            append(if (blocks.isEmpty()) "<p>${esc(scene.plainText).replace("\n", "<br/>")}</p>" else NovelHtmlRenderer.render(blocks, images))
+                        }
+                    }
+                }
+            }
+            if (options.includeCodex) bundle.codexEntries.sortedBy { it.name }.forEach { append("<h2>${esc(it.name)}</h2><p>${esc(it.plainText)}</p>") }
+        }
+        val title = esc(bundle.book?.title.orEmpty())
         return """
             <!DOCTYPE html>
-            <html><head><meta charset="utf-8"/><title>$title</title></head>
+            <html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>$title</title>
+            <style>body{max-width:44rem;margin:auto;padding:1rem;line-height:1.6}img{max-width:100%;height:auto}figure{margin:1rem 0}pre{white-space:pre-wrap}</style></head>
             <body>
             <h1>$title</h1>
             $body

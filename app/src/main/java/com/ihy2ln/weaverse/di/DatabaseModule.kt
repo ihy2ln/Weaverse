@@ -38,6 +38,7 @@ object DatabaseModule {
                 WeaverseDatabase.MIGRATION_19_20,
                 WeaverseDatabase.MIGRATION_20_21,
                 WeaverseDatabase.MIGRATION_21_22,
+                WeaverseDatabase.MIGRATION_22_23,
             )
             .addCallback(
                 object : RoomDatabase.Callback() {

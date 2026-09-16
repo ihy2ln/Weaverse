@@ -12,6 +12,7 @@ import com.ihy2ln.weaverse.core.text.Block
 import com.ihy2ln.weaverse.core.text.Paragraph
 import com.ihy2ln.weaverse.core.text.insertGeneratedProseAfter
 import com.ihy2ln.weaverse.core.text.replaceRangeText
+import com.ihy2ln.weaverse.core.text.plainText
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
 import com.ihy2ln.weaverse.data.db.entities.SceneEntity
 import java.io.File
@@ -79,6 +80,11 @@ class WriteGeneration @Inject constructor(
             ?.let { id -> blocks.indexOfFirst { it.id == id } }
             ?.takeIf { it >= 0 }
         val replaceIndex = overlay.replaceBlockIndex?.let { anchored ?: it }
+        check(overlay.anchorBlockId == null || anchored != null) { "The target passage was removed. Regenerate for the current scene." }
+        if (overlay.sourceParagraphText != null && replaceIndex != null) {
+            val current = (blocks.getOrNull(replaceIndex) as? Paragraph)?.spans?.plainText()
+            check(current == overlay.sourceParagraphText) { "The passage changed after this candidate was requested. Your edits were kept; regenerate before replacing." }
+        }
         val replaceStart = overlay.replaceStart
         val replaceEnd = overlay.replaceEnd
         if (replaceIndex != null && replaceStart != null && replaceEnd != null) {
@@ -117,12 +123,15 @@ class WriteGeneration @Inject constructor(
             )
         }
         val commandForPrompt = if (hasImage) "describe_image" else overlay.commandId
-        val entries = db.codexDao().observeEntries(bookId).first()
+        val seriesId = db.bookDao().getById(bookId)?.seriesId
+        val entries = db.codexDao().getAllEntries().filter { !it.disabled && (it.scopeId == bookId || it.scopeId == seriesId || it.scopeId == "global") }
+        val pinned = scene?.id?.let { db.novelMediaDao().contextIds(it).toSet() }.orEmpty()
         val assembled = contextBuilder.build(
             entries,
             ContextBuildRequest(
                 scanText = sceneText + " " + overlay.prompt + " " + (scene?.pov.orEmpty()),
                 userMessage = overlay.prompt,
+                manualIncludeIds = pinned,
             ),
         )
         val renderCtx = promptAssembler.buildPromptRenderContext(

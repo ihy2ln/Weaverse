@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.compose.ui.text.TextRange
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.room.withTransaction
 import com.ihy2ln.weaverse.ai.AIChunk
 import com.ihy2ln.weaverse.ai.AiGenerationService
 import com.ihy2ln.weaverse.ai.context.ContextMeter
@@ -91,9 +92,10 @@ class WriteViewModel @Inject constructor(
     private var revisionJob: Job? = null
     /** docJson of the most recent local write — identifies our own Room echoes. */
     private var lastPersistedDocJson: String? = null
+    private val pendingDocuments = mutableMapOf<String, Document>()
 
-    /** Conflated so bursts of keystrokes persist once, serialized in a single consumer. */
-    private val persistQueue = Channel<PendingSceneWrite>(Channel.CONFLATED)
+    /** Serialized across scenes; a scene switch must never drop another scene's write. */
+    private val persistQueue = Channel<PendingSceneWrite>(Channel.UNLIMITED)
 
     private data class PendingSceneWrite(val sceneId: String, val doc: Document)
 
@@ -161,6 +163,9 @@ class WriteViewModel @Inject constructor(
             if (jumpKind == "SceneBeat") startSceneBeatFromPlan()
             return
         }
+        flushTypingHistory()
+        cancelAiGeneration()
+        _uiState.update { it.copy(aiOverlay = null) }
         sceneJob?.cancel()
         revisionJob?.cancel()
         if (typingBaseline != null) {
@@ -265,6 +270,8 @@ class WriteViewModel @Inject constructor(
     }
 
     private fun applyScene(scene: SceneEntity) {
+        val pending = pendingDocuments[scene.id]
+        if (pending != null && pending.blocks != documentFromJson(scene.docJson).blocks) return
         // Every local keystroke writes the scene to Room and the observe flow echoes it
         // back here. While the user keeps typing, an echo can lag behind newer local
         // state; applying it would clobber fresher keystrokes (dropped/jumping text).
@@ -278,6 +285,7 @@ class WriteViewModel @Inject constructor(
         viewModelScope.launch {
             val mediaIds = blocks.flatMap { WriteMediaOps.mediaIdsOf(it) }
             val paths = mediaOps.resolvePaths(mediaIds)
+            if (loadedScene?.id != scene.id) return@launch
             _uiState.update {
                 it.copy(
                     sceneId = scene.id,
@@ -686,6 +694,7 @@ class WriteViewModel @Inject constructor(
                         promptId = library.promptId,
                         outputWords = 100,
                         replaceBlockIndex = if (replaceInPlace) sel.blockIndex else null,
+                        sourceParagraphText = if (replaceInPlace) block?.plainText() else null,
                         replaceStart = if (replaceInPlace) sel.min else null,
                         replaceEnd = if (replaceInPlace) sel.max else null,
                     ),
@@ -721,13 +730,11 @@ class WriteViewModel @Inject constructor(
     }
 
     fun onSlashTrigger(index: Int) {
-        promptEntryBus.requestOpen(PromptEntryKind.Ai)
-        _uiState.update { it.copy(slashBlockIndex = null, slashFilter = "") }
+        _uiState.update { it.copy(slashBlockIndex = index, slashFilter = "") }
     }
 
     fun onBackslashTrigger(index: Int) {
-        promptEntryBus.requestOpen(PromptEntryKind.Manual)
-        _uiState.update { it.copy(slashBlockIndex = null, slashFilter = "", statusMessage = "") }
+        _uiState.update { it.copy(slashBlockIndex = null, slashFilter = "", statusMessage = "Continue typing here. Use Text for formatting or Media to insert an attachment.") }
     }
 
     fun dismissSlash() {
@@ -738,7 +745,7 @@ class WriteViewModel @Inject constructor(
         val index = _uiState.value.slashBlockIndex ?: return
         viewModelScope.launch {
             when (command.id) {
-                "image" -> {
+                "image", "video" -> {
                     _uiState.update {
                         it.copy(
                             pickImageBlockIndex = index,
@@ -748,16 +755,6 @@ class WriteViewModel @Inject constructor(
                         )
                     }
                     return@launch
-                }
-                "video" -> {
-                    val media = mediaOps.registerPlaceholderImage()
-                    val path = mediaOps.resolveFile(media).absolutePath
-                    val block = WriteMediaOps.newMediaBlock(media.id, MediaKind.Video)
-                    updateBlocksSync(recordHistory = true) { blocks ->
-                        blocks[index] = Paragraph(blocks[index].id, listOf(Span("")))
-                        blocks.add(index + 1, block)
-                    }
-                    _uiState.update { it.copy(mediaPaths = it.mediaPaths + (media.id to path)) }
                 }
                 "scene_beat" -> {
                     updateBlocksSync(recordHistory = true) { blocks ->
@@ -879,7 +876,31 @@ class WriteViewModel @Inject constructor(
 
     fun dismissAiOverlay() {
         generationJob?.cancel()
-        _uiState.update { it.copy(aiOverlay = null) }
+        _uiState.update { it.copy(aiOverlay = it.aiOverlay?.copy(hidden = true, isStreaming = false)) }
+    }
+
+    fun resumeAiOverlay() = _uiState.update { it.copy(aiOverlay = it.aiOverlay?.copy(hidden = false)) }
+
+    fun previewAiContext() {
+        val overlay = _uiState.value.aiOverlay ?: return
+        val scene = loadedScene ?: return
+        val prose = Document(_uiState.value.blocks).plainText()
+        viewModelScope.launch {
+            val prep = writeGeneration.prepareStream(overlay, prose, scene, bookId,
+                hasApiKey = true, modelSupportsImages = aiGeneration.modelSupportsImages())
+            if (loadedScene?.id != scene.id || _uiState.value.aiOverlay?.anchorBlockId != overlay.anchorBlockId) return@launch
+            val preview = when (prep) {
+                is WriteGenerationPrep.Failed -> prep.message
+                is WriteGenerationPrep.Ready -> buildString {
+                    appendLine("Story knowledge: " + prep.plan.assembled.usedEntries.joinToString { it.name })
+                    appendLine("Attached images: ${prep.plan.imageAttachments.size}")
+                    appendLine(prep.plan.assembled.systemBlocks.joinToString("\n\n"))
+                    prep.plan.assembled.messages.forEach { appendLine("${it.first}: ${it.second}") }
+                    appendLine(prep.plan.userMessage)
+                }
+            }
+            _uiState.update { it.copy(aiOverlay = it.aiOverlay?.copy(contextPreview = preview)) }
+        }
     }
 
     fun runAiGeneration() {
@@ -1005,9 +1026,7 @@ class WriteViewModel @Inject constructor(
                 )
             }.onSuccess { result ->
                 val summary = result.text.trim()
-                val updated = scene.copy(summary = summary, updatedAt = nextWriteStamp())
-                documentOps.saveScene(updated)
-                loadedScene = updated
+                db.novelMediaDao().updateSceneSummary(scene.id, summary, nextWriteStamp())
                 _uiState.update { it.copy(isSummarizing = false, statusMessage = "Scene summarized") }
             }.onFailure { err ->
                 _uiState.update {
@@ -1028,11 +1047,15 @@ class WriteViewModel @Inject constructor(
             dismissAiOverlay()
             return
         }
+        val candidate = try { writeGeneration.acceptIntoBlocks(_uiState.value.blocks, overlay, text) }
+        catch (failure: IllegalStateException) {
+            _uiState.update { it.copy(aiOverlay = it.aiOverlay?.copy(errorMessage = failure.message.orEmpty())) }
+            return
+        }
         flushTypingHistory()
         updateBlocksSync(recordHistory = true) { blocks ->
-            val next = writeGeneration.acceptIntoBlocks(blocks, overlay, text)
             blocks.clear()
-            blocks.addAll(next)
+            blocks.addAll(candidate)
         }
         if (extracted.second.isNotEmpty()) {
             viewModelScope.launch {
@@ -1068,26 +1091,23 @@ class WriteViewModel @Inject constructor(
             return
         }
         val blockIndex = _uiState.value.pickImageBlockIndex ?: return
+        val targetSceneId = loadedScene?.id ?: return
+        val anchorId = _uiState.value.blocks.getOrNull(blockIndex)?.id
         viewModelScope.launch {
             runCatching {
                 val mediaList = mediaOps.importFromUris(uris)
-                if (blockIndex < 0) {
-                    var index = (_uiState.value.blocks.size - 1).coerceAtLeast(0)
-                    mediaList.forEach { media ->
-                        val kind = MediaRepository.kindForType(media.type)
-                        insertMediaBlock(index, media.id, kind)
-                        index += 1
+                check(loadedScene?.id == targetSceneId) { "The scene changed during import. Imported files remain in your media library; insert them in the intended scene." }
+                var index = if (anchorId == null) _uiState.value.blocks.lastIndex
+                    else _uiState.value.blocks.indexOfFirst { it.id == anchorId }.also {
+                        check(it >= 0) { "The insertion paragraph was removed. Imported files remain in your media library." }
                     }
-                } else {
-                    var index = blockIndex
-                    mediaList.forEach { media ->
-                        val kind = MediaRepository.kindForType(media.type)
-                        insertMediaBlock(index, media.id, kind)
-                        index += 1
-                    }
+                mediaList.forEach { media ->
+                    insertMediaBlock(index, media.id, MediaRepository.kindForType(media.type))
+                    index += 1
                 }
-            }.onFailure {
-                _uiState.update { state -> state.copy(pickImageBlockIndex = null) }
+            }.onFailure { error ->
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                _uiState.update { state -> state.copy(pickImageBlockIndex = null, statusMessage = error.message ?: "Media import failed. Your prose was kept.") }
             }
         }
     }
@@ -1099,7 +1119,7 @@ class WriteViewModel @Inject constructor(
     fun requestAddMedia() {
         _uiState.update {
             it.copy(
-                pickImageBlockIndex = -1,
+                pickImageBlockIndex = it.selection.blockIndex,
                 pickImageRequestId = it.pickImageRequestId + 1,
             )
         }
@@ -1108,21 +1128,24 @@ class WriteViewModel @Inject constructor(
     fun requestAddAudio() {
         _uiState.update {
             it.copy(
-                pickImageBlockIndex = -1,
+                pickImageBlockIndex = it.selection.blockIndex,
                 pickAudioRequestId = it.pickAudioRequestId + 1,
             )
         }
     }
 
     private suspend fun insertMediaBlock(index: Int, mediaId: String, kind: MediaKind) {
+        val sceneId = loadedScene?.id ?: return
+        val anchor = _uiState.value.blocks.getOrNull(index)?.id
         val paths = mediaOps.resolvePaths(listOf(mediaId))
         val path = paths[mediaId] ?: return
+        check(loadedScene?.id == sceneId) { "The scene changed before media could be placed. Your prose was kept." }
+        val resolvedIndex = if (anchor == null) index else _uiState.value.blocks.indexOfFirst { it.id == anchor }
+        check(anchor == null || resolvedIndex >= 0) { "The insertion paragraph was removed. Your prose was kept." }
         val block = WriteMediaOps.newMediaBlock(mediaId, kind)
         updateBlocksSync(recordHistory = true) { blocks ->
-            if (index in blocks.indices && blocks[index] is Paragraph) {
-                blocks[index] = Paragraph(blocks[index].id, listOf(Span("")))
-            }
-            blocks.add(index + 1, block)
+            val next = WriteMediaOps.insertAfter(blocks, resolvedIndex, block)
+            blocks.clear(); blocks.addAll(next)
         }
         _uiState.update {
             it.copy(mediaPaths = it.mediaPaths + (mediaId to path), pickImageBlockIndex = null)
@@ -1164,7 +1187,12 @@ class WriteViewModel @Inject constructor(
         try {
             // Queued behind keystroke persists so a pending write can never land after
             // the snapshot and resurrect newer text over it.
-            persistQueue.send(PendingSceneWrite(sceneId, Document(blocks)))
+            val doc = Document(blocks)
+            pendingDocuments[sceneId] = doc
+            if (loadedScene?.id == sceneId) {
+                _uiState.update { it.copy(blocks = blocks, wordCount = doc.wordCount(), saveStatus = "Saving…") }
+            }
+            persistQueue.send(PendingSceneWrite(sceneId, doc))
         } finally {
             applyingHistory = false
         }
@@ -1205,6 +1233,8 @@ class WriteViewModel @Inject constructor(
 
     private fun persistScene(doc: Document) {
         val sceneId = loadedScene?.id ?: return
+        pendingDocuments[sceneId] = doc
+        _uiState.update { it.copy(saveStatus = "Saving…") }
         persistQueue.trySend(PendingSceneWrite(sceneId, doc))
     }
 
@@ -1214,11 +1244,33 @@ class WriteViewModel @Inject constructor(
      */
     private suspend fun drainPersistQueue() {
         for (write in persistQueue) {
-            val base = loadedScene?.takeIf { it.id == write.sceneId } ?: continue
-            val updated = documentOps.persist(base, write.doc, nextWriteStamp())
-            loadedScene = updated
-            lastPersistedDocJson = updated.docJson
-            refreshContextMeter()
+            try {
+                val updated = db.withTransaction {
+                    val base = documentOps.getScene(write.sceneId) ?: return@withTransaction null
+                    documentOps.persist(base, write.doc, nextWriteStamp())
+                } ?: continue
+                if (pendingDocuments[write.sceneId] == write.doc) pendingDocuments.remove(write.sceneId)
+                if (loadedScene?.id == write.sceneId) {
+                    loadedScene = updated
+                    lastPersistedDocJson = updated.docJson
+                    _uiState.update { it.copy(saveStatus = if (it.blocks == write.doc.blocks) "Saved" else "Saving…") }
+                    refreshContextMeter()
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (_: Exception) {
+                _uiState.update { it.copy(saveStatus = "Save failed", statusMessage = "Could not save the scene. Keep this editor open and retry your edit.") }
+            }
+        }
+    }
+
+    fun insertExistingMedia(mediaId: String) {
+        val sceneId = loadedScene?.id ?: return
+        val anchor = _uiState.value.blocks.getOrNull(_uiState.value.selection.blockIndex)?.id
+        viewModelScope.launch {
+            val asset = db.mediaDao().observeAll().first().firstOrNull { it.id == mediaId } ?: return@launch
+            if (loadedScene?.id != sceneId) return@launch
+            val index = _uiState.value.blocks.indexOfFirst { it.id == anchor }.takeIf { it >= 0 } ?: _uiState.value.blocks.lastIndex
+            insertMediaBlock(index, mediaId, MediaRepository.kindForType(asset.type))
         }
     }
 

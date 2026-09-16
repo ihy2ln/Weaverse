@@ -16,6 +16,7 @@ data class SelectionState(
 }
 
 data class AiOverlayState(
+    val hidden: Boolean = false,
     val commandId: String = "",
     val label: String = "",
     val prompt: String = "",
@@ -24,6 +25,8 @@ data class AiOverlayState(
     val outputWords: Int = 100,
     /** Block the result is anchored to; resolved by id at accept so edits during generation can't misplace it. */
     val anchorBlockId: String? = null,
+    val sourceParagraphText: String? = null,
+    val contextPreview: String = "",
     val streamingText: String = "",
     val isStreaming: Boolean = false,
     val errorMessage: String = "",
@@ -60,6 +63,7 @@ data class SceneRevisionUi(
 data class WriteUiState(
     val sceneId: String = "scene-1",
     val sceneTitle: String = "",
+    val saveStatus: String = "Saved",
     val blocks: List<Block> = emptyList(),
     val mediaPaths: Map<String, String> = emptyMap(),
     val wordCount: Int = 0,

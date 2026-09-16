@@ -54,6 +54,8 @@ class WriteMediaOps @Inject constructor(
     fun resolveFile(media: MediaEntity) = mediaRepository.resolveFile(media)
 
     companion object {
+        fun insertAfter(blocks: List<Block>, index: Int, block: Block): List<Block> =
+            blocks.toMutableList().apply { add((index + 1).coerceIn(0, size), block) }
         fun clipboardFromBlock(block: Block): MediaClipboardPayload? = when (block) {
             is MediaBlock -> MediaClipboardPayload(
                 mediaId = block.mediaId,

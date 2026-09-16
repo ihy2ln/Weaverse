@@ -4,6 +4,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -55,14 +61,24 @@ import com.ihy2ln.weaverse.feature.novel.write.editor.DocumentEditor
 import com.ihy2ln.weaverse.feature.novel.write.editor.SlashCommandOverlay
 import com.ihy2ln.weaverse.feature.novel.write.editor.defaultSlashCommands
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun WriteScreen(
     sceneId: String = "scene-1",
     jumpKind: String = "Scene",
     onOpenCodexEntry: (String) -> Unit = {},
+    pendingMediaId: String? = null,
+    onMediaConsumed: () -> Unit = {},
+    onOpenMediaLibrary: () -> Unit = {},
     viewModel: WriteViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
+    var toolSheet by rememberSaveable(sceneId) { mutableStateOf<String?>(null) }
+    LaunchedEffect(pendingMediaId, state.sceneId) {
+        if (pendingMediaId != null && state.sceneId == sceneId) {
+            viewModel.insertExistingMedia(pendingMediaId); onMediaConsumed()
+        }
+    }
     val tokens = inkTokens()
     val clipboard = LocalClipboardManager.current
     val startDictate = rememberSpeechToText { spoken ->
@@ -133,94 +149,12 @@ fun WriteScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(contentPad)
-                .padding(
-                    bottom = when {
-                        state.aiOverlay == null -> 0.dp
-                        state.aiOverlay?.commandId == "scene_beat" -> 0.dp
-                        else -> 120.dp
-                    },
-                ),
+                .padding(contentPad),
         ) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(0.dp),
-            ) {
-                var mediaMenuOpen by remember { mutableStateOf(false) }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        state.sceneTitle.ifBlank { "Scene" },
-                        style = MaterialTheme.typography.titleSmall,
-                        color = tokens.primaryText,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        softWrap = false,
-                        modifier = Modifier.weight(1f),
-                    )
-                    InkTextButton(
-                        label = if (state.isSummarizing) "Summarizing…" else "Summarize",
-                        onClick = viewModel::summarizeScene,
-                        enabled = !state.isSummarizing,
-                        compact = true,
-                    )
-                    InkTextButton(
-                        label = "Find",
-                        onClick = viewModel::toggleFindReplace,
-                        compact = true,
-                    )
-                    InkTextButton(
-                        label = "History",
-                        onClick = viewModel::toggleHistory,
-                        compact = true,
-                    )
-                    Box {
-                        InkTextButton(
-                            label = "Media",
-                            onClick = { mediaMenuOpen = true },
-                            compact = true,
-                        )
-                        DropdownMenu(
-                            expanded = mediaMenuOpen,
-                            onDismissRequest = { mediaMenuOpen = false },
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Mic") },
-                                onClick = {
-                                    mediaMenuOpen = false
-                                    startDictate()
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Audio") },
-                                onClick = {
-                                    mediaMenuOpen = false
-                                    viewModel.requestAddAudio()
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Picture") },
-                                onClick = {
-                                    mediaMenuOpen = false
-                                    viewModel.requestAddMedia()
-                                },
-                            )
-                        }
-                    }
-                }
-                Text(
-                    buildString {
-                        append("${state.wordCount} words")
-                        state.contextMeter?.let { append(" · ${it.label}") }
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = tokens.secondaryText,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    softWrap = false,
-                )
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("${state.wordCount} words · ${state.saveStatus}", style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.weight(1f))
+                androidx.compose.material3.TextButton(onClick = { toolSheet = "Tools" }) { Text("Tools") }
             }
             if (state.findReplace.visible) {
                 FindReplaceBar(
@@ -341,8 +275,50 @@ fun WriteScreen(
                         EditTextAction.Dictate -> startDictate()
                     }
                 },
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.weight(1f).fillMaxWidth(),
             )
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.SpaceEvenly) {
+                androidx.compose.material3.TextButton(onClick = viewModel::undo, enabled = state.canUndo, modifier = Modifier.heightIn(min = 48.dp)) { Text("Undo") }
+                androidx.compose.material3.TextButton(onClick = viewModel::redo, enabled = state.canRedo, modifier = Modifier.heightIn(min = 48.dp)) { Text("Redo") }
+                listOf("Text", "Media", "AI").forEach { label ->
+                    androidx.compose.material3.TextButton(onClick = { toolSheet = label }, modifier = Modifier.heightIn(min = 48.dp)) { Text(label) }
+                }
+            }
+        }
+        if (toolSheet != null) androidx.compose.material3.ModalBottomSheet(onDismissRequest = { toolSheet = null }) {
+            Column(Modifier.fillMaxWidth().heightIn(max = 400.dp).verticalScroll(rememberScrollState()).padding(16.dp)) {
+                Text(toolSheet.orEmpty(), style = MaterialTheme.typography.titleLarge)
+                fun closeAction(action: () -> Unit): () -> Unit = { toolSheet = null; action() }
+                when (toolSheet) {
+                    "Text" -> {
+                        InkTextButton("Bold", closeAction { viewModel.toggleMarkOnSelection(Mark.Bold) })
+                        InkTextButton("Italic", closeAction { viewModel.toggleMarkOnSelection(Mark.Italic) })
+                        InkTextButton("Text color", closeAction(viewModel::requestColorPicker))
+                        InkTextButton("Add selection to Codex", closeAction(viewModel::addSelectionToCodex))
+                        InkTextButton("Dictate", closeAction { startDictate() })
+                    }
+                    "Media" -> {
+                        InkTextButton("Insert image / video", closeAction(viewModel::requestAddMedia))
+                        InkTextButton("Insert audio", closeAction(viewModel::requestAddAudio))
+                        InkTextButton("Story media & references", closeAction(onOpenMediaLibrary))
+                    }
+                    "AI" -> {
+                        Text("Choose an action, inspect the prompt, then Generate. Nothing is sent by opening this menu.", style = MaterialTheme.typography.bodySmall)
+                        if (state.aiOverlay?.hidden == true) InkTextButton("Resume AI draft", closeAction(viewModel::resumeAiOverlay))
+                        listOf("continue" to "Continue", "replace" to "Rewrite", "expand" to "Expand", "shorten" to "Shorten").forEach { (id, label) ->
+                            InkTextButton(label, closeAction { viewModel.startSelectionAi(id, label) })
+                        }
+                        InkTextButton("Scene beat / image-to-prose", closeAction(viewModel::startSceneBeatFromPlan))
+                    }
+                    else -> {
+                        InkTextButton("Find / replace", closeAction(viewModel::toggleFindReplace))
+                        InkTextButton("Revision history", closeAction(viewModel::toggleHistory))
+                        InkTextButton("Save revision snapshot", closeAction(viewModel::snapshotNow))
+                        InkTextButton("Summarize scene (runs AI)", closeAction(viewModel::summarizeScene))
+                        Text(state.contextMeter?.label.orEmpty(), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
         }
         if (state.slashBlockIndex != null) {
             SlashCommandOverlay(
@@ -355,10 +331,12 @@ fun WriteScreen(
                     .padding(InkSpacing.lg),
             )
         }
-        state.aiOverlay?.takeIf { it.commandId != "scene_beat" }?.let { overlay ->
+        state.aiOverlay?.takeIf { it.commandId != "scene_beat" && !it.hidden }?.let { overlay ->
+            androidx.compose.material3.ModalBottomSheet(onDismissRequest = viewModel::dismissAiOverlay) {
             Column(
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
+                    .heightIn(max = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * .75f).dp)
+                    .verticalScroll(rememberScrollState())
                     .fillMaxWidth()
                     .padding(horizontal = InkSpacing.md, vertical = InkSpacing.sm)
                     .clip(RoundedCornerShape(10.dp))
@@ -423,7 +401,14 @@ fun WriteScreen(
                         textStyle = MaterialTheme.typography.bodyMedium,
                     )
                 }
+                InkTextButton("Preview AI context (no request)", viewModel::previewAiContext)
+                if (overlay.contextPreview.isNotBlank()) {
+                    Text("Context snapshot — refresh after changing your prompt or scene", style = MaterialTheme.typography.labelSmall)
+                    Text(overlay.contextPreview, modifier = Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState()), style = MaterialTheme.typography.bodySmall)
+                }
                 if (overlay.streamingText.isNotBlank() && !overlay.isStreaming) {
+                    Text("Candidate — not yet applied", style = MaterialTheme.typography.titleSmall)
+                    androidx.compose.foundation.text.selection.SelectionContainer { Text(overlay.streamingText) }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -468,6 +453,7 @@ fun WriteScreen(
                     )
                 }
             }
+        }
         }
         if (state.showHistory) {
             androidx.compose.material3.AlertDialog(

@@ -8,6 +8,19 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
 class WriteGenerationAcceptTest {
+    @Test fun editedPassageCannotBeOverwrittenByStaleCandidate() {
+        val overlay = AiOverlayState(anchorBlockId = "p", replaceBlockIndex = 0, replaceStart = 0,
+            replaceEnd = 4, sourceParagraphText = "Old passage")
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException::class.java) {
+            generation.acceptIntoBlocks(listOf(Paragraph("p", listOf(Span("My new prose")))), overlay, "AI prose")
+        }
+    }
+    @Test fun deletedAnchorCannotRedirectCandidateToAnotherParagraph() {
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException::class.java) {
+            generation.acceptIntoBlocks(listOf(Paragraph("new", listOf(Span("Keep")))),
+                AiOverlayState(anchorBlockId = "deleted"), "AI prose")
+        }
+    }
     private val generation = WriteGeneration(mockk(relaxed = true), mockk(relaxed = true))
 
     @Test

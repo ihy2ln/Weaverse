@@ -62,7 +62,7 @@ fun BlockEditorField(
     val plain = paragraph.plainText()
     fun mentionsFor(text: String): List<CodexMention> = findCodexMentions(text, codexMentionTargets)
 
-    var value by remember(paragraph.id) {
+    var value by androidx.compose.runtime.saveable.rememberSaveable(paragraph.id, stateSaver = NovelTextFieldSaver) {
         mutableStateOf(
             TextFieldValue(
                 annotatedString = paragraph.spans.toAnnotatedString(
@@ -80,19 +80,17 @@ fun BlockEditorField(
 
     // Sync external paragraph updates (undo/AI accept) without clobbering caret during typing
     LaunchedEffect(paragraph.id, plain, paragraph.spans, codexMentionTargets) {
-        if (value.text != plain || appliedTargets != codexMentionTargets) {
+        val annotated = paragraph.spans.toAnnotatedString(textColor, mentions = mentionsFor(plain), linkColor = InkAccentBlue)
+        if (value.annotatedString != annotated || appliedTargets != codexMentionTargets) {
             val sel = value.selection
             val capped = TextRange(
                 sel.start.coerceIn(0, plain.length),
                 sel.end.coerceIn(0, plain.length),
             )
             value = TextFieldValue(
-                annotatedString = paragraph.spans.toAnnotatedString(
-                    textColor,
-                    mentions = mentionsFor(plain),
-                    linkColor = InkAccentBlue,
-                ),
+                annotatedString = annotated,
                 selection = capped,
+                composition = value.composition.takeIf { value.text == plain },
             )
             appliedTargets = codexMentionTargets
         }

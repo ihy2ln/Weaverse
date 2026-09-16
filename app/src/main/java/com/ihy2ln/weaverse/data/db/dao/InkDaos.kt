@@ -75,6 +75,8 @@ interface BookDao {
 
 @Dao
 interface ManuscriptDao {
+    @Query("SELECT s.* FROM scenes s INNER JOIN chapters c ON c.id = s.chapterId INNER JOIN acts a ON a.id = c.actId WHERE a.bookId = :bookId ORDER BY a.sortOrder, c.sortOrder, s.sortOrder")
+    fun observeBookScenes(bookId: String): Flow<List<SceneEntity>>
     @Query("SELECT * FROM acts WHERE bookId = :bookId ORDER BY sortOrder")
     fun observeActs(bookId: String): Flow<List<ActEntity>>
 

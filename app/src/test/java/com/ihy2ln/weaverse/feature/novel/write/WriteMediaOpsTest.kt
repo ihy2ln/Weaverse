@@ -10,6 +10,14 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 
 class WriteMediaOpsTest {
+    @Test fun insertingIllustrationPreservesParagraphAndExistingMedia() {
+        val prose = Paragraph("p", listOf(Span("Never erase this passage.")))
+        val art = MediaBlock("art", "original-art", MediaKind.Image)
+        val audio = MediaBlock("audio", "original-audio", MediaKind.Audio)
+        val next = WriteMediaOps.insertAfter(listOf(prose, audio), 0, art)
+        assertEquals(listOf(prose, art, audio), next)
+        assertEquals(listOf(art), WriteMediaOps.insertAfter(emptyList(), -1, art))
+    }
     @Test
     fun clipboardRoundTrip_singleMedia() {
         val block = MediaBlock("b1", "img-a", MediaKind.Image, widthPercent = 80f)

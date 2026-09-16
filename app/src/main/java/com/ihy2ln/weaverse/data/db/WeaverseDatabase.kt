@@ -56,6 +56,7 @@ import com.ihy2ln.weaverse.data.db.entities.RpgCampaignSaveEntity
         SceneEntity::class,
         SceneRevisionEntity::class,
         SceneCodexLinkEntity::class,
+        com.ihy2ln.weaverse.data.db.entities.NovelMediaLink::class,
         CodexCategoryEntity::class,
         CodexEntryEntity::class,
         CodexEntryLoreEntity::class,
@@ -80,11 +81,12 @@ import com.ihy2ln.weaverse.data.db.entities.RpgCampaignSaveEntity
         TextGameSaveEntity::class,
         RpgCampaignSaveEntity::class,
     ],
-    version = 22,
+    version = 23,
     exportSchema = false,
 )
 @TypeConverters(InkTypeConverters::class)
 abstract class WeaverseDatabase : RoomDatabase() {
+    abstract fun novelMediaDao(): com.ihy2ln.weaverse.data.db.dao.NovelMediaDao
     abstract fun seriesDao(): SeriesDao
     abstract fun bookDao(): BookDao
     abstract fun manuscriptDao(): ManuscriptDao
@@ -98,6 +100,11 @@ abstract class WeaverseDatabase : RoomDatabase() {
     abstract fun textGameSaveDao(): TextGameSaveDao
 
     companion object {
+        val MIGRATION_22_23 = object : Migration(22, 23) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS novel_media_links (id TEXT NOT NULL PRIMARY KEY, bookId TEXT NOT NULL, sceneId TEXT NOT NULL, entryId TEXT NOT NULL, mediaId TEXT NOT NULL, caption TEXT NOT NULL, altText TEXT NOT NULL, provenance TEXT NOT NULL, createdAt INTEGER NOT NULL)")
+            }
+        }
         val MIGRATION_21_22 = object : Migration(21, 22) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 listOf("publicationType", "releaseYear", "contentRating", "catalogScore").forEach { column ->
