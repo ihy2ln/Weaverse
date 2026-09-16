@@ -32,8 +32,8 @@ android {
         applicationId = "com.ihy2ln.weaverse"
         minSdk = 26
         targetSdk = 34
-        versionCode = 142
-        versionName = "1.4.16"
+        versionCode = 144
+        versionName = "1.4.18"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -71,11 +71,11 @@ android {
             }
         }
         debug {
-            applicationIdSuffix = ".textgame"
+            applicationIdSuffix = providers.gradleProperty("qaApplicationIdSuffix").getOrElse(".textgame")
             versionNameSuffix = "-debug"
             // Keep locally installable test builds visually distinct from the
             // production app so testers cannot accidentally reopen an older release.
-            resValue("string", "app_name", "Weaverse Test 1.4.15")
+            resValue("string", "app_name", "Weaverse Test 1.4.18")
         }
     }
 
@@ -91,6 +91,7 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        aidl = true
     }
 
     packaging {
@@ -162,6 +163,16 @@ dependencies {
 
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
+
+    // Mihon/Tachiyomi extension host ABI. Extension APKs compile these as
+    // provided dependencies and expect the host application to supply them.
+    implementation("io.reactivex:rxjava:1.3.8")
+    implementation("org.jsoup:jsoup:1.23.1")
+    implementation("androidx.preference:preference-ktx:1.2.1")
+    implementation("com.github.mihonapp:injekt:91edab2317")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-protobuf:1.7.3")
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
 
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.junit.jupiter.api)

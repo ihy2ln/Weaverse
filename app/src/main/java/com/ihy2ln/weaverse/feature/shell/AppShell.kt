@@ -564,7 +564,7 @@ fun AppShell(
                     else -> mode = AppMode.Novel.name
                 }
             }
-            WorkspaceChrome(
+            if (rpChrome?.hideWorkspaceChrome != true) WorkspaceChrome(
                 bookTitle = chromeTitle,
                 seriesTitle = chromeSubtitle,
                 workspaceOptions = workspaceOptions,
@@ -828,7 +828,7 @@ fun AppShell(
                 )
             }
             Row(modifier = Modifier.fillMaxSize()) {
-                val hideSideRail = isPortrait || chromeTool != null
+                val hideSideRail = isPortrait || chromeTool != null || rpChrome?.hideWorkspaceChrome == true
                 // Portrait must use railPortraitMin…Max — coerceIn(railMin, 220.dp) throws
                 // IllegalArgumentException (240 > 220) and crashes S25 portrait navigation.
                 val targetRailWidth = when {
@@ -1191,6 +1191,7 @@ fun AppShell(
             novelDest = novelDest,
             forceCollapsed = textGameBattleFocus,
             active = activeWritingDestination &&
+                !(mode == AppMode.Storyboard.name && mangaEditorOnly) &&
                 !(mode == AppMode.Roleplay.name && rpChrome?.displayMode == "dungeonMaster") &&
                 chromeTool == null &&
                 workspaceFocus != WorkspaceFocus.Pictures.name &&

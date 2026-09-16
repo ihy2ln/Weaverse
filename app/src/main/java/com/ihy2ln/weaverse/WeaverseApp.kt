@@ -23,6 +23,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import eu.kanade.tachiyomi.network.NetworkHelper
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.InjektModule
+import uy.kohesive.injekt.api.InjektRegistrar
+import uy.kohesive.injekt.api.addSingleton
 
 @HiltAndroidApp
 class WeaverseApp : Application(), Configuration.Provider {
@@ -65,6 +70,15 @@ class WeaverseApp : Application(), Configuration.Provider {
     override fun onCreate() {
         instance = this
         super.onCreate()
+        // Extension source classes use Mihon's small service locator at runtime.
+        // Register only the host services that are part of the public source ABI.
+        Injekt.importModule(object : InjektModule {
+            override fun InjektRegistrar.registerInjectables() {
+                addSingleton<Application>(this@WeaverseApp)
+                addSingleton<Context>(this@WeaverseApp)
+                addSingleton(NetworkHelper(this@WeaverseApp))
+            }
+        })
         crashLog.install()
         appScope.launch {
             seeder.seedIfEmpty()

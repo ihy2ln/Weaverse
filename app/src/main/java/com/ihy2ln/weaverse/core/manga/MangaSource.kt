@@ -10,6 +10,16 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import com.ihy2ln.weaverse.core.manga.extension.MangaExtensionManager
+import com.ihy2ln.weaverse.core.manga.extension.MihonExtensionSourceAdapter
+import eu.kanade.tachiyomi.source.model.FilterList
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -22,6 +32,11 @@ data class MangaSourceDescriptor(
     val authorized: Boolean,
     val supportsSearch: Boolean = true,
     val supportsDownloads: Boolean = true,
+    val language: String = "en",
+    val origin: String = "built-in",
+    val packageName: String? = null,
+    val supportsLatest: Boolean = true,
+    val supportsNativeFilters: Boolean = false,
 )
 
 enum class MangaBrowseMode { Popular, Latest }
@@ -55,6 +70,7 @@ data class MangaSearchResult(
     val type: String = "",
     val year: String = "",
     val rating: String = "",
+    val score: String = "",
 )
 
 data class MangaChapter(
@@ -68,6 +84,8 @@ data class MangaChapter(
     val language: String = "en",
     val canonicalUrl: String = "",
     val readingOrder: String = "ltr",
+    val dateUpload: Long = 0L,
+    val scanlator: String = "",
 )
 
 data class MangaPage(
@@ -93,6 +111,9 @@ interface MangaSourceAdapter {
 
     suspend fun searchPage(query: String, page: Int): List<MangaSearchResult> =
         if (page <= 0) search(query) else emptyList()
+    fun nativeFilters(): FilterList = FilterList()
+    suspend fun searchPage(query: String, page: Int, filters: FilterList): List<MangaSearchResult> =
+        searchPage(query, page)
     suspend fun details(manga: MangaSearchResult): MangaSearchResult = manga
     suspend fun chapters(manga: MangaSearchResult): List<MangaChapter>
     suspend fun pages(chapter: MangaChapter): List<MangaPage>
@@ -102,9 +123,17 @@ interface MangaSourceAdapter {
 class MangaSourceRegistry @Inject constructor(
     private val mangaDex: MangaDexSource,
     private val publicHtml: PublicHtmlMangaSources,
+    private val extensions: MangaExtensionManager,
 ) {
-    /** MangaDex plus reviewed public-HTML catalog adapters (Comix, Atsumaru, MangaFire, MangaDot, Rawkuma). */
-    val sources: List<MangaSourceAdapter> = listOf(mangaDex) + publicHtml.sources
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val builtIns: List<MangaSourceAdapter> = listOf(mangaDex) + publicHtml.sources
+    val sourcesFlow: StateFlow<List<MangaSourceAdapter>> = extensions.state.map { state ->
+        builtIns + state.installed.filter { it.trusted && it.error == null }.flatMap { extension ->
+            extension.sources.map { source -> MihonExtensionSourceAdapter(source, extension.packageName) }
+        }
+    }.stateIn(scope, SharingStarted.Eagerly, builtIns)
+    /** Built-ins plus every currently loaded, trusted extension source. */
+    val sources: List<MangaSourceAdapter> get() = sourcesFlow.value
 
     fun get(sourceId: String): MangaSourceAdapter? = sources.firstOrNull { it.descriptor.id == sourceId }
 }
@@ -182,8 +211,11 @@ class MangaDexSource @Inject constructor(
                 description = description,
                 coverUrl = cover,
                 canonicalUrl = "https://mangadex.org/title/$id",
-                tags = tags,
+                tags = tags + listOfNotNull(attributes?.string("publicationDemographic")?.takeUnless { it == "null" }),
                 languages = languages,
+                status = attributes?.string("status").orEmpty(),
+                year = attributes?.string("year").orEmpty(),
+                rating = attributes?.string("contentRating").orEmpty(),
             )
         }
     }

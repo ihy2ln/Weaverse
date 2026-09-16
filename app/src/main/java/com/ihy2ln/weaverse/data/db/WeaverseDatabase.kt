@@ -31,6 +31,8 @@ import com.ihy2ln.weaverse.data.db.entities.MangaFavoriteCategoryEntity
 import com.ihy2ln.weaverse.data.db.entities.MangaFavoriteEntity
 import com.ihy2ln.weaverse.data.db.entities.MangaPageEntity
 import com.ihy2ln.weaverse.data.db.entities.MangaSeriesEntity
+import com.ihy2ln.weaverse.data.db.entities.MangaTrackingEntity
+import com.ihy2ln.weaverse.data.db.entities.MangaUpdateErrorEntity
 import com.ihy2ln.weaverse.data.db.entities.PromptEntity
 import com.ihy2ln.weaverse.data.db.entities.PromptFolderEntity
 import com.ihy2ln.weaverse.data.db.entities.RpCharacterEntity
@@ -70,13 +72,15 @@ import com.ihy2ln.weaverse.data.db.entities.RpgCampaignSaveEntity
         MangaSeriesEntity::class,
         MangaFavoriteCategoryEntity::class,
         MangaFavoriteEntity::class,
+        MangaTrackingEntity::class,
+        MangaUpdateErrorEntity::class,
         PromptFolderEntity::class,
         PromptEntity::class,
         AiProfileEntity::class,
         TextGameSaveEntity::class,
         RpgCampaignSaveEntity::class,
     ],
-    version = 20,
+    version = 21,
     exportSchema = false,
 )
 @TypeConverters(InkTypeConverters::class)
@@ -94,6 +98,35 @@ abstract class WeaverseDatabase : RoomDatabase() {
     abstract fun textGameSaveDao(): TextGameSaveDao
 
     companion object {
+        val MIGRATION_20_21 = object : Migration(20, 21) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE manga_series ADD COLUMN authors TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE manga_series ADD COLUMN artists TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE manga_series ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE manga_series ADD COLUMN languages TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE manga_series ADD COLUMN publicationStatus TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE manga_chapters ADD COLUMN scanlator TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE manga_chapters ADD COLUMN dateUpload INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE manga_chapters ADD COLUMN read INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE manga_chapters ADD COLUMN bookmarked INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE manga_chapters ADD COLUMN lastPageRead INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE manga_chapters ADD COLUMN lastReadAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS manga_tracks (" +
+                        "id TEXT NOT NULL PRIMARY KEY, seriesId TEXT NOT NULL, serviceId TEXT NOT NULL, remoteId TEXT NOT NULL, " +
+                        "remoteTitle TEXT NOT NULL, status TEXT NOT NULL, score REAL NOT NULL, progress INTEGER NOT NULL, " +
+                        "startedAt INTEGER, completedAt INTEGER, notes TEXT NOT NULL, updatedAt INTEGER NOT NULL)",
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_manga_tracks_seriesId_serviceId ON manga_tracks(seriesId, serviceId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_manga_tracks_serviceId ON manga_tracks(serviceId)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS manga_update_errors (" +
+                        "id TEXT NOT NULL PRIMARY KEY, seriesId TEXT NOT NULL, sourceId TEXT NOT NULL, message TEXT NOT NULL, createdAt INTEGER NOT NULL)",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_manga_update_errors_seriesId ON manga_update_errors(seriesId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_manga_update_errors_createdAt ON manga_update_errors(createdAt)")
+            }
+        }
         val MIGRATION_19_20 = object : Migration(19, 20) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(

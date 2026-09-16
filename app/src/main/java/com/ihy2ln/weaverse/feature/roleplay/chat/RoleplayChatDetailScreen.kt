@@ -506,7 +506,7 @@ fun RoleplayChatDetailScreen(
                             compact = true,
                         )
                         InkTextButton(
-                            label = "Translate page to English",
+                            label = "Translate to English",
                             onClick = viewModel::translateActiveMangaPageToEnglish,
                             compact = true,
                         )
@@ -866,6 +866,7 @@ fun RoleplayChatDetailScreen(
                 },
                 onGenerateArt = viewModel::openImageGen,
                 onCreateWithAi = { viewModel.openStoryboardGeneration(rightToLeft) },
+                onTranslate = viewModel::translateActiveMangaPageToEnglish,
                 onExport = viewModel::exportStoryboardPage,
             )
         }
@@ -1045,6 +1046,7 @@ private fun StoryboardCreatorDock(
     onImportPages: () -> Unit,
     onGenerateArt: () -> Unit,
     onCreateWithAi: () -> Unit,
+    onTranslate: () -> Unit,
     onExport: () -> Unit,
 ) {
     val tokens = inkTokens()
@@ -1181,6 +1183,9 @@ private fun StoryboardCreatorDock(
                 "AI" -> {
                     InkTextButton(label = "Draft complete page", onClick = onCreateWithAi, enabled = !preview, compact = true)
                     InkTextButton(label = "Generate selected art", onClick = onGenerateArt, enabled = !preview, compact = true)
+                    // Imported CBZ/PDF manga lands in this workspace, so the English pass has
+                    // to be reachable here and not only from a downloaded chapter.
+                    InkTextButton(label = "Translate to English", onClick = onTranslate, enabled = !preview, compact = true)
                     Text("AI changes apply only to this page or the selected panel.", style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
                 }
                 "Export" -> {
@@ -1235,7 +1240,7 @@ private fun StoryboardEditorDock(
                 enabled = hasSelection,
                 compact = true,
             )
-            InkTextButton(label = "Translate", onClick = onTranslate, compact = true)
+            InkTextButton(label = "Translate to English", onClick = onTranslate, compact = true)
             InkTextButton(label = "Color", onClick = onColor, compact = true)
             InkTextButton(
                 label = if (expanded) "Less" else "More",
@@ -1666,7 +1671,7 @@ private fun MangaSnapGrid(
     onMediaEdit: (String, String, MediaEditAction) -> Unit,
     onMediaTransform: (String, String, Float, Float, Float) -> Unit,
     onOverlayMove: (String, String, String, Float, Float) -> Unit,
-    onOverlayResize: (String, String, String, Float) -> Unit,
+    onOverlayResize: (String, String, String, Float, Float, Float, Float) -> Unit,
     onOverlayTap: (String, String, String) -> Unit,
     onClearSelection: () -> Unit,
     /** Long-press on an empty slot: add a picture/video to the page. */
@@ -1854,8 +1859,8 @@ private fun MangaSnapGrid(
                     onOverlayMove = { overlayId, x, y ->
                         onOverlayMove(panel.messageId, panel.blockId, overlayId, x, y)
                     },
-                    onOverlayResize = { overlayId, w ->
-                        onOverlayResize(panel.messageId, panel.blockId, overlayId, w)
+                    onOverlayResize = { overlayId, x, y, w, h ->
+                        onOverlayResize(panel.messageId, panel.blockId, overlayId, x, y, w, h)
                     },
                     onOverlayTap = { overlayId ->
                         onOverlayTap(panel.messageId, panel.blockId, overlayId)
@@ -1894,7 +1899,7 @@ private fun MangaSnapPanel(
     onMediaEdit: (MediaEditAction) -> Unit,
     onMediaTransform: (Float, Float, Float) -> Unit,
     onOverlayMove: (String, Float, Float) -> Unit,
-    onOverlayResize: (String, Float) -> Unit,
+    onOverlayResize: (String, Float, Float, Float, Float) -> Unit,
     onOverlayTap: (String) -> Unit,
     editable: Boolean = true,
 ) {
@@ -2118,7 +2123,7 @@ private fun MangaSnapPanel(
                 // so panel-drag and overlay-drag never compete for the same press.
                 editable = editable && !selected,
                 onMove = { id, x, y -> onOverlayMove(id, x, y) },
-                onResize = { id, w -> onOverlayResize(id, w) },
+                onResize = onOverlayResize,
                 onTap = { id -> onOverlayTap(id) },
             )
         }

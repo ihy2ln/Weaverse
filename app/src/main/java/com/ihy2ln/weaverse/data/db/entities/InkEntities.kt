@@ -420,6 +420,12 @@ data class MangaChapterEntity(
     val errorMessage: String = "",
     val updatedAt: Long = 0L,
     val downloadedAt: Long? = null,
+    val scanlator: String = "",
+    val dateUpload: Long = 0L,
+    val read: Boolean = false,
+    val bookmarked: Boolean = false,
+    val lastPageRead: Int = 0,
+    val lastReadAt: Long = 0L,
 )
 
 /** One remote page and its immutable local/original copy. */
@@ -456,6 +462,40 @@ data class MangaSeriesEntity(
     val coverUrl: String = "",
     val canonicalUrl: String = "",
     val updatedAt: Long = 0L,
+    val authors: String = "",
+    val artists: String = "",
+    val tags: String = "",
+    val languages: String = "",
+    val publicationStatus: String = "",
+)
+
+/** Provider-neutral tracker binding. Authentication secrets live in encrypted preferences, never here. */
+@Entity(
+    tableName = "manga_tracks",
+    indices = [Index(value = ["seriesId", "serviceId"], unique = true), Index("serviceId")],
+)
+data class MangaTrackingEntity(
+    @PrimaryKey val id: String,
+    val seriesId: String,
+    val serviceId: String,
+    val remoteId: String,
+    val remoteTitle: String = "",
+    val status: String = "",
+    val score: Float = 0f,
+    val progress: Int = 0,
+    val startedAt: Long? = null,
+    val completedAt: Long? = null,
+    val notes: String = "",
+    val updatedAt: Long = 0L,
+)
+
+@Entity(tableName = "manga_update_errors", indices = [Index("seriesId"), Index("createdAt")])
+data class MangaUpdateErrorEntity(
+    @PrimaryKey val id: String,
+    val seriesId: String,
+    val sourceId: String,
+    val message: String,
+    val createdAt: Long,
 )
 
 @Entity(tableName = "manga_favorite_categories", indices = [Index(value = ["name"], unique = true)])

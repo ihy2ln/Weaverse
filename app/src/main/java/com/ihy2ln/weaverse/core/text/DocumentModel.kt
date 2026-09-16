@@ -23,7 +23,12 @@ data class TextOverlay(
     val xPercent: Float = 50f,
     val yPercent: Float = 50f,
     val widthPercent: Float = 60f,
+    /** Optional fixed box height. Zero keeps the legacy content-sized behavior. */
+    val heightPercent: Float = 0f,
     val fontSizeSp: Float = 16f,
+    val bold: Boolean = true,
+    val italic: Boolean = false,
+    val fontFamily: String = "sans-serif",
     val colorHex: String = "#FFFFFF",
     val backgroundHex: String? = "#000000",
     val backgroundAlpha: Float = 0.55f,
@@ -32,6 +37,23 @@ data class TextOverlay(
     val tailAngleDeg: Float = 270f,
     /** Optional durable origin marker, for example manga-translation. */
     val source: String = "",
+    // Older overlays have unknown edit history: protect them until explicitly selected.
+    val manuallyAdjusted: Boolean = true,
+    /** Manga lettering metadata. Defaults keep older saved documents compatible. */
+    val autoFit: Boolean = false,
+    val alignment: String = "Center",
+    val writingMode: String = "Horizontal",
+    val lineSpacing: Float = 1f,
+    val paddingFraction: Float = .08f,
+    val cleanupEnabled: Boolean = true,
+    val strokeHex: String = "#FFFFFF",
+    val strokeWidth: Float = 0f,
+    val sourceLanguage: String = "",
+    /** Fixed source lettering bounds; moving the replacement never changes these. */
+    val cleanupXPercent: Float = -1f,
+    val cleanupYPercent: Float = -1f,
+    val cleanupWidthPercent: Float = -1f,
+    val cleanupHeightPercent: Float = -1f,
 )
 
 @Serializable

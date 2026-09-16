@@ -95,6 +95,8 @@ data class UserPreferences(
     val mangaTextModelRef: String = "",
     /** Image-to-image model used for imported manga colorization. */
     val mangaImageModelRef: String = "",
+    val mangaColorStyleGuide: String = "Flat, restrained colors. Follow existing shading and screentones. No added lighting or painterly effects.",
+    val mangaPreserveLineArt: Boolean = true,
     val launchMode: String = "novel",
     val colorCodingEnabled: Boolean = true,
     val selectedBookId: String = "book-adams-haven-1",
@@ -187,6 +189,8 @@ class SettingsRepository @Inject constructor(
             mangaVisionModelRef = prefs[KEY_MANGA_VISION_MODEL] ?: "",
             mangaTextModelRef = prefs[KEY_MANGA_TEXT_MODEL] ?: "",
             mangaImageModelRef = prefs[KEY_MANGA_IMAGE_MODEL] ?: "",
+            mangaColorStyleGuide = prefs[KEY_MANGA_COLOR_STYLE] ?: UserPreferences().mangaColorStyleGuide,
+            mangaPreserveLineArt = prefs[KEY_MANGA_PRESERVE_ART] ?: true,
             launchMode = prefs[KEY_LAUNCH_MODE] ?: "novel",
             colorCodingEnabled = prefs[KEY_COLOR_CODING] ?: true,
             selectedBookId = prefs[KEY_SELECTED_BOOK] ?: "book-adams-haven-1",
@@ -379,6 +383,13 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setMangaImageModel(ref: String) {
         context.dataStore.edit { it[KEY_MANGA_IMAGE_MODEL] = ref }
+    }
+
+    suspend fun setMangaColorStyle(guide: String, preserve: Boolean) {
+        context.dataStore.edit {
+            it[KEY_MANGA_COLOR_STYLE] = guide.take(2000)
+            it[KEY_MANGA_PRESERVE_ART] = preserve
+        }
     }
 
     suspend fun setLaunchMode(mode: String) {
@@ -741,6 +752,8 @@ class SettingsRepository @Inject constructor(
         private val KEY_MANGA_VISION_MODEL = stringPreferencesKey("manga_editor_vision_model")
         private val KEY_MANGA_TEXT_MODEL = stringPreferencesKey("manga_editor_text_model")
         private val KEY_MANGA_IMAGE_MODEL = stringPreferencesKey("manga_editor_image_model")
+        private val KEY_MANGA_COLOR_STYLE = stringPreferencesKey("manga_color_style")
+        private val KEY_MANGA_PRESERVE_ART = booleanPreferencesKey("manga_preserve_art")
         private val KEY_LAUNCH_MODE = stringPreferencesKey("launch_mode")
         private val KEY_COLOR_CODING = booleanPreferencesKey("color_coding")
         private val KEY_SELECTED_BOOK = stringPreferencesKey("selected_book_id")

@@ -10,6 +10,72 @@ import org.junit.jupiter.api.Test
 
 class PublicHtmlMangaSourceAdapterTest {
     @Test
+    fun rawkumaUsesSeriesLinkInsteadOfSectionAltAndSortsLoadedTitles() {
+        val client = OkHttpClient()
+        val adapter = PublicHtmlMangaSourceAdapter(
+            PublicHtmlSourceConfig("rawkuma", "Rawkuma", "https://rawkuma.net/", listOf("/"), listOf("/"), listOf("/?s=%s"), listOf("/manga/")),
+            client, MangaWebLinkImporter(client),
+        )
+        val rows = adapter.parseCatalog("https://rawkuma.net/", """
+            <a href="/manga/zebra/"><img src="/covers/z.jpg" alt="Last Updates"></a>
+            <h3><a href="/manga/zebra/">Zebra Story</a></h3>
+            <a href="/manga/alpha/"><img src="/covers/a.jpg" alt="Last Updates"></a>
+            <h3><a href="/manga/alpha/">Alpha Story</a></h3>
+        """)
+        assertEquals(listOf("Zebra Story", "Alpha Story"), rows.map { it.title })
+        assertEquals(listOf("Alpha Story", "Zebra Story"), CatalogSort.apply(rows, "title").map { it.title })
+        assertEquals(rows, CatalogSort.apply(rows, "source"))
+        assertEquals("Alpha Story", CatalogSort.apply(listOf(rows[0], rows[1].copy(score = "9.1")), "score").first().title)
+    }
+    @Test
+    fun comixDetailsReadAllTaxonomiesAndScore() = runTest {
+        MockWebServer().use { server ->
+            val client = OkHttpClient()
+            val adapter = PublicHtmlMangaSourceAdapter(
+                PublicHtmlSourceConfig("comix", "Comix", server.url("/").toString(), listOf("/"), listOf("/"), listOf("/?q=%s"), listOf("/title/")),
+                client, MangaWebLinkImporter(client),
+            )
+            fun html(extra: String) = """<script id="initial-data">{"manga":{"url":"/title/example","title":"Example","synopsis":"Description","type":"manhwa","status":"releasing","ratedAvg":9.1,"contentRating":"safe"$extra}}</script>"""
+            val catalog = adapter.parseCatalog(server.url("/").toString(), html("" )).single()
+            assertTrue(catalog.tags.isEmpty())
+            server.enqueue(MockResponse().setBody(html(""", "genres":[{"title":"Action"}],"formats":[{"title":"Full Color"}],"demographics":[{"title":"Shounen"}],"tags":[{"title":"Transmigration"}],"authors":[{"title":"Creator"}]""")))
+            val details = adapter.details(catalog)
+            assertEquals(listOf("Action", "Shounen", "Full Color", "Transmigration"), details.tags)
+            assertEquals("9.1", details.score)
+            assertEquals("safe", details.rating)
+            assertEquals("ongoing", details.status)
+            assertEquals(listOf("Creator"), details.authors)
+        }
+    }
+    @Test
+    fun rawkumaLoadsBeyondFortyAndKeepsEachCoverWithItsTitle() = runTest {
+        MockWebServer().use { server ->
+            val client = OkHttpClient()
+            val adapter = PublicHtmlMangaSourceAdapter(
+                PublicHtmlSourceConfig("rawkuma", "Rawkuma", server.url("/").toString(),
+                    listOf("/manga/"), listOf("/manga/"), listOf("/?s=%s"), listOf("/manga/")),
+                client, MangaWebLinkImporter(client),
+            )
+            fun cards(start: Int) = (start until start + 60).joinToString("") {
+                """<a href="/manga/title-$it/"><img data-src="/covers/$it.jpg" alt="Title $it"></a>"""
+            }
+            server.enqueue(MockResponse().setBody("<img src='/logo.png'>" + cards(0) +
+                """<a href="/manga/page/2/">2</a>"""))
+            server.enqueue(MockResponse().setBody(cards(60)))
+            val first = adapter.browse(MangaBrowseMode.Popular)
+            val second = adapter.browsePage(MangaBrowseMode.Popular, 1)
+            assertEquals(120, (first + second).map { it.remoteId }.distinct().size)
+            (first + second).forEachIndexed { index, manga ->
+                assertEquals("Title $index", manga.title)
+                assertEquals(server.url("/covers/$index.jpg").toString(), manga.coverUrl)
+            }
+            assertTrue(adapter.browsePage(MangaBrowseMode.Popular, 2).isEmpty())
+            server.takeRequest()
+            assertEquals("/manga/page/2/", server.takeRequest().path)
+            assertEquals(2, server.requestCount)
+        }
+    }
+    @Test
     fun catalogPrefersRealCoverOverLogoAndReadsSrcset() {
         val server = MockWebServer()
         server.start()

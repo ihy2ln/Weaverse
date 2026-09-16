@@ -24,7 +24,7 @@ class MangaSourceContractTest {
 
     @Test
     fun publicHtmlCatalogIdsStayStableForExtensionsAndMcp() {
-        val sources = PublicHtmlMangaSources(OkHttpClient(), MangaWebLinkImporter(OkHttpClient())).sources
+        val sources = PublicHtmlMangaSources(OkHttpClient(), MangaWebLinkImporter(OkHttpClient()), io.mockk.mockk()).sources
         assertEquals(
             listOf("comix", "atsumaru", "mangafire", "mangadot", "rawkuma"),
             sources.map { it.descriptor.id },

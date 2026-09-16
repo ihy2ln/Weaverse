@@ -63,6 +63,11 @@ import com.ihy2ln.weaverse.core.manga.MangaSourceRegistry
 import com.ihy2ln.weaverse.core.manga.MangaWebsite
 import com.ihy2ln.weaverse.core.manga.WebLinkSnapshot
 import com.ihy2ln.weaverse.core.manga.bundledMangaWebsites
+import com.ihy2ln.weaverse.core.manga.extension.AvailableExtension
+import com.ihy2ln.weaverse.core.manga.extension.ExtensionCatalogState
+import com.ihy2ln.weaverse.core.manga.extension.ExtensionInstallMode
+import com.ihy2ln.weaverse.core.manga.extension.InstalledExtension
+import com.ihy2ln.weaverse.core.manga.extension.MangaExtensionManager
 import com.ihy2ln.weaverse.core.media.MediaRepository
 import com.ihy2ln.weaverse.data.db.entities.MangaChapterEntity
 import com.ihy2ln.weaverse.data.db.entities.MangaFavoriteCategoryEntity
@@ -77,9 +82,17 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import com.ihy2ln.weaverse.core.manga.CatalogTags
 import android.content.Context
 import java.io.File
 import javax.inject.Inject
+import eu.kanade.tachiyomi.source.model.FilterList
 
 data class MangaSourceUiState(
     val query: String = "",
@@ -116,6 +129,17 @@ data class MangaSourceUiState(
     val loadingMore: Boolean = false,
     /** Latest real adapter result keyed by source id: ready, empty, blocked, or error text. */
     val sourceHealth: Map<String, String> = emptyMap(),
+    val extensionCatalog: ExtensionCatalogState = ExtensionCatalogState(),
+    /** The live filter instances exported by the selected extension source. */
+    val nativeFilters: FilterList = FilterList(),
+    val incognito: Boolean = false,
+    val globalTagFilter: String = "",
+    val globalMatchAny: Boolean = false,
+    val catalogSort: String = "source",
+    val globalLanguageFilter: String = "",
+    val globalStatusFilter: String = "",
+    val globalLibraryOnly: Boolean = false,
+    val pinnedSourceIds: Set<String> = emptySet(),
 )
 
 private data class MangaFavoriteState(
@@ -128,14 +152,19 @@ private data class MangaFavoriteState(
 class MangaSourceViewModel @Inject constructor(
     private val repository: MangaDownloadRepository,
     private val registry: MangaSourceRegistry,
+    private val extensionManager: MangaExtensionManager,
     private val mediaRepository: MediaRepository,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
     private val websitePreferences = context.getSharedPreferences("manga-source-websites", Context.MODE_PRIVATE)
+    private val readerPreferences = context.getSharedPreferences("manga-reader-settings", Context.MODE_PRIVATE)
     private val local = MutableStateFlow(
         MangaSourceUiState(
             websites = readCustomWebsites(),
             sources = registry.sources.map { it.descriptor },
+            nativeFilters = registry.sources.firstOrNull()?.nativeFilters() ?: FilterList(),
+            incognito = readerPreferences.getBoolean("incognito", false),
+            pinnedSourceIds = readerPreferences.getStringSet("pinned_sources", emptySet()).orEmpty(),
         ),
     )
     private val favoriteState = combine(
@@ -143,8 +172,15 @@ class MangaSourceViewModel @Inject constructor(
         repository.observeFavoriteCategories(),
         repository.observeFavorites(),
     ) { series, categories, favorites -> MangaFavoriteState(series, categories, favorites) }
+    private val localWithExtensions = combine(local, extensionManager.state) { state, extensions ->
+        state.copy(
+            sources = registry.sources.map { it.descriptor },
+            extensionCatalog = extensions,
+            status = extensions.message.ifBlank { state.status },
+        )
+    }
     val uiState: StateFlow<MangaSourceUiState> = combine(
-        local,
+        localWithExtensions,
         repository.observeChapters(),
         repository.observeCoverPages(),
         mediaRepository.observeAll(),
@@ -185,17 +221,109 @@ class MangaSourceViewModel @Inject constructor(
 
     fun setStatus(value: String) = local.value.let { local.value = it.copy(status = value) }
 
+    fun setIncognito(value: Boolean) {
+        readerPreferences.edit().putBoolean("incognito", value).apply()
+        local.value = local.value.copy(incognito = value, status = if (value) "Incognito mode enabled" else "Incognito mode disabled")
+    }
+
+    fun togglePinnedSource(sourceId: String) {
+        val updated = local.value.pinnedSourceIds.toMutableSet().apply { if (!add(sourceId)) remove(sourceId) }
+        readerPreferences.edit().putStringSet("pinned_sources", updated).apply()
+        local.value = local.value.copy(pinnedSourceIds = updated)
+    }
+
     fun setFavoriteCategoryName(value: String) = local.value.let { local.value = it.copy(favoriteCategoryName = value) }
 
+    fun addExtensionStore(url: String) = extensionManager.addStore(url)
+    fun removeExtensionStore(url: String) = extensionManager.removeStore(url)
+    fun refreshExtensions() = extensionManager.refreshAvailable()
+    fun trustExtension(packageName: String) = extensionManager.trust(packageName)
+    fun installExtension(extension: AvailableExtension, mode: ExtensionInstallMode) = extensionManager.install(extension, mode)
+    fun cancelExtensionInstall(packageName: String) = extensionManager.cancel(packageName)
+    fun uninstallExtension(extension: InstalledExtension) = extensionManager.uninstall(extension)
+
     fun selectSource(sourceId: String) {
-        val source = registry.get(sourceId)?.descriptor ?: return
+        val adapter = registry.get(sourceId) ?: return
+        val source = adapter.descriptor
         local.value = local.value.copy(
             activeSourceId = sourceId,
+            nativeFilters = adapter.nativeFilters(),
             results = emptyList(),
             selected = null,
             chapters = emptyList(),
             status = "${source.name} selected. Choose Popular, Latest, or Search.",
         )
+    }
+
+    fun resetNativeFilters() {
+        val filters = registry.get(local.value.activeSourceId)?.nativeFilters() ?: FilterList()
+        local.value = local.value.copy(nativeFilters = filters)
+    }
+
+    /** Filter state is owned by extension objects; copying the list publishes their mutation to Compose. */
+    fun notifyNativeFiltersChanged() {
+        local.value = local.value.copy(nativeFilters = FilterList(local.value.nativeFilters.list.toList()))
+    }
+
+    fun setGlobalTagFilter(value: String) { local.value = local.value.copy(globalTagFilter = value) }
+    fun setGlobalMatchAny(value: Boolean) { local.value = local.value.copy(globalMatchAny = value) }
+    fun setCatalogSort(value: String) { local.value = local.value.copy(catalogSort = value) }
+    fun setGlobalLanguageFilter(value: String) { local.value = local.value.copy(globalLanguageFilter = value) }
+    fun setGlobalStatusFilter(value: String) { local.value = local.value.copy(globalStatusFilter = value) }
+    fun setGlobalLibraryOnly(value: Boolean) { local.value = local.value.copy(globalLibraryOnly = value) }
+
+    fun resetGlobalFilters() {
+        local.value = local.value.copy(
+            globalTagFilter = "",
+            globalMatchAny = false,
+            catalogSort = "source",
+            globalLanguageFilter = "",
+            globalStatusFilter = "",
+            globalLibraryOnly = false,
+        )
+    }
+
+    fun applyCatalogFilters() {
+        val snapshot = local.value
+        if (snapshot.catalogSort == "latest") browse(MangaBrowseMode.Latest)
+        else if (snapshot.catalogSort == "popular") browse(MangaBrowseMode.Popular)
+        else if (snapshot.query.isBlank() && snapshot.nativeFilters.isEmpty()) browse(snapshot.catalogMode ?: MangaBrowseMode.Popular) else search()
+    }
+
+    private val catalogMetadata = java.util.concurrent.ConcurrentHashMap<String, MangaSearchResult>()
+    private val metadataSlots = Semaphore(3)
+    private var filterMetadataWarning = ""
+
+    private suspend fun applyGlobalFilters(items: List<MangaSearchResult>): List<MangaSearchResult> {
+        val filters = local.value
+        val requestedTags = filters.globalTagFilter.split(',').map(String::trim).filter(String::isNotBlank)
+        val language = filters.globalLanguageFilter.trim()
+        val status = filters.globalStatusFilter.trim()
+        val saved = uiState.value.favoriteSeries.mapTo(hashSetOf()) { "${it.sourceId}:${it.remoteId}" }
+        val failures = java.util.concurrent.atomic.AtomicInteger()
+        val enriched = coroutineScope {
+            items.map { manga -> async {
+                val needsDetails = (requestedTags.isNotEmpty() && manga.tags.isEmpty()) ||
+                    (status.isNotBlank() && (manga.status.isBlank() || manga.status == "Unknown"))
+                if (!needsDetails) manga else metadataSlots.withPermit {
+                    val key = "${manga.sourceId}:${manga.remoteId}"
+                    catalogMetadata[key] ?: try {
+                        repository.loadDetails(manga).also { catalogMetadata[key] = it }
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (error: Exception) {
+                        failures.incrementAndGet()
+                        null // Unknown metadata must not be treated as a match, including exclusions.
+                    }
+                }
+            } }.awaitAll().filterNotNull()
+        }
+        filterMetadataWarning = if (failures.get() == 0) "" else " ${failures.get()} titles skipped because their filter metadata could not load. Retry to check them."
+        return enriched.filter { manga ->
+            CatalogTags.matches(manga.tags + manga.type.takeIf(String::isNotBlank).let { listOfNotNull(it) }, filters.globalTagFilter, filters.globalMatchAny) &&
+                (language.isBlank() || manga.languages.any { it.equals(language, true) || it.contains(language, true) }) &&
+                (status.isBlank() || manga.status.contains(status, true)) &&
+                (!filters.globalLibraryOnly || "${manga.sourceId}:${manga.remoteId}" in saved)
+        }
     }
 
     fun createFavoriteCategory() {
@@ -320,7 +448,10 @@ class MangaSourceViewModel @Inject constructor(
 
     fun search() {
         val query = local.value.query.trim()
-        if (query.isBlank()) {
+        if (query.isBlank() && local.value.nativeFilters.isEmpty() &&
+            local.value.globalTagFilter.isBlank() && local.value.globalLanguageFilter.isBlank() &&
+            local.value.globalStatusFilter.isBlank() && !local.value.globalLibraryOnly
+        ) {
             local.value = local.value.copy(status = "Enter a manga title to search.")
             return
         }
@@ -337,13 +468,13 @@ class MangaSourceViewModel @Inject constructor(
                 catalogPage = 0,
                 canLoadMore = false,
             )
-            runCatching { repository.search(sourceId, query) }
-                .onSuccess {
+            runCatching { repository.searchPage(sourceId, query, 0, local.value.nativeFilters).let { it to applyGlobalFilters(it) } }
+                .onSuccess { (it, filtered) ->
                     local.value = local.value.copy(
-                        results = it,
+                        results = com.ihy2ln.weaverse.core.manga.CatalogSort.apply(filtered, local.value.catalogSort),
                         busy = false,
                         canLoadMore = it.isNotEmpty(),
-                        status = if (it.isEmpty()) "No results found." else "Select a title to load chapters.",
+                        status = (if (it.isEmpty()) "No results found." else "${filtered.size} matching titles.") + filterMetadataWarning,
                         sourceHealth = local.value.sourceHealth + (sourceId to if (it.isEmpty()) "Reachable · no matching titles" else "Ready · ${it.size} titles loaded"),
                     )
                 }
@@ -362,19 +493,20 @@ class MangaSourceViewModel @Inject constructor(
                 busy = true,
                 selected = null,
                 chapters = emptyList(),
+                results = emptyList(),
                 catalogMode = mode,
                 catalogQuery = "",
                 catalogPage = 0,
                 canLoadMore = false,
                 status = if (mode == MangaBrowseMode.Popular) "Loading popular $sourceName titles…" else "Loading latest $sourceName titles…",
             )
-            runCatching { repository.browse(sourceId, mode) }
-                .onSuccess {
+            runCatching { repository.browse(sourceId, mode).let { it to applyGlobalFilters(it) } }
+                .onSuccess { (it, filtered) ->
                     local.value = local.value.copy(
-                        results = it,
+                        results = com.ihy2ln.weaverse.core.manga.CatalogSort.apply(filtered, local.value.catalogSort),
                         busy = false,
                         canLoadMore = it.isNotEmpty(),
-                        status = if (it.isEmpty()) "No titles were returned." else "Select a cover to view chapters.",
+                        status = (if (it.isEmpty()) "No titles were returned." else "${filtered.size} matching titles.") + filterMetadataWarning,
                         sourceHealth = local.value.sourceHealth + (sourceId to if (it.isEmpty()) "Reachable · catalog format unsupported" else "Ready · ${it.size} titles loaded"),
                     )
                 }
@@ -393,28 +525,29 @@ class MangaSourceViewModel @Inject constructor(
     fun loadMoreResults() {
         val snapshot = local.value
         if (snapshot.busy || snapshot.loadingMore || !snapshot.canLoadMore) return
-        if (snapshot.results.isEmpty() || snapshot.selected != null) return
+        if (snapshot.selected != null) return
         val sourceId = snapshot.activeSourceId
         val nextPage = snapshot.catalogPage + 1
         viewModelScope.launch {
             local.value = local.value.copy(loadingMore = true)
             runCatching {
-                if (snapshot.catalogMode != null) {
+                val batch = if (snapshot.catalogMode != null) {
                     repository.browsePage(sourceId, snapshot.catalogMode, nextPage)
                 } else {
-                    repository.searchPage(sourceId, snapshot.catalogQuery, nextPage)
+                    repository.searchPage(sourceId, snapshot.catalogQuery, nextPage, snapshot.nativeFilters)
                 }
+                batch to applyGlobalFilters(batch)
             }
-                .onSuccess { more ->
+                .onSuccess { (more, filtered) ->
                     // Sources can repeat rows across pages; key off the identity the grid uses.
                     val seen = local.value.results.mapTo(hashSetOf()) { "${it.sourceId}:${it.remoteId}" }
-                    val fresh = more.filterNot { "${it.sourceId}:${it.remoteId}" in seen }
+                    val fresh = filtered.filterNot { "${it.sourceId}:${it.remoteId}" in seen }
                     local.value = local.value.copy(
-                        results = local.value.results + fresh,
+                        results = com.ihy2ln.weaverse.core.manga.CatalogSort.apply(local.value.results + fresh, local.value.catalogSort),
                         catalogPage = nextPage,
                         loadingMore = false,
-                        canLoadMore = fresh.isNotEmpty(),
-                        status = if (fresh.isEmpty()) "That is the end of this catalog." else local.value.status,
+                        canLoadMore = more.isNotEmpty(),
+                        status = (if (more.isEmpty()) "That is the end of this catalog." else if (fresh.isEmpty()) "No matches on this page; more pages are available." else "${fresh.size} more matching titles.") + filterMetadataWarning,
                     )
                 }
                 .onFailure {
@@ -470,23 +603,13 @@ class MangaSourceViewModel @Inject constructor(
 
     fun openOnlineReader(chapter: MangaChapter, pageIndex: Int = 0) = viewModelScope.launch {
         local.value = local.value.copy(busy = true, status = "Loading pages for online reading…")
-        runCatching { repository.loadPages(chapter).sortedBy { it.pageIndex } }
-            .onSuccess { pages ->
-                val readerChapter = MangaChapterEntity(
-                    id = "online-${chapter.sourceId}-${chapter.remoteId}",
-                    sourceId = chapter.sourceId,
-                    remoteId = chapter.remoteId,
-                    mangaId = chapter.mangaId,
-                    mangaTitle = chapter.mangaTitle,
-                    title = chapter.title,
-                    volume = chapter.volume,
-                    chapterNumber = chapter.chapterNumber,
-                    language = chapter.language,
-                    canonicalUrl = chapter.canonicalUrl,
-                    readingOrder = chapter.readingOrder,
-                    pageCount = pages.size,
-                    status = "online",
-                )
+        runCatching {
+            val pages = repository.loadPages(chapter).sortedBy { it.pageIndex }
+            val persisted = repository.addDiscoveredChapter(chapter)
+            pages to persisted
+        }
+            .onSuccess { (pages, persisted) ->
+                val readerChapter = persisted.copy(pageCount = pages.size, status = "online")
                 local.value = local.value.copy(
                     busy = false,
                     readerChapter = readerChapter.takeIf { pages.isNotEmpty() },
@@ -553,8 +676,50 @@ class MangaSourceViewModel @Inject constructor(
             .onFailure { local.value = local.value.copy(busy = false, status = it.message ?: "Could not open chapter.") }
     }
 
+    fun resumeChapter(chapter: MangaChapterEntity) {
+        if (chapter.status == "completed") {
+            openReader(chapter.id, chapter.lastPageRead)
+        } else {
+            openOnlineReader(
+                MangaChapter(
+                    sourceId = chapter.sourceId,
+                    remoteId = chapter.remoteId,
+                    mangaId = chapter.mangaId,
+                    mangaTitle = chapter.mangaTitle,
+                    title = chapter.title,
+                    volume = chapter.volume,
+                    chapterNumber = chapter.chapterNumber,
+                    language = chapter.language,
+                    canonicalUrl = chapter.canonicalUrl,
+                    readingOrder = chapter.readingOrder,
+                    dateUpload = chapter.dateUpload,
+                    scanlator = chapter.scanlator,
+                ),
+                chapter.lastPageRead,
+            )
+        }
+    }
+
     fun closeReader() {
         local.value = local.value.copy(readerChapter = null, readerPagePaths = emptyList(), readerPageIndex = 0, readerOnline = false)
+    }
+
+    fun recordReaderPage(chapterId: String, pageIndex: Int, pageCount: Int) {
+        if (local.value.incognito) return
+        viewModelScope.launch { repository.recordReadingProgress(chapterId, pageIndex, pageCount) }
+    }
+
+    fun setChapterRead(chapter: MangaChapterEntity, read: Boolean) = viewModelScope.launch {
+        repository.setChapterRead(chapter, read)
+    }
+
+    fun setChapterBookmarked(chapter: MangaChapterEntity, bookmarked: Boolean) = viewModelScope.launch {
+        repository.setChapterBookmarked(chapter, bookmarked)
+    }
+
+    fun clearHistory() = viewModelScope.launch {
+        repository.clearReadingHistory()
+        local.value = local.value.copy(status = "Reading history cleared")
     }
 
     private fun readCustomWebsites(): List<MangaWebsite> = websitePreferences
@@ -598,6 +763,7 @@ fun MangaSourceDialog(
             onDismiss = viewModel::closeReader,
             initialPageIndex = state.readerPageIndex,
             online = state.readerOnline,
+            onPageChanged = { page -> viewModel.recordReaderPage(chapter.id, page, state.readerPagePaths.size) },
         )
         return
     }
@@ -716,7 +882,7 @@ fun MangaSourceDialog(
                                     "completed" -> Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                                         TextButton(onClick = { viewModel.openReader(existing.id) }) { Text("Read") }
                                         if (onImportChapter != null) TextButton(onClick = { onImportChapter(existing.id) }) { Text("Add") }
-                                        if (onTranslateChapter != null) TextButton(onClick = { onTranslateChapter(existing.id) }) { Text("Translate") }
+                                        if (onTranslateChapter != null) TextButton(onClick = { onTranslateChapter(existing.id) }) { Text("Translate to English") }
                                     }
                                     "downloading", "queued" -> TextButton(onClick = { viewModel.stop(existing) }) { Text("Stop") }
                                     "failed", "stopped" -> TextButton(onClick = { viewModel.retry(existing) }) { Text("Retry") }
@@ -784,7 +950,7 @@ fun MangaSourceDialog(
                                 TextButton(onClick = { onImportChapter(chapter.id) }) { Text("Add") }
                             }
                             if (chapter.status == "completed" && onTranslateChapter != null) {
-                                TextButton(onClick = { onTranslateChapter(chapter.id) }) { Text("Translate") }
+                                TextButton(onClick = { onTranslateChapter(chapter.id) }) { Text("Translate to English") }
                             }
                         }
                     }
@@ -813,6 +979,7 @@ fun MangaChapterReader(
     initialPageIndex: Int = 0,
     onAction: (MangaReaderAction, chapterId: String, pageIndex: Int) -> Unit = { _, _, _ -> },
     online: Boolean = false,
+    onPageChanged: (Int) -> Unit = {},
 ) {
     val listState = rememberLazyListState()
     val currentPage = listState.firstVisibleItemIndex.coerceIn(0, (pagePaths.size - 1).coerceAtLeast(0))
@@ -820,6 +987,9 @@ fun MangaChapterReader(
         if (pagePaths.isNotEmpty()) {
             listState.scrollToItem(initialPageIndex.coerceIn(0, pagePaths.lastIndex))
         }
+    }
+    androidx.compose.runtime.LaunchedEffect(currentPage, pagePaths.size) {
+        if (pagePaths.isNotEmpty()) onPageChanged(currentPage)
     }
     Dialog(
         onDismissRequest = onDismiss,
@@ -885,7 +1055,7 @@ fun MangaChapterReader(
                         ) {
                             TextButton(onClick = { onAction(MangaReaderAction.EditPage, chapter.id, currentPage) }) { Text("Edit page") }
                             TextButton(onClick = { onAction(MangaReaderAction.EditChapter, chapter.id, currentPage) }) { Text("Edit chapter") }
-                            TextButton(onClick = { onAction(MangaReaderAction.TranslatePage, chapter.id, currentPage) }) { Text("Translate page") }
+                            TextButton(onClick = { onAction(MangaReaderAction.TranslatePage, chapter.id, currentPage) }) { Text("Translate to English") }
                             TextButton(onClick = { onAction(MangaReaderAction.TranslateChapter, chapter.id, currentPage) }) { Text("Translate all") }
                             TextButton(onClick = { onAction(MangaReaderAction.ColorPage, chapter.id, currentPage) }) { Text("Color page") }
                             TextButton(onClick = { onAction(MangaReaderAction.ColorChapter, chapter.id, currentPage) }) { Text("Color all") }

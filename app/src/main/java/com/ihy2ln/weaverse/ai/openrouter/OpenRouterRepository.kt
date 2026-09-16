@@ -44,6 +44,22 @@ class OpenRouterRepository @Inject constructor(
     /** Overridable for unit tests (MockWebServer). */
     @Volatile
     var baseUrl: String = BASE_URL
+    private val _imageEditingModels = kotlinx.coroutines.flow.MutableStateFlow<List<ModelInfo>>(emptyList())
+    val imageEditingModels: kotlinx.coroutines.flow.StateFlow<List<ModelInfo>> = _imageEditingModels
+
+    suspend fun fetchImageEditingModels(): List<ModelInfo> = withContext(Dispatchers.IO) {
+        val key = requireKey()
+        try {
+            executeGet("$baseUrl/images/models", key).use { response ->
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) throw OpenRouterErrorMapper.fromHttp(response.code, body)
+                OpenRouterImageApi.editingModels(body).also { _imageEditingModels.value = it }
+            }
+        } catch (error: Exception) {
+            _imageEditingModels.value = emptyList()
+            throw error
+        }
+    }
     private val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
@@ -287,33 +303,22 @@ class OpenRouterRepository @Inject constructor(
         withContext(Dispatchers.IO) {
             val key = requireKey()
             val model = normalizeModelId(modelId)
-            ensureModelVerified(model)
-
-            val bodyJson = json.encodeToString(
-                OpenRouterChatRequest(
-                    model = model,
-                    messages = listOf(
-                        OpenRouterChatMessage(
-                            role = "user",
-                            content = if (imageAttachments.isEmpty()) {
-                                kotlinx.serialization.json.JsonPrimitive(prompt)
-                            } else {
-                                buildMultimodalContent(prompt, imageAttachments)
-                            },
-                        ),
-                    ),
-                    stream = false,
-                    modalities = listOf("image", "text"),
-                ),
-            )
-            val httpRequest = authorizedRequest("$baseUrl/chat/completions", key)
+            var aspectRatio: String? = null
+            if (imageAttachments.isNotEmpty()) {
+                val candidates = fetchImageEditingModels()
+                val selected = candidates.firstOrNull { it.id == model } ?: throw AIError.BadRequest(
+                    "This model is not currently listed for reference-image editing. Refresh the editor model list and choose another model.")
+                if ("ratio:auto" in selected.tags) aspectRatio = "auto"
+            }
+            val bodyJson = OpenRouterImageApi.request(model, prompt, imageAttachments, aspectRatio)
+            val httpRequest = authorizedRequest("$baseUrl/images", key)
                 .post(bodyJson.toRequestBody(JSON_MEDIA))
                 .build()
 
             try {
                 streamingClient.newCall(httpRequest).execute().use { response ->
                     val body = response.body?.string().orEmpty()
-                    logResponse("$baseUrl/chat/completions", response.code, body)
+                    // Never log generated image payloads or source reference data.
                     if (!response.isSuccessful) {
                         throw OpenRouterErrorMapper.fromHttp(
                             response.code,
@@ -321,25 +326,14 @@ class OpenRouterRepository @Inject constructor(
                             response.header("Retry-After")?.toLongOrNull(),
                         )
                     }
-                    val parsed = json.decodeFromString(OpenRouterChatResponse.serializer(), body)
-                    OpenRouterErrorMapper.fromEmbeddedError(parsed.error)?.let { throw it }
-                    val dataUrl = parsed.choices.firstOrNull()
-                        ?.message?.images
-                        ?.firstOrNull()?.imageUrl?.url
-                        .orEmpty()
-                    if (dataUrl.isBlank()) {
-                        throw AIError.HttpFailure(
-                            statusCode = 502,
-                            message = "The model returned no image. It may not support image output — pick an Image generation model.",
-                        )
-                    }
-                    val base64 = dataUrl.substringAfter("base64,", missingDelimiterValue = "")
-                    if (base64.isBlank()) {
-                        throw AIError.HttpFailure(statusCode = 502, message = "Unsupported image data URL.")
-                    }
-                    val mime = Regex("data:([^;]+);").find(dataUrl)?.groupValues?.get(1) ?: "image/png"
-                    Pair(android.util.Base64.decode(base64, android.util.Base64.DEFAULT), mime)
+                    val decoded = OpenRouterImageApi.decode(body)
+                    val usage = json.decodeFromString(OpenRouterChatResponse.serializer(), body).usage
+                    if (usage != null) settings.recordUsage(usage.promptTokens, usage.completionTokens, usage.cost)
+                    currentCoroutineContext().ensureActive()
+                    decoded
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: AIError) {
                 throw e
             } catch (e: IOException) {

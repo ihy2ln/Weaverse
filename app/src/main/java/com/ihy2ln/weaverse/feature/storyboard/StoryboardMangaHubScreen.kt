@@ -126,6 +126,7 @@ fun StoryboardMangaHubScreen(
             onDismiss = viewModel::closeReader,
             initialPageIndex = state.readerPageIndex,
             online = state.readerOnline,
+            onPageChanged = { page -> viewModel.recordReaderPage(chapter.id, page, state.readerPagePaths.size) },
             onAction = { action, chapterId, pageIndex ->
                 viewModel.closeReader()
                 onEditChapter(MangaEditRequest(chapterId, pageIndex, returnToReader = true, action = action))
@@ -134,51 +135,15 @@ fun StoryboardMangaHubScreen(
         return
     }
 
-    MaterialTheme(colorScheme = HubColors) {
-        Surface(modifier = modifier.fillMaxSize(), color = HubBlack) {
-            Column(modifier = Modifier.fillMaxSize()) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Column {
-                    Text("Window", style = MaterialTheme.typography.headlineSmall, color = HubText, fontWeight = FontWeight.Bold)
-                    Text("Manga · Comic · Manhwa", style = MaterialTheme.typography.labelMedium, color = HubMuted)
-                }
-                Text("Build ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelSmall, color = HubMuted)
-            }
-            if (state.busy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            if (state.status.isNotBlank()) {
-                Text(state.status, color = HubAccent, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
-            }
-                when (tab) {
-                    MangaHubTab.Library -> HubLibrary(
-                        state = state,
-                        viewModel = viewModel,
-                        onEditChapter = onEditChapter,
-                        onOpenFavorite = { manga ->
-                            tabName = MangaHubTab.Browse.name
-                            viewModel.selectSource(manga.sourceId)
-                            viewModel.select(manga)
-                        },
-                    )
-                    MangaHubTab.Browse -> HubBrowse(state, viewModel)
-                    MangaHubTab.Downloads -> HubDownloads(state, viewModel, onEditChapter)
-                    MangaHubTab.Extensions -> HubExtensions(
-                        state = state,
-                        viewModel = viewModel,
-                    )
-                    MangaHubTab.Projects -> WorkShelfScreen(
-                        kind = WorkShelfKind.Storyboard,
-                        onCreate = onCreateProject,
-                        onOpen = onOpenProject,
-                        modifier = Modifier.fillMaxSize().background(HubBlack),
-                    )
-                }
-            }
-        }
-    }
+    MihonMangaHome(
+        initialTab = tab.name,
+        state = state,
+        viewModel = viewModel,
+        onCreateProject = onCreateProject,
+        onOpenProject = onOpenProject,
+        onEditChapter = onEditChapter,
+        modifier = modifier,
+    )
 }
 
 @Composable

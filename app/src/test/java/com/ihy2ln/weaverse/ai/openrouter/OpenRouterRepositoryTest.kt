@@ -48,6 +48,22 @@ class OpenRouterRepositoryTest {
     }
 
     @Test
+    fun imageEditingUsesDedicatedEndpointAndReferencePayload() = runTest {
+        every { settings.apiKey(SecureKeyStore.OPENROUTER) } returns "test-key"
+        server.enqueue(MockResponse().setBody("""{"data":[{"id":"black-forest-labs/flux.2-pro",
+            "architecture":{"input_modalities":["text","image"],"output_modalities":["image"]},
+            "supported_parameters":{"input_references":{"max":8},"aspect_ratio":{"values":["auto"]}}}]}"""))
+        server.enqueue(MockResponse().setBody("""{"data":[{"b64_json":"iVBORw0KGgo="}],"usage":{"cost":0.01}}"""))
+        val image = repository.generateImage("black-forest-labs/flux.2-pro", "Keep the art",
+            listOf(com.ihy2ln.weaverse.ai.ImageAttachment("image/png", "test-image")))
+        assertEquals("image/png", image.second)
+        assertEquals("/api/v1/images/models", server.takeRequest().path)
+        val request = server.takeRequest()
+        assertEquals("/api/v1/images", request.path)
+        assertTrue(request.body.readUtf8().contains("input_references"))
+    }
+
+    @Test
     fun validateKeyReturnsDataOn200() = runTest {
         server.enqueue(
             MockResponse()

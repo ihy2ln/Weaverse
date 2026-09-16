@@ -10,16 +10,22 @@ import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
+import org.jsoup.Jsoup
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
- * Reviewed source definitions for sites that expose their catalogs and chapter links in public HTML.
- * The adapter performs ordinary HTTP requests only: it does not execute challenge scripts, log in,
- * solve CAPTCHAs, or evade a site's access controls.
+ * Built-in public website adapters. JavaScript-only catalogs use the site's normal WebView UI;
+ * the host does not fabricate access tokens, log in, or solve verification challenges.
  */
 @Singleton
 class PublicHtmlMangaSources @Inject constructor(
     client: OkHttpClient,
     webLinkImporter: MangaWebLinkImporter,
+    renderedCatalog: RenderedCatalogClient,
 ) {
     val sources: List<MangaSourceAdapter> = listOf(
         PublicHtmlMangaSourceAdapter(
@@ -27,39 +33,29 @@ class PublicHtmlMangaSources @Inject constructor(
                 id = "comix",
                 name = "Comix",
                 baseUrl = "https://comix.to/",
-                popularPaths = listOf("/browser?sort=most_views_7d", "/browser?sort=total_views", "/", "/home"),
-                latestPaths = listOf("/browser?sort=updated", "/browser?sort=updated_date", "/latest", "/browse?sort=updated_at"),
-                searchPaths = listOf("/browser?keyword=%s", "/browser?search=%s", "/search?q=%s", "/browse?keyword=%s"),
+                popularPaths = listOf("/"),
+                latestPaths = listOf("/browse"),
+                searchPaths = listOf("/browse?keyword=%s"),
                 seriesPathHints = listOf("/title/", "/comic/", "/manga/", "/series/"),
             ),
             client = client,
             webLinkImporter = webLinkImporter,
+            renderedLoader = renderedCatalog::load,
         ),
-        PublicHtmlMangaSourceAdapter(
-            config = PublicHtmlSourceConfig(
-                id = "atsumaru",
-                name = "Atsumaru",
-                baseUrl = "https://atsu.moe/",
-                popularPaths = listOf("/browse?sort=popular", "/browse?sort=views", "/"),
-                latestPaths = listOf("/latest", "/browse?sort=updated", "/browse?sort=recent"),
-                searchPaths = listOf("/search?q=%s", "/search?query=%s", "/browse?search=%s", "/browse?keyword=%s"),
-                seriesPathHints = listOf("/manga/", "/series/", "/title/"),
-            ),
-            client = client,
-            webLinkImporter = webLinkImporter,
-        ),
+        AtsumaruSource(client),
         PublicHtmlMangaSourceAdapter(
             config = PublicHtmlSourceConfig(
                 id = "mangafire",
                 name = "MangaFire",
                 baseUrl = "https://mangafire.to/",
-                popularPaths = listOf("/most-viewed", "/most-favourited", "/filter?sort=most_viewed", "/filter?sort=views", "/"),
-                latestPaths = listOf("/filter?sort=recently_updated", "/filter?sort=updated", "/updates"),
-                searchPaths = listOf("/filter?keyword=%s", "/filter?search=%s", "/search?keyword=%s", "/search?q=%s"),
+                popularPaths = listOf("/"),
+                latestPaths = listOf("/browse"),
+                searchPaths = listOf("/browse?keyword=%s"),
                 seriesPathHints = listOf("/manga/", "/title/", "/series/"),
             ),
             client = client,
             webLinkImporter = webLinkImporter,
+            renderedLoader = renderedCatalog::load,
         ),
         PublicHtmlMangaSourceAdapter(
             config = PublicHtmlSourceConfig(
@@ -73,6 +69,7 @@ class PublicHtmlMangaSources @Inject constructor(
             ),
             client = client,
             webLinkImporter = webLinkImporter,
+            renderedLoader = renderedCatalog::load,
         ),
         PublicHtmlMangaSourceAdapter(
             config = PublicHtmlSourceConfig(
@@ -121,6 +118,7 @@ internal class PublicHtmlMangaSourceAdapter(
     private val config: PublicHtmlSourceConfig,
     private val client: OkHttpClient,
     private val webLinkImporter: MangaWebLinkImporter,
+    private val renderedLoader: (suspend (String) -> String)? = null,
 ) : MangaSourceAdapter {
     override val descriptor = MangaSourceDescriptor(
         id = config.id,
@@ -128,25 +126,63 @@ internal class PublicHtmlMangaSourceAdapter(
         baseUrl = config.baseUrl,
         description = "Browsable public catalog with series metadata, chapters, and page downloads.",
         authorized = false,
+        language = config.language,
     )
 
     override suspend fun search(query: String): List<MangaSearchResult> {
         val clean = query.trim()
         if (clean.isBlank()) return emptyList()
+        if (config.id == "rawkuma") return searchPage(clean, 0)
         val encoded = URLEncoder.encode(clean, StandardCharsets.UTF_8.name())
         val results = fetchCatalog(config.searchPaths.map { it.replace("%s", encoded) })
         return results.filter { it.title.contains(clean, ignoreCase = true) }.ifEmpty { results }
     }
 
-    override suspend fun browse(mode: MangaBrowseMode): List<MangaSearchResult> = fetchCatalog(
+    override suspend fun browse(mode: MangaBrowseMode): List<MangaSearchResult> = if (config.id == "rawkuma") browsePage(mode, 0) else fetchCatalog(
         when (mode) {
             MangaBrowseMode.Popular -> config.popularPaths
             MangaBrowseMode.Latest -> config.latestPaths
         },
     )
 
+    override suspend fun browsePage(mode: MangaBrowseMode, page: Int): List<MangaSearchResult> {
+        if (config.id != "rawkuma") return super.browsePage(mode, page)
+        return rawkumaPage("browse:$mode", page, "manga/?order=${if (mode == MangaBrowseMode.Popular) "popular" else "update"}")
+    }
+
+    override suspend fun searchPage(query: String, page: Int): List<MangaSearchResult> {
+        if (config.id != "rawkuma") return super.searchPage(query, page)
+        return rawkumaPage("search:$query", page, "?s=${URLEncoder.encode(query.trim(), StandardCharsets.UTF_8.name())}&post_type=wp-manga")
+    }
+
+    private val rawkumaNext = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    private suspend fun rawkumaPage(key: String, page: Int, firstPath: String): List<MangaSearchResult> {
+        require(page >= 0)
+        val url = if (page == 0) resolve(config.baseUrl, firstPath)!! else {
+            rawkumaNext["$key:$page"] ?: return emptyList()
+        }
+        val html = fetch(url)
+        val document = Jsoup.parse(html, url)
+        val nextNumber = page + 2
+        val next = document.select("a[href]").firstOrNull {
+            val href = it.absUrl("href")
+            URI(href).host == URI(config.baseUrl).host &&
+                (URI(href).path.orEmpty().endsWith("/page/$nextNumber/") ||
+                    Regex("[?&]paged=$nextNumber(?:&|$)").containsMatchIn(href))
+        }?.absUrl("href")
+        if (next != null) rawkumaNext["$key:${page + 1}"] = next
+        else rawkumaNext.remove("$key:${page + 1}")
+        return parseCatalog(url, html)
+    }
+
     override suspend fun details(manga: MangaSearchResult): MangaSearchResult {
-        val html = fetch(manga.canonicalUrl)
+        var html = fetch(manga.canonicalUrl)
+        if (Jsoup.parse(html).selectFirst("script#initial-data") != null) {
+            parseCatalog(manga.canonicalUrl, html).firstOrNull { it.remoteId == manga.remoteId || it.title.equals(manga.title, true) }
+                ?.let { return it.copy(remoteId = manga.remoteId) }
+        }
+        if (heading(html).isBlank() && renderedLoader != null) html = renderedLoader.invoke(manga.canonicalUrl)
         val metadata = extractMetadata(manga.canonicalUrl, html)
         return manga.copy(
             title = meta(html, "og:title").ifBlank { heading(html).ifBlank { manga.title } },
@@ -164,7 +200,10 @@ internal class PublicHtmlMangaSourceAdapter(
     }
 
     override suspend fun chapters(manga: MangaSearchResult): List<MangaChapter> {
-        val html = fetch(manga.canonicalUrl)
+        var html = fetch(manga.canonicalUrl)
+        if (extractAnchors(manga.canonicalUrl, html).none { isChapterUrl(it.first) } && renderedLoader != null) {
+            html = renderedLoader.invoke(manga.canonicalUrl)
+        }
         val links = extractAnchors(manga.canonicalUrl, html)
             .filter { (url, _) -> isChapterUrl(url) }
             .distinctBy { it.first.substringBefore('#').trimEnd('/') }
@@ -196,6 +235,42 @@ internal class PublicHtmlMangaSourceAdapter(
         }
 
     internal fun parseCatalog(baseUrl: String, html: String): List<MangaSearchResult> {
+        if (config.id == "rawkuma") return parseRawkumaCatalog(baseUrl, html)
+        val embedded = Jsoup.parse(html).selectFirst("script#initial-data")?.data()
+        if (!embedded.isNullOrBlank()) {
+            val root = Json.parseToJsonElement(embedded)
+            val results = mutableListOf<MangaSearchResult>()
+            fun visit(element: JsonElement) {
+                when (element) {
+                    is JsonArray -> element.forEach(::visit)
+                    is JsonObject -> {
+                        fun value(key: String) = (element[key] as? JsonPrimitive)?.content.orEmpty()
+                        fun labels(key: String) = (element[key] as? JsonArray).orEmpty().mapNotNull {
+                            ((it as? JsonObject)?.get("title") as? JsonPrimitive)?.content
+                        }
+                        val path = value("url")
+                        val title = value("title")
+                        if (path.startsWith("/title/") && title.isNotBlank()) {
+                            val url = resolve(baseUrl, path) ?: return
+                            val poster = element["poster"] as? JsonObject
+                            results += MangaSearchResult(
+                                sourceId = config.id, remoteId = stableId(url), title = title,
+                                canonicalUrl = url, description = value("synopsis"),
+                                coverUrl = (poster?.get("medium") as? JsonPrimitive)?.content,
+                                languages = listOf(config.language, value("originalLanguage")).filter(String::isNotBlank).distinct(),
+                                status = when (value("status")) { "releasing" -> "ongoing"; "on_hiatus" -> "hiatus"; "finished" -> "completed"; else -> value("status") },
+                                type = value("type"), year = value("year"), rating = value("contentRating"), score = value("ratedAvg"),
+                                tags = (labels("genres") + labels("demographics") + labels("formats") + labels("tags")).distinct(),
+                                authors = labels("authors"), artists = labels("artists"),
+                            )
+                        } else element.values.forEach(::visit)
+                    }
+                    else -> Unit
+                }
+            }
+            visit(root)
+            if (results.isNotEmpty()) return results.distinctBy { it.remoteId }
+        }
         val anchors = extractAnchors(baseUrl, html)
         return anchors.mapNotNull { (url, label) ->
             if (!isSeriesUrl(url)) return@mapNotNull null
@@ -217,7 +292,7 @@ internal class PublicHtmlMangaSourceAdapter(
                 coverUrl = metadata.coverUrl,
                 canonicalUrl = url,
                 tags = metadata.tags,
-                languages = metadata.languages,
+                languages = metadata.languages.ifEmpty { listOf(config.language) },
                 authors = metadata.authors,
                 artists = metadata.artists,
                 status = metadata.status,
@@ -228,20 +303,54 @@ internal class PublicHtmlMangaSourceAdapter(
         }.distinctBy { it.canonicalUrl.trimEnd('/').lowercase() }.take(40)
     }
 
+    private fun parseRawkumaCatalog(baseUrl: String, html: String): List<MangaSearchResult> {
+        val document = Jsoup.parse(html, baseUrl)
+        // Image alt text on RawKuma can be a section label ("Last Updates").
+        // Match the separate title link by URL, never by a surrounding section's text.
+        val titleLinks = document.select("a[href]").groupBy { it.absUrl("href").substringBefore('#').trimEnd('/') }
+        fun usableTitle(value: String) = value.trim().takeIf {
+            it.isNotEmpty() && it.lowercase() !in setOf("last updates", "latest updates", "manga", "series page", "read more")
+        }
+        return document.select("a[href]").mapNotNull { anchor ->
+            val url = anchor.absUrl("href").substringBefore('#')
+            if (runCatching { URI(url).host == URI(config.baseUrl).host &&
+                Regex("^/manga/[^/]+/?$").matches(URI(url).path.orEmpty()) }.getOrDefault(false).not()) return@mapNotNull null
+            val img = anchor.selectFirst("img") ?: return@mapNotNull null
+            val cover = imageUrl(baseUrl, img.outerHtml()) ?: return@mapNotNull null
+            val title = titleLinks[url.trimEnd('/')].orEmpty().firstNotNullOfOrNull { usableTitle(it.text()) }
+                ?: usableTitle(anchor.attr("title")) ?: usableTitle(img.attr("alt"))
+                ?: java.net.URLDecoder.decode(URI(url).path.trimEnd('/').substringAfterLast('/'), "UTF-8").replace('-', ' ')
+            if (title.isBlank()) return@mapNotNull null
+            MangaSearchResult(sourceId = config.id, remoteId = stableId(url), title = title,
+                canonicalUrl = url, coverUrl = cover, languages = listOf(config.language))
+        }.distinctBy { it.remoteId }
+    }
+
     private suspend fun fetchCatalog(paths: List<String>): List<MangaSearchResult> {
         var lastFailure: Throwable? = null
         var reachedPublicPage = false
         paths.distinct().forEach { path ->
             runCatching {
                 val url = resolve(config.baseUrl, path) ?: error("Invalid catalog URL")
-                parseCatalog(url, fetch(url))
+                val html = try { fetch(url) } catch (failure: Exception) {
+                    if (failure is kotlinx.coroutines.CancellationException || renderedLoader == null) throw failure
+                    renderedLoader.invoke(url)
+                }
+                val static = parseCatalog(url, html)
+                if (static.isNotEmpty() || renderedLoader == null) static else {
+                    val rendered = renderedLoader.invoke(url)
+                    val results = parseCatalog(url, rendered)
+                    if (results.isEmpty() && (Jsoup.parse(rendered).text().contains("No results", true) ||
+                        Jsoup.parse(rendered).text().contains("No titles found", true))) return emptyList()
+                    results
+                }
             }.onSuccess {
                 reachedPublicPage = true
                 if (it.isNotEmpty()) return it
             }
-                .onFailure { lastFailure = it }
+                .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it; lastFailure = it }
         }
-        if (reachedPublicPage) return emptyList()
+        if (reachedPublicPage) error("${config.name} returned a page without a readable catalog. Its website format needs an updated adapter.")
         if (lastFailure != null) throw lastFailure as Throwable
         return emptyList()
     }
@@ -254,10 +363,14 @@ internal class PublicHtmlMangaSourceAdapter(
             .header("Accept-Language", "en-US,en;q=0.8")
             .build()
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) error("${descriptor.name} blocked the catalog request (HTTP ${response.code}).")
+            if (!response.isSuccessful) error("${descriptor.name} request failed (HTTP ${response.code}).")
             val html = response.body?.string().orEmpty()
             if (html.isBlank()) error("${descriptor.name} returned an empty catalog.")
-            if (html.contains("cf-chl-", true) || html.contains("just a moment", true) || html.contains("captcha", true)) {
+            // A login/register CAPTCHA script may be present on an otherwise public catalog.
+            // Only classify an actual interstitial, not any page containing the word captcha.
+            val document = Jsoup.parse(html)
+            if (document.title().contains("just a moment", true) ||
+                document.selectFirst("form#challenge-form") != null) {
                 error("${descriptor.name} requires a browser verification challenge and cannot be browsed right now.")
             }
             html
@@ -292,7 +405,9 @@ internal class PublicHtmlMangaSourceAdapter(
         val tagLinks = extractAnchors(baseUrl, html).mapNotNull { (url, label) ->
             val path = URI(url).path.orEmpty().lowercase()
             label.takeIf { path.contains("/genre/") || path.contains("/genres/") ||
-                path.contains("/tag/") || path.contains("/tags/") || path.contains("/theme/") }
+                path.contains("/tag/") || path.contains("/tags/") || path.contains("/theme/") ||
+                path.contains("/demographic/") || path.contains("/format/") ||
+                URI(url).query.orEmpty().contains("genre") }
         }
         val authorLinks = extractAnchors(baseUrl, html).mapNotNull { (url, label) ->
             label.takeIf { URI(url).path.orEmpty().lowercase().contains("/author") }
@@ -303,7 +418,7 @@ internal class PublicHtmlMangaSourceAdapter(
         val languages = (jsonLdValues(html, "inLanguage") + htmlLanguage(html) +
             labeledValues(html, "language", "languages", "translated language"))
             .map(::cleanText).filter(String::isNotBlank).distinct()
-        val tags = (tagLinks + jsonGenres + labeledValues(html, "genre", "genres", "tags", "themes"))
+        val tags = (tagLinks + jsonGenres + labeledValues(html, "genre", "genres", "tags", "themes", "demographic", "format", "type"))
             .map(::cleanText).filter(::isMetadataLabel).distinct()
         val authors = (authorLinks + jsonLdValues(html, "author"))
             .map(::cleanText).filter(::isMetadataLabel).distinct()

@@ -76,7 +76,8 @@ import com.ihy2ln.weaverse.feature.novel.codex.CodexBang
 import com.ihy2ln.weaverse.feature.novel.codex.CodexEntryKind
 import com.ihy2ln.weaverse.feature.novel.codex.effectiveBangCommands
 import com.ihy2ln.weaverse.feature.roleplay.chat.RpgTurnCommands
-import com.ihy2ln.weaverse.core.mcp.McpHarnessConfig
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 
 
 
@@ -1204,23 +1205,24 @@ fun SettingsScreen(
             )
             Text(
                 "Let Cursor, Claude Code, OpenCode, Codex CLI or any MCP client read your library. " +
-                    "Codex is built in as an explicit access switch. Turning it on starts the local " +
-                    "hub and opens MCP until you turn it off. Cursor IDE and Cursor CLI (`agent`) " +
+                    "Turning on ChatGPT / Codex MCP starts this device's local " +
+                    "hub and opens MCP until you turn it off. This does not sign into ChatGPT or enable cloud image editing. Cursor IDE and Cursor CLI (`agent`) " +
                     "share ~/.cursor/mcp.json.",
                 style = MaterialTheme.typography.bodySmall,
                 color = inkTokens().secondaryText,
             )
             val clipboardMcp = LocalClipboardManager.current
             val mcpEndpoint = "http://${state.sync.lanAddress.ifBlank { "<device-ip>" }}:${state.sync.port}/mcp"
+            val codexSetupCommand = "codex mcp add weaverse --url $mcpEndpoint"
             InkCard(modifier = Modifier.fillMaxWidth().padding(top = InkSpacing.sm)) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(InkSpacing.sm),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Codex", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                        Text("ChatGPT / Codex MCP & CLI", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                         Text(
-                            McpHarnessConfig.CODEX_EMULATOR_ENDPOINT,
+                            mcpEndpoint,
                             style = MaterialTheme.typography.labelSmall,
                             color = inkTokens().secondaryText,
                         )
@@ -1234,25 +1236,20 @@ fun SettingsScreen(
                             color = inkTokens().secondaryText,
                         )
                     }
-                    if (state.prefs.codexMcpEnabled) {
-                        InkOutlinedButton(
-                            label = "Turn off",
-                            onClick = { viewModel.setCodexMcpEnabled(false) },
-                        )
-                    } else {
-                        InkConfirmButton(
-                            label = "Turn on",
-                            contentDescription = "Enable the built-in Codex MCP connection",
-                            onClick = { viewModel.setCodexMcpEnabled(true) },
-                        )
-                    }
+                    androidx.compose.material3.Switch(
+                        checked = state.prefs.codexMcpEnabled,
+                        onCheckedChange = viewModel::setCodexMcpEnabled,
+                        modifier = Modifier.semantics {
+                            contentDescription = "ChatGPT / Codex MCP access"
+                        },
+                    )
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        McpHarnessConfig.codexAddCommand,
+                        codexSetupCommand,
                         style = MaterialTheme.typography.labelSmall,
                         color = inkTokens().secondaryText,
                         maxLines = 2,
@@ -1260,7 +1257,7 @@ fun SettingsScreen(
                     )
                     InkOutlinedButton(
                         label = "Copy setup",
-                        onClick = { clipboardMcp.setText(AnnotatedString(McpHarnessConfig.codexAddCommand)) },
+                        onClick = { clipboardMcp.setText(AnnotatedString(codexSetupCommand)) },
                         modifier = Modifier.padding(start = InkSpacing.xs),
                     )
                 }

@@ -76,6 +76,8 @@ object OpenRouterModelCatalog {
             val vision = dto.supportsImageInput()
             val imageGen = dto.generatesImages()
             val tags = buildList {
+                if (dto.architecture?.outputModalities?.contains("text") == true ||
+                    dto.architecture.outputSide().split('+').contains("text")) add("Text output")
                 if (tts) add("TTS")
                 if (vision) add("Vision")
                 if (imageGen) add("Image generation")

@@ -18,6 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Slider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,6 +46,16 @@ fun TextOverlayEditSheet(
 ) {
     var text by remember(overlay.id) { mutableStateOf(overlay.text) }
     var style by remember(overlay.id) { mutableStateOf(overlay.style) }
+    var writing by remember(overlay.id) { mutableStateOf(overlay.writingMode) }
+    var fit by remember(overlay.id) { mutableStateOf(overlay.autoFit) }
+    var fontSize by remember(overlay.id) { mutableStateOf(overlay.fontSizeSp) }
+    var bold by remember(overlay.id) { mutableStateOf(overlay.bold) }
+    var italic by remember(overlay.id) { mutableStateOf(overlay.italic) }
+    var family by remember(overlay.id) { mutableStateOf(overlay.fontFamily) }
+    var alignment by remember(overlay.id) { mutableStateOf(overlay.alignment) }
+    var spacing by remember(overlay.id) { mutableStateOf(overlay.lineSpacing) }
+    var padding by remember(overlay.id) { mutableStateOf(overlay.paddingFraction) }
+    var rotation by remember(overlay.id) { mutableStateOf(overlay.rotationDeg) }
     var colorHex by remember(overlay.id) { mutableStateOf(overlay.colorHex) }
     var backgroundHex by remember(overlay.id) { mutableStateOf(overlay.backgroundHex ?: "#000000") }
 
@@ -75,6 +86,36 @@ fun TextOverlayEditSheet(
                     )
                 }
                 Text("Text color", style = MaterialTheme.typography.labelSmall)
+                Text("Tap a box to select it; drag its body to move. Double-tap to edit.")
+                Row(horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                    listOf("Horizontal", "Vertical").forEach { direction ->
+                        FilterChip(writing == direction, { writing = direction }, label = { Text(direction) })
+                    }
+                }
+                FilterChip(fit, { fit = !fit }, label = { Text("Fit text inside box") })
+                Row(horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                    FilterChip(bold, { bold = !bold }, label = { Text("Bold") })
+                    FilterChip(italic, { italic = !italic }, label = { Text("Italic") })
+                }
+                Text("Font family")
+                listOf("Sans serif" to "sans-serif", "Serif" to "serif",
+                    "Monospace" to "monospace", "Cursive" to "cursive").forEach { (label, value) ->
+                    FilterChip(family == value, { family = value }, label = { Text(label) })
+                }
+                Text("Font size: ${fontSize.toInt()}")
+                Slider(fontSize.coerceIn(6f, 96f), { fontSize = it; fit = false }, valueRange = 6f..96f)
+                Text("Line spacing: ${"%.2f".format(spacing)}")
+                Slider(spacing.coerceIn(.5f, 3f), { spacing = it }, valueRange = .5f..3f)
+                Text("Padding: ${(padding * 100).toInt()}%")
+                Slider(padding.coerceIn(0f, .4f), { padding = it }, valueRange = 0f..0.4f)
+                Text("Rotation: ${rotation.toInt()}° (separate from writing direction)")
+                Slider(rotation.coerceIn(-180f, 180f), { rotation = it }, valueRange = -180f..180f)
+                Text("A red underline on the selected box means text is clipped. Enable Fit text or reduce the font size.")
+                Row(horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                    listOf("Start", "Center", "End").forEach { value ->
+                        FilterChip(alignment == value, { alignment = value }, label = { Text(value) })
+                    }
+                }
                 SwatchRow(OverlayTextSwatches, colorHex) { colorHex = it }
                 Text("Background", style = MaterialTheme.typography.labelSmall)
                 SwatchRow(OverlayBgSwatches, backgroundHex) { backgroundHex = it }
@@ -85,6 +126,16 @@ fun TextOverlayEditSheet(
                 onSave(
                     overlay.copy(
                         text = text,
+                        writingMode = writing,
+                        autoFit = fit,
+                        fontSizeSp = fontSize,
+                        bold = bold,
+                        italic = italic,
+                        fontFamily = family,
+                        alignment = alignment,
+                        lineSpacing = spacing,
+                        paddingFraction = padding,
+                        rotationDeg = rotation,
                         style = style,
                         colorHex = colorHex,
                         backgroundHex = backgroundHex,

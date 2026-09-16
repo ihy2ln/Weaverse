@@ -89,7 +89,15 @@ class StoryboardPageExporter @Inject constructor(
     }
 
     private fun drawOverlays(canvas: Canvas, panel: RectF, overlays: List<TextOverlay>) {
-        overlays.forEach { overlay ->
+        // Manga lettering is flattened here and only here: up to this point it is a movable
+        // layer, and export is the one moment its current position has to become pixels.
+        val (lettering, labels) = overlays
+            .filter { it.text.isNotBlank() }
+            .partition { it.source == "manga-translation" }
+        if (lettering.isNotEmpty()) {
+            ImageOps.typesetLayersOnCanvas(canvas, panel, lettering.map { it.toTypesetLayer() })
+        }
+        labels.forEach { overlay ->
             if (overlay.text.isBlank()) return@forEach
             val centerX = panel.left + panel.width() * overlay.xPercent / 100f
             val centerY = panel.top + panel.height() * overlay.yPercent / 100f
@@ -141,4 +149,37 @@ class StoryboardPageExporter @Inject constructor(
     private fun parseColor(value: String?, fallback: Int): Int = runCatching {
         android.graphics.Color.parseColor(value ?: return@runCatching fallback)
     }.getOrDefault(fallback)
+}
+
+/**
+ * The exported form of one editable lettering layer. Height, alignment, stroke and auto-fit
+ * are carried across so the flattened PNG matches what the editor showed.
+ */
+fun TextOverlay.toTypesetLayer(): TypesetLayer {
+    val width = (widthPercent / 100f).coerceIn(0.02f, 1f)
+    val height = ((if (heightPercent > 0f) heightPercent else 12f) / 100f).coerceIn(0.02f, 1f)
+    val left = (xPercent / 100f - width / 2f).coerceIn(0f, 1f - width)
+    val top = (yPercent / 100f - height / 2f).coerceIn(0f, 1f - height)
+    return TypesetLayer(
+        normalized = RectF(left, top, left + width, top + height),
+          text = text,
+          bold = bold, italic = italic, fontFamily = fontFamily,
+        fillColor = hexToColorInt(colorHex, android.graphics.Color.BLACK),
+        strokeColor = hexToColorInt(strokeHex, android.graphics.Color.WHITE),
+        strokeWidthPx = strokeWidth,
+        autoFit = autoFit,
+        writing = if (writingMode == "Vertical") TypesetWriting.Vertical else TypesetWriting.Horizontal,
+        fontSizePx = fontSizeSp / .55f,
+        referenceWidth = 1000f,
+        rotationDeg = rotationDeg,
+        lineSpacing = lineSpacing,
+        paddingFraction = paddingFraction,
+        alignment = when (alignment) {
+            "Start" -> TypesetAlign.Start
+            "End" -> TypesetAlign.End
+            else -> TypesetAlign.Center
+        },
+        // The editor shows the wording exactly as typed, so export must not re-case it.
+        uppercase = false,
+    )
 }

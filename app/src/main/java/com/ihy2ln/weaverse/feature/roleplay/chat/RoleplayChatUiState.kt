@@ -91,7 +91,7 @@ data class CaptureDialogState(
     val extraction: AdventureCapture.Extraction,
 )
 
-enum class MangaEditorTool { Select, Text, Brush, Eraser, ColorPicker, Remove, Pan }
+enum class MangaEditorTool { Select, Text, Brush, Whiteout, Eraser, ColorPicker, Remove, Pan }
 
 enum class MangaProcessStage { Detection, Ocr, Translation, Proofreading, Cleanup }
 
@@ -108,31 +108,102 @@ data class PanelTextRegion(
     val visible: Boolean = true,
     val autoFit: Boolean = true,
     val fontSizePx: Float = 0f,
+    val bold: Boolean = true,
+    val italic: Boolean = false,
+    val fontFamily: String = "sans-serif",
     val fillHex: String = "#111111",
     val strokeHex: String = "#FFFFFF",
     val strokeWidth: Float = 0f,
     val alignment: String = "Center",
     val writingMode: String = "Horizontal",
+    val lineSpacing: Float = 1f,
+    val paddingFraction: Float = .08f,
+    val cleanupEnabled: Boolean = true,
+    val rotationDeg: Float = 0f,
     val edited: Boolean = false,
+    val sourceLanguage: String = "",
+    /** Fixed normalized source bounds. Negative values mean use the placement box. */
+    val cleanupX: Float = -1f,
+    val cleanupY: Float = -1f,
+    val cleanupW: Float = -1f,
+    val cleanupH: Float = -1f,
+    val reviewRequired: Boolean = false,
+)
+
+fun PanelTextRegion.cleanupRect(): RectF = RectF(
+    if (cleanupX >= 0f) cleanupX else x,
+    if (cleanupY >= 0f) cleanupY else y,
+    (if (cleanupX >= 0f) cleanupX else x) + (if (cleanupW > 0f) cleanupW else w),
+    (if (cleanupY >= 0f) cleanupY else y) + (if (cleanupH > 0f) cleanupH else h),
 )
 
 fun PanelTextRegion.toEditableOverlay(index: Int = 0): TextOverlay = TextOverlay(
     id = id.ifBlank { "manga-translation-$index" },
     text = translation.trim(),
+    bold = bold, italic = italic, fontFamily = fontFamily,
     style = TextOverlayStyle.Plain,
     xPercent = ((x + w / 2f) * 100f).coerceIn(0f, 100f),
     yPercent = ((y + h / 2f) * 100f).coerceIn(0f, 100f),
-    widthPercent = (w * 100f).coerceIn(8f, 100f),
-    fontSizeSp = (if (fontSizePx > 0f) fontSizePx * 0.55f else h * 145f).coerceIn(9f, 34f),
+    widthPercent = (w * 100f).coerceIn(1f, 100f),
+    heightPercent = (h * 100f).coerceIn(1f, 100f),
+    fontSizeSp = if (fontSizePx > 0f) fontSizePx * .55f else 15.4f,
     colorHex = fillHex,
     backgroundHex = null,
     backgroundAlpha = 0f,
     source = "manga-translation",
+    manuallyAdjusted = edited,
+    autoFit = autoFit,
+    alignment = alignment,
+    writingMode = writingMode,
+    lineSpacing = lineSpacing,
+    paddingFraction = paddingFraction,
+    cleanupEnabled = cleanupEnabled,
+    rotationDeg = rotationDeg,
+    strokeHex = strokeHex,
+    strokeWidth = strokeWidth,
+    sourceLanguage = sourceLanguage,
+    cleanupXPercent = (if (cleanupX >= 0f) cleanupX else x) * 100f,
+    cleanupYPercent = (if (cleanupY >= 0f) cleanupY else y) * 100f,
+    cleanupWidthPercent = (if (cleanupW > 0f) cleanupW else w) * 100f,
+    cleanupHeightPercent = (if (cleanupH > 0f) cleanupH else h) * 100f,
 )
+
+fun TextOverlay.toPanelTextRegion(): PanelTextRegion {
+    val width = (widthPercent / 100f).coerceIn(0.01f, 1f)
+    val height = ((if (heightPercent > 0f) heightPercent else 12f) / 100f).coerceIn(0.01f, 1f)
+    return PanelTextRegion(
+        id = id,
+        x = (xPercent / 100f - width / 2f).coerceIn(0f, 1f - width),
+        y = (yPercent / 100f - height / 2f).coerceIn(0f, 1f - height),
+        w = width,
+        h = height,
+        original = "",
+        translation = text,
+        bold = bold, italic = italic, fontFamily = fontFamily,
+        autoFit = autoFit,
+        fontSizePx = if (fontSizeSp > 0f) fontSizeSp / 0.55f else 0f,
+        fillHex = colorHex,
+        strokeHex = strokeHex,
+        strokeWidth = strokeWidth,
+        alignment = alignment,
+        writingMode = writingMode,
+        lineSpacing = lineSpacing,
+        paddingFraction = paddingFraction,
+        cleanupEnabled = cleanupEnabled,
+        rotationDeg = rotationDeg,
+        edited = manuallyAdjusted,
+        sourceLanguage = sourceLanguage,
+        cleanupX = cleanupXPercent.takeIf { it >= 0f }?.div(100f) ?: -1f,
+        cleanupY = cleanupYPercent.takeIf { it >= 0f }?.div(100f) ?: -1f,
+        cleanupW = cleanupWidthPercent.takeIf { it > 0f }?.div(100f) ?: -1f,
+        cleanupH = cleanupHeightPercent.takeIf { it > 0f }?.div(100f) ?: -1f,
+    )
+}
 
 fun PanelTextRegion.toTypesetLayer(): TypesetLayer = TypesetLayer(
     normalized = RectF(x, y, x + w, y + h),
     text = translation,
+    bold = bold, italic = italic, fontFamily = fontFamily,
     fillColor = hexToColorInt(fillHex, android.graphics.Color.BLACK),
     strokeColor = hexToColorInt(strokeHex, android.graphics.Color.WHITE),
     strokeWidthPx = strokeWidth,
@@ -144,6 +215,11 @@ fun PanelTextRegion.toTypesetLayer(): TypesetLayer = TypesetLayer(
         else -> TypesetAlign.Center
     },
     writing = if (writingMode == "Vertical") TypesetWriting.Vertical else TypesetWriting.Horizontal,
+    lineSpacing = lineSpacing,
+    paddingFraction = paddingFraction,
+    rotationDeg = rotationDeg,
+    referenceWidth = 1000f,
+    uppercase = false,
     visible = visible,
 )
 
@@ -157,6 +233,7 @@ data class PanelEditorUi(
     val blockId: String,
     val mediaId: String,
     val path: String,
+    val originalPath: String = "",
     val busy: Boolean = false,
     val status: String = "",
     /** AI-detected text regions (original + translation). */
@@ -202,6 +279,8 @@ data class RoleplayChatUiState(
     val editorVisionModelRef: String = "",
     val editorTextModelRef: String = "",
     val editorImageModelRef: String = "",
+    val mangaColorStyleGuide: String = "",
+    val mangaPreserveLineArt: Boolean = true,
     val editorModelsRefreshing: Boolean = false,
     val editorModelsStatus: String = "",
     /** Exact backend roll currently being animated for the submitted action. */
@@ -254,6 +333,10 @@ data class RoleplayChatUiState(
     val mangaEditAction: String = "",
     val mangaEditCurrent: Int = 0,
     val mangaEditTotal: Int = 0,
+    /** Pages and source regions that failed the post-render foreign-text check. */
+    val mangaTranslationReviewPageIds: Set<String> = emptySet(),
+    val mangaTranslationReviewRegions: Map<String, List<PanelTextRegion>> = emptyMap(),
+    val mangaTranslationReviewReasons: Map<String, String> = emptyMap(),
     /** Recoverable AI/offline storyboard page creation state. */
     val storyboardGeneration: StoryboardGenerationUiState = StoryboardGenerationUiState(),
     val storyboardGenerationOpen: Boolean = false,

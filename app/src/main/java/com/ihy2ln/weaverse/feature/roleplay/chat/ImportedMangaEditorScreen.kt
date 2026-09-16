@@ -6,6 +6,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,6 +39,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -50,20 +54,23 @@ import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import java.io.File
 
-/**
- * Dedicated, page-preserving editor for downloaded/imported manga.
- *
- * This deliberately does not share the blank-panel Storyboard composer. A
- * source page stays a full page until the user explicitly separates it, and
- * every bitmap operation creates a derived copy linked to its original.
- */
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.*
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.runtime.mutableFloatStateOf
+
+/** Manga-first surface: tools overlay the canvas, so opening controls never moves the page. */
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun ImportedMangaEditorScreen(
-    chatId: String,
-    onBack: () -> Unit,
+    chatId: String, onBack: () -> Unit,
     onChromeChange: (RoleplayChatChrome?) -> Unit = {},
-    initialPageId: String? = null,
-    initialEditorAction: String? = null,
+    initialPageId: String? = null, initialEditorAction: String? = null,
     initialMangaChapterId: String? = null,
     viewModel: RoleplayChatViewModel = hiltViewModel(),
 ) {
@@ -72,19 +79,17 @@ fun ImportedMangaEditorScreen(
         viewModel.setDisplayMode("roleplay")
     }
     val state by viewModel.uiState.collectAsState()
+    val tokens = inkTokens()
     var initialActionApplied by rememberSaveable(chatId) { mutableStateOf(false) }
+    var initialPageApplied by rememberSaveable(chatId, initialPageId) { mutableStateOf(false) }
     var showOriginal by rememberSaveable(chatId) { mutableStateOf(false) }
     var visionMenuOpen by rememberSaveable(chatId) { mutableStateOf(false) }
     var translationMenuOpen by rememberSaveable(chatId) { mutableStateOf(false) }
     var imageMenuOpen by rememberSaveable(chatId) { mutableStateOf(false) }
-    // The model pickers are set-once-and-forget, so they stay folded away and leave the
-    // page itself the room on screen. Arriving here to translate opens them, because that
-    // flow asks you to choose a model before it will spend tokens.
-    var aiModelsExpanded by rememberSaveable(chatId) {
-        mutableStateOf(initialEditorAction == "TranslatePage" || initialEditorAction == "TranslateChapter")
-    }
-    var statusExpanded by rememberSaveable(chatId) { mutableStateOf(false) }
-
+    var presetMenuOpen by remember { mutableStateOf(false) }
+    var colorGuide by rememberSaveable(chatId, state.mangaColorStyleGuide) { mutableStateOf(state.mangaColorStyleGuide) }
+    var preserveDrawing by rememberSaveable(chatId, state.mangaPreserveLineArt) { mutableStateOf(state.mangaPreserveLineArt) }
+    val modelPanelHeight = (LocalConfiguration.current.screenHeightDp * 0.45f).coerceIn(100f, 420f).dp
     LaunchedEffect(chatId) {
         if (state.editorVisionModels.isEmpty() || state.editorTextModels.isEmpty() || state.editorImageModels.isEmpty()) {
             viewModel.refreshEditorModels()
@@ -92,7 +97,10 @@ fun ImportedMangaEditorScreen(
     }
 
     LaunchedEffect(chatId, initialPageId, state.pages) {
-        initialPageId?.takeIf { id -> state.pages.any { it.id == id } }?.let(viewModel::switchPage)
+        if (!initialPageApplied) initialPageId?.takeIf { id -> state.pages.any { it.id == id } }?.let {
+            viewModel.switchPage(it)
+            initialPageApplied = true
+        }
     }
     LaunchedEffect(
         chatId,
@@ -107,8 +115,7 @@ fun ImportedMangaEditorScreen(
         when (initialEditorAction) {
             // Translation opens here first so the user can choose both models before spending tokens.
             "TranslatePage", "TranslateChapter" -> Unit
-            "ColorPage" -> viewModel.colorizeActiveMangaPage()
-            "ColorChapter" -> initialMangaChapterId?.let(viewModel::colorizeDownloadedChapter)
+            "ColorPage", "ColorChapter" -> Unit
         }
         initialActionApplied = true
     }
@@ -125,10 +132,42 @@ fun ImportedMangaEditorScreen(
                 displayMode = "roleplay",
                 onDisplayMode = {},
                 showSwitcher = false,
+                hideWorkspaceChrome = true,
             ),
         )
     }
     DisposableEffect(Unit) { onDispose { onChromeChange(null) } }
+
+    var editing by rememberSaveable(chatId) { mutableStateOf(false) }
+    var chromeVisible by rememberSaveable(chatId) { mutableStateOf(false) }
+    var sheet by rememberSaveable(chatId) { mutableStateOf<String?>(null) }
+    var aiAction by rememberSaveable(chatId) { mutableStateOf("Translate") }
+    var chapterScope by rememberSaveable(chatId) { mutableStateOf(false) }
+    var selectedTextId by remember(state.activePageId) { mutableStateOf<String?>(null) }
+    var selectionReset by remember(state.activePageId) { mutableStateOf(0) }
+    LaunchedEffect(editing) { if (!editing) selectedTextId = null }
+    // Explicit translation entrypoints configure only; they never launch a paid job.
+    LaunchedEffect(initialEditorAction) {
+        if (initialEditorAction in listOf("TranslatePage", "TranslateChapter", "ColorPage", "ColorChapter")) {
+            aiAction = if (initialEditorAction?.startsWith("Color") == true) "Colorize" else "Translate"
+            editing = true
+            sheet = "AI"
+            chapterScope = initialEditorAction?.endsWith("Chapter") == true
+        }
+    }
+    val pages = remember(state.pages) { state.pages.sortedBy { it.order } }
+    val pageIndex = pages.indexOfFirst { it.id == state.activePageId }.coerceAtLeast(0)
+    val selected = state.mediaPanels.firstOrNull { "${it.messageId}::${it.blockId}" == state.selectedMediaKey }
+        ?: state.mediaPanels.firstOrNull()
+    val pageScroll = rememberLazyListState()
+    var zoom by rememberSaveable(state.activePageId) { mutableFloatStateOf(1f) }
+    var panX by rememberSaveable(state.activePageId) { mutableFloatStateOf(0f) }
+    var panY by rememberSaveable(state.activePageId) { mutableFloatStateOf(0f) }
+    val transform = rememberTransformableState { scale, pan, _ ->
+        zoom = (zoom * scale).coerceIn(1f, 4f)
+        if (zoom <= 1f) { panX = 0f; panY = 0f }
+        else { panX = (panX + pan.x).coerceIn(-2000f, 2000f); panY = (panY + pan.y).coerceIn(-4000f, 4000f) }
+    }
 
     state.imageEditor?.let { editor ->
         PanelImageEditor(
@@ -163,91 +202,79 @@ fun ImportedMangaEditorScreen(
             }
     }
 
-    val pages = remember(state.pages) { state.pages.sortedBy { it.order } }
-    val pageIndex = pages.indexOfFirst { it.id == state.activePageId }.coerceAtLeast(0)
-    val selected = state.mediaPanels.firstOrNull {
-        "${it.messageId}::${it.blockId}" == state.selectedMediaKey
-    } ?: state.mediaPanels.firstOrNull()
-    val tokens = inkTokens()
 
-    Column(modifier = Modifier.fillMaxSize().background(tokens.background)) {
-        // One line of chrome: back, which chapter, and the Original/Edited toggle. The
-        // screen's own name and the "originals stay intact" note moved into the models
-        // panel, so the page itself gets the height they were spending.
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xxs),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            InkTextButton(label = "‹ Library", onClick = onBack, compact = true)
-            Text(
-                state.title.ifBlank { "Imported chapter" },
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f).padding(horizontal = InkSpacing.xs),
-            )
-            InkTextButton(
-                label = if (showOriginal) "Original" else "Edited",
-                onClick = { showOriginal = !showOriginal },
-                compact = true,
-            )
+    fun back() {
+        when {
+            sheet != null -> sheet = null
+            editing && selectedTextId != null -> { selectedTextId = null; selectionReset++ }
+            editing -> { editing = false; chromeVisible = true }
+            else -> onBack()
         }
-        Surface(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
-            color = tokens.panel,
-            shape = RoundedCornerShape(8.dp),
-            tonalElevation = 2.dp,
+    }
+    BackHandler(enabled = state.editingOverlay == null) { back() }
+    val review = state.activePageId in state.mangaTranslationReviewPageIds
+    Box(Modifier.fillMaxSize().background(Color.Black).clipToBounds()) {
+        LazyColumn(
+            state = pageScroll,
+            modifier = Modifier.fillMaxSize()
+                .transformable(transform, enabled = !editing, canPan = { zoom > 1f })
+                .graphicsLayer { scaleX = zoom; scaleY = zoom; translationX = panX; translationY = panY },
         ) {
-            Column(modifier = Modifier.fillMaxWidth().padding(InkSpacing.sm)) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { aiModelsExpanded = !aiModelsExpanded },
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "AI models for this editor",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        if (!aiModelsExpanded) {
-                            Text(
-                                listOf(
-                                    editorModelLabel(state.editorVisionModels, state.editorVisionModelRef),
-                                    editorModelLabel(state.editorTextModels, state.editorTextModelRef),
-                                    editorModelLabel(state.editorImageModels, state.editorImageModelRef),
-                                ).joinToString(" · "),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = tokens.secondaryText,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
-                    Text(
-                        if (aiModelsExpanded) "Hide ▾" else "Change ▸",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(start = InkSpacing.xs),
-                    )
-                }
-                if (aiModelsExpanded) {
-                Text(
-                    "Vision reads and locates the source lettering. Translation rewrites and proofreads it before English is placed back on the page. " +
-                        "Full source pages stay intact — translation, color and brush edits are saved as separate versions.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = tokens.secondaryText,
+            items(state.mediaPanels, key = { "${it.messageId}:${it.blockId}" }) { panel ->
+                ImportedMangaPagePanel(panel = panel, showOriginal = showOriginal,
+                    editable = editing, selected = editing && "${panel.messageId}::${panel.blockId}" == state.selectedMediaKey,
+                    onSelect = {
+                        if (editing) viewModel.selectMedia(panel.messageId, panel.blockId)
+                        else chromeVisible = !chromeVisible
+                    },
+                    onOverlayMove = { id, x, y -> viewModel.moveTextOverlay(panel.messageId, panel.blockId, id, x, y) },
+                    onOverlayResize = { id, x, y, w, h -> viewModel.resizeTextOverlay(panel.messageId, panel.blockId, id, x, y, w, h) },
+                    onOverlayTap = { id -> viewModel.openOverlayEditor(panel.messageId, panel.blockId, id) },
+                    selectionResetKey = selectionReset,
+                    onOverlaySelected = { selectedTextId = it },
                 )
-                if (initialEditorAction == "TranslatePage" || initialEditorAction == "TranslateChapter") {
-                    Text(
-                        "Choose both models below, then tap Translate English or Translate chapter.",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(top = InkSpacing.xs),
-                    )
+            }
+        }
+        if (state.mediaPanels.isEmpty()) Text("Loading manga…", color = Color.White, modifier = Modifier.align(Alignment.Center))
+        if (editing || chromeVisible) {
+            Surface(Modifier.align(Alignment.TopCenter).fillMaxWidth(), color = MaterialTheme.colorScheme.surface.copy(alpha = .96f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    MangaTool("Back", { back() })
+                    Text(state.title.ifBlank { "Manga" }, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    MangaTool(if (editing) "Read" else "Edit", {
+                        editing = !editing
+                    })
+                    MangaTool("More", { sheet = "More" })
                 }
+            }
+            Surface(Modifier.align(Alignment.BottomCenter).fillMaxWidth(), color = MaterialTheme.colorScheme.surface.copy(alpha = .96f)) {
+                if (editing) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    MangaTool("Undo", viewModel::undoStoryboardEdit, state.canUndoStoryboard && !state.mangaEditBusy)
+                    MangaTool("Redo", viewModel::redoStoryboardEdit, state.canRedoStoryboard && !state.mangaEditBusy)
+                    MangaTool("Text", { sheet = "Text" }, !showOriginal && !state.mangaEditBusy)
+                    MangaTool("Cleanup", { selected?.let { viewModel.openImageEditor(it.messageId, it.blockId) } }, selected != null && !showOriginal && !state.mangaEditBusy)
+                    MangaTool("AI", { sheet = "AI" })
+                } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    MangaTool("Previous", { pages.getOrNull(pageIndex - 1)?.let { viewModel.switchPage(it.id) } }, pageIndex > 0)
+                    MangaTool("${pageIndex + 1}/${pages.size.coerceAtLeast(1)}", { sheet = "Pages" })
+                    MangaTool("Next", { pages.getOrNull(pageIndex + 1)?.let { viewModel.switchPage(it.id) } }, pageIndex < pages.lastIndex)
+                }
+            }
+        }
+        if (state.mangaEditBusy || review) {
+            Surface(Modifier.align(Alignment.TopEnd).padding(top = if (editing || chromeVisible) 52.dp else 4.dp), shape = RoundedCornerShape(8.dp)) {
+                MangaTool(if (state.mangaEditBusy) "${state.mangaEditCurrent}/${state.mangaEditTotal} · Working" else "Needs review", { sheet = "Status" })
+            }
+        }
+    }
+    if (sheet != null) {
+        val sheetScroll = remember(sheet) { androidx.compose.foundation.ScrollState(0) }
+        ModalBottomSheet(onDismissRequest = { sheet = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+            Column(Modifier.fillMaxWidth().imePadding().heightIn(max = LocalConfiguration.current.screenHeightDp.dp * .8f)
+                .verticalScroll(sheetScroll).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(sheet ?: "", style = MaterialTheme.typography.titleLarge)
+                when (sheet) {
+                    "Settings" -> {
                 ModelChoice(
                     label = "Vision / OCR",
                     models = state.editorVisionModels,
@@ -272,6 +299,54 @@ fun ImportedMangaEditorScreen(
                     onExpandedChange = { imageMenuOpen = it },
                     onSelected = viewModel::selectEditorImageModel,
                 )
+                  Box {
+                      InkTextButton(label = "Colorization presets ▾", compact = true,
+                          enabled = !state.mangaEditBusy, onClick = { presetMenuOpen = true })
+                      androidx.compose.material3.DropdownMenu(
+                          expanded = presetMenuOpen, onDismissRequest = { presetMenuOpen = false },
+                          modifier = Modifier.heightIn(max = modelPanelHeight),
+                      ) {
+                          com.ihy2ln.weaverse.core.media.MangaColorPresets.guides.forEach { (name, guide) ->
+                              androidx.compose.material3.DropdownMenuItem(text = { Text(name) }, onClick = {
+                                  colorGuide = guide
+                                  preserveDrawing = true
+                                  presetMenuOpen = false
+                              })
+                          }
+                      }
+                  }
+                  Text("Presets change the palette guide, not the drawing. Choose a preset, customize it below, then Save color guide.",
+                      style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
+                androidx.compose.material3.OutlinedTextField(
+                    value = colorGuide,
+                    onValueChange = { colorGuide = it.take(2000) },
+                    label = { Text("Colorization guide / palette") },
+                    supportingText = { Text("Describe palette and color treatment, e.g. muted earth tones, flat colors, red coat. Save before processing.") },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !state.mangaEditBusy,
+                    minLines = 2,
+                    maxLines = 5,
+                )
+                FilterChip(
+                    selected = preserveDrawing,
+                    onClick = { preserveDrawing = !preserveDrawing },
+                    enabled = !state.mangaEditBusy,
+                    label = { Text("Preserve original drawing and shading") },
+                )
+                Text(
+                    if (preserveDrawing) "Uses AI color only, retaining source brightness and existing colored pixels. Pure white and black remain unchanged; colors may be subtle. Color placement can still be imperfect."
+                    else "AI-rendered output: stronger color freedom, but the model may alter faces, shading or artwork despite the prompt.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.secondaryText,
+                )
+                  Column(verticalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                    InkTextButton(label = "Save color guide", compact = true,
+                        enabled = !state.mangaEditBusy,
+                        onClick = { viewModel.saveMangaColorStyle(colorGuide, preserveDrawing) })
+                    InkTextButton(label = "Reset guide", compact = true,
+                        enabled = !state.mangaEditBusy,
+                        onClick = { colorGuide = com.ihy2ln.weaverse.core.media.MangaColorPolicy.DEFAULT_GUIDE; preserveDrawing = true })
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     InkTextButton(
                         label = if (state.editorModelsRefreshing) "Refreshing…" else "Refresh model list",
@@ -296,170 +371,74 @@ fun ImportedMangaEditorScreen(
                         state.editorImageModels.isEmpty())
                 ) {
                     Text(
-                        "No selectable models are cached. Save an OpenRouter key, then tap Refresh model list.",
+                          "No selectable models are cached. Save an OpenRouter key, then tap Refresh model list.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.error,
                     )
+                  }
+                    }
+                    "AI" -> {
+                        Text("Choose an action and scope. Run starts a request using your configured models.")
+                        listOf("Translate", "Colorize", "Colorize + Translate").forEach { action ->
+                            FilterChip(selected = aiAction == action, onClick = { aiAction = action }, label = { Text(action) })
+                        }
+                        Row {
+                            FilterChip(selected = !chapterScope, onClick = { chapterScope = false }, label = { Text("Page") })
+                            FilterChip(selected = chapterScope, enabled = initialMangaChapterId != null, onClick = { chapterScope = true }, label = { Text("Chapter") })
+                        }
+                        MangaTool("AI models and color guide", { sheet = "Settings" })
+                        Button(enabled = !state.mangaEditBusy && (!chapterScope || initialMangaChapterId != null), onClick = {
+                            sheet = null
+                            if (chapterScope) initialMangaChapterId?.let { id ->
+                                when (aiAction) {
+                                    "Translate" -> viewModel.translateDownloadedChapter(id)
+                                    "Colorize" -> viewModel.colorizeDownloadedChapter(id)
+                                    else -> viewModel.colorizeAndTranslateChapter(id)
+                                }
+                            } else when (aiAction) {
+                                "Translate" -> viewModel.translateActiveMangaPageToEnglish()
+                                "Colorize" -> viewModel.colorizeActiveMangaPage()
+                                else -> viewModel.colorizeAndTranslateActivePage()
+                            }
+                        }) { Text("Run ${aiAction.lowercase()} · ${if (chapterScope) "chapter" else "page"}") }
+                    }
+                    "Pages" -> pages.forEachIndexed { index, page ->
+                        MangaTool("Page ${index + 1}", { viewModel.switchPage(page.id); sheet = null })
+                    }
+                    "Text" -> {
+                        MangaTool("Add text", { selected?.let { viewModel.addTextOverlay(it.messageId, it.blockId) }; sheet = null }, selected != null)
+                        Text("Tap a text box to select it; tap again for formatting. Drag its center to move it.")
+                        MangaTool("Re-layout page translations", { sheet = null; viewModel.relayoutMangaTranslations() }, !state.mangaEditBusy)
+                        selected?.overlays?.filter { it.source == "manga-translation" }?.forEach { overlay ->
+                            MangaTool("Re-layout: ${overlay.text.take(45)}", { sheet = null; viewModel.relayoutMangaTranslations(overlay.id) }, !state.mangaEditBusy)
+                        }
+                    }
+                    "More" -> {
+                        MangaTool(if (showOriginal) "Show edited page" else "Show original page", { showOriginal = !showOriginal; sheet = null })
+                        MangaTool("Pages · ${pageIndex + 1}/${pages.size.coerceAtLeast(1)}", { sheet = "Pages" })
+                        MangaTool("AI settings", { sheet = "Settings" })
+                        MangaTool("Status / review", { sheet = "Status" })
+                        MangaTool("Reset zoom", { zoom = 1f; panX = 0f; panY = 0f; sheet = null })
+                        MangaTool("Separate panels (AI)", { selected?.let { viewModel.separatePanels(it.messageId, it.blockId, useAi = true) }; sheet = null }, selected != null && !state.mangaEditBusy && !showOriginal)
+                        MangaTool("Separate panels offline", { selected?.let { viewModel.separatePanels(it.messageId, it.blockId, useAi = false) }; sheet = null }, selected != null && !state.mangaEditBusy && !showOriginal)
+                        MangaTool("Export PNG", { viewModel.exportStoryboardPage(); sheet = null })
+                    }
+                    "Status" -> {
+                        Text(state.storyboardStatus.ifBlank { "No processing messages." })
+                        if (state.mangaEditBusy) MangaTool("Stop processing", viewModel::stopMangaEditProcessing)
+                        if (review) MangaTool("Review translation", { sheet = null; editing = true; viewModel.openActiveMangaReview() }, !state.mangaEditBusy)
+                    }
                 }
-                }
-            }
-        }
-        if (state.storyboardStatus.isNotBlank()) {
-            // Results can run several sentences; keep one line unless it is tapped, so a
-            // finished translation does not push the page it just produced off screen.
-            Text(
-                state.storyboardStatus,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = if (statusExpanded) Int.MAX_VALUE else 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { statusExpanded = !statusExpanded }
-                    .padding(horizontal = InkSpacing.md, vertical = 2.dp),
-            )
-        }
-        if (state.mangaEditBusy) {
-            val progress = state.mangaEditCurrent.toFloat() / state.mangaEditTotal.coerceAtLeast(1)
-            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = InkSpacing.md, vertical = 4.dp)) {
-                LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "${state.mangaEditAction} · ${state.mangaEditCurrent}/${state.mangaEditTotal}",
-                        style = MaterialTheme.typography.labelSmall,
-                    )
-                    InkTextButton(label = "Stop", onClick = viewModel::stopMangaEditProcessing, compact = true)
-                }
-            }
-        }
-        LazyRow(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
-            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
-        ) {
-            items(pages, key = { it.id }) { page ->
-                val index = pages.indexOf(page)
-                FilterChip(
-                    selected = page.id == state.activePageId,
-                    onClick = { viewModel.switchPage(page.id) },
-                    label = { Text("${index + 1}") },
-                )
-            }
-        }
-        HorizontalDivider()
-        if (state.mediaPanels.isEmpty()) {
-            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Text("Loading the imported page…", color = tokens.secondaryText)
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(InkSpacing.sm),
-            ) {
-                items(state.mediaPanels, key = { "${it.messageId}:${it.blockId}" }) { panel ->
-                    ImportedMangaPagePanel(
-                        panel = panel,
-                        showOriginal = showOriginal,
-                        selected = "${panel.messageId}::${panel.blockId}" == state.selectedMediaKey,
-                        onSelect = { viewModel.selectMedia(panel.messageId, panel.blockId) },
-                        onOverlayMove = { id, x, y ->
-                            viewModel.moveTextOverlay(panel.messageId, panel.blockId, id, x, y)
-                        },
-                        onOverlayResize = { id, width ->
-                            viewModel.resizeTextOverlay(panel.messageId, panel.blockId, id, width)
-                        },
-                        onOverlayTap = { id -> viewModel.openOverlayEditor(panel.messageId, panel.blockId, id) },
-                    )
-                }
-            }
-        }
-        HorizontalDivider()
-        Column(
-            modifier = Modifier.fillMaxWidth().background(tokens.panel).padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
-        ) {
-            // Counter folded into the action row so the bar costs one line, not two.
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "${pageIndex + 1}/${pages.size.coerceAtLeast(1)}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = tokens.secondaryText,
-                )
-                InkTextButton(
-                    label = "‹ Prev",
-                    onClick = { pages.getOrNull(pageIndex - 1)?.let { viewModel.switchPage(it.id) } },
-                    enabled = pageIndex > 0,
-                    compact = true,
-                )
-                InkTextButton(
-                    label = "Next ›",
-                    onClick = { pages.getOrNull(pageIndex + 1)?.let { viewModel.switchPage(it.id) } },
-                    enabled = pageIndex < pages.lastIndex,
-                    compact = true,
-                )
-                InkTextButton(
-                    label = "Translate",
-                    onClick = viewModel::translateActiveMangaPageToEnglish,
-                    enabled = !state.mangaEditBusy,
-                    compact = true,
-                )
-                InkTextButton(
-                    label = "Colorize",
-                    onClick = viewModel::colorizeActiveMangaPage,
-                    enabled = !state.mangaEditBusy,
-                    compact = true,
-                )
-                InkTextButton(
-                    label = "Translate chapter",
-                    onClick = { initialMangaChapterId?.let(viewModel::translateDownloadedChapter) },
-                    enabled = !state.mangaEditBusy && initialMangaChapterId != null,
-                    compact = true,
-                )
-                InkTextButton(
-                    label = "Colorize chapter",
-                    onClick = { initialMangaChapterId?.let(viewModel::colorizeDownloadedChapter) },
-                    enabled = !state.mangaEditBusy && initialMangaChapterId != null,
-                    compact = true,
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
-            ) {
-                InkTextButton(
-                    label = "Page editor",
-                    onClick = { selected?.let { viewModel.openImageEditor(it.messageId, it.blockId) } },
-                    enabled = selected != null && !showOriginal,
-                    compact = true,
-                )
-                InkTextButton(
-                    label = "Add text",
-                    onClick = { selected?.let { viewModel.addTextOverlay(it.messageId, it.blockId) } },
-                    enabled = selected != null && !showOriginal,
-                    compact = true,
-                )
-                InkTextButton(
-                    label = "Separate panels (AI)",
-                    onClick = { selected?.let { viewModel.separatePanels(it.messageId, it.blockId, useAi = true) } },
-                    enabled = selected != null && !showOriginal && !state.mangaEditBusy,
-                    compact = true,
-                )
-                InkTextButton(
-                    label = "Separate offline",
-                    onClick = { selected?.let { viewModel.separatePanels(it.messageId, it.blockId, useAi = false) } },
-                    enabled = selected != null && !showOriginal && !state.mangaEditBusy,
-                    compact = true,
-                )
-                InkTextButton(label = "Export PNG", onClick = viewModel::exportStoryboardPage, compact = true)
+                MangaTool("Close", { sheet = null })
             }
         }
     }
+}
+
+@Composable
+private fun MangaTool(label: String, onClick: () -> Unit, enabled: Boolean = true) {
+    TextButton(onClick = onClick, enabled = enabled, modifier = Modifier.heightIn(min = 48.dp),
+        contentPadding = PaddingValues(horizontal = 8.dp)) { Text(label, maxLines = 2) }
 }
 
 @Composable
@@ -467,41 +446,46 @@ private fun ImportedMangaPagePanel(
     panel: RpMediaRef,
     showOriginal: Boolean,
     selected: Boolean,
+    editable: Boolean,
     onSelect: () -> Unit,
     onOverlayMove: (String, Float, Float) -> Unit,
-    onOverlayResize: (String, Float) -> Unit,
+    onOverlayResize: (String, Float, Float, Float, Float) -> Unit,
     onOverlayTap: (String) -> Unit,
+    selectionResetKey: Int,
+    onOverlaySelected: (String?) -> Unit,
 ) {
     val path = panel.originalPath.takeIf { showOriginal && it.isNotBlank() } ?: panel.path
     val ratio = remember(path) { imageAspectRatio(path) }
     val borderColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = InkSpacing.sm).border(2.dp, borderColor, RoundedCornerShape(6.dp)),
+        modifier = Modifier.fillMaxWidth().then(if (editable && selected) Modifier.border(1.dp, borderColor) else Modifier),
         color = MaterialTheme.colorScheme.surface,
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(ratio)
-                .clip(RoundedCornerShape(6.dp))
                 .clickable(onClick = onSelect),
         ) {
             AsyncImage(
                 model = File(path),
-                contentDescription = if (showOriginal) "Original imported manga page" else "Editable manga page",
+                contentDescription = if (showOriginal) "Original imported manga page" else "Manga page",
                 contentScale = ContentScale.FillBounds,
                 modifier = Modifier.fillMaxSize(),
             )
             if (!showOriginal && panel.overlays.isNotEmpty()) {
                 TextOverlayLayer(
                     overlays = panel.overlays,
-                    editable = true,
+                    editable = editable,
                     onMove = onOverlayMove,
                     onResize = onOverlayResize,
                     onTap = onOverlayTap,
+                    onSelected = onOverlaySelected,
+                    selectionResetKey = selectionResetKey,
+                    onSelectionCleared = { onOverlaySelected(null) },
                 )
             }
-            if (!showOriginal && panel.variantKind != "original") {
+            if (editable && !showOriginal && panel.variantKind != "original") {
                 Text(
                     panel.variantKind.replaceFirstChar { it.uppercase() },
                     style = MaterialTheme.typography.labelSmall,
@@ -523,5 +507,5 @@ private fun imageAspectRatio(path: String): Float {
     val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeFile(path, options)
     if (options.outWidth <= 0 || options.outHeight <= 0) return 0.7f
-    return (options.outWidth.toFloat() / options.outHeight.toFloat()).coerceIn(0.25f, 3f)
+    return (options.outWidth.toFloat() / options.outHeight.toFloat())
 }

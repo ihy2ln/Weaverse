@@ -29,6 +29,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
+import eu.kanade.tachiyomi.source.model.FilterList
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -72,6 +73,9 @@ class MangaDownloadRepository @Inject constructor(
 
     suspend fun searchPage(sourceId: String, query: String, page: Int): List<MangaSearchResult> =
         registry.get(sourceId)?.searchPage(query, page).orEmpty()
+
+    suspend fun searchPage(sourceId: String, query: String, page: Int, filters: FilterList): List<MangaSearchResult> =
+        registry.get(sourceId)?.searchPage(query, page, filters).orEmpty()
 
     suspend fun loadChapters(manga: MangaSearchResult): List<MangaChapter> =
         registry.get(manga.sourceId)?.chapters(manga).orEmpty()
@@ -134,6 +138,11 @@ class MangaDownloadRepository @Inject constructor(
                 coverUrl = manga.coverUrl.orEmpty(),
                 canonicalUrl = manga.canonicalUrl,
                 updatedAt = System.currentTimeMillis(),
+                authors = manga.authors.joinToString("\u001f"),
+                artists = manga.artists.joinToString("\u001f"),
+                tags = manga.tags.joinToString("\u001f"),
+                languages = manga.languages.joinToString("\u001f"),
+                publicationStatus = manga.status,
             ),
         )
         if (favorite) {
@@ -165,10 +174,34 @@ class MangaDownloadRepository @Inject constructor(
             errorMessage = "",
             updatedAt = System.currentTimeMillis(),
             downloadedAt = existing?.downloadedAt,
+            scanlator = chapter.scanlator,
+            dateUpload = chapter.dateUpload,
+            read = existing?.read ?: false,
+            bookmarked = existing?.bookmarked ?: false,
+            lastPageRead = existing?.lastPageRead ?: 0,
+            lastReadAt = existing?.lastReadAt ?: 0L,
         )
         db.mangaDao().upsertChapter(entity)
         return entity
     }
+
+    suspend fun recordReadingProgress(chapterId: String, pageIndex: Int, pageCount: Int) {
+        if (chapterId.isBlank()) return
+        db.mangaDao().recordReadingProgress(
+            chapterId = chapterId,
+            pageIndex = pageIndex.coerceAtLeast(0),
+            readAt = System.currentTimeMillis(),
+            finished = pageCount > 0 && pageIndex >= pageCount - 1,
+        )
+    }
+
+    suspend fun setChapterRead(chapter: MangaChapterEntity, read: Boolean) =
+        db.mangaDao().setChapterRead(chapter.id, read)
+
+    suspend fun setChapterBookmarked(chapter: MangaChapterEntity, bookmarked: Boolean) =
+        db.mangaDao().setChapterBookmarked(chapter.id, bookmarked)
+
+    suspend fun clearReadingHistory() = db.mangaDao().clearReadingHistory()
 
     suspend fun enqueue(chapter: MangaChapterEntity) {
         val pages = db.mangaDao().getPages(chapter.id)

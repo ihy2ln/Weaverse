@@ -146,6 +146,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -173,6 +174,10 @@ private const val ADVENTURE_SCENE_ROLE = "scene"
  * the first unrelated Vision model returned by the cache.
  */
 private const val MANGA_TRANSLATION_LUNA_REF = "openrouter/openai/gpt-5.6-luna"
+
+/** Share of a resolved container that lettering may occupy, inside the balloon curve. */
+private const val TextSafeWidthFraction = 0.84f
+private const val TextSafeHeightFraction = 0.78f
 private val ExplicitSceneAdvance = Regex(
     "\\b(next scene|advance (?:the )?scene|move (?:on|forward)|leave this scene|go to the next)\\b",
     RegexOption.IGNORE_CASE,
@@ -321,18 +326,11 @@ class RoleplayChatViewModel @Inject constructor(
                 }
             }
             launch {
-                combine(settings.preferences, modelCache.models) { prefs, dtos ->
-                    prefs to modelCache.toModelInfo(dtos)
-                }.collect { (prefs, models) ->
-                    val visionModels = models
-                        .filter { model -> model.available && model.supportsImages }
-                        .sortedBy { it.displayName.lowercase() }
-                    val textModels = models
-                        .filter { model -> model.available && !model.isTts && !model.generatesImages }
-                        .sortedBy { it.displayName.lowercase() }
-                    val imageModels = models
-                        .filter { model -> model.available && model.supportsImages && model.generatesImages }
-                        .sortedBy { it.displayName.lowercase() }
+                combine(settings.preferences, modelCache.models, openRouterRepository.imageEditingModels) { prefs, dtos, images ->
+                    Triple(prefs, modelCache.toModelInfo(dtos), images)
+                }.collect { (prefs, models, imageModels) ->
+                    val visionModels = com.ihy2ln.weaverse.ai.MangaEditorModels.vision(models)
+                    val textModels = com.ihy2ln.weaverse.ai.MangaEditorModels.text(models)
                     val defaultModelRef = prefs.defaultModelRef
                     val preferredVision = prefs.mangaVisionModelRef.takeIf { ref ->
                         visionModels.any { PromptModelSelection.modelRef(it.id) == ref }
@@ -359,6 +357,8 @@ class RoleplayChatViewModel @Inject constructor(
                             editorVisionModelRef = preferredVision,
                             editorTextModelRef = preferredText,
                             editorImageModelRef = preferredImage,
+                            mangaColorStyleGuide = prefs.mangaColorStyleGuide,
+                            mangaPreserveLineArt = prefs.mangaPreserveLineArt,
                         )
                     }
                     contextLimit = ContextMeter.limitFor(
@@ -1368,17 +1368,65 @@ class RoleplayChatViewModel @Inject constructor(
     }
 
     fun moveTextOverlay(messageId: String, blockId: String, overlayId: String, xPercent: Float, yPercent: Float) {
-        updateTextOverlay(messageId, blockId, overlayId) { it.copy(xPercent = xPercent, yPercent = yPercent) }
+        updateTextOverlay(messageId, blockId, overlayId) { it.copy(xPercent = xPercent, yPercent = yPercent, manuallyAdjusted = true) }
     }
 
-    fun resizeTextOverlay(messageId: String, blockId: String, overlayId: String, widthPercent: Float) {
-        updateTextOverlay(messageId, blockId, overlayId) { it.copy(widthPercent = widthPercent) }
+    fun resizeTextOverlay(messageId: String, blockId: String, overlayId: String, x: Float, y: Float, width: Float, height: Float) {
+        updateTextOverlay(messageId, blockId, overlayId) {
+            it.copy(xPercent = x, yPercent = y, widthPercent = width, heightPercent = height, manuallyAdjusted = true)
+        }
     }
 
     fun saveTextOverlay(messageId: String, blockId: String, overlay: TextOverlay) {
-        updateTextOverlay(messageId, blockId, overlay.id) { overlay }
+        updateTextOverlay(messageId, blockId, overlay.id) { overlay.copy(manuallyAdjusted = true) }
     }
 
+
+    /** Re-typeset existing wording only. Never changes the cleaned image or source mask. */
+    fun relayoutMangaTranslations(overlayId: String? = null) {
+        if (_uiState.value.mangaEditBusy) return
+        val targets = _uiState.value.mediaPanels.toList()
+        viewModelScope.launch {
+            var changed = 0
+            val failures = mutableListOf<String>()
+            for (panel in targets) {
+                val overlays = panel.overlays.filter { it.source == "manga-translation" }
+                if (overlays.isEmpty()) continue
+                val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                android.graphics.BitmapFactory.decodeFile(panel.path, options)
+                if (options.outWidth <= 0 || options.outHeight <= 0) continue
+                val regions = overlays.map {
+                    it.toPanelTextRegion().copy(edited = if (overlayId != null) it.id != overlayId else it.manuallyAdjusted)
+                }
+                val planned = MangaLetteringPlacement.constrain(regions, options.outWidth.toFloat() / options.outHeight)
+                val problems = MangaLetteringValidator.problems(planned, options.outWidth, options.outHeight)
+                if (problems.isNotEmpty()) { failures += problems; continue }
+                val current = rawMessages.find { it.id == panel.messageId } ?: continue
+                val blocks = documentFromJson(current.contentJson).blocks.toMutableList()
+                val index = blocks.indexOfFirst { it.id == panel.blockId }
+                if (index < 0) continue
+                val replacements = planned.filterNot { it.edited }.associateBy { it.id }
+                fun replace(existing: List<TextOverlay>) = existing.map { before ->
+                    replacements[before.id]?.let { after ->
+                        changed++
+                        before.copy(xPercent = (after.x + after.w / 2) * 100, yPercent = (after.y + after.h / 2) * 100,
+                            widthPercent = after.w * 100, heightPercent = after.h * 100,
+                            fontSizeSp = after.fontSizePx * .55f, autoFit = true,
+                            manuallyAdjusted = before.manuallyAdjusted)
+                    } ?: before
+                }
+                blocks[index] = when (val block = blocks[index]) {
+                    is MediaBlock -> block.copy(overlays = replace(block.overlays))
+                    is MediaStackBlock -> block.copy(overlays = replace(block.overlays))
+                    else -> continue
+                }
+                persistMessageBlocks(current, blocks)
+            }
+            _uiState.update { it.copy(storyboardStatus = if (failures.isNotEmpty())
+                "Some placements were kept unchanged: " + failures.distinct().joinToString(" ")
+                else "Re-laid out $changed translation(s). Wording, cleanup and unselected manual edits were kept.") }
+        }
+    }
     fun deleteTextOverlay(messageId: String, blockId: String, overlayId: String) {
         viewModelScope.launch {
             val current = rawMessages.find { it.id == messageId } ?: return@launch
@@ -4328,6 +4376,15 @@ class RoleplayChatViewModel @Inject constructor(
             it.messageId == messageId && it.blockId == blockId
         } ?: return
         if (panel.isAudio) return
+        val persistedRegions = rawMessages.find { it.id == messageId }
+            ?.let { documentFromJson(it.contentJson).blocks }
+            ?.filterIsInstance<MediaBlock>()
+            ?.find { it.id == blockId }
+            ?.overlays
+            ?.filter { it.source == "manga-translation" }
+            ?.map(TextOverlay::toPanelTextRegion)
+            .orEmpty()
+        val reviewRegions = _uiState.value.mangaTranslationReviewRegions[blockId].orEmpty()
         _uiState.update {
             it.copy(
                 imageEditor = PanelEditorUi(
@@ -4335,6 +4392,17 @@ class RoleplayChatViewModel @Inject constructor(
                     blockId = blockId,
                     mediaId = panel.mediaId,
                     path = panel.path,
+                    originalPath = panel.originalPath,
+                    regions = if (reviewRegions.isNotEmpty()) reviewRegions else persistedRegions,
+                    selectedRegionId = (reviewRegions.ifEmpty { persistedRegions }).firstOrNull()?.id,
+                    status = if (reviewRegions.isNotEmpty()) {
+                        "Automatic translation was not applied: " +
+                            it.mangaTranslationReviewReasons[blockId].orEmpty().ifBlank { "The page could not be verified." } +
+                            " Inspect the draft text and source lettering. Double-tap a text box to correct its translation; " +
+                            "use the cleanup tools for remaining source letters, then Save when satisfied."
+                    } else if (persistedRegions.isNotEmpty()) {
+                        "Drag text to move it; use Whiteout for missed source text."
+                    } else "",
                 ),
             )
         }
@@ -4342,6 +4410,17 @@ class RoleplayChatViewModel @Inject constructor(
 
     fun closeImageEditor() {
         _uiState.update { it.copy(imageEditor = null) }
+    }
+
+    fun openActiveMangaReview() {
+        if (_uiState.value.mangaEditBusy) return
+        val state = _uiState.value
+        val panel = state.mediaPanels.firstOrNull { it.blockId in state.mangaTranslationReviewRegions }
+        if (panel == null) {
+            _uiState.update { it.copy(storyboardStatus = "No review draft is available on this page. Run Translate again to create a new draft.") }
+            return
+        }
+        openImageEditor(panel.messageId, panel.blockId)
     }
 
     fun editorSetStatus(status: String) {
@@ -4380,21 +4459,45 @@ class RoleplayChatViewModel @Inject constructor(
         viewModelScope.launch { settings.setMangaImageModel(modelRef) }
     }
 
+    fun saveMangaColorStyle(guide: String, preserve: Boolean) {
+        _uiState.update { it.copy(mangaColorStyleGuide = guide.take(2000), mangaPreserveLineArt = preserve) }
+        viewModelScope.launch { settings.setMangaColorStyle(guide, preserve) }
+    }
+
+    private suspend fun colorizeMangaImage(path: String, modelRef: String): Pair<ByteArray, String> {
+        val prefs = settings.preferences.first()
+        if (prefs.mangaPreserveLineArt) com.ihy2ln.weaverse.core.media.MangaColorTransfer.validateSource(path)
+        val attachment = PanelAi.imageAttachmentFor(path, maxDim = 1536)
+            ?: error("Could not read the source image.")
+        val generated = aiGeneration.generateImage(
+            prompt = com.ihy2ln.weaverse.core.media.MangaColorPolicy.prompt(prefs.mangaColorStyleGuide),
+            modelRef = modelRef,
+            imageAttachments = listOf(attachment),
+        )
+        return if (prefs.mangaPreserveLineArt) {
+            com.ihy2ln.weaverse.core.media.MangaColorTransfer.preserveDrawing(path, generated.first) to "image/png"
+        } else generated
+    }
+
     fun refreshEditorModels() {
         if (_uiState.value.editorModelsRefreshing) return
         viewModelScope.launch {
             _uiState.update {
                 it.copy(editorModelsRefreshing = true, editorModelsStatus = "Refreshing OpenRouter models…")
             }
-            runCatching { openRouterRepository.fetchModels(forceRefresh = true) }
+            runCatching {
+                val models = openRouterRepository.fetchModels(forceRefresh = true)
+                openRouterRepository.fetchImageEditingModels()
+                models
+            }
                 .onSuccess { models ->
-                    val visionCount = models.count { it.supportsImages }
-                    val textCount = models.count { !it.isTts && !it.generatesImages }
-                    val imageCount = models.count { it.supportsImages && it.generatesImages }
+                    val visionCount = com.ihy2ln.weaverse.ai.MangaEditorModels.vision(models).size
+                    val textCount = com.ihy2ln.weaverse.ai.MangaEditorModels.text(models).size
+                    val imageCount = openRouterRepository.imageEditingModels.value.size
                     _uiState.update {
                         it.copy(
                             editorModelsStatus =
-                                "Loaded $visionCount Vision, $textCount translation and $imageCount image-editing models.",
+                                "Compatible catalog: $visionCount OCR, $textCount text, $imageCount reference-image models. Not live-tested on your account.",
                         )
                     }
                 }
@@ -4449,13 +4552,172 @@ class RoleplayChatViewModel @Inject constructor(
             }
         }
 
-    private fun startMangaTranslation(pageIds: Set<String>, scopeLabel: String) {
-        if (_uiState.value.mangaEditBusy) return
-        mangaEditJob = viewModelScope.launch {
+    private fun MangaCleanupBounds.toRectF(): RectF = RectF(x, y, right, bottom)
+
+    /**
+     * Result of rendering one page. [cleaned] is the cleaned plate only: the English lives on
+     * as editable overlays, so it is never burned into the stored picture.
+     */
+    private class MangaPageRender(
+        val outcome: MangaPageOutcome,
+        val regions: List<PanelTextRegion>,
+        val cleaned: android.graphics.Bitmap?,
+        val reason: String,
+    )
+
+    /**
+     * Resolves where each English replacement sits and what colour it must be, measured on the
+     * already-cleaned plate. The container walk finds the white balloon or the black caption
+     * box that held the source glyphs, which keeps the replacement off the artwork and lets a
+     * dark caption take white lettering instead of unreadable black.
+     */
+    private fun placedEnglishRegions(
+        bitmap: android.graphics.Bitmap,
+        regions: List<PanelTextRegion>,
+    ): List<PanelTextRegion> {
+        if (regions.isEmpty()) return regions
+        val containers = ImageOps.textContainers(bitmap, regions.map { it.cleanupRect() })
+        return regions.mapIndexed { index, region ->
+            val frame = containers.getOrNull(index) ?: return@mapIndexed region
+            val box = frame.box
+            // The container is the balloon's bounding rectangle, but a balloon is an ellipse:
+            // text filling the rectangle spills out at the curved top and bottom. Inset to the
+            // area a letterer would actually set inside the shape.
+            val centerX = (box.left + box.right) / 2f
+            val centerY = (box.top + box.bottom) / 2f
+            val safeW = ((box.right - box.left) * TextSafeWidthFraction).coerceIn(0.01f, 1f)
+            val safeH = ((box.bottom - box.top) * TextSafeHeightFraction).coerceIn(0.01f, 1f)
+            region.copy(
+                x = (centerX - safeW / 2f).coerceIn(0f, 1f - safeW),
+                y = (centerY - safeH / 2f).coerceIn(0f, 1f - safeH),
+                w = safeW,
+                h = safeH,
+                cleanupX = if (region.cleanupX >= 0f) region.cleanupX else region.x,
+                cleanupY = if (region.cleanupY >= 0f) region.cleanupY else region.y,
+                cleanupW = if (region.cleanupW > 0f) region.cleanupW else region.w,
+                cleanupH = if (region.cleanupH > 0f) region.cleanupH else region.h,
+                fontSizePx = MangaLetteringPlacement.preferredSize(region, bitmap.width.toFloat() / bitmap.height),
+                fillHex = ImageOps.colorIntToHex(ImageOps.contrastingFillColor(frame.backgroundLuminance)),
+                strokeHex = ImageOps.colorIntToHex(ImageOps.contrastingStrokeColor(frame.backgroundLuminance)),
+            )
+        }
+    }
+
+    /**
+     * The page as the reader would see it — cleaned plate plus the English layers — built only
+     * to be shown to the verifier. Nothing here is written to disk.
+     */
+    private fun compositeWithEnglish(
+        cleaned: android.graphics.Bitmap,
+        regions: List<PanelTextRegion>,
+    ): android.graphics.Bitmap {
+        val composite = cleaned.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
+        ImageOps.typesetLayers(
+            composite,
+            regions.filter { it.visible && it.translation.isNotBlank() }.map { it.toTypesetLayer() },
+        )
+        return composite
+    }
+
+    /**
+     * Cleans, letters and verifies one page, retrying at most once with the boxes Vision still
+     * found source lettering in. Every attempt reloads the original file, so a retry cleans
+     * fresh pixels instead of compounding damage from the attempt before it.
+     */
+    private suspend fun renderTranslatedPage(
+        path: String,
+        visionModelRef: String,
+        planned: List<PanelTextRegion>,
+        onStage: (String) -> Unit,
+    ): MangaPageRender {
+        var cleanupBounds = MangaTranslationPlan.cleanupBounds(planned)
+        var residual: List<PanelTextRegion> = emptyList()
+        var reason = ""
+        for (attempt in 0..1) {
+            val cleaned = ImageOps.loadBitmap(path, maxDim = 3200)
+                ?: return MangaPageRender(
+                    MangaPageOutcome.Rejected,
+                    planned,
+                    null,
+                    "the original picture could not be opened",
+                )
+            var retained = false
+            try {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            onStage(if (attempt == 0) "Cleaning" else "Retrying")
+            ImageOps.replaceTextRegions(cleaned, cleanupBounds.map { it.toRectF() })
+            onStage("Typesetting")
+            val safePlacement = MangaLetteringPlacement.constrain(placedEnglishRegions(cleaned, planned), cleaned.width.toFloat() / cleaned.height)
+            val placed = try {
+                PanelAi.refineLettering(aiGeneration, visionModelRef, cleaned, safePlacement)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                safePlacement
+            }
+            val placementProblems = MangaLetteringValidator.problems(placed, cleaned.width, cleaned.height)
+            if (placementProblems.isNotEmpty()) return MangaPageRender(MangaPageOutcome.Rejected,
+                placed.map { it.copy(reviewRequired = true) }, null, placementProblems.joinToString("\n"))
+            onStage("Verifying")
+            val composite = compositeWithEnglish(cleaned, placed)
+            val verification = try {
+                PanelAi.verifyNoForeignText(aiGeneration, visionModelRef, composite)
+            } finally {
+                composite.recycle()
+            }
+            if (verification.passed) {
+                retained = true
+                return MangaPageRender(
+                    if (attempt == 0) MangaPageOutcome.Translated else MangaPageOutcome.Retried,
+                    placed,
+                    cleaned,
+                    "",
+                )
+            }
+            cleaned.recycle()
+            residual = verification.residualRegions
+            reason = verification.error
+                ?: "source lettering was still visible in ${residual.size} region(s)"
+            // A verifier that could not run gives no boxes to widen, so a second pass would do
+            // exactly what the first did. Fail closed and keep the original page.
+            if (attempt == 1 || residual.isEmpty()) break
+            cleanupBounds = MangaTranslationPlan.mergeCleanupBounds(
+                cleanupBounds,
+                MangaTranslationPlan.cleanupBounds(residual),
+            )
+            } finally {
+                if (!retained && !cleaned.isRecycled) cleaned.recycle()
+            }
+        }
+        return MangaPageRender(
+            MangaPageOutcome.Rejected,
+            MangaTranslationPlan.reviewRegions(planned, residual),
+            null,
+            reason.ifBlank { "the page could not be verified" },
+        )
+    }
+
+    fun colorizeAndTranslateActivePage() {
+        val id = _uiState.value.activePageId
+        if (id.isNotBlank()) startMangaTranslation(setOf(id), "page", colorizeFirst = true)
+    }
+
+    fun colorizeAndTranslateChapter(chapterId: String) {
+        val ids = _uiState.value.pages.filter { it.sourceChapterId == chapterId }.mapTo(linkedSetOf()) { it.id }
+        if (ids.isNotEmpty()) startMangaTranslation(ids, "chapter", colorizeFirst = true)
+    }
+
+    private fun startMangaTranslation(pageIds: Set<String>, scopeLabel: String, colorizeFirst: Boolean = false) {
+        if (_uiState.value.mangaEditBusy || mangaEditJob?.isActive == true) return
+        // Claim the job before suspending so repeated taps cannot start parallel bitmap jobs.
+        _uiState.update { it.copy(mangaEditBusy = true, mangaEditAction = "Translating to English") }
+        mangaEditJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.Default) {
             var completed = 0
             var translatedPanels = 0
+            var retriedPanels = 0
             var translatedRegions = 0
             var rejectedPages = 0
+            var alreadyEnglish = 0
             try {
                 val targets = mangaEditTargets(pageIds)
                 if (targets.isEmpty()) {
@@ -4473,7 +4735,15 @@ class RoleplayChatViewModel @Inject constructor(
                 val modelRef = visionModelRef()
                 if (modelRef == null) {
                     _uiState.update {
-                        it.copy(storyboardStatus = "English translation needs a Vision-capable model in Settings → Writing.")
+                        it.copy(
+                            storyboardStatus = if (aiGeneration.hasApiKey()) {
+                                "English translation found no Vision-capable model. Open Settings → " +
+                                    "AI Connections and refresh the model list, then try again."
+                            } else {
+                                "English translation needs an AI connection. Add your API key in " +
+                                    "Settings → AI Connections."
+                            },
+                        )
                     }
                     return@launch
                 }
@@ -4487,26 +4757,58 @@ class RoleplayChatViewModel @Inject constructor(
                 val workingBlocks = targets.map { it.message }.distinctBy { it.id }.associate { message ->
                     message.id to documentFromJson(message.contentJson).blocks.toMutableList()
                 }
-                targets.forEachIndexed { index, target ->
-                    _uiState.update {
-                        it.copy(
-                            storyboardStatus =
-                                "Translating ${index + 1}/${targets.size} · Vision: $modelLabel · Text: $textModelLabel…",
-                            mangaEditCurrent = index,
-                        )
+                val combinedImageModel = if (colorizeFirst) imageEditModelRef()
+                    ?: error("Choose an image-editing model before colorizing and translating.") else null
+                targets.forEachIndexed { index, sourceTarget ->
+                    var target = sourceTarget
+                    fun stage(step: String) {
+                        _uiState.update {
+                            it.copy(
+                                storyboardStatus = "$step ${index + 1}/${targets.size} · " +
+                                    "Vision: $modelLabel · Text: $textModelLabel…",
+                                mangaEditCurrent = index,
+                            )
+                        }
                     }
-                    val regions = PanelAi.readText(aiGeneration, modelRef, target.path, "English")
+                    if (combinedImageModel != null) {
+                        stage("Colorizing before translation")
+                        val (bytes, mime) = colorizeMangaImage(target.path, combinedImageModel)
+                        val media = mediaRepository.importFromBytes(bytes,
+                            "manga-color-translate-${UUID.randomUUID()}.${if (mime == "image/png") "png" else "jpg"}", mime)
+                        val blocks = workingBlocks.getValue(target.message.id)
+                        val blockIndex = blocks.indexOfFirst { it.id == target.block.id }
+                        val colored = target.block.copy(mediaId = media.id,
+                            originalMediaId = target.block.originalMediaId ?: target.block.mediaId,
+                            variantKind = "colorized")
+                        blocks[blockIndex] = colored
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                            persistMessageBlocks(target.message, blocks)
+                        }
+                        target = target.copy(block = colored, path = mediaRepository.resolveFile(media).absolutePath)
+                    }
+                    stage("Reading")
+                    val detected = PanelAi.readText(aiGeneration, modelRef, target.path, "English")
                         .orEmpty()
                         .filter { it.translation.isNotBlank() || it.original.isNotBlank() }
+                    // Lettering already printed in English is left exactly as the artist drew it.
+                    val planned = MangaTranslationPlan.translatable(detected)
+                    if (planned.isEmpty()) {
+                        // A page with no text at all is not a page that was already English.
+                        if (MangaTranslationPlan.preservedEnglish(detected).isNotEmpty()) alreadyEnglish++
+                        completed = index + 1
+                        _uiState.update { it.copy(mangaEditCurrent = completed) }
+                        return@forEachIndexed
+                    }
+                    stage("Translating")
                     val translatedText = PanelAi.translateTexts(
                         aiGeneration,
                         textModelRef,
-                        regions.map { region -> region.original.ifBlank { region.translation } },
+                        planned.map { region -> region.original.ifBlank { region.translation } },
                         "English",
                     )
-                    var finalRegions = if (translatedText != null && translatedText.size == regions.size) {
-                        regions.zip(translatedText) { region, translation -> region.copy(translation = translation) }
-                    } else regions
+                    var finalRegions = if (translatedText != null && translatedText.size == planned.size) {
+                        planned.zip(translatedText) { region, translation -> region.copy(translation = translation) }
+                    } else planned
                     PanelAi.proofreadTexts(
                         aiGeneration,
                         textModelRef,
@@ -4515,73 +4817,146 @@ class RoleplayChatViewModel @Inject constructor(
                     )?.takeIf { it.size == finalRegions.size }?.let { polished ->
                         finalRegions = finalRegions.zip(polished) { region, text -> region.copy(translation = text) }
                     }
+                    // Script validation happens before any pixel is touched: a page that failed
+                    // to translate is safer unchanged than cleaned and left blank.
                     val safeRegions = validatedEnglishRegions(finalRegions)
+                    completed = index + 1
                     if (safeRegions == null) {
                         rejectedPages++
-                        completed = index + 1
-                        _uiState.update {
-                            it.copy(
-                                storyboardStatus =
-                                    "Skipped picture ${index + 1}: translation was incomplete or not English. " +
-                                        "The original was kept unchanged.",
-                                mangaEditCurrent = completed,
-                            )
-                        }
+                        markPageNeedsReview(
+                            target = target,
+                            regions = finalRegions,
+                            reason = "the translation was incomplete or was not English",
+                        )
+                        _uiState.update { it.copy(mangaEditCurrent = completed) }
                         return@forEachIndexed
                     }
-                    finalRegions = safeRegions
-                    completed = index + 1
-                    _uiState.update { it.copy(mangaEditCurrent = completed) }
-                    if (regions.isEmpty()) return@forEachIndexed
-                    val blocks = workingBlocks[target.message.id] ?: return@forEachIndexed
-                    val blockIndex = blocks.indexOfFirst { it.id == target.block.id }
-                    val base = blocks.getOrNull(blockIndex) as? MediaBlock ?: return@forEachIndexed
-                    val bitmap = ImageOps.loadBitmap(target.path, maxDim = 3200)
-                        ?: return@forEachIndexed
+                    val render = renderTranslatedPage(target.path, modelRef, safeRegions) { step -> stage(step) }
+                    if (render.cleaned == null) {
+                        rejectedPages++
+                        markPageNeedsReview(target, render.regions, render.reason)
+                        _uiState.update { it.copy(mangaEditCurrent = completed) }
+                        return@forEachIndexed
+                    }
+                    val blocks = workingBlocks[target.message.id]
+                    val blockIndex = blocks?.indexOfFirst { it.id == target.block.id } ?: -1
+                    val base = blocks?.getOrNull(blockIndex) as? MediaBlock
+                    if (base == null) {
+                        render.cleaned.recycle()
+                        _uiState.update { it.copy(mangaEditCurrent = completed) }
+                        return@forEachIndexed
+                    }
                     val entity = try {
-                        typesetOntoPage(bitmap, finalRegions)
                         mediaRepository.importFromBytes(
-                            bytes = ImageOps.toPngBytes(bitmap),
+                            bytes = ImageOps.toPngBytes(render.cleaned),
                             fileName = "manga-english-${UUID.randomUUID()}.png",
                             mimeType = "image/png",
                         )
                     } finally {
-                        bitmap.recycle()
+                        render.cleaned.recycle()
                     }
                     blocks[blockIndex] = base.copy(
                         mediaId = entity.id,
                         originalMediaId = base.originalMediaId ?: base.mediaId,
                         variantKind = "translated",
-                        // The English is painted into the page itself now, so the floating
-                        // label layer would only draw every line a second time.
-                        overlays = base.overlays.filterNot { it.source == "manga-translation" },
+                        // The stored picture is the cleaned plate. English stays a durable layer
+                        // so it can be dragged, resized and re-worded without another render.
+                        overlays = base.overlays.filterNot { it.source == "manga-translation" } +
+                            render.regions
+                                .filter { it.visible && it.translation.isNotBlank() }
+                                .mapIndexed { layerIndex, region -> region.toEditableOverlay(layerIndex) },
                     )
-                    persistMessageBlocks(target.message, blocks)
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                        persistMessageBlocks(target.message, blocks)
+                    }
+                    clearPageReview(
+                        target,
+                        targets.filter { it.block.pageId == target.block.pageId }
+                            .mapTo(mutableSetOf()) { it.block.id },
+                    )
                     translatedPanels++
-                    translatedRegions += finalRegions.size
+                    if (render.outcome == MangaPageOutcome.Retried) retriedPanels++
+                    translatedRegions += render.regions.count { it.translation.isNotBlank() }
+                    _uiState.update { it.copy(mangaEditCurrent = completed) }
                 }
                 _uiState.update {
                     it.copy(
-                        storyboardStatus = if (translatedPanels == 0 && rejectedPages > 0) {
-                            "No pages changed: $rejectedPages picture(s) failed the English lettering check. " +
-                                "Original pages were kept unchanged."
-                        } else if (translatedPanels == 0) {
-                            "No readable text was returned for this $scopeLabel. The original art is unchanged."
-                        } else {
-                            "Lettered $translatedRegions region(s) across $translatedPanels picture(s); " +
-                                "originals unchanged${if (rejectedPages > 0) "; $rejectedPages skipped" else ""}."
-                        },
+                        storyboardStatus = MangaTranslationPlan.summary(
+                            scopeLabel = scopeLabel,
+                            translatedPanels = translatedPanels,
+                            retriedPanels = retriedPanels,
+                            translatedRegions = translatedRegions,
+                            rejectedPages = rejectedPages,
+                            alreadyEnglish = alreadyEnglish,
+                        ),
                     )
                 }
             } catch (cancelled: CancellationException) {
                 _uiState.update {
                     it.copy(storyboardStatus = "Translation stopped after $completed item(s). Saved edits were kept.")
                 }
+                throw cancelled
+            } catch (failure: Exception) {
+                android.util.Log.e("MangaTranslation", "Translation failed after $completed item(s)", failure)
+                _uiState.update {
+                    it.copy(storyboardStatus = "Translation stopped: ${failure.message?.take(300) ?: "Unknown error"}. Saved pages were kept.")
+                }
+            } catch (failure: OutOfMemoryError) {
+                android.util.Log.e("MangaTranslation", "Insufficient memory while translating", failure)
+                _uiState.update {
+                    it.copy(storyboardStatus = "Not enough memory to translate this page. Saved pages were kept. Try a smaller page.")
+                }
             } finally {
                 _uiState.update {
                     it.copy(mangaEditBusy = false, mangaEditAction = "", mangaEditCurrent = 0, mangaEditTotal = 0)
                 }
             }
+        }
+    }
+
+    /**
+     * A page that could not be verified keeps its original media and mediaId untouched. The
+     * proposed English is kept as a review draft, so reopening the editor shows the work so far
+     * with the unresolved source regions highlighted.
+     */
+    private fun markPageNeedsReview(
+        target: MangaEditTarget,
+        regions: List<PanelTextRegion>,
+        reason: String,
+    ) {
+        val draft = MangaReviewDraft(
+            pageId = target.block.pageId.orEmpty(),
+            blockId = target.block.id,
+            regions = regions.map { it.copy(reviewRequired = it.reviewRequired || it.translation.isBlank()) },
+            reason = reason,
+        )
+        _uiState.update { state ->
+            state.copy(
+                mangaTranslationReviewPageIds = state.mangaTranslationReviewPageIds + draft.pageId,
+                mangaTranslationReviewRegions =
+                    state.mangaTranslationReviewRegions + (draft.blockId to draft.regions),
+                mangaTranslationReviewReasons = state.mangaTranslationReviewReasons + (draft.blockId to draft.reason),
+            )
+        }
+    }
+
+    /**
+     * A page can hold several panels. Clearing one panel's review only clears the page when no
+     * sibling panel on it is still waiting to be looked at.
+     */
+    private fun clearPageReview(target: MangaEditTarget, pageBlockIds: Set<String>) {
+        _uiState.update { state ->
+            val remaining = state.mangaTranslationReviewRegions - target.block.id
+            val pageStillNeedsReview = pageBlockIds.any { it != target.block.id && it in remaining }
+            state.copy(
+                mangaTranslationReviewRegions = remaining,
+                mangaTranslationReviewReasons = state.mangaTranslationReviewReasons - target.block.id,
+                mangaTranslationReviewPageIds = if (pageStillNeedsReview) {
+                    state.mangaTranslationReviewPageIds
+                } else {
+                    state.mangaTranslationReviewPageIds - target.block.pageId.orEmpty()
+                },
+            )
         }
     }
 
@@ -4606,8 +4981,9 @@ class RoleplayChatViewModel @Inject constructor(
     }
 
     private fun startMangaColorization(pageIds: Set<String>, scopeLabel: String) {
-        if (_uiState.value.mangaEditBusy) return
-        mangaEditJob = viewModelScope.launch {
+        if (_uiState.value.mangaEditBusy || mangaEditJob?.isActive == true) return
+        _uiState.update { it.copy(mangaEditBusy = true, mangaEditAction = "Colorizing black-and-white art") }
+        mangaEditJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.Default) {
             var completed = 0
             var colorized = 0
             var alreadyColor = 0
@@ -4651,13 +5027,7 @@ class RoleplayChatViewModel @Inject constructor(
                                 // A full-page edit needs more than the 1100px used for a
                                 // read-the-lettering vision call, or fine line art and small
                                 // text turn to mush once the model repaints the page.
-                                val attachment = PanelAi.imageAttachmentFor(target.path, maxDim = 1536)
-                                    ?: return@forEachIndexed
-                                val (bytes, mime) = aiGeneration.generateImage(
-                                    prompt = "Professionally colorize this exact black-and-white manga page. Preserve every panel boundary, character identity, pose, line, screentone, speech bubble, and all existing lettering exactly. Add coherent anime colors, natural skin tones, cinematic lighting, and consistent materials. Do not crop, redraw, translate, remove, or invent content.",
-                                    modelRef = imageModelRef,
-                                    imageAttachments = listOf(attachment),
-                                )
+                                val (bytes, mime) = colorizeMangaImage(target.path, imageModelRef)
                                 val entity = mediaRepository.importFromBytes(
                                     bytes = bytes,
                                     fileName = "manga-ai-color-${UUID.randomUUID()}.${if (mime == "image/png") "png" else "jpg"}",
@@ -4671,7 +5041,9 @@ class RoleplayChatViewModel @Inject constructor(
                                     originalMediaId = current.originalMediaId ?: current.mediaId,
                                     variantKind = "colorized",
                                 )
-                                persistMessageBlocks(target.message, blocks)
+                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                                    persistMessageBlocks(target.message, blocks)
+                                }
                                 colorized++
                             } else {
                                 alreadyColor++
@@ -4691,6 +5063,17 @@ class RoleplayChatViewModel @Inject constructor(
             } catch (cancelled: CancellationException) {
                 _uiState.update {
                     it.copy(storyboardStatus = "Colorization stopped after $completed item(s). Saved colorized copies were kept.")
+                }
+                throw cancelled
+            } catch (failure: Exception) {
+                android.util.Log.e("MangaColorization", "Colorization failed after $completed item(s)", failure)
+                _uiState.update {
+                    it.copy(storyboardStatus = "Colorization stopped: ${failure.message?.take(300) ?: "Unknown error"}. Saved pages were kept.")
+                }
+            } catch (failure: OutOfMemoryError) {
+                android.util.Log.e("MangaColorization", "Insufficient memory while colorizing", failure)
+                _uiState.update {
+                    it.copy(storyboardStatus = "Not enough memory to colorize this page. Saved pages were kept. Try a smaller page.")
                 }
             } finally {
                 _uiState.update {
@@ -4713,12 +5096,20 @@ class RoleplayChatViewModel @Inject constructor(
      * depending on cache ordering.
      */
     private suspend fun visionModelRef(): String? {
-        val infos = modelCache.toModelInfo(modelCache.models.first())
+        // A cold start has an empty model cache, so every "supports images" check below would
+        // say no and the caller would blame the user's settings for a list we simply had not
+        // fetched yet. Warm it once, here, so every caller gets the same behaviour.
+        var cached = modelCache.toModelInfo(modelCache.models.first())
+        if (cached.none { it.supportsImages && it.available }) {
+            runCatching { openRouterRepository.fetchModels(forceRefresh = false) }
+            cached = modelCache.toModelInfo(modelCache.models.first())
+        }
+        val infos = com.ihy2ln.weaverse.ai.MangaEditorModels.vision(cached)
         _uiState.value.editorVisionModelRef.takeIf { it.isNotBlank() }?.let { selected ->
-            if (aiGeneration.hasApiKey(selected) && aiGeneration.modelSupportsImages(selected)) return selected
+            if (aiGeneration.hasApiKey(selected) && infos.any { PromptModelSelection.modelRef(it.id) == selected }) return selected
         }
         if (aiGeneration.hasApiKey(MANGA_TRANSLATION_LUNA_REF) &&
-            aiGeneration.modelSupportsImages(MANGA_TRANSLATION_LUNA_REF)
+            infos.any { PromptModelSelection.modelRef(it.id) == MANGA_TRANSLATION_LUNA_REF }
         ) {
             return MANGA_TRANSLATION_LUNA_REF
         }
@@ -4728,15 +5119,14 @@ class RoleplayChatViewModel @Inject constructor(
         )
         if (selected.isNotBlank() &&
             aiGeneration.hasApiKey(selected) &&
-            aiGeneration.modelSupportsImages(selected)
+            infos.any { PromptModelSelection.modelRef(it.id) == selected }
         ) {
             return selected
         }
         infos.firstOrNull { it.supportsImages && it.available }?.let {
             return PromptModelSelection.modelRef(it.id)
         }
-        val fallback = _uiState.value.defaultModelRef
-        return fallback.takeIf { it.isNotBlank() && aiGeneration.modelSupportsImages(fallback) }
+        return null
     }
 
     private fun editorTextModelRef(): String =
@@ -4764,8 +5154,7 @@ class RoleplayChatViewModel @Inject constructor(
                     (secondary == null || id.contains(secondary) || name.contains(secondary))
             }.let { if (it < 0) knownGoodHints.size else it }
         }
-        val candidates = modelCache.toModelInfo(modelCache.models.first())
-            .filter { it.available && it.supportsImages && it.generatesImages }
+        val candidates = openRouterRepository.fetchImageEditingModels()
         _uiState.value.editorImageModelRef.takeIf { selected ->
             selected.isNotBlank() && candidates.any { PromptModelSelection.modelRef(it.id) == selected }
         }?.let { return it }
@@ -4980,7 +5369,7 @@ class RoleplayChatViewModel @Inject constructor(
         }
         viewModelScope.launch {
             editorSetBusy(true)
-            editorSetStatus("Typesetting the translation…")
+            editorSetStatus("Cleaning source lettering…")
             val current = rawMessages.find { it.id == editor.messageId }
             val blocks = current?.let { documentFromJson(it.contentJson).blocks.toMutableList() }
             val index = blocks?.indexOfFirst { it.id == editor.blockId } ?: -1
@@ -4996,8 +5385,15 @@ class RoleplayChatViewModel @Inject constructor(
                 editorSetStatus("Could not open the picture to typeset the translation.")
                 return@launch
             }
+            var placed: List<PanelTextRegion> = emptyList()
             val entity = try {
-                typesetOntoPage(bitmap, safeRegions)
+                // Only the fixed source bounds are cleaned; where the English ends up is a
+                // separate, movable decision that never feeds back into the cleanup.
+                ImageOps.replaceTextRegions(
+                    bitmap,
+                    MangaTranslationPlan.cleanupBounds(safeRegions).map { it.toRectF() },
+                )
+                placed = placedEnglishRegions(bitmap, safeRegions)
                 mediaRepository.importFromBytes(
                     bytes = ImageOps.toPngBytes(bitmap),
                     fileName = "manga-english-${UUID.randomUUID()}.png",
@@ -5006,47 +5402,32 @@ class RoleplayChatViewModel @Inject constructor(
             } finally {
                 bitmap.recycle()
             }
+            val lettered = placed.filter { it.visible && it.translation.isNotBlank() }
             blocks[index] = base.copy(
                 mediaId = entity.id,
                 originalMediaId = base.originalMediaId ?: base.mediaId,
                 variantKind = "translated",
-                overlays = base.overlays.filterNot { it.source == "manga-translation" },
+                overlays = base.overlays.filterNot { it.source == "manga-translation" } +
+                    lettered.mapIndexed { layerIndex, region -> region.toEditableOverlay(layerIndex) },
             )
             persistMessageBlocks(current, blocks)
             _uiState.update { ed ->
                 ed.imageEditor?.let {
-                    ed.copy(imageEditor = it.copy(path = mediaRepository.resolveFile(entity).absolutePath, regions = emptyList()))
+                    ed.copy(
+                        imageEditor = it.copy(
+                            path = mediaRepository.resolveFile(entity).absolutePath,
+                            regions = placed,
+                            selectedRegionId = placed.firstOrNull()?.id,
+                        ),
+                    )
                 } ?: ed
             }
             editorSetBusy(false)
-            editorSetStatus("Cleaned and lettered ${safeRegions.count { it.visible && it.translation.isNotBlank() }} region(s).")
+            editorSetStatus(
+                "Cleaned and lettered ${lettered.size} region(s). " +
+                    "Drag text to move it; use Whiteout for missed source text.",
+            )
         }
-    }
-
-    /**
-     * Koharu's cleanup-then-letter order for one page: strip the source glyphs, widen each
-     * detected text box to the bubble that held it, then paint the English onto the cleaned
-     * plate with auto-fitting. Painting into the picture, rather than floating a label over
-     * it, is what keeps a line inside its balloon at any zoom — an overlay measured in sp
-     * cannot track the picture's own scale.
-     */
-    private fun typesetOntoPage(bitmap: android.graphics.Bitmap, regions: List<PanelTextRegion>) {
-        // Never erase a source region unless a validated replacement will be painted
-        // into that same region. This prevents blank bubbles when translation fails.
-        val lettered = regions.filter { it.visible && it.translation.isNotBlank() }
-        val textRects = lettered.map { region ->
-            RectF(region.x, region.y, region.x + region.w, region.y + region.h)
-        }
-        if (textRects.isEmpty()) return
-        ImageOps.replaceTextRegions(bitmap, textRects)
-        // Measured after cleanup so the outward walk is not stopped by the source lettering.
-        val frames = ImageOps.bubbleFrames(bitmap, textRects)
-        ImageOps.typesetLayers(
-            bitmap,
-            lettered.mapIndexed { index, region ->
-                region.toTypesetLayer().copy(normalized = frames[index])
-            },
-        )
     }
 
     /**
@@ -5082,8 +5463,8 @@ class RoleplayChatViewModel @Inject constructor(
     fun saveEditedPanel(bitmap: android.graphics.Bitmap) {
         val editor = _uiState.value.imageEditor ?: return
         val sourcePath = editor.path
-        // Text found but never applied still gets lettered into the page on save, so this
-        // path agrees with Translate instead of leaving a differently-sized floating label.
+        // Brush and whiteout edits are pixels and belong in the saved picture; the English
+        // is saved alongside them as layers, so wording and position stay editable.
         val pending = editor.regions.filter { it.visible && it.translation.isNotBlank() }
         val safePending = validatedEnglishRegions(pending)
         if (pending.isNotEmpty() && safePending == null) {
@@ -5096,7 +5477,6 @@ class RoleplayChatViewModel @Inject constructor(
             }
             return
         }
-        if (!safePending.isNullOrEmpty()) typesetOntoPage(bitmap, safePending)
         viewModelScope.launch {
             val entity = mediaRepository.importFromBytes(
                 bytes = ImageOps.toPngBytes(bitmap),
@@ -5118,7 +5498,9 @@ class RoleplayChatViewModel @Inject constructor(
                             mediaId = entity.id,
                             originalMediaId = block.originalMediaId ?: block.mediaId,
                             variantKind = "edited",
-                            overlays = block.overlays.filterNot { it.source == "manga-translation" },
+                            overlays = block.overlays.filterNot { it.source == "manga-translation" } +
+                                safePending.orEmpty()
+                                    .mapIndexed { layerIndex, region -> region.toEditableOverlay(layerIndex) },
                         )
                     } else {
                         block
@@ -5126,10 +5508,20 @@ class RoleplayChatViewModel @Inject constructor(
                 }
                 persistMessageBlocks(current, blocks)
             }
+            if (current != null) {
+                val savedBlock = documentFromJson(current.contentJson).blocks
+                    .filterIsInstance<MediaBlock>().firstOrNull { it.id == editor.blockId }
+                if (savedBlock != null) clearPageReview(
+                    MangaEditTarget(current, savedBlock, sourcePath),
+                    documentFromJson(current.contentJson).blocks.filterIsInstance<MediaBlock>()
+                        .filter { it.pageId == savedBlock.pageId }.mapTo(mutableSetOf()) { it.id },
+                )
+            }
             _uiState.update {
                 it.copy(
                     imageEditor = null,
-                    storyboardStatus = "Saved a new version. The original page is unchanged — use Original / Edited to compare.",
+                    storyboardStatus = "Saved a new version with ${safePending.orEmpty().size} text layer(s). " +
+                        "The original page is unchanged — use Original / Edited to compare.",
                 )
             }
         }

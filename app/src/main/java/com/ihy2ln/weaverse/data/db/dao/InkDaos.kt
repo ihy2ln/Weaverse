@@ -470,6 +470,18 @@ interface MangaDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertChapter(entity: MangaChapterEntity)
 
+    @Query("UPDATE manga_chapters SET lastPageRead = :pageIndex, lastReadAt = :readAt, read = CASE WHEN :finished THEN 1 ELSE read END WHERE id = :chapterId")
+    suspend fun recordReadingProgress(chapterId: String, pageIndex: Int, readAt: Long, finished: Boolean)
+
+    @Query("UPDATE manga_chapters SET read = :read, lastPageRead = CASE WHEN :read THEN pageCount - 1 ELSE lastPageRead END WHERE id = :chapterId")
+    suspend fun setChapterRead(chapterId: String, read: Boolean)
+
+    @Query("UPDATE manga_chapters SET bookmarked = :bookmarked WHERE id = :chapterId")
+    suspend fun setChapterBookmarked(chapterId: String, bookmarked: Boolean)
+
+    @Query("UPDATE manga_chapters SET lastReadAt = 0, lastPageRead = 0")
+    suspend fun clearReadingHistory()
+
     @Query("SELECT * FROM manga_chapters WHERE mangaId = :mangaId")
     suspend fun getChaptersByManga(mangaId: String): List<MangaChapterEntity>
 
