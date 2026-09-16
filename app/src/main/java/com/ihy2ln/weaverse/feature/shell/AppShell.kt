@@ -194,6 +194,7 @@ fun AppShell(
     val promptOverlayOpen = promptUi.kind != null
 
     fun openGlobalPromptIfNeeded(kind: PromptEntryKind): Boolean {
+        if (mode == AppMode.Novel.name) return false
         shellViewModel.openPrompt(kind)
         return true
     }

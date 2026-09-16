@@ -44,6 +44,7 @@ class WritePromptAssembler @Inject constructor(
     suspend fun libraryPromptBundle(
         commandId: String,
         renderCtx: PromptRenderContext,
+        selectedPromptId: String? = null,
     ): LibraryPromptBundle {
         val type = when (commandId) {
             "extend" -> "expand"
@@ -51,7 +52,8 @@ class WritePromptAssembler @Inject constructor(
         }
         val prompts = promptRepository.observeByType(type).first()
             .ifEmpty { promptRepository.observeByType(commandId).first() }
-        val prompt = prompts.firstOrNull { it.isDefault }
+        val prompt = selectedPromptId?.let { promptRepository.getPrompt(it) ?: error("Selected template was deleted. Choose another template.") }
+            ?: prompts.firstOrNull { it.isDefault }
             ?: prompts.firstOrNull { it.id == "prompt-$type" }
             ?: prompts.firstOrNull()
         if (prompt == null) {
@@ -171,6 +173,6 @@ class WritePromptAssembler @Inject constructor(
                 "a slight overrun is allowed when necessary.\n\n",
         )
         append("Current scene:\n")
-        append(sceneText.take(6000))
+        append(sceneText)
     }
 }

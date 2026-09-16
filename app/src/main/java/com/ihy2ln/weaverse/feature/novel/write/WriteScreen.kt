@@ -70,6 +70,8 @@ fun WriteScreen(
     pendingMediaId: String? = null,
     onMediaConsumed: () -> Unit = {},
     onOpenMediaLibrary: () -> Unit = {},
+    toolRequest: String? = null,
+    onToolConsumed: () -> Unit = {},
     viewModel: WriteViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -79,6 +81,7 @@ fun WriteScreen(
             viewModel.insertExistingMedia(pendingMediaId); onMediaConsumed()
         }
     }
+    LaunchedEffect(toolRequest) { if (toolRequest != null) { toolSheet = toolRequest; onToolConsumed() } }
     val tokens = inkTokens()
     val clipboard = LocalClipboardManager.current
     val startDictate = rememberSpeechToText { spoken ->
@@ -130,6 +133,7 @@ fun WriteScreen(
     LaunchedEffect(state.aiOverlay?.pickBeatImageRequestId) {
         val req = state.aiOverlay?.pickBeatImageRequestId ?: 0L
         if (req > 0L) {
+            viewModel.consumeBeatImageRequest()
             beatImagePicker.launch(
                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
             )
@@ -154,7 +158,7 @@ fun WriteScreen(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("${state.wordCount} words · ${state.saveStatus}", style = MaterialTheme.typography.labelSmall,
                     modifier = Modifier.weight(1f))
-                androidx.compose.material3.TextButton(onClick = { toolSheet = "Tools" }) { Text("Tools") }
+
             }
             if (state.findReplace.visible) {
                 FindReplaceBar(
@@ -277,27 +281,24 @@ fun WriteScreen(
                 },
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.SpaceEvenly) {
-                androidx.compose.material3.TextButton(onClick = viewModel::undo, enabled = state.canUndo, modifier = Modifier.heightIn(min = 48.dp)) { Text("Undo") }
-                androidx.compose.material3.TextButton(onClick = viewModel::redo, enabled = state.canRedo, modifier = Modifier.heightIn(min = 48.dp)) { Text("Redo") }
-                listOf("Text", "Media", "AI").forEach { label ->
-                    androidx.compose.material3.TextButton(onClick = { toolSheet = label }, modifier = Modifier.heightIn(min = 48.dp)) { Text(label) }
-                }
-            }
         }
         if (toolSheet != null) androidx.compose.material3.ModalBottomSheet(onDismissRequest = { toolSheet = null }) {
             Column(Modifier.fillMaxWidth().heightIn(max = 400.dp).verticalScroll(rememberScrollState()).padding(16.dp)) {
                 Text(toolSheet.orEmpty(), style = MaterialTheme.typography.titleLarge)
                 fun closeAction(action: () -> Unit): () -> Unit = { toolSheet = null; action() }
                 when (toolSheet) {
-                    "Text" -> {
+                    "Undo/Redo" -> {
+                        InkTextButton("Undo", closeAction(viewModel::undo), enabled = state.canUndo)
+                        InkTextButton("Redo", closeAction(viewModel::redo), enabled = state.canRedo)
+                    }
+                    "Format" -> {
                         InkTextButton("Bold", closeAction { viewModel.toggleMarkOnSelection(Mark.Bold) })
                         InkTextButton("Italic", closeAction { viewModel.toggleMarkOnSelection(Mark.Italic) })
                         InkTextButton("Text color", closeAction(viewModel::requestColorPicker))
                         InkTextButton("Add selection to Codex", closeAction(viewModel::addSelectionToCodex))
                         InkTextButton("Dictate", closeAction { startDictate() })
                     }
-                    "Media" -> {
+                    "Insert" -> {
                         InkTextButton("Insert image / video", closeAction(viewModel::requestAddMedia))
                         InkTextButton("Insert audio", closeAction(viewModel::requestAddAudio))
                         InkTextButton("Story media & references", closeAction(onOpenMediaLibrary))
@@ -330,130 +331,6 @@ fun WriteScreen(
                     .align(Alignment.BottomCenter)
                     .padding(InkSpacing.lg),
             )
-        }
-        state.aiOverlay?.takeIf { it.commandId != "scene_beat" && !it.hidden }?.let { overlay ->
-            androidx.compose.material3.ModalBottomSheet(onDismissRequest = viewModel::dismissAiOverlay) {
-            Column(
-                modifier = Modifier
-                    .heightIn(max = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * .75f).dp)
-                    .verticalScroll(rememberScrollState())
-                    .fillMaxWidth()
-                    .padding(horizontal = InkSpacing.md, vertical = InkSpacing.sm)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.94f))
-                    .padding(horizontal = InkSpacing.md, vertical = InkSpacing.sm),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(
-                        overlay.label,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontSize = 11.sp,
-                        color = tokens.secondaryText,
-                    )
-                    InkTextButton(label = "Hide", onClick = viewModel::dismissAiOverlay)
-                }
-                VoiceToTextField(
-                    value = overlay.prompt,
-                    onValueChange = viewModel::updateAiPrompt,
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = "Add a short instruction…",
-                    minLines = 1,
-                    maxLines = 3,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color.Transparent,
-                        unfocusedBorderColor = Color.Transparent,
-                        disabledBorderColor = Color.Transparent,
-                    ),
-                )
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = InkSpacing.xs),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
-                ) {
-                    InkFilledButton(
-                        label = if (overlay.isStreaming) "Cancel" else "Generate",
-                        onClick = if (overlay.isStreaming) viewModel::cancelAiGeneration else viewModel::runAiGeneration,
-                        enabled = overlay.isStreaming || overlay.prompt.isNotBlank() || overlay.streamingText.isNotBlank() || true,
-                    )
-                    InkModeCapsule(
-                        label = "Clear Text",
-                        onClick = {
-                            viewModel.updateAiPrompt("")
-                            viewModel.discardAiResult()
-                        },
-                        enabled = overlay.prompt.isNotBlank() || overlay.streamingText.isNotBlank(),
-                    )
-                    Text("Words", style = MaterialTheme.typography.labelMedium)
-                    OutlinedTextField(
-                        value = overlay.outputWords.toString(),
-                        onValueChange = { raw ->
-                            val digits = raw.filter { it.isDigit() }.take(4)
-                            viewModel.updateOutputWords(digits.toIntOrNull() ?: 750)
-                        },
-                        modifier = Modifier.width(64.dp),
-                        singleLine = true,
-                        textStyle = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-                InkTextButton("Preview AI context (no request)", viewModel::previewAiContext)
-                if (overlay.contextPreview.isNotBlank()) {
-                    Text("Context snapshot — refresh after changing your prompt or scene", style = MaterialTheme.typography.labelSmall)
-                    Text(overlay.contextPreview, modifier = Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState()), style = MaterialTheme.typography.bodySmall)
-                }
-                if (overlay.streamingText.isNotBlank() && !overlay.isStreaming) {
-                    Text("Candidate — not yet applied", style = MaterialTheme.typography.titleSmall)
-                    androidx.compose.foundation.text.selection.SelectionContainer { Text(overlay.streamingText) }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = InkSpacing.xs),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
-                    ) {
-                        PromptActionMenuButton(
-                            onConfirm = viewModel::acceptAiResult,
-                            onRetry = viewModel::retryAiGeneration,
-                        )
-                    }
-                }
-                if (overlay.errorMessage.isNotBlank()) {
-                    Text(
-                        overlay.errorMessage,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(top = InkSpacing.xs),
-                    )
-                }
-                if (overlay.isStreaming) {
-                    Text(
-                        "Generating…",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = tokens.secondaryText,
-                        modifier = Modifier.padding(top = InkSpacing.xs),
-                    )
-                }
-                if (overlay.contextMeter != null) {
-                    Text(
-                        overlay.contextMeter!!.label,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = tokens.secondaryText,
-                    )
-                }
-                if (overlay.usageLog.isNotBlank()) {
-                    Text(
-                        overlay.usageLog,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = tokens.secondaryText,
-                    )
-                }
-            }
-        }
         }
         if (state.showHistory) {
             androidx.compose.material3.AlertDialog(

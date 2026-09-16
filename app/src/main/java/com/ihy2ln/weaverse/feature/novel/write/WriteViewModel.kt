@@ -14,6 +14,7 @@ import com.ihy2ln.weaverse.core.media.MediaRepository
 import com.ihy2ln.weaverse.core.media.AiMediaRequestParser
 import com.ihy2ln.weaverse.core.media.AiMediaResolver
 import com.ihy2ln.weaverse.core.text.Block
+import com.ihy2ln.weaverse.core.text.toJson
 import com.ihy2ln.weaverse.core.text.Document
 import com.ihy2ln.weaverse.core.text.Mark
 import com.ihy2ln.weaverse.core.text.MediaKind
@@ -55,6 +56,11 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.*
+import kotlinx.serialization.encodeToString
+import com.ihy2ln.weaverse.data.db.entities.NovelPromptDraft
+import com.ihy2ln.weaverse.data.db.entities.NovelWritingSettings
+import com.ihy2ln.weaverse.data.repo.PromptRepository
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import java.util.UUID
@@ -62,6 +68,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class WriteViewModel @Inject constructor(
+    private val promptRepository: PromptRepository,
     private val documentOps: WriteDocumentOps,
     private val writeGeneration: WriteGeneration,
     private val mediaOps: WriteMediaOps,
@@ -80,6 +87,66 @@ class WriteViewModel @Inject constructor(
     val uiState: StateFlow<WriteUiState> = _uiState.asStateFlow()
     private val json = Json { ignoreUnknownKeys = true }
     private var bookId: String = "book-adams-haven-1"
+
+    val writingSettings = MutableStateFlow(NovelWritingSettings(""))
+    val styleGuide = MutableStateFlow("")
+    val effectiveModel = MutableStateFlow("")
+    val templates = promptRepository.observePrompts().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val availableModels = modelCache.models
+    val promptRequests = promptEntryBus.openRequests
+    private val draftCache = mutableMapOf<String, AiOverlayState>()
+    private val positions = mutableMapOf<String, SelectionState>()
+    private var generationEpoch = 0L
+    private var requestedSceneId = ""
+
+    fun openComposer() {
+        if (_uiState.value.aiOverlay != null) resumeAiOverlay() else startSelectionAi("custom", "Custom")
+    }
+
+    fun selectTemplate(id: String?) { _uiState.update { it.copy(aiOverlay = it.aiOverlay?.copy(promptId = id, contextPreview = "")) } }
+    fun saveTemplate(name: String, duplicateId: String? = null) = viewModelScope.launch {
+        val original = duplicateId?.let { promptRepository.getPrompt(it) }
+        if (original != null) {
+            val copy = original.copy(id = "prompt-${UUID.randomUUID()}", name = name, isDefault = false)
+            promptRepository.upsert(copy); selectTemplate(copy.id)
+        } else {
+            val folder = promptRepository.observeFolders().first().firstOrNull()
+                ?: promptRepository.createFolder("Writing prompts")
+            val prompt = promptRepository.createPrompt(folder.id, name, "custom", _uiState.value.aiOverlay?.prompt.orEmpty())
+            selectTemplate(prompt.id)
+        }
+    }
+    fun saveWritingSettings(value: NovelWritingSettings, style: String) {
+        writingSettings.value = value
+        styleGuide.value = style
+        viewModelScope.launch {
+            db.novelWritingDao().saveSettings(value)
+            db.novelWritingDao().saveStyle(value.bookId, style, nextWriteStamp())
+            effectiveModel.value = aiGeneration.resolveModelRef(value.modelRef)
+        }
+    }
+    fun chooseCandidate(index: Int) {
+        _uiState.update { state ->
+            val current = state.aiOverlay ?: return@update state
+            val chosen = current.candidates.getOrNull(index) ?: return@update state
+            val history = current.candidates.toMutableList().also { it.removeAt(index) }
+            if (current.streamingText.isNotBlank()) history.add(current.copy(candidates = emptyList(), contextPreview = ""))
+            state.copy(aiOverlay = chosen.copy(candidates = history, hidden = false, isStreaming = false))
+        }
+    }
+    fun retargetCandidate(replace: Boolean) {
+        val state = _uiState.value
+        val selection = state.selection
+        val paragraph = state.blocks.getOrNull(selection.blockIndex) as? Paragraph ?: return
+        if (replace && !selection.hasSelection) {
+            _uiState.update { it.copy(aiOverlay = it.aiOverlay?.copy(errorMessage = "Select text in the manuscript, then retarget.")) }; return
+        }
+        _uiState.update { it.copy(aiOverlay = it.aiOverlay?.copy(targetSceneId = state.sceneId, anchorBlockId = paragraph.id,
+            sourceParagraphText = paragraph.plainText(), cursorOffset = selection.max,
+            replaceBlockIndex = if (replace) selection.blockIndex else null,
+            replaceStart = if (replace) selection.min else null, replaceEnd = if (replace) selection.max else null,
+            errorMessage = "", contextPreview = "")) }
+    }
 
     private var loadedScene: SceneEntity? = null
     private var sceneJob: Job? = null
@@ -101,8 +168,23 @@ class WriteViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
+            uiState.mapNotNull { it.aiOverlay }.distinctUntilChanged().onEach { overlay ->
+                if (overlay.targetSceneId.isNotBlank()) draftCache[overlay.targetSceneId] = overlay
+            }.buffer(Channel.UNLIMITED).collect { overlay ->
+                if (overlay.targetSceneId.isNotBlank()) db.novelWritingDao().saveDraft(NovelPromptDraft(
+                    overlay.targetSceneId, json.encodeToString(overlay.copy(isStreaming = false, pickBeatImageRequestId = 0L,
+                        errorMessage = if (overlay.isStreaming) "Interrupted. Review partial output or Generate again." else overlay.errorMessage))))
+            }
+        }
+
+        viewModelScope.launch {
             settings.preferences.collect { prefs ->
-                bookId = prefs.selectedBookId
+                if (bookId != prefs.selectedBookId || writingSettings.value.bookId.isBlank()) {
+                    bookId = prefs.selectedBookId
+                    writingSettings.value = db.novelWritingDao().settings(bookId) ?: NovelWritingSettings(bookId)
+                    styleGuide.value = db.bookDao().getById(bookId)?.styleGuide.orEmpty()
+                }
+                effectiveModel.value = aiGeneration.resolveModelRef(writingSettings.value.modelRef)
                 _uiState.update {
                     it.copy(
                         showInlineWritingPrompt = prefs.extraPromptSurfaces.inlineWriting,
@@ -159,10 +241,13 @@ class WriteViewModel @Inject constructor(
 
     fun loadScene(sceneId: String, jumpKind: String = "Scene") {
         pendingJumpKind = jumpKind
-        if (loadedScene?.id == sceneId && sceneJob?.isActive == true) {
+        if ((loadedScene?.id == sceneId || requestedSceneId == sceneId) && sceneJob?.isActive == true) {
             if (jumpKind == "SceneBeat") startSceneBeatFromPlan()
             return
         }
+        requestedSceneId = sceneId
+        positions[_uiState.value.sceneId] = _uiState.value.selection
+        _uiState.value.aiOverlay?.let { draftCache[it.targetSceneId] = it.copy(isStreaming = false) }
         flushTypingHistory()
         cancelAiGeneration()
         _uiState.update { it.copy(aiOverlay = null) }
@@ -177,6 +262,12 @@ class WriteViewModel @Inject constructor(
         loadedScene = null
         lastPersistedDocJson = null
         sceneJob = viewModelScope.launch {
+            val restored = draftCache[sceneId] ?: db.novelWritingDao().draft(sceneId)?.let {
+                runCatching { json.decodeFromString<AiOverlayState>(it.stateJson) }.getOrNull()
+            }
+            if (requestedSceneId != sceneId) return@launch
+            _uiState.update { it.copy(aiOverlay = restored?.copy(hidden = true, isStreaming = false, pickBeatImageRequestId = 0L),
+                selection = positions[sceneId] ?: SelectionState()) }
             documentOps.observeScene(sceneId).collect { scene ->
                 if (scene != null) applyScene(scene)
             }
@@ -188,15 +279,7 @@ class WriteViewModel @Inject constructor(
         }
     }
 
-    fun startSceneBeatFromPlan() {
-        updateBlocksSync(recordHistory = true) { blocks ->
-            val last = blocks.lastOrNull() as? SceneBeatBlock
-            if (last != null && last.prompt.isBlank()) return@updateBlocksSync
-            val next = blocks.appendSceneBeat()
-            blocks.clear()
-            blocks.addAll(next)
-        }
-    }
+    fun startSceneBeatFromPlan() = startSelectionAi("scene_beat", "Scene beat")
 
     fun insertContinuation(text: String) {
         val trimmed = text.trim()
@@ -247,6 +330,7 @@ class WriteViewModel @Inject constructor(
             _uiState.update {
                 it.copy(
                     aiOverlay = AiOverlayState(
+                        targetSceneId = _uiState.value.sceneId,
                         commandId = "scene_beat",
                         label = "SCENE BEAT",
                         insertAfterIndex = index,
@@ -257,7 +341,7 @@ class WriteViewModel @Inject constructor(
                     ),
                 )
             }
-            runAiGeneration()
+            // The composer requires an explicit Generate action.
         }
     }
 
@@ -323,7 +407,7 @@ class WriteViewModel @Inject constructor(
     }
 
     fun onPromptShortcut(kind: PromptEntryKind) {
-        promptEntryBus.requestOpen(kind)
+        openComposer()
     }
 
     fun onSelectionChange(blockIndex: Int, range: TextRange) {
@@ -410,8 +494,9 @@ class WriteViewModel @Inject constructor(
 
     fun snapshotNow() {
         val scene = loadedScene ?: return
+        val document = Document(_uiState.value.blocks)
         viewModelScope.launch {
-            documentOps.snapshotNow(scene, kind = "manual")
+            documentOps.snapshotNow(scene.copy(docJson = document.toJson(), plainText = document.plainText(), wordCount = document.wordCount()), kind = "manual")
             _uiState.update { it.copy(statusMessage = "Snapshot saved") }
         }
     }
@@ -668,39 +753,26 @@ class WriteViewModel @Inject constructor(
     }
 
     fun startSelectionAi(commandId: String, label: String) {
-        val sel = _uiState.value.selection
-        val block = _uiState.value.blocks.getOrNull(sel.blockIndex) as? Paragraph
-        val sceneText = Document(_uiState.value.blocks).plainText()
-        val selected = selectedText().ifBlank { sceneText }
-        viewModelScope.launch {
-            val library = promptAssembler.libraryPromptBundle(commandId, PromptRenderContext())
-            val replaceInPlace = sel.hasSelection && block != null
-            _uiState.update {
-                it.copy(
-                    editPopupBlockIndex = null,
-                    aiOverlay = AiOverlayState(
-                        commandId = commandId,
-                        label = label.uppercase(),
-                        insertAfterIndex = sel.blockIndex,
-                        anchorBlockId = _uiState.value.blocks.getOrNull(sel.blockIndex)?.id,
-                        prompt = "",
-                        systemInstructions = buildString {
-                            append(library.systemInstructions)
-                            if (selected.isNotBlank()) {
-                                append("\n\nPassage:\n")
-                                append(selected)
-                            }
-                        },
-                        promptId = library.promptId,
-                        outputWords = 100,
-                        replaceBlockIndex = if (replaceInPlace) sel.blockIndex else null,
-                        sourceParagraphText = if (replaceInPlace) block?.plainText() else null,
-                        replaceStart = if (replaceInPlace) sel.min else null,
-                        replaceEnd = if (replaceInPlace) sel.max else null,
-                    ),
-                )
-            }
-        }
+        val state = _uiState.value
+        val focused = state.blocks.getOrNull(state.selection.blockIndex) as? Paragraph
+        val fallback = state.blocks.indexOfLast { it is Paragraph }
+        val sel = if (focused != null || fallback < 0) state.selection else SelectionState(fallback,
+            (state.blocks[fallback] as Paragraph).plainText().length, (state.blocks[fallback] as Paragraph).plainText().length)
+        val block = state.blocks.getOrNull(sel.blockIndex)
+        val paragraph = block as? Paragraph
+        cancelAiGeneration()
+        val old = state.aiOverlay
+        val history = old?.candidates.orEmpty() + listOfNotNull(old?.takeIf { it.streamingText.isNotBlank() }?.copy(candidates = emptyList(), contextPreview = ""))
+        val replace = commandId in listOf("replace", "expand", "extend", "shorten") && sel.hasSelection && paragraph != null
+        _uiState.update { it.copy(editPopupBlockIndex = null, aiOverlay = AiOverlayState(
+            targetSceneId = state.sceneId, commandId = commandId, label = label,
+            anchorBlockId = block?.id, sourceParagraphText = paragraph?.plainText(),
+            cursorOffset = if (paragraph != null) sel.max else null, insertAfterIndex = sel.blockIndex,
+            prompt = old?.prompt.orEmpty(), outputWords = old?.outputWords ?: writingSettings.value.outputWords,
+            candidates = history,
+            replaceBlockIndex = if (replace) sel.blockIndex else null,
+            replaceStart = if (replace) sel.min else null, replaceEnd = if (replace) sel.max else null,
+        )) }
     }
 
     fun addSelectionToCodex() {
@@ -743,79 +815,15 @@ class WriteViewModel @Inject constructor(
 
     fun applySlashCommand(command: SlashCommand) {
         val index = _uiState.value.slashBlockIndex ?: return
-        viewModelScope.launch {
-            when (command.id) {
-                "image", "video" -> {
-                    _uiState.update {
-                        it.copy(
-                            pickImageBlockIndex = index,
-                            pickImageRequestId = it.pickImageRequestId + 1,
-                            slashBlockIndex = null,
-                            slashFilter = "",
-                        )
-                    }
-                    return@launch
-                }
-                "scene_beat" -> {
-                    updateBlocksSync(recordHistory = true) { blocks ->
-                        if (blocks[index] is Paragraph) {
-                            blocks[index] = Paragraph(blocks[index].id, listOf(Span("")))
-                        }
-                        blocks.add(
-                            index + 1,
-                            SceneBeatBlock(
-                                id = UUID.randomUUID().toString(),
-                                prompt = "",
-                            ),
-                        )
-                    }
-                    _uiState.update { it.copy(slashBlockIndex = null, slashFilter = "") }
-                    return@launch
-                }
-                "continue", "expand", "shorten", "extend", "replace" -> {
-                    updateBlocksSync(recordHistory = true) { blocks ->
-                        if (blocks[index] is Paragraph) {
-                            blocks[index] = Paragraph(blocks[index].id, listOf(Span("")))
-                        }
-                    }
-                    val library = promptAssembler.libraryPromptBundle(command.id, PromptRenderContext())
-                    _uiState.update {
-                        it.copy(
-                            aiOverlay = AiOverlayState(
-                                commandId = command.id,
-                                label = command.label.uppercase(),
-                                insertAfterIndex = index,
-                                prompt = "",
-                                systemInstructions = library.systemInstructions,
-                                promptId = library.promptId,
-                            ),
-                            slashBlockIndex = null,
-                            slashFilter = "",
-                        )
-                    }
-                    return@launch
-                }
-                else -> updateBlocksSync(recordHistory = true) { blocks ->
-                    if (blocks[index] is Paragraph) {
-                        blocks[index] = Paragraph(blocks[index].id, listOf(Span("")))
-                    }
-                }
-            }
-            dismissSlash()
-        }
+        dismissSlash()
+        if (command.id in listOf("image", "video")) { requestAddMedia(); return }
+        onSelectionChange(index, TextRange(_uiState.value.selection.max))
+        startSelectionAi(command.id, command.label)
     }
 
     fun updateAiPrompt(value: String) {
         _uiState.update { state ->
             state.copy(aiOverlay = state.aiOverlay?.copy(prompt = value, errorMessage = ""))
-        }
-        val overlay = _uiState.value.aiOverlay ?: return
-        if (overlay.commandId == "scene_beat") {
-            updateBlocks(recordHistory = false) { blocks ->
-                val next = blocks.withSceneBeatPrompt(overlay.insertAfterIndex, value)
-                blocks.clear()
-                blocks.addAll(next)
-            }
         }
         refreshContextMeter()
     }
@@ -825,6 +833,8 @@ class WriteViewModel @Inject constructor(
             state.copy(aiOverlay = state.aiOverlay?.copy(outputWords = words.coerceIn(50, 4000)))
         }
     }
+
+    fun consumeBeatImageRequest() { _uiState.update { it.copy(aiOverlay = it.aiOverlay?.copy(pickBeatImageRequestId = 0L)) } }
 
     fun requestBeatImage() {
         _uiState.update { state ->
@@ -836,10 +846,12 @@ class WriteViewModel @Inject constructor(
     }
 
     fun attachBeatImage(uri: Uri) {
+        val target = _uiState.value.aiOverlay ?: return
         viewModelScope.launch {
             runCatching {
                 val media = mediaOps.importFromUri(uri)
                 val path = mediaOps.resolveFile(media).absolutePath
+                if (_uiState.value.sceneId != target.targetSceneId) return@launch
                 _uiState.update { state ->
                     state.copy(
                         aiOverlay = state.aiOverlay?.copy(
@@ -850,6 +862,7 @@ class WriteViewModel @Inject constructor(
                     )
                 }
             }.onFailure { err ->
+                if (err is kotlinx.coroutines.CancellationException) throw err
                 _uiState.update {
                     it.copy(
                         aiOverlay = it.aiOverlay?.copy(
@@ -875,8 +888,7 @@ class WriteViewModel @Inject constructor(
     }
 
     fun dismissAiOverlay() {
-        generationJob?.cancel()
-        _uiState.update { it.copy(aiOverlay = it.aiOverlay?.copy(hidden = true, isStreaming = false)) }
+        _uiState.update { it.copy(aiOverlay = it.aiOverlay?.copy(hidden = true)) }
     }
 
     fun resumeAiOverlay() = _uiState.update { it.copy(aiOverlay = it.aiOverlay?.copy(hidden = false)) }
@@ -887,11 +899,15 @@ class WriteViewModel @Inject constructor(
         val prose = Document(_uiState.value.blocks).plainText()
         viewModelScope.launch {
             val prep = writeGeneration.prepareStream(overlay, prose, scene, bookId,
-                hasApiKey = true, modelSupportsImages = aiGeneration.modelSupportsImages())
+                hasApiKey = true, modelSupportsImages = aiGeneration.modelSupportsImages(effectiveModel.value),
+                contextLimit = ContextMeter.limitFor(effectiveModel.value, modelCache.toModelInfo(modelCache.models.first())))
             if (loadedScene?.id != scene.id || _uiState.value.aiOverlay?.anchorBlockId != overlay.anchorBlockId) return@launch
             val preview = when (prep) {
                 is WriteGenerationPrep.Failed -> prep.message
                 is WriteGenerationPrep.Ready -> buildString {
+                    appendLine("Provider/model: ${effectiveModel.value}; output: ${overlay.outputWords} words")
+                    appendLine(prep.plan.overlay.contextMeter?.label + " (includes output reserve and image allowance)")
+                    appendLine("Dropped entries: " + prep.plan.assembled.droppedEntryIds.joinToString())
                     appendLine("Story knowledge: " + prep.plan.assembled.usedEntries.joinToString { it.name })
                     appendLine("Attached images: ${prep.plan.imageAttachments.size}")
                     appendLine(prep.plan.assembled.systemBlocks.joinToString("\n\n"))
@@ -907,19 +923,26 @@ class WriteViewModel @Inject constructor(
         val overlay = _uiState.value.aiOverlay ?: return
         if (overlay.isStreaming) return
         generationJob?.cancel()
+        val epoch = ++generationEpoch
+        val targetScene = loadedScene
+        val prose = Document(_uiState.value.blocks).plainText()
+        val model = effectiveModel.value
+        _uiState.update { it.copy(aiOverlay = it.aiOverlay?.copy(isStreaming = true)) }
         generationJob = viewModelScope.launch {
             val prep = writeGeneration.prepareStream(
                 overlay = overlay,
-                sceneText = Document(_uiState.value.blocks).plainText(),
-                scene = loadedScene,
+                sceneText = prose,
+                scene = targetScene,
                 bookId = bookId,
-                hasApiKey = aiGeneration.hasApiKey(),
-                modelSupportsImages = aiGeneration.modelSupportsImages(),
+                hasApiKey = aiGeneration.hasApiKey(model),
+                modelSupportsImages = aiGeneration.modelSupportsImages(model),
+                contextLimit = ContextMeter.limitFor(model, modelCache.toModelInfo(modelCache.models.first())),
             )
+            if (epoch != generationEpoch || loadedScene?.id != targetScene?.id) return@launch
             val plan = when (prep) {
                 is WriteGenerationPrep.Failed -> {
                     _uiState.update {
-                        it.copy(aiOverlay = it.aiOverlay?.copy(errorMessage = prep.message))
+                        it.copy(aiOverlay = it.aiOverlay?.copy(errorMessage = prep.message, isStreaming = false))
                     }
                     return@launch
                 }
@@ -928,6 +951,7 @@ class WriteViewModel @Inject constructor(
             _uiState.update {
                 it.copy(
                     aiOverlay = plan.overlay.copy(
+                        candidates = overlay.candidates + listOfNotNull(overlay.takeIf { it.streamingText.isNotBlank() }?.copy(candidates = emptyList(), contextPreview = "")),
                         isStreaming = true,
                         streamingText = "",
                         errorMessage = "",
@@ -939,11 +963,13 @@ class WriteViewModel @Inject constructor(
             var usageLog = ""
             runCatching {
                 aiGeneration.stream(
+                    modelRef = model,
                     userMessage = plan.userMessage,
                     assembled = plan.assembled,
                     maxTokens = plan.maxTokens,
                     imageAttachments = plan.imageAttachments,
                 ).collect { chunk ->
+                    if (epoch != generationEpoch || loadedScene?.id != targetScene?.id) return@collect
                     when (chunk) {
                         is AIChunk.Delta -> {
                             builder.append(chunk.text)
@@ -972,6 +998,8 @@ class WriteViewModel @Inject constructor(
                     }
                 }
             }.onFailure { err ->
+                if (err is kotlinx.coroutines.CancellationException) throw err
+                if (epoch != generationEpoch) return@launch
                 _uiState.update {
                     it.copy(
                         aiOverlay = it.aiOverlay?.copy(
@@ -995,6 +1023,7 @@ class WriteViewModel @Inject constructor(
     }
 
     fun cancelAiGeneration() {
+        generationEpoch++
         generationJob?.cancel()
         generationJob = null
         _uiState.update {
@@ -1041,6 +1070,10 @@ class WriteViewModel @Inject constructor(
 
     fun acceptAiResult() {
         val overlay = _uiState.value.aiOverlay ?: return
+        if (overlay.isStreaming) return
+        if (overlay.targetSceneId.isNotBlank() && overlay.targetSceneId != _uiState.value.sceneId) {
+            _uiState.update { it.copy(aiOverlay = it.aiOverlay?.copy(errorMessage = "This candidate belongs to another scene.")) }; return
+        }
         val extracted = AiMediaRequestParser.extract(overlay.streamingText.trim())
         val text = extracted.first
         if (text.isBlank()) {
@@ -1052,6 +1085,7 @@ class WriteViewModel @Inject constructor(
             _uiState.update { it.copy(aiOverlay = it.aiOverlay?.copy(errorMessage = failure.message.orEmpty())) }
             return
         }
+        snapshotNow()
         flushTypingHistory()
         updateBlocksSync(recordHistory = true) { blocks ->
             blocks.clear()

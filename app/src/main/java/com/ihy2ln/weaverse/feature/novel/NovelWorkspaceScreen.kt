@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
-import com.ihy2ln.weaverse.feature.novel.write.WriteScreen
+import com.ihy2ln.weaverse.feature.novel.write.*
 import com.ihy2ln.weaverse.feature.novel.plan.PlanScreen
 import com.ihy2ln.weaverse.feature.novel.codex.CodexRailScreen
 import com.ihy2ln.weaverse.feature.novel.chat.WorkshopChatScreen
@@ -27,6 +27,7 @@ import com.ihy2ln.weaverse.feature.novel.chat.WorkshopThreadsRail
 import com.ihy2ln.weaverse.feature.novel.read.ReaderScreen
 import com.ihy2ln.weaverse.feature.novel.review.ReviewScreen
 import java.io.File
+import com.ihy2ln.weaverse.core.text.plainText
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,6 +35,12 @@ fun NovelWorkspaceScreen(title: String, initialSceneId: String, initialDestinati
     onExit: () -> Unit, onOpenCodexEntry: (String) -> Unit,
     onSettings: () -> Unit = {}, onExport: () -> Unit = {},
     viewModel: NovelWorkspaceViewModel = hiltViewModel()) {
+    val writeModel: WriteViewModel = hiltViewModel()
+    val writing by writeModel.uiState.collectAsState()
+    var toolRequest by remember { mutableStateOf<String?>(null) }
+    var guidance by remember { mutableStateOf(false) }
+    var quickSearch by rememberSaveable { mutableStateOf("") }
+    var quickEdit by remember { mutableStateOf<com.ihy2ln.weaverse.data.db.entities.CodexEntryEntity?>(null) }
     val state by viewModel.state.collectAsState()
     val status by viewModel.status.collectAsState()
     val busy by viewModel.busy.collectAsState()
@@ -49,19 +56,25 @@ fun NovelWorkspaceScreen(title: String, initialSceneId: String, initialDestinati
     var pendingMedia by rememberSaveable { mutableStateOf<String?>(null) }
     var threadId by rememberSaveable(state.bookId) { mutableStateOf<String?>(null) }
     val savedStates = rememberSaveableStateHolder()
+    LaunchedEffect(scene?.id) { scene?.let { writeModel.loadScene(it.id) } }
+    LaunchedEffect(writeModel) { writeModel.promptRequests.collect { tab = "Write"; if (scene != null) writeModel.openComposer() else picker = true } }
     BackHandler { when { picker -> picker = false; tab != "Write" -> tab = "Write"; else -> onExit() } }
     Column(Modifier.fillMaxSize().imePadding()) {
         Surface(tonalElevation = 2.dp) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = onExit, modifier = Modifier.heightIn(min = 48.dp)) { Text("Books") }
                 Column(Modifier.weight(1f).clickable { picker = true }.padding(horizontal = 4.dp)) {
-                    Text(title.ifBlank { "Novel" }, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
                     Text(scene?.title ?: "Choose or create a scene", maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp)
                 }
                 TextButton(onClick = { picker = true }) { Text("Scenes") }
                 Box {
                     TextButton(onClick = { menu = true }) { Text("More") }
                     DropdownMenu(menu, { menu = false }) {
+                        DropdownMenuItem(text = { Text("Find / replace") }, onClick = { tab = "Write"; menu = false; writeModel.toggleFindReplace() })
+                        DropdownMenuItem(text = { Text("Revision history") }, onClick = { tab = "Write"; menu = false; writeModel.toggleHistory() })
+                        DropdownMenuItem(text = { Text("Save revision snapshot") }, onClick = { menu = false; writeModel.snapshotNow() })
+                        DropdownMenuItem(text = { Text("Memory, Author’s Note & style") }, onClick = { menu = false; guidance = true })
+                        DropdownMenuItem(text = { Text("Summarize scene (runs AI)") }, onClick = { menu = false; writeModel.summarizeScene() })
                         listOf("Read", "Review").forEach { target -> DropdownMenuItem(text = { Text(target) }, onClick = { tab = target; menu = false }) }
                         DropdownMenuItem(text = { Text("AI & app settings") }, onClick = { menu = false; onSettings() })
                         DropdownMenuItem(text = { Text("Export / import") }, onClick = { menu = false; onExport() })
@@ -73,7 +86,8 @@ fun NovelWorkspaceScreen(title: String, initialSceneId: String, initialDestinati
             savedStates.SaveableStateProvider("${state.bookId}:$tab:${if (tab == "Write") scene?.id.orEmpty() else ""}") {
                 when (tab) {
                     "Write" -> if (scene != null) {
-                        WriteScreen(sceneId = scene.id, onOpenCodexEntry = onOpenCodexEntry,
+                        WriteScreen(sceneId = scene.id, onOpenCodexEntry = { id -> quickEdit = state.entries.firstOrNull { it.id == id } },
+                            viewModel = writeModel, toolRequest = toolRequest, onToolConsumed = { toolRequest = null },
                             pendingMediaId = pendingMedia, onMediaConsumed = { pendingMedia = null },
                             onOpenMediaLibrary = { tab = "Media" })
                     } else Column(Modifier.padding(24.dp)) {
@@ -95,27 +109,58 @@ fun NovelWorkspaceScreen(title: String, initialSceneId: String, initialDestinati
                 }
             }
         }
+        if (tab == "Write" && scene != null) NovelPromptComposer(writeModel)
         Surface(tonalElevation = 3.dp) {
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.SpaceEvenly) {
-                listOf("Write", "Plan", "Codex", "Media", "Workshop").forEach { target ->
-                    TextButton(onClick = { tab = target }, modifier = Modifier.widthIn(min = 64.dp).heightIn(min = 48.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp)) {
-                        Text(target, maxLines = 1, softWrap = false, fontSize = 12.sp, color = if (tab == target) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { tab = "Write"; if (scene != null) writeModel.openComposer() else picker = true },
+                    modifier = Modifier.heightIn(min = 48.dp)) { Text("Prompt", maxLines = 1, softWrap = false) }
+                val toolbarScroll = rememberScrollState()
+                Row(Modifier.weight(1f).horizontalScroll(toolbarScroll)) {
+                    listOf("Undo/Redo", "Format", "Insert", "Context", "Write", "Plan", "Codex", "Media", "Workshop").forEach { target ->
+                        TextButton(onClick = {
+                            when (target) {
+                                "Undo/Redo", "Format", "Insert" -> { tab = "Write"; if (scene != null) toolRequest = target else picker = true }
+                                "Context" -> contextSheet = true
+                                else -> tab = target
+                            }
+                        }, modifier = Modifier.heightIn(min = 48.dp), contentPadding = PaddingValues(horizontal = 10.dp),
+                            colors = ButtonDefaults.textButtonColors(containerColor = if (tab == target) MaterialTheme.colorScheme.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent)) {
+                            Text(target, maxLines = 1, softWrap = false, fontSize = 12.sp)
+                        }
                     }
                 }
+                Text(if (toolbarScroll.canScrollForward) "›" else "‹", Modifier.padding(4.dp), color = MaterialTheme.colorScheme.primary)
             }
         }
     }
+    if (guidance) NovelGuidanceDialog(writeModel) { guidance = false }
+    quickEdit?.let { entry ->
+        var name by remember(entry.id) { mutableStateOf(entry.name) }
+        var text by remember(entry.id) { mutableStateOf(entry.plainText) }
+        AlertDialog(onDismissRequest = { quickEdit = null }, title = { Text("Edit Codex entry") }, text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                OutlinedTextField(name, { name = it }, label = { Text("Name") })
+                OutlinedTextField(text, { text = it }, label = { Text("Reference text") }, minLines = 4)
+            }
+        }, confirmButton = { TextButton(onClick = { viewModel.editEntry(entry.id, name, text); quickEdit = null }) { Text("Save") } },
+            dismissButton = { TextButton(onClick = { quickEdit = null }) { Text("Cancel") } })
+    }
+
     if (contextSheet) ModalBottomSheet(onDismissRequest = { contextSheet = false }) {
-        Text("Context for ${scene?.title.orEmpty()}", Modifier.padding(16.dp), style = MaterialTheme.typography.titleMedium)
+        Text("Quick Codex · ${scene?.title.orEmpty()}", Modifier.padding(16.dp), style = MaterialTheme.typography.titleMedium)
         Text("Pinned entries join automatically detected story knowledge. Reference media is not uploaded.", Modifier.padding(horizontal = 16.dp), fontSize = 12.sp)
+        OutlinedTextField(quickSearch, { quickSearch = it }, label = { Text("Search references") }, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp))
+        TextButton(onClick = { contextSheet = false; guidance = true }) { Text("Memory, Author’s Note & style") }
         LazyColumn(Modifier.heightIn(max = 420.dp)) {
-            items(state.entries, key = { it.id }) { entry ->
+            items(state.entries.filter { !it.disabled && (it.name.contains(quickSearch, true) || it.plainText.contains(quickSearch, true)) }, key = { it.id }) { entry ->
                 val pinned = state.contextLinks.any { it.sceneId == scene?.id && it.entryId == entry.id }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(pinned, { checked -> scene?.let { viewModel.pinContext(it.id, entry.id, checked) } })
-                    Text(entry.name, Modifier.weight(1f))
-                    TextButton(onClick = { contextSheet = false; onOpenCodexEntry(entry.id) }) { Text("Open") }
+                    Column(Modifier.weight(1f)) {
+                        Text(entry.name + if (pinned) " · Pinned" else if (com.ihy2ln.weaverse.ai.context.ContextBuilder().build(listOf(entry), com.ihy2ln.weaverse.ai.context.ContextBuildRequest(scanText = com.ihy2ln.weaverse.core.text.Document(writing.blocks).plainText())).usedEntries.isNotEmpty()) " · Detected" else "")
+                        Text(entry.plainText.take(160), maxLines = 2, fontSize = 12.sp)
+                    }
+                    TextButton(onClick = { contextSheet = false; quickEdit = entry }) { Text("Open") }
                 }
             }
         }

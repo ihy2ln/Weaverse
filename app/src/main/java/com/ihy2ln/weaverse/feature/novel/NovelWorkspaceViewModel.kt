@@ -28,6 +28,7 @@ internal fun inlineNovelMediaIds(blocks: List<Block>): List<String> = blocks.fla
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class NovelWorkspaceViewModel @Inject constructor(private val db: WeaverseDatabase,
+    private val codex: com.ihy2ln.weaverse.data.repo.CodexRepository,
     private val settings: SettingsRepository, private val media: MediaRepository,
     private val history: com.ihy2ln.weaverse.feature.shell.WorkspaceHistory,
     private val stamps: com.ihy2ln.weaverse.data.repo.SceneWriteStamps) : ViewModel() {
@@ -46,6 +47,7 @@ class NovelWorkspaceViewModel @Inject constructor(private val db: WeaverseDataba
         }
     }.flowOn(Dispatchers.IO).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), NovelWorkspaceState())
 
+    fun editEntry(id: String, name: String, text: String) { viewModelScope.launch { codex.updateEntryText(id, name, text) } }
     fun pinContext(sceneId: String, entryId: String, pinned: Boolean) {
         if (state.value.scenes.none { it.id == sceneId } || state.value.entries.none { it.id == entryId }) return
         viewModelScope.launch {

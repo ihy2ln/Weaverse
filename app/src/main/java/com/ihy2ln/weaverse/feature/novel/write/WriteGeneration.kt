@@ -98,10 +98,17 @@ class WriteGeneration @Inject constructor(
                 return next
             }
         }
+        if (overlay.cursorOffset != null && anchored != null) {
+            val paragraph = blocks[anchored] as? Paragraph ?: error("The target is no longer a paragraph.")
+            check(paragraph.plainText() == overlay.sourceParagraphText) { "The insertion passage changed. Retarget at the current cursor; your candidate is kept." }
+            val offset = overlay.cursorOffset
+            check(offset in 0..paragraph.plainText().length) { "Invalid cursor target." }
+            return blocks.toMutableList().also { it[anchored] = paragraph.copy(spans = paragraph.spans.replaceRangeText(offset, offset, text)) }
+        }
         return blocks.insertGeneratedProseAfter(
             insertAfterIndex = anchored ?: overlay.insertAfterIndex,
             generatedText = text,
-            beatPrompt = overlay.prompt.takeIf { overlay.commandId == "scene_beat" },
+            beatPrompt = null,
         )
     }
 
@@ -112,6 +119,7 @@ class WriteGeneration @Inject constructor(
         bookId: String,
         hasApiKey: Boolean,
         modelSupportsImages: Boolean,
+        contextLimit: Int = ContextMeter.DEFAULT_LIMIT,
     ): WriteGenerationPrep {
         if (!hasApiKey) {
             return WriteGenerationPrep.Failed(AIError.NoApiKey().message.orEmpty())
@@ -122,79 +130,69 @@ class WriteGeneration @Inject constructor(
                 "Selected model does not support images. Pick a Vision-capable model in Settings, or clear the attached picture.",
             )
         }
-        val commandForPrompt = if (hasImage) "describe_image" else overlay.commandId
-        val seriesId = db.bookDao().getById(bookId)?.seriesId
-        val entries = db.codexDao().getAllEntries().filter { !it.disabled && (it.scopeId == bookId || it.scopeId == seriesId || it.scopeId == "global") }
+        val book = db.bookDao().getById(bookId)
+        val writing = db.novelWritingDao().settings(bookId)
+        val entries = db.codexDao().getAllEntries().filter { !it.disabled && (it.scopeId == bookId || it.scopeId == book?.seriesId || it.scopeId == "global") }
         val pinned = scene?.id?.let { db.novelMediaDao().contextIds(it).toSet() }.orEmpty()
-        val assembled = contextBuilder.build(
-            entries,
-            ContextBuildRequest(
-                scanText = sceneText + " " + overlay.prompt + " " + (scene?.pov.orEmpty()),
-                userMessage = overlay.prompt,
-                manualIncludeIds = pinned,
-            ),
-        )
-        val renderCtx = promptAssembler.buildPromptRenderContext(
-            bookId = bookId,
-            sceneText = sceneText,
-            scene = scene,
-            entries = entries,
-            codexBlock = assembled.codexBlock,
-            message = overlay.prompt,
-            outputWords = overlay.outputWords,
-        )
-        val fresh = promptAssembler.libraryPromptBundle(commandForPrompt, renderCtx).let { bundle ->
-            if (bundle.systemInstructions.isBlank() && hasImage) {
-                promptAssembler.libraryPromptBundle("scene_beat", renderCtx)
-            } else {
-                bundle
+        val maxTokens = (overlay.outputWords * 1.7 + 192).toInt().coerceIn(192, 8192)
+        val attachments = if (hasImage) listOfNotNull(loadImageAttachment(overlay.imagePath!!)) else emptyList()
+        if (hasImage && attachments.isEmpty()) return WriteGenerationPrep.Failed("Attached image is missing or unreadable. Reattach it or remove the attachment.")
+        val excluded = mutableSetOf<String>()
+        while (true) {
+            val context = contextBuilder.build(entries, ContextBuildRequest(
+                scanText = sceneText + " " + overlay.prompt + " " + scene?.pov.orEmpty(),
+                manualIncludeIds = pinned, manualExcludeIds = excluded,
+                maxContextTokens = contextLimit, reserveResponseTokens = maxTokens,
+            ))
+            val included = entries.filter { entry -> context.usedEntries.any { it.entryId == entry.id } }
+            val render = promptAssembler.buildPromptRenderContext(bookId, sceneText, scene, included,
+                context.codexBlock, overlay.prompt, overlay.outputWords)
+            val fresh = try {
+                promptAssembler.libraryPromptBundle(overlay.commandId, render, overlay.promptId)
+            } catch (error: IllegalStateException) {
+                return WriteGenerationPrep.Failed(error.message.orEmpty())
             }
+            val system = buildList {
+                add("You are a creative writing assistant. Return only the requested prose.")
+                add(fresh.systemInstructions)
+                val renderedText = fresh.systemInstructions + fresh.historyMessages.joinToString { it.second } + fresh.finalUserMessage.orEmpty()
+                if (context.codexBlock.isNotBlank() && !renderedText.contains(context.codexBlock)) add(context.codexBlock)
+                promptAssembler.buildPovSystemBlock(scene, included).takeIf { it.isNotBlank() }?.let(::add)
+                book?.styleGuide?.takeIf { it.isNotBlank() }?.let { add("Style guide:\n$it") }
+                writing?.memory?.takeIf { it.isNotBlank() }?.let { add("Book memory (persistent facts):\n$it") }
+                writing?.authorNote?.takeIf { it.isNotBlank() }?.let { add("Author's note (current direction):\n$it") }
+            }
+            val user = buildString {
+                fresh.finalUserMessage?.let { appendLine(it) }
+                appendLine(promptAssembler.buildUserMessage(overlay, sceneText, hasImage))
+                appendLine("Action: ${overlay.commandId}")
+                appendLine("Explicit instruction: ${overlay.prompt}")
+                if (overlay.replaceBlockIndex != null) {
+                    val source = overlay.sourceParagraphText.orEmpty()
+                    val start = overlay.replaceStart ?: 0
+                    val end = overlay.replaceEnd ?: 0
+                    if (start == end || start < 0 || end > source.length) return WriteGenerationPrep.Failed("Select a passage before replacing text.")
+                    appendLine("Selected target (replace only this text):\n${source.substring(start, end)}")
+                } else appendLine("Target: insert new prose at the saved cursor; do not rewrite the whole scene.")
+            }
+            val assembled = AssembledPrompt(
+                systemBlocks = com.ihy2ln.weaverse.ai.prompt.PromptAddOns.applyTo(system),
+                messages = fresh.historyMessages, usedEntries = context.usedEntries,
+                tokenBreakdown = emptyList(), droppedEntryIds = (context.droppedEntryIds + excluded).distinct(),
+                codexBlock = context.codexBlock,
+            )
+            // Include message framing and a conservative image allowance in the estimate.
+            val used = ContextMeter.used(assembled, user) + 64 + attachments.size * 4096
+            if (used + maxTokens <= contextLimit) return WriteGenerationPrep.Ready(WriteStreamPlan(
+                overlay.copy(systemInstructions = fresh.systemInstructions, promptId = fresh.promptId,
+                    contextMeter = ContextMeterReading(used + maxTokens, contextLimit)),
+                assembled, user, maxTokens, attachments,
+            ))
+            val drop = context.usedEntries.lastOrNull { it.entryId !in pinned } ?: context.usedEntries.lastOrNull()
+            if (drop == null) return WriteGenerationPrep.Failed(
+                "Required scene, instructions and target need about ${used + maxTokens} tokens; this model allows $contextLimit. Choose a larger-context model, shorten the instructions/scene, reduce output length or remove the attachment. Nothing was sent.")
+            excluded.add(drop.entryId)
         }
-        val activeOverlay = overlay.copy(
-            systemInstructions = fresh.systemInstructions.ifBlank { overlay.systemInstructions },
-            promptId = fresh.promptId ?: overlay.promptId,
-        )
-        val usingMultiMessagePrompt = fresh.historyMessages.isNotEmpty() || fresh.finalUserMessage != null
-        val systemBlocks = buildList {
-            if (usingMultiMessagePrompt) {
-                add("You are a creative writing assistant.")
-            } else {
-                addAll(assembled.systemBlocks)
-            }
-            val povBlock = promptAssembler.buildPovSystemBlock(scene, entries)
-            if (povBlock.isNotBlank()) add(povBlock)
-            if (activeOverlay.systemInstructions.isNotBlank()) {
-                add("Prompt instructions:\n${activeOverlay.systemInstructions}")
-            }
-            if (hasImage) {
-                add(
-                    "Describe the attached picture as prose suitable for a scene beat. " +
-                        "Turn visual detail into narrative text; do not mention that you are describing an image.",
-                )
-            }
-        }
-        val maxTokens = (activeOverlay.outputWords * 1.7 + 192).toInt().coerceIn(192, 8192)
-        val userMessage = fresh.finalUserMessage
-            ?: promptAssembler.buildUserMessage(activeOverlay, sceneText, hasImage)
-        val imageAttachments = if (hasImage) {
-            listOfNotNull(loadImageAttachment(activeOverlay.imagePath!!))
-        } else {
-            emptyList()
-        }
-        return WriteGenerationPrep.Ready(
-            WriteStreamPlan(
-                overlay = activeOverlay,
-                assembled = AssembledPrompt(
-                    systemBlocks = systemBlocks,
-                    messages = fresh.historyMessages,
-                    usedEntries = assembled.usedEntries,
-                    tokenBreakdown = assembled.tokenBreakdown,
-                ),
-                userMessage = userMessage,
-                maxTokens = maxTokens,
-                imageAttachments = imageAttachments,
-            ),
-        )
     }
 
     suspend fun prepareSummarize(

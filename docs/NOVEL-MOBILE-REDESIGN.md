@@ -1,6 +1,6 @@
 # Mobile Novel workspace redesign
 
-Status: first Android implementation delivered in v1.4.26; remaining work and verification limits are listed below. This is not a claim of full Novelcrafter/NovelAI parity.
+Status: v1.4.27 adds the single toolbar and direct prompt composer. See [direct prompting implementation and verification](QA-2026-09-16-NOVEL-DIRECT-PROMPTING.md) for current behavior and limitations. The v1.4.26 notes below are historical.
 
 ## Implemented in v1.4.26
 

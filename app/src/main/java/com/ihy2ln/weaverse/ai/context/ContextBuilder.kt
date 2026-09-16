@@ -56,26 +56,20 @@ class ContextBuilder {
             ContextChip(it.id, it.name, it.colorHex, autoDetected = it.id !in request.manualIncludeIds)
         }
 
-        val codexBlock = merged.joinToString("\n\n") { "[[${it.name}]]\n${it.plainText}" }
-        val systemBlocks = listOfNotNull(
-            "You are a creative writing assistant.",
-            codexBlock.takeIf { it.isNotBlank() },
-        )
-
+        val base = "You are a creative writing assistant."
         val budget = request.maxContextTokens - request.reserveResponseTokens
-        var used = systemBlocks.sumOf { estimateTokens(it) }
+        var used = estimateTokens(base) + estimateTokens(request.userMessage)
         val included = mutableListOf<CodexEntryEntity>()
         val dropped = mutableListOf<String>()
-
         merged.forEach { entry ->
-            val cost = estimateTokens(entry.plainText)
+            val cost = estimateTokens("[[${entry.name}]]\n${entry.plainText}\n\n")
             if (used + cost <= budget) {
                 included.add(entry)
                 used += cost
-            } else {
-                dropped.add(entry.id)
-            }
+            } else dropped.add(entry.id)
         }
+        val codexBlock = included.joinToString("\n\n") { "[[${it.name}]]\n${it.plainText}" }
+        val systemBlocks = listOfNotNull(base, codexBlock.takeIf { it.isNotBlank() })
 
         return AssembledPrompt(
             systemBlocks = systemBlocks,
@@ -98,5 +92,5 @@ class ContextBuilder {
         }
     }
 
-    private fun estimateTokens(text: String): Int = (text.length / 4).coerceAtLeast(1)
+    private fun estimateTokens(text: String): Int = ((text.length + 3) / 4).coerceAtLeast(1)
 }

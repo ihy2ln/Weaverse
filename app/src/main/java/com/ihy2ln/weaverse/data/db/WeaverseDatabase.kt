@@ -49,6 +49,8 @@ import com.ihy2ln.weaverse.data.db.entities.RpgCampaignSaveEntity
 
 @Database(
     entities = [
+        com.ihy2ln.weaverse.data.db.entities.NovelPromptDraft::class,
+        com.ihy2ln.weaverse.data.db.entities.NovelWritingSettings::class,
         SeriesEntity::class,
         BookEntity::class,
         ActEntity::class,
@@ -81,11 +83,12 @@ import com.ihy2ln.weaverse.data.db.entities.RpgCampaignSaveEntity
         TextGameSaveEntity::class,
         RpgCampaignSaveEntity::class,
     ],
-    version = 23,
+    version = 24,
     exportSchema = false,
 )
 @TypeConverters(InkTypeConverters::class)
 abstract class WeaverseDatabase : RoomDatabase() {
+    abstract fun novelWritingDao(): com.ihy2ln.weaverse.data.db.dao.NovelWritingDao
     abstract fun novelMediaDao(): com.ihy2ln.weaverse.data.db.dao.NovelMediaDao
     abstract fun seriesDao(): SeriesDao
     abstract fun bookDao(): BookDao
@@ -100,6 +103,12 @@ abstract class WeaverseDatabase : RoomDatabase() {
     abstract fun textGameSaveDao(): TextGameSaveDao
 
     companion object {
+        val MIGRATION_23_24 = object : Migration(23, 24) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS novel_prompt_drafts (sceneId TEXT NOT NULL PRIMARY KEY, stateJson TEXT NOT NULL)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS novel_writing_settings (bookId TEXT NOT NULL PRIMARY KEY, memory TEXT NOT NULL, authorNote TEXT NOT NULL, modelRef TEXT NOT NULL, outputWords INTEGER NOT NULL)")
+            }
+        }
         val MIGRATION_22_23 = object : Migration(22, 23) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE TABLE IF NOT EXISTS novel_media_links (id TEXT NOT NULL PRIMARY KEY, bookId TEXT NOT NULL, sceneId TEXT NOT NULL, entryId TEXT NOT NULL, mediaId TEXT NOT NULL, caption TEXT NOT NULL, altText TEXT NOT NULL, provenance TEXT NOT NULL, createdAt INTEGER NOT NULL)")

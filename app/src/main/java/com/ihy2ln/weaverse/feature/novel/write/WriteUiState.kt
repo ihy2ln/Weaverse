@@ -15,7 +15,11 @@ data class SelectionState(
     val max: Int get() = maxOf(start, end)
 }
 
+@kotlinx.serialization.Serializable
 data class AiOverlayState(
+    val targetSceneId: String = "",
+    val cursorOffset: Int? = null,
+    val candidates: List<AiOverlayState> = emptyList(),
     val hidden: Boolean = false,
     val commandId: String = "",
     val label: String = "",
@@ -38,7 +42,7 @@ data class AiOverlayState(
     val imageMediaId: String? = null,
     val imagePath: String? = null,
     val pickBeatImageRequestId: Long = 0L,
-    val contextMeter: ContextMeterReading? = null,
+    @kotlinx.serialization.Transient val contextMeter: ContextMeterReading? = null,
 )
 
 data class FindReplaceState(
