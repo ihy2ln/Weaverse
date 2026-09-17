@@ -28,7 +28,7 @@ class NovelWorkspaceDeviceTest {
             db.openHelper.writableDatabase.execSQL("DROP TABLE novel_writing_settings")
             db.openHelper.writableDatabase.version = 23
             db.close()
-            db = Room.databaseBuilder(context, WeaverseDatabase::class.java, name).addMigrations(WeaverseDatabase.MIGRATION_23_24).build()
+            db = Room.databaseBuilder(context, WeaverseDatabase::class.java, name).addMigrations(WeaverseDatabase.MIGRATION_23_24, WeaverseDatabase.MIGRATION_24_25, WeaverseDatabase.MIGRATION_25_26).build()
             assertEquals(book, db.bookDao().getById("book"))
             assertEquals(original, db.manuscriptDao().getScene("scene"))
             assertEquals(link, db.novelMediaDao().observe("book").first().single())
@@ -82,7 +82,7 @@ class NovelWorkspaceDeviceTest {
             db.openHelper.writableDatabase.version = 22
             db.close()
             db = Room.databaseBuilder(context, WeaverseDatabase::class.java, name)
-                .addMigrations(WeaverseDatabase.MIGRATION_22_23, WeaverseDatabase.MIGRATION_23_24).build()
+                .addMigrations(WeaverseDatabase.MIGRATION_22_23, WeaverseDatabase.MIGRATION_23_24, WeaverseDatabase.MIGRATION_24_25, WeaverseDatabase.MIGRATION_25_26).build()
             assertEquals(scene, db.manuscriptDao().getScene("scene"))
             val link = NovelMediaLink("link", "book", "scene", mediaId = "art", caption = "Portrait", altText = "A reference portrait", createdAt = 2)
             db.novelMediaDao().upsert(link)

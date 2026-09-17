@@ -51,6 +51,20 @@ class MangaDownloadRepository @Inject constructor(
     private val mediaRepository: MediaRepository,
     private val okHttpClient: OkHttpClient,
 ) {
+    @Inject lateinit var homeHistory: com.ihy2ln.weaverse.feature.shell.HomeHistory
+    suspend fun recordHomeAccess(sourceId: String, remoteId: String) {
+        val dao = db.mangaDao()
+        if (dao.getSeries(sourceId, remoteId) == null) {
+            dao.getChaptersByManga(remoteId).firstOrNull { it.sourceId == sourceId }?.let { chapter ->
+                saveSeriesMetadata(MangaSearchResult(sourceId, remoteId, chapter.mangaTitle))
+            }
+        }
+        dao.getSeries(sourceId, remoteId)?.let { homeHistory.record("Storyboard", "manga", it.id) }
+    }
+    suspend fun recentSeries(id: String): MangaSeriesEntity? = db.mangaDao().observeSeries().first().firstOrNull { it.id == id }
+    suspend fun resumeChapter(series: MangaSeriesEntity): MangaChapterEntity? = db.mangaDao().getChaptersByManga(series.remoteId)
+        .filter { it.sourceId == series.sourceId && it.status == "completed" && it.lastReadAt > 0 }
+        .maxByOrNull { it.lastReadAt }
     fun observeChapters(): Flow<List<MangaChapterEntity>> = db.mangaDao().observeChapters()
 
     fun observeCoverPages(): Flow<List<MangaPageEntity>> = db.mangaDao().observeCoverPages()

@@ -101,7 +101,7 @@ fun NotesRailScreen(
                             shape = RoundedCornerShape(inkRadiusSm()),
                         )
                         .clickable {
-                            viewModel.selectNote(note.id)
+                            viewModel.openNote(note.id)
                             onNoteOpened()
                         }
                         .padding(if (compact) InkSpacing.xs else InkSpacing.sm),

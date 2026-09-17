@@ -18,7 +18,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -50,7 +50,7 @@ class MainActivity : ComponentActivity() {
                 val tokens = inkTokens()
                 val themed = resolveSectionColor(prefs.appearance.chrome, tokens.panel)
                 val barColor = if (themed.alpha < 0.4f) tokens.panel else themed.copy(alpha = 1f)
-                SideEffect {
+                LaunchedEffect(barColor) {
                     val argb = barColor.toArgb()
                     val style = if (barColor.luminance() > 0.5f) {
                         SystemBarStyle.light(argb, argb)
@@ -65,15 +65,6 @@ class MainActivity : ComponentActivity() {
                         .imePadding(),
                     color = barColor,
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .statusBarsPadding()
-                            .navigationBarsPadding(),
-                    ) {
-                        AppShell()
-                    }
-
                     // Back used to quit outright, which is easy to trigger by accident
                     // with the edge-swipe gesture mid-scene. Confirm first.
                     var confirmExit by rememberSaveable { mutableStateOf(false) }
@@ -91,6 +82,16 @@ class MainActivity : ComponentActivity() {
                             },
                         )
                     }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .statusBarsPadding()
+                            .navigationBarsPadding(),
+                    ) {
+                        AppShell()
+                    }
+
+
                 }
             }
         }

@@ -22,6 +22,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyRow
@@ -61,6 +63,8 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.TextToolbar
@@ -91,7 +95,6 @@ import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import com.ihy2ln.weaverse.feature.prompt.PromptModelPickerDialog
 import com.ihy2ln.weaverse.feature.prompt.PromptModelSelection
 import com.ihy2ln.weaverse.feature.prompt.PromptWordLimit
-import com.ihy2ln.weaverse.feature.prompt.UnifiedPromptBar
 import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgChapterBeat
 import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgAdventureMapScreen
 import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgGenerationStatus
@@ -105,58 +108,47 @@ import com.ihy2ln.weaverse.feature.roleplay.party.PartyViewModel
 import java.io.File
 import kotlinx.coroutines.launch
 
-private data class RpgActionPresetGroup(val label: String, val options: List<String>)
+/** Preset ids the dock routes to a screen action instead of into the composer. */
+const val RpgPresetParty = "rpg-preset-party"
+const val RpgPresetCombat = "rpg-preset-combat"
 
-@Composable
-private fun RpgSceneActionPalette(
-    mode: RpgCombatRuleset,
-    onSelect: (String) -> Unit,
-    onOpenParty: () -> Unit,
-    onStartCombat: () -> Unit,
-) {
+/**
+ * Actions / Thoughts / Roleplay — the turn presets the prompt dock offers where the
+ * Novel dock offers prompt templates.
+ */
+fun rpgPresetGroups(mode: RpgCombatRuleset): List<RpgPresetGroup> {
     val partyOption = when (mode) {
         RpgCombatRuleset.CardBattle -> "View tactical roster cards"
         RpgCombatRuleset.DndD20 -> "View party character sheets"
         RpgCombatRuleset.TextReactions -> "View party roster"
     }
-    val combatOption = "Enter ${mode.label} combat"
-    val groups = remember(mode) {
-        listOf(
-            RpgActionPresetGroup("Actions", listOf("Look around carefully", "Move closer cautiously", "Interact with the environment", "Use a carried item", "Help a party member", "Wait and observe")),
-            RpgActionPresetGroup("Thoughts", listOf("Think through the situation", "Recall relevant knowledge", "Study their intentions", "Consider the risks", "Focus on a suspicious detail", "Reflect on the party's goal")),
-            RpgActionPresetGroup("Other RPG", listOf(partyOption, combatOption, "Speak to a nearby character", "Ask a direct question", "Attempt to persuade them", "Search for clues", "Check the party's condition")),
-        )
-    }
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
-        horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
-    ) {
-        groups.forEach { group ->
-            var expanded by remember(group.label) { mutableStateOf(false) }
-            Box(Modifier.weight(1f)) {
-                InkOutlinedButton(
-                    label = group.label + " ▾",
-                    onClick = { expanded = true },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                    group.options.forEach { option ->
-                        DropdownMenuItem(
-                            text = { Text(option) },
-                            onClick = {
-                                when (option) {
-                                    partyOption -> onOpenParty()
-                                    combatOption -> onStartCombat()
-                                    else -> onSelect(option)
-                                }
-                                expanded = false
-                            },
-                        )
-                    }
-                }
-            }
-        }
-    }
+    fun texts(vararg options: String) = options.map { RpgPreset(it, it) }
+    return listOf(
+        RpgPresetGroup(
+            "Actions",
+            texts(
+                "Look around carefully", "Move closer cautiously", "Interact with the environment",
+                "Use a carried item", "Help a party member", "Wait and observe",
+            ),
+        ),
+        RpgPresetGroup(
+            "Thoughts",
+            texts(
+                "Think through the situation", "Recall relevant knowledge", "Study their intentions",
+                "Consider the risks", "Focus on a suspicious detail", "Reflect on the party's goal",
+            ),
+        ),
+        RpgPresetGroup(
+            "Roleplay",
+            listOf(
+                RpgPreset(RpgPresetParty, partyOption),
+                RpgPreset(RpgPresetCombat, "Enter " + mode.label + " combat"),
+            ) + texts(
+                "Speak to a nearby character", "Ask a direct question", "Attempt to persuade them",
+                "Search for clues", "Check the party's condition",
+            ),
+        ),
+    )
 }
 
 @Composable
@@ -512,8 +504,9 @@ fun AdventurePlayScreen(
     val storyState = rememberLazyListState()
     val planScrollState = rememberScrollState()
     val planScope = rememberCoroutineScope()
-    var promptCollapsed by rememberSaveable { mutableStateOf(false) }
     var modelsOpen by remember { mutableStateOf(false) }
+    // Height the player dragged the prompt dock to; 0 means size it to its content.
+    var promptDockHeight by rememberSaveable { mutableStateOf(0f) }
     var showAddText by remember { mutableStateOf(false) }
     var selectionAddTextVisible by remember { mutableStateOf(false) }
     var sceneArtMenuOpen by remember { mutableStateOf(false) }
@@ -532,23 +525,10 @@ fun AdventurePlayScreen(
     var setupGoal by rememberSaveable { mutableStateOf("") }
     var setupTone by rememberSaveable { mutableStateOf("") }
     var setupComplication by rememberSaveable { mutableStateOf("") }
-    var minimumWordsText by rememberSaveable { mutableStateOf(state.minimumOutputWords.toString()) }
-    var maximumWordsText by rememberSaveable { mutableStateOf(state.outputWords.toString()) }
-    LaunchedEffect(state.minimumOutputWords) {
-        if (minimumWordsText.toIntOrNull() != state.minimumOutputWords) {
-            minimumWordsText = state.minimumOutputWords.toString()
-        }
-    }
-    LaunchedEffect(state.outputWords) {
-        if (maximumWordsText.toIntOrNull() != state.outputWords) {
-            maximumWordsText = state.outputWords.toString()
-        }
-    }
-    val minWords = minimumWordsText.toIntOrNull()
-    val maxWords = maximumWordsText.toIntOrNull()
-    val wordRangeValid = minWords != null && maxWords != null &&
-        minWords in PromptWordLimit.Minimum..PromptWordLimit.Maximum &&
-        maxWords in PromptWordLimit.Minimum..PromptWordLimit.Maximum && minWords <= maxWords
+    // The dock keeps its own digit buffers; only the resulting range matters here.
+    val wordRangeValid = state.minimumOutputWords in PromptWordLimit.Minimum..PromptWordLimit.Maximum &&
+        state.outputWords in PromptWordLimit.Minimum..PromptWordLimit.Maximum &&
+        state.minimumOutputWords <= state.outputWords
 
     LaunchedEffect(state.title) {
         onChromeChange(
@@ -584,6 +564,10 @@ fun AdventurePlayScreen(
     }
 
     val sceneArt = state.mediaPanels.lastOrNull { it.path.isNotBlank() && !it.isAudio }
+    val promptDockMaxHeight = run {
+        val keyboard = with(LocalDensity.current) { WindowInsets.ime.getBottom(this).toDp() }
+        (LocalConfiguration.current.screenHeightDp.dp - keyboard - 96.dp).coerceAtLeast(80.dp)
+    }
     val startupPending = state.rpgStartup == null && state.adventureStartupPhase in setOf(
         AdventureStartupPhase.Character,
         AdventureStartupPhase.Choose,
@@ -1022,43 +1006,6 @@ fun AdventurePlayScreen(
                     }
                 }
             }
-            if (!startupPending && state.rpgActionChoices.isNotEmpty()) {
-                Text(
-                    "Choose the party’s direction",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = tokens.activePill,
-                    modifier = Modifier.padding(top = InkSpacing.xs, bottom = InkSpacing.xs),
-                )
-                LazyRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
-                ) {
-                    items(state.rpgActionChoices, key = { it.id }) { choice ->
-                        Column(
-                            modifier = Modifier
-                                .width(190.dp)
-                                .clip(RoundedCornerShape(inkRadiusSm()))
-                                .background(tokens.panel)
-                                .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.55f), RoundedCornerShape(inkRadiusSm()))
-                                .clickable(onClickLabel = "Choose ${choice.title}") {
-                                    viewModel.onInputChange(choice.title)
-                                }
-                                .padding(InkSpacing.xs),
-                        ) {
-                            Text(choice.title, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                            if (choice.description.isNotBlank()) {
-                                Text(
-                                    choice.description,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = tokens.secondaryText,
-                                    maxLines = 3,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
         }
 
         if (state.adventureStartupPhase == AdventureStartupPhase.Choose) {
@@ -1227,17 +1174,9 @@ fun AdventurePlayScreen(
                 },
             )
         }
-        if (!startupPending) {
-            RpgSceneActionPalette(
-                mode = state.rpgCombatMode,
-                onSelect = viewModel::onInputChange,
-                onOpenParty = { showCharacterCards = true },
-                onStartCombat = { viewModel.beginRpgCombat() },
-            )
-        }
-        UnifiedPromptBar(
-            value = state.input,
-            onValueChange = viewModel::onInputChange,
+        RpgPromptDock(
+            input = state.input,
+            onInputChange = viewModel::onInputChange,
             placeholder = if (state.rpgActionChoices.isNotEmpty()) {
                 "Your own action…"
             } else if (state.adventureStartupPhase == AdventureStartupPhase.Character) {
@@ -1255,37 +1194,36 @@ fun AdventurePlayScreen(
             } else {
                 "What do you do? · Describe your action…"
             },
-            collapsed = promptCollapsed,
-            onCollapsedChange = { promptCollapsed = it },
-            contextLabel = state.contextMeter?.label.orEmpty(),
-            minimumWords = minimumWordsText,
-            maximumWords = maximumWordsText,
-            onMinimumWordsChange = { value ->
-                minimumWordsText = value.filter(Char::isDigit).take(4)
-                minimumWordsText.toIntOrNull()?.let(viewModel::updateMinimumOutputWords)
-            },
-            onMaximumWordsChange = { value ->
-                maximumWordsText = value.filter(Char::isDigit).take(4)
-                maximumWordsText.toIntOrNull()?.let(viewModel::updateOutputWords)
-            },
-            wordRangeValid = wordRangeValid,
-            modelLabel = PromptModelSelection.shortLabel(
-                PromptModelSelection.effectiveModelRef(
-                    state.selectedModelRef,
-                    state.defaultModelRef,
-                ),
-                state.writingModels,
-            ),
-            onModelClick = { modelsOpen = true },
-            aiMode = startupPending || state.entryMode != "nai",
             streaming = state.isStreaming,
+            aiMode = startupPending || state.entryMode != "nai",
             onToggleMode = {
                 if (!startupPending) {
                     viewModel.setEntryMode(if (state.entryMode == "nai") "ai" else "nai")
                 }
             },
-            canSubmit = state.input.isNotBlank() && wordRangeValid,
-            canClear = state.input.isNotBlank(),
+            contextLabel = state.contextMeter?.label.orEmpty(),
+            minimumWords = state.minimumOutputWords,
+            maximumWords = state.outputWords,
+            onMinimumWords = viewModel::updateMinimumOutputWords,
+            onMaximumWords = viewModel::updateOutputWords,
+            wordRangeValid = wordRangeValid,
+            modelLabel = PromptModelSelection.shortLabel(
+                PromptModelSelection.effectiveModelRef(state.selectedModelRef, state.defaultModelRef),
+                state.writingModels,
+            ),
+            models = state.writingModels,
+            onPickModel = viewModel::selectModel,
+            onUseDefaultModel = viewModel::useDefaultModel,
+            choices = if (startupPending) emptyList() else state.rpgActionChoices,
+            presetGroups = if (startupPending) emptyList() else rpgPresetGroups(state.rpgCombatMode),
+            onPreset = { preset ->
+                when (preset.id) {
+                    RpgPresetParty -> showCharacterCards = true
+                    RpgPresetCombat -> viewModel.beginRpgCombat()
+                    else -> viewModel.onInputChange(preset.label)
+                }
+            },
+            canSubmit = state.input.isNotBlank(),
             onSubmit = viewModel::send,
             onCancel = viewModel::cancelGeneration,
             onClear = viewModel::clearInput,
@@ -1293,15 +1231,13 @@ fun AdventurePlayScreen(
             onRetry = viewModel::regenerateLatestReply,
             onContinue = viewModel::continueAdventure,
             onMicTap = { if (!state.isStreaming) startDictate() },
-            onExtraAction = viewModel::rollAction,
+            onRoll = viewModel::rollAction,
             onAdd = viewModel::requestMediaPick,
             onAddCharacter = viewModel::addRosterCharacter,
             onAddItem = viewModel::addInventoryItem,
-            onSpoken = { spoken ->
-                viewModel.onInputChange(mergeSpokenText(state.input, spoken))
-            },
-            compactSingleLine = true,
-            showCommandPopup = true,
+            pinnedHeightDp = promptDockHeight,
+            onPinnedHeightChange = { promptDockHeight = it },
+            availableHeight = promptDockMaxHeight,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),

@@ -23,6 +23,7 @@ private data class ProfileArt(
 @Composable
 fun ProfileBackgroundArt(profile: AppearanceProfile, modifier: Modifier = Modifier) {
     val art = when (profile) {
+        AppearanceProfile.Streaming -> ProfileArt(StreamingTokens.background, StreamingTokens.panel, StreamingTokens.background, emptyList())
         AppearanceProfile.Fantasy -> ProfileArt(
             top = Color(0xFF1B1533),
             middle = Color(0xFF241C46),

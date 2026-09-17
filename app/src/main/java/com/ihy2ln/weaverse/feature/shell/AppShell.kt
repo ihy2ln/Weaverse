@@ -135,6 +135,12 @@ fun AppShell(
     codexViewModel: CodexViewModel = hiltViewModel(),
     promptViewModel: GlobalPromptViewModel = hiltViewModel(),
 ) {
+    var showHome by rememberSaveable { mutableStateOf(true) }
+    var notesDest by rememberSaveable { mutableStateOf(NotesDestination.Chat.name) }
+    var homeThreadId by rememberSaveable { mutableStateOf<String?>(null) }
+    var homeMangaId by rememberSaveable { mutableStateOf<String?>(null) }
+    var browseRoutes by rememberSaveable { mutableStateOf(listOf("home")) }
+    val homeStateHolder = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     var mode by rememberSaveable { mutableStateOf(AppMode.Novel.name) }
     var novelDest by rememberSaveable { mutableStateOf(NovelDestination.Bookshelf.name) }
     var rpDest by rememberSaveable { mutableStateOf(RoleplayDestination.Campaign.name) }
@@ -225,6 +231,14 @@ fun AppShell(
                 // Campaigns and storyboards are both manuscripts underneath, so one
                 // path creates all three and only the landing screen differs.
                 shellViewModel.createWork(vocabulary, details) { bookId, chatId ->
+                    showHome = false
+                    val accessMode = when (vocabulary) {
+                        CreateWorkVocabulary.Storyboard -> "Storyboard"
+                        CreateWorkVocabulary.Campaign -> "Roleplay"
+                        CreateWorkVocabulary.TextGame -> "Games"
+                        else -> "Novel"
+                    }
+                    shellViewModel.recordAccess(accessMode, if (accessMode == "Games") "chat" else "book", if (accessMode == "Games") chatId.orEmpty() else bookId)
                     showLibrary = false
                     when (vocabulary) {
                         CreateWorkVocabulary.Storyboard -> {
@@ -412,6 +426,10 @@ fun AppShell(
         else -> "$seriesTitle · Codex & Prompts stay shared"
     }
 
+    val isBookBrowsing = (showHome || (mode == AppMode.Novel.name && novelDest == NovelDestination.Bookshelf.name)) &&
+                !showSettings && !showExport && !showSearch && !showLibrary && chromeTool == null &&
+                selectedCodexEntryId == null && selectedCharacterId == null && selectedPersonaId == null && workspaceFocus == WorkspaceFocus.Story.name
+
     val shellFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) {
         runCatching { shellFocus.requestFocus() }
@@ -447,7 +465,7 @@ fun AppShell(
         val userBackgroundVideo = shellInfo.backgroundVideoPath
         val showProfileArt =
             userBackgroundImage == null && userBackgroundVideo == null && prefs.profileBackgroundEnabled
-        when {
+        if (!isBookBrowsing) when {
             userBackgroundVideo != null -> LoopingVideoBackground(
                 path = userBackgroundVideo,
                 modifier = Modifier.fillMaxSize(),
@@ -512,7 +530,7 @@ fun AppShell(
                 AppMode.Games -> GamesDestination.TextGames.name
                 AppMode.Chatting -> chatDest
                 AppMode.Storyboard -> storyboardDest
-                AppMode.Notes -> NotesDestination.Chat.name
+                AppMode.Notes -> notesDest
             }
             val chromeTitle = when {
                 showSettings -> "Settings"
@@ -533,13 +551,10 @@ fun AppShell(
                     "Shared · ${codexState.entries.size} entries · every book & mode"
                 else -> toolbarSubtitle
             }
-            val canGoBack = showSettings || showExport || showSearch || showLibrary ||
-                selectedCodexEntryId != null || selectedCharacterId != null || selectedPersonaId != null ||
-                selectedInventoryCarrierId != null || chromeTool != null || selectedRpChatId != null ||
-                selectedGameSessionId != null || storyboardChatId != null ||
-                mode != AppMode.Novel.name || novelDest != NovelDestination.Bookshelf.name
+            val canGoBack = !showHome || showSettings || showExport || showSearch || showLibrary
             fun goBackOneScreen() {
                 when {
+                    isBookBrowsing && browseRoutes.size > 1 -> browseRoutes = browseRoutes.dropLast(1)
                     showSettings -> showSettings = false
                     showExport -> showExport = false
                     showSearch -> showSearch = false
@@ -549,6 +564,9 @@ fun AppShell(
                     selectedPersonaId != null -> selectedPersonaId = null
                     selectedInventoryCarrierId != null -> selectedInventoryCarrierId = null
                     chromeTool != null -> chromeTool = null
+                    workspaceFocus != WorkspaceFocus.Story.name -> workspaceFocus = WorkspaceFocus.Story.name
+                    currentMode == AppMode.Notes && notesDetailOpen -> notesDetailOpen = false
+                    currentMode == AppMode.Notes && notesDest != NotesDestination.Chat.name -> notesDest = NotesDestination.Chat.name
                     selectedRpChatId != null -> { selectedRpChatId = null; rpDest = RoleplayDestination.Chats.name }
                     selectedGameSessionId != null -> selectedGameSessionId = null
                     storyboardChatId != null -> {
@@ -562,13 +580,24 @@ fun AppShell(
                     currentMode == AppMode.Roleplay && rpDest != RoleplayDestination.Campaign.name -> rpDest = RoleplayDestination.Campaign.name
                     currentMode == AppMode.Chatting && chatDest != ChattingDestination.Chats.name -> chatDest = ChattingDestination.Chats.name
                     currentMode == AppMode.Storyboard && storyboardDest != StoryboardDestination.Library.name -> storyboardDest = StoryboardDestination.Library.name
-                    else -> mode = AppMode.Novel.name
+                    else -> showHome = true
                 }
             }
-            val inNovelWorkspace = mode == AppMode.Novel.name && novelDest != NovelDestination.Bookshelf.name &&
+            androidx.activity.compose.BackHandler(enabled = canGoBack) { goBackOneScreen() }
+            val inNovelWorkspace = !showHome && mode == AppMode.Novel.name && novelDest != NovelDestination.Bookshelf.name &&
                 !showLibrary && !showSettings && !showSearch && !showExport && chromeTool == null &&
                 selectedCodexEntryId == null && workspaceFocus != WorkspaceFocus.Pictures.name
-            if (rpChrome?.hideWorkspaceChrome != true && !inNovelWorkspace) WorkspaceChrome(
+            val shellChrome: @Composable () -> Unit = { WorkspaceChrome(
+                browsing = isBookBrowsing,
+                isHome = showHome && !showSettings && !showSearch && !showExport && !showLibrary,
+                onHome = {
+                    browseRoutes = listOf("home")
+                    showHome = true; showSettings = false; showExport = false; showSearch = false; showLibrary = false
+                    chromeTool = null; selectedCodexEntryId = null; selectedCharacterId = null; selectedPersonaId = null
+                    selectedInventoryCarrierId = null; selectedRpChatId = null; selectedGameSessionId = null; storyboardChatId = null; rpChrome = null
+                    workspaceFocus = WorkspaceFocus.Story.name
+                },
+                onSearch = { showSearch = true },
                 bookTitle = chromeTitle,
                 seriesTitle = chromeSubtitle,
                 workspaceOptions = workspaceOptions,
@@ -596,13 +625,14 @@ fun AppShell(
                 onSettings = { showSettings = !showSettings },
                 onImport = { showExport = true },
                 onExport = { showExport = true },
-                canGoBack = canGoBack,
+                canGoBack = if (isBookBrowsing) browseRoutes.size > 1 else canGoBack,
                 onBack = ::goBackOneScreen,
                 canUndo = historyState.canUndo,
                 canRedo = historyState.canRedo,
                 onUndo = shellViewModel::undo,
                 onRedo = shellViewModel::redo,
                 onTool = { id ->
+                    showHome = false
                     showLibrary = false
                     showSettings = false
                     showExport = false
@@ -622,6 +652,11 @@ fun AppShell(
                     }
                 },
                 onWorkspace = { next ->
+                    if (next == AppMode.Novel.name) browseRoutes = listOf("books")
+                    showHome = false
+                    selectedGameSessionId = null
+                    homeThreadId = null
+                    homeMangaId = null
                     showLibrary = false
                     showSettings = false
                     showExport = false
@@ -641,12 +676,17 @@ fun AppShell(
                         AppMode.Games.name -> { /* single destination */ }
                         AppMode.Chatting.name -> chatDest = ChattingDestination.Chats.name
                         AppMode.Storyboard.name -> storyboardDest = StoryboardDestination.Library.name
+                        AppMode.Notes.name -> notesDest = NotesDestination.Chat.name
                     }
                     if (next != AppMode.Notes.name) {
                         workspaceFocus = WorkspaceFocus.Story.name
                     }
                 },
                 onMode = { id ->
+                    if (currentMode == AppMode.Novel && id == NovelDestination.Bookshelf.name) browseRoutes = listOf("books")
+                    showHome = false
+                    showSearch = false; showExport = false
+                    selectedCodexEntryId = null; selectedCharacterId = null; selectedPersonaId = null
                     showLibrary = false
                     showSettings = false
                     chromeTool = null
@@ -668,25 +708,31 @@ fun AppShell(
                             storyboardDest = id
                             storyboardChatId = null
                         }
-                        AppMode.Notes -> notesDetailOpen = false
+                        AppMode.Notes -> { notesDest = id; notesDetailOpen = false }
                     }
                 },
                 onFocus = { workspaceFocus = it; chromeTool = null },
                 onWorkspaceOrderChange = shellViewModel::setWorkspaceButtonOrder,
                 onModeOrderChange = { shellViewModel.setModeButtonOrder(currentMode, it) },
-            )
+            ) }
+            if (!inNovelWorkspace) {
+                if (isBookBrowsing) com.ihy2ln.weaverse.feature.library.BookBrowsingTheme { shellChrome() } else shellChrome()
+            }
             when {
                 showSettings -> SettingsScreen(modifier = Modifier.weight(1f).fillMaxSize())
                 showExport -> ExportImportScreen(modifier = Modifier.weight(1f).fillMaxSize())
                 showSearch -> GlobalSearchScreen(
                     onResultClick = { result ->
+                        showHome = false
                         showSearch = false
                         showLibrary = false
                         when (result.type) {
                             SearchResultType.Scene -> {
-                                mode = AppMode.Novel.name
-                                selectedSceneId = result.id
-                                novelDest = NovelDestination.Write.name
+                                shellViewModel.openSceneFromSearch(result.id) {
+                                    mode = AppMode.Novel.name
+                                    selectedSceneId = result.id
+                                    novelDest = NovelDestination.Write.name
+                                }
                             }
                             SearchResultType.Codex -> {
                                 selectedCodexEntryId = result.id
@@ -709,24 +755,31 @@ fun AppShell(
                 )
                 showLibrary -> LibraryScreen(
                     onOpenMode = { modeId ->
+                        showHome = false
                         showLibrary = false
                         mode = modeId
                         chromeTool = null
                     },
-                    onOpenBook = { _, sceneId ->
+                    onOpenBook = { bookId, sceneId ->
+                        showHome = false
+                        shellViewModel.recordAccess("Novel", "book", bookId, sceneId.orEmpty())
                         if (sceneId != null) selectedSceneId = sceneId
                         showLibrary = false
                         novelDest = NovelDestination.Plan.name
                         mode = AppMode.Novel.name
                     },
-                    onWriteBook = { _, sceneId ->
+                    onWriteBook = { bookId, sceneId ->
+                        showHome = false
+                        shellViewModel.recordAccess("Novel", "book", bookId, sceneId.orEmpty())
                         if (sceneId != null) selectedSceneId = sceneId
                         writeJumpKind = WriteJumpKind.Scene.name
                         showLibrary = false
                         novelDest = NovelDestination.Write.name
                         mode = AppMode.Novel.name
                     },
-                    onReadBook = { _, sceneId ->
+                    onReadBook = { bookId, sceneId ->
+                        showHome = false
+                        shellViewModel.recordAccess("Novel", "book", bookId, sceneId.orEmpty())
                         if (sceneId != null) selectedSceneId = sceneId
                         showLibrary = false
                         novelDest = NovelDestination.Read.name
@@ -735,6 +788,43 @@ fun AppShell(
                     onOpenExport = { showExport = true },
                     modifier = Modifier.weight(1f).fillMaxSize(),
                 )
+                isBookBrowsing -> homeStateHolder.SaveableStateProvider("browser") {
+                    com.ihy2ln.weaverse.feature.library.BookBrowserScreen(
+                        routes = browseRoutes, onRoutes = { browseRoutes = it },
+                        onRead = { id -> shellViewModel.openBookForBrowsing(id, false) { scene ->
+                            selectedSceneId = scene; mode = AppMode.Novel.name; showHome = false; novelDest = NovelDestination.Read.name
+                        } },
+                        onWrite = { id -> shellViewModel.openBookForBrowsing(id, true) { scene ->
+                            selectedSceneId = scene; mode = AppMode.Novel.name; showHome = false; novelDest = NovelDestination.Write.name
+                        } },
+                        onCreate = { creatingWork = CreateWorkVocabulary.Novel },
+                        onImport = { showExport = true },
+                        onExport = { id -> shellViewModel.openBookForBrowsing(id, false) { showExport = true } },
+                        modes = workspaceOptions.map { AppMode.valueOf(it.id) },
+                        onMode = { next ->
+                            if (next == AppMode.Novel) browseRoutes = listOf("books")
+                            mode = next.name; showHome = false; homeThreadId = null; homeMangaId = null
+                            selectedGameSessionId = null; selectedRpChatId = null; storyboardChatId = null
+                            chatServerId = null; notesDetailOpen = false; rpChrome = null
+                            selectedCodexEntryId = null; selectedCharacterId = null; selectedPersonaId = null
+                            chromeTool = null; workspaceFocus = WorkspaceFocus.Story.name
+                            novelDest = NovelDestination.Bookshelf.name; rpDest = RoleplayDestination.Campaign.name
+                            chatDest = ChattingDestination.Chats.name; storyboardDest = StoryboardDestination.Library.name
+                            notesDest = NotesDestination.Chat.name
+                        },
+                        onRecent = { item -> shellViewModel.openRecent(item) { recent ->
+                            mode = recent.mode; showHome = false
+                            when (recent.mode) {
+                                "Novel" -> { selectedSceneId = recent.target; novelDest = NovelDestination.Write.name }
+                                "Roleplay" -> { selectedRpChatId = recent.sessionId; rpDest = RoleplayDestination.Chats.name }
+                                "Games" -> selectedGameSessionId = recent.sessionId
+                                "Chatting" -> { chatServerId = recent.bookId; selectedRpChatId = recent.sessionId; chatDest = ChattingDestination.Chats.name }
+                                "Storyboard" -> { homeMangaId = recent.contentId.takeIf { recent.kind == "manga" }; storyboardChatId = recent.sessionId.takeIf { recent.kind != "manga" }; storyboardDest = StoryboardDestination.Library.name }
+                                "Notes" -> if (recent.kind == "note") { notesDest = NotesDestination.Board.name; notesViewModel.selectNote(recent.contentId); notesDetailOpen = true } else { notesDest = NotesDestination.Chat.name; homeThreadId = recent.contentId }
+                            }
+                        } }, modifier = Modifier.weight(1f).fillMaxSize(),
+                    )
+                }
                 selectedCodexEntryId != null -> Column(Modifier.weight(1f).fillMaxSize()) {
                     val codexPanelExpanded = codexPanelHeightDp > 72f
                     // Back/exit: without this the codex panel could only be left by
@@ -957,6 +1047,7 @@ fun AppShell(
                                         showExport = true
                                     },
                                     onOpen = { card ->
+                                        shellViewModel.recordAccess("Novel", "book", card.id)
                                         card.bookId?.let(shellViewModel::setSelectedBookId)
                                         novelDest = NovelDestination.Plan.name
                                     },
@@ -971,18 +1062,19 @@ fun AppShell(
                                     onOpenCodexEntry = { selectedCodexEntryId = it },
                                 )
                             }
-                            AppMode.Notes.name -> when (cd) {
+                            AppMode.Notes.name -> when (notesDest) {
                                 NotesDestination.Board.name -> NotesWorkspaceScreen(
                                     viewModel = notesViewModel,
                                     detailOpen = notesDetailOpen,
                                     onDetailOpen = { notesDetailOpen = true },
                                     modifier = Modifier.fillMaxSize(),
                                 )
-                                else -> BrainstormChatScreen()
+                                else -> BrainstormChatScreen(initialThreadId = homeThreadId)
                             }
                             AppMode.Chatting.name -> when (chattingDestinationOf(cd)) {
                                 ChattingDestination.Friends -> FriendsScreen(
                                     onOpenChat = {
+                                        shellViewModel.recordAccess("Chatting", "chat", it)
                                         // DMs open under Home in the Discord workspace.
                                         chatServerId = null
                                         selectedRpChatId = it
@@ -996,7 +1088,7 @@ fun AppShell(
                                         chatServerId = it
                                         if (it != null) selectedRpChatId = null
                                     },
-                                    onRoomSelect = { selectedRpChatId = it },
+                                    onRoomSelect = { selectedRpChatId = it; if (it != null) shellViewModel.recordAccess("Chatting", "chat", it) },
                                     onOpenFriends = { chatDest = ChattingDestination.Friends.name },
                                 )
                             }
@@ -1004,6 +1096,7 @@ fun AppShell(
                                 if (boardId == null) {
                                     StoryboardMangaHubScreen(
                                         initialTab = storyboardDestinationOf(sd).name,
+                                        initialSeriesId = homeMangaId,
                                         onCreateProject = { storyboardPlusMenu = true },
                                         readerReturnTarget = mangaReaderChapterId?.let { chapterId ->
                                             MangaReaderReturnTarget(chapterId, mangaReaderPageIndex)
@@ -1032,6 +1125,7 @@ fun AppShell(
                                             )
                                         },
                                         onOpenProject = { card ->
+                                            shellViewModel.recordAccess("Storyboard", if (card.bookId != null) "book" else "chat", card.id)
                                             card.bookId?.let(shellViewModel::setSelectedBookId)
                                             mangaEditorOnly = false
                                             mangaEditorPageId = null
@@ -1093,6 +1187,7 @@ fun AppShell(
                                             card.bookId?.let { bookId ->
                                                 shellViewModel.openCampaign(bookId) { sessionId ->
                                                     selectedGameSessionId = sessionId
+                                                    shellViewModel.recordAccess("Games", "chat", sessionId)
                                                 }
                                             }
                                         },
@@ -1117,6 +1212,7 @@ fun AppShell(
                                                 card.bookId?.let { bookId ->
                                                     shellViewModel.openCampaign(bookId) { sessionId ->
                                                         selectedRpChatId = sessionId
+                                                        shellViewModel.recordAccess("Roleplay", "book", bookId, sessionId)
                                                     }
                                                 }
                                             },
@@ -1130,6 +1226,7 @@ fun AppShell(
                                         card.bookId?.let { bookId ->
                                             shellViewModel.openCampaign(bookId) { sessionId ->
                                                 selectedRpChatId = sessionId
+                                                        shellViewModel.recordAccess("Roleplay", "book", bookId, sessionId)
                                                 rpDest = RoleplayDestination.Chats.name
                                             }
                                         }
@@ -1187,7 +1284,7 @@ fun AppShell(
             ),
             novelDest = novelDest,
             forceCollapsed = textGameBattleFocus,
-            active = activeWritingDestination &&
+            active = !showHome && activeWritingDestination &&
                 mode != AppMode.Novel.name &&
                 !(mode == AppMode.Storyboard.name && mangaEditorOnly) &&
                 !(mode == AppMode.Roleplay.name && rpChrome?.displayMode == "dungeonMaster") &&

@@ -65,21 +65,12 @@ private enum class MangaHubTab(val label: String) {
     Library("Library"), Browse("Browse"), Downloads("Downloads"), Extensions("Extensions"), Projects("Projects")
 }
 
-private val HubBlack = Color(0xFF101012)
-private val HubPanel = Color(0xFF1B1B1F)
-private val HubText = Color(0xFFF4F1F5)
-private val HubMuted = Color(0xFFB7B1BC)
-private val HubAccent = Color(0xFF92A8FF)
-private val HubColors = darkColorScheme(
-    primary = HubAccent,
-    onPrimary = HubBlack,
-    background = HubBlack,
-    onBackground = HubText,
-    surface = HubBlack,
-    onSurface = HubText,
-    surfaceVariant = HubPanel,
-    onSurfaceVariant = HubMuted,
-)
+private val HubBlack = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.background
+private val HubPanel = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.panel
+private val HubText = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.primaryText
+private val HubMuted = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.secondaryText
+private val HubAccent = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.activePill
+private val HubColors = com.ihy2ln.weaverse.core.ui.theme.StreamingColors
 
 data class MangaEditRequest(
     val chapterId: String,
@@ -96,6 +87,7 @@ data class MangaReaderReturnTarget(
 @Composable
 fun StoryboardMangaHubScreen(
     initialTab: String = "Library",
+    initialSeriesId: String? = null,
     onCreateProject: () -> Unit,
     onOpenProject: (WorkShelfCard) -> Unit,
     onEditChapter: (MangaEditRequest) -> Unit,
@@ -104,6 +96,7 @@ fun StoryboardMangaHubScreen(
     modifier: Modifier = Modifier,
     viewModel: MangaSourceViewModel = hiltViewModel(),
 ) {
+    LaunchedEffect(initialSeriesId) { initialSeriesId?.let(viewModel::openRecentSeries) }
     val state by viewModel.uiState.collectAsState()
     var tabName by rememberSaveable { mutableStateOf(initialTab) }
     val tab = runCatching { MangaHubTab.valueOf(tabName) }.getOrDefault(MangaHubTab.Library)

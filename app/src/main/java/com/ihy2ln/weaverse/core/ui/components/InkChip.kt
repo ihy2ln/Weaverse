@@ -1,5 +1,6 @@
 package com.ihy2ln.weaverse.core.ui.components
 
+import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -14,9 +15,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.ihy2ln.weaverse.core.ui.theme.InkHairline
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
-import com.ihy2ln.weaverse.core.ui.theme.InkSecondaryText
 
 @Composable
 fun InkChip(
@@ -36,7 +35,7 @@ fun InkChip(
             .then(
                 if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier,
             )
-            .border(1.dp, if (selected) color else InkHairline, shape)
+            .border(1.dp, if (selected) color else inkTokens().hairline, shape)
             .padding(horizontal = InkSpacing.md, vertical = InkSpacing.xs),
     ) {
         Text(
@@ -58,10 +57,10 @@ fun InkGhostChip(
     Box(
         modifier = modifier
             .clip(shape)
-            .border(1.dp, InkHairline, shape)
+            .border(1.dp, inkTokens().hairline, shape)
             .clickable(onClick = onClick)
             .padding(horizontal = InkSpacing.md, vertical = InkSpacing.xs),
     ) {
-        Text(text = label, color = InkSecondaryText, fontSize = 12.sp)
+        Text(text = label, color = inkTokens().secondaryText, fontSize = 12.sp)
     }
 }

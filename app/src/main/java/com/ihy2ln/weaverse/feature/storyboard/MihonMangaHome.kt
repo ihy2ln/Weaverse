@@ -143,26 +143,16 @@ import androidx.preference.EditTextPreference
 import androidx.preference.MultiSelectListPreference
 import androidx.compose.material3.Switch
 
-private val MihonBackground = Color(0xFF111318)
-private val MihonSurface = Color(0xFF191C22)
-private val MihonSurfaceHigh = Color(0xFF24272E)
-private val MihonPrimary = Color(0xFFA9C7FF)
-private val MihonOnPrimary = Color(0xFF0B305F)
-private val MihonText = Color(0xFFE2E2E9)
-private val MihonMuted = Color(0xFFC3C6D0)
+private val MihonBackground = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.background
+private val MihonSurface = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.panel
+private val MihonSurfaceHigh = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.hover
+private val MihonPrimary = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.activePill
+private val MihonOnPrimary = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.activePillLabel
+private val MihonText = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.primaryText
+private val MihonMuted = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.secondaryText
 private val MihonError = Color(0xFFFFB4AB)
 
-private val MihonColors = darkColorScheme(
-    primary = MihonPrimary,
-    onPrimary = MihonOnPrimary,
-    background = MihonBackground,
-    onBackground = MihonText,
-    surface = MihonBackground,
-    onSurface = MihonText,
-    surfaceVariant = MihonSurfaceHigh,
-    onSurfaceVariant = MihonMuted,
-    error = MihonError,
-)
+private val MihonColors = com.ihy2ln.weaverse.core.ui.theme.StreamingColors
 
 private enum class MihonDestination(val label: String, val icon: ImageVector) {
     Library("Library", Icons.Outlined.CollectionsBookmark),

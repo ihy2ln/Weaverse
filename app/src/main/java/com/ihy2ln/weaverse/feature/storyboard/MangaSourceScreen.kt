@@ -76,6 +76,7 @@ import com.ihy2ln.weaverse.data.db.entities.MangaSeriesEntity
 import coil3.compose.AsyncImage
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -623,6 +624,14 @@ class MangaSourceViewModel @Inject constructor(
         }
     }
 
+    fun openRecentSeries(id: String) = viewModelScope.launch {
+        val series = repository.recentSeries(id) ?: return@launch
+        val chapter = repository.resumeChapter(series)
+        if (chapter != null) {
+            uiState.first { state -> state.downloads.any { it.id == chapter.id } }
+            openReader(chapter.id, chapter.lastPageRead)
+        } else select(MangaSearchResult(series.sourceId, series.remoteId, series.title, series.description, series.coverUrl, series.canonicalUrl))
+    }
     fun select(manga: MangaSearchResult) {
         viewModelScope.launch {
             local.value = local.value.copy(selected = manga, chapters = emptyList(), busy = true, status = "Loading chapters…")
@@ -631,6 +640,7 @@ class MangaSourceViewModel @Inject constructor(
                 details to repository.loadChapters(details)
             }
                 .onSuccess { (details, chapters) ->
+                    repository.recordHomeAccess(details.sourceId, details.remoteId)
                     local.value = local.value.copy(
                         selected = details,
                         chapters = chapters,
@@ -698,6 +708,7 @@ class MangaSourceViewModel @Inject constructor(
             pages to persisted
         }
             .onSuccess { (pages, persisted) ->
+                if (pages.isNotEmpty()) repository.recordHomeAccess(persisted.sourceId, persisted.mangaId)
                 val readerChapter = persisted.copy(pageCount = pages.size, status = "online")
                 local.value = local.value.copy(
                     busy = false,
@@ -749,6 +760,7 @@ class MangaSourceViewModel @Inject constructor(
         local.value = local.value.copy(busy = true, status = "Opening offline chapter…")
         runCatching { repository.offlinePageFiles(chapterId).map(File::getAbsolutePath) }
             .onSuccess { pages ->
+                if (pages.isNotEmpty()) repository.recordHomeAccess(chapter.sourceId, chapter.mangaId)
                 local.value = local.value.copy(
                     busy = false,
                     readerChapter = chapter.takeIf { pages.isNotEmpty() },

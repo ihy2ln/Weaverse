@@ -112,29 +112,36 @@ fun DiscordChatScreen(
         }
     }
 
-    Row(modifier = Modifier.fillMaxSize().background(tokens.background)) {
-        ServerRail(
-            servers = state.servers,
-            selectedServerId = selectedServerId,
-            onSelect = onServerSelect,
-        )
-        ChannelSidebar(
-            state = state,
-            onRoomSelect = onRoomSelect,
-            onAddChannel = { channelDialogOpen = true },
-            onAddCharacter = { pickerOpen = true },
-            onDeleteRoom = { pendingDeleteRoomId = it },
-        )
-        MessagePane(
-            state = state,
-            viewModel = viewModel,
-            onOpenFriends = onOpenFriends,
-            promptCollapsed = promptCollapsed,
-            onPromptCollapsedChange = { promptCollapsed = it },
-            onModelClick = { modelsOpen = true },
-            onMicTap = { if (!state.isStreaming) startDictate() },
-            modifier = Modifier.weight(1f).fillMaxHeight(),
-        )
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+        val compact = maxWidth / androidx.compose.ui.platform.LocalDensity.current.fontScale < 700.dp
+        var channelsOpen by rememberSaveable { mutableStateOf(selectedRoomId == null) }
+        androidx.activity.compose.BackHandler(compact && !channelsOpen) { channelsOpen = true }
+        androidx.compose.runtime.LaunchedEffect(state.selectedRoomId) {
+            if (state.selectedRoomId != null) channelsOpen = false
+        }
+        Row(modifier = Modifier.fillMaxSize().background(tokens.background)) {
+            if (!compact || channelsOpen) {
+                ServerRail(servers = state.servers, selectedServerId = selectedServerId, onSelect = onServerSelect)
+                ChannelSidebar(
+                    state = state,
+                    onRoomSelect = { onRoomSelect(it); channelsOpen = false },
+                    onAddChannel = { channelDialogOpen = true },
+                    onAddCharacter = { pickerOpen = true },
+                    onDeleteRoom = { pendingDeleteRoomId = it },
+                    modifier = if (compact) Modifier.weight(1f) else Modifier.width(224.dp),
+                )
+            }
+            if (!compact || !channelsOpen) Column(Modifier.weight(1f).fillMaxHeight()) {
+                if (compact) TextButton(onClick = { channelsOpen = true }) { Text("← Conversations") }
+                MessagePane(
+                    state = state, viewModel = viewModel, onOpenFriends = onOpenFriends,
+                    promptCollapsed = promptCollapsed, onPromptCollapsedChange = { promptCollapsed = it },
+                    onModelClick = { modelsOpen = true },
+                    onMicTap = { if (!state.isStreaming) startDictate() },
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                )
+            }
+        }
     }
 
     if (pickerOpen) {
@@ -288,7 +295,7 @@ private fun ServerIcon(
             label,
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
-            color = if (selected || colorHex != null) Color.White else tokens.primaryText,
+            color = if (selected && colorHex == null) tokens.activePillLabel else tokens.primaryText,
         )
     }
 }
@@ -303,11 +310,11 @@ private fun ChannelSidebar(
     onAddChannel: () -> Unit,
     onAddCharacter: () -> Unit,
     onDeleteRoom: (String) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val tokens = inkTokens()
     Column(
-        modifier = Modifier
-            .width(224.dp)
+        modifier = modifier
             .fillMaxHeight()
             .background(tokens.background)
             .padding(vertical = InkSpacing.md),
@@ -480,7 +487,7 @@ private fun RoomRow(
                 room.unread.toString(),
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onPrimary,
                 modifier = Modifier
                     .clip(RoundedCornerShape(10.dp))
                     .background(MaterialTheme.colorScheme.primary)
@@ -833,7 +840,7 @@ private fun MessageRow(
                             "APP",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White,
+                            color = MaterialTheme.colorScheme.onPrimary,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(4.dp))
                                 .background(MaterialTheme.colorScheme.primary)

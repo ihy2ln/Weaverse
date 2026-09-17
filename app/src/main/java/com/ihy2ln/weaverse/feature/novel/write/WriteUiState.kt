@@ -25,7 +25,8 @@ data class AiOverlayState(
     val label: String = "",
     val prompt: String = "",
     val systemInstructions: String = "",
-    val promptId: String? = null,
+    /** Every template the user ticked. The first one also supplies message framing. */
+    val promptIds: List<String> = emptyList(),
     val outputWords: Int = 100,
     /** Block the result is anchored to; resolved by id at accept so edits during generation can't misplace it. */
     val anchorBlockId: String? = null,
@@ -43,6 +44,19 @@ data class AiOverlayState(
     val imagePath: String? = null,
     val pickBeatImageRequestId: Long = 0L,
     @kotlinx.serialization.Transient val contextMeter: ContextMeterReading? = null,
+) {
+    /** The template that supplies history / final-user framing; the rest only add system text. */
+    val promptId: String? get() = promptIds.firstOrNull()
+}
+
+/**
+ * A request to move the caret into a block. [nonce] rises on every request so the
+ * same block can be re-focused after the user tapped somewhere else and back.
+ */
+data class CaretRequest(
+    val blockIndex: Int,
+    val offset: Int? = null,
+    val nonce: Long = 0L,
 )
 
 data class FindReplaceState(
@@ -78,6 +92,7 @@ data class WriteUiState(
     val pickAudioRequestId: Long = 0L,
     val aiOverlay: AiOverlayState? = null,
     val selection: SelectionState = SelectionState(),
+    val caretRequest: CaretRequest? = null,
     val selectedMediaBlockIndex: Int? = null,
     val canPasteMedia: Boolean = false,
     val editPopupBlockIndex: Int? = null,

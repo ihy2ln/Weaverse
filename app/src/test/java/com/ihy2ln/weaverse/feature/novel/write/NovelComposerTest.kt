@@ -35,10 +35,21 @@ class NovelComposerTest {
         val chosen = default.copy(id = "chosen", description = "Chosen fidelity sentinel", isDefault = false)
         every { repo.observeByType(any()) } returns flowOf(listOf(default))
         coEvery { repo.getPrompt("chosen") } returns chosen
-        val bundle = WritePromptAssembler(repo, mockk()).libraryPromptBundle("continue", PromptRenderContext(), "chosen")
+        val bundle = WritePromptAssembler(repo, mockk()).libraryPromptBundle("continue", PromptRenderContext(), listOf("chosen"))
         assertEquals("chosen", bundle.promptId)
         assertTrue(bundle.systemInstructions.contains("Chosen fidelity sentinel"))
         assertFalse(bundle.systemInstructions.contains("Wrong default"))
+    }
+
+    @Test fun severalTemplatesLayerSystemInstructionsInTickOrder() = runTest {
+        val repo = mockk<PromptRepository>()
+        val first = PromptEntity(id = "a", folderId = "f", name = "A", type = "continue", description = "FIRST_SENTINEL", createdAt = 0)
+        val second = first.copy(id = "b", name = "B", description = "SECOND_SENTINEL")
+        coEvery { repo.getPrompt("a") } returns first
+        coEvery { repo.getPrompt("b") } returns second
+        val bundle = WritePromptAssembler(repo, mockk()).libraryPromptBundle("continue", PromptRenderContext(), listOf("a", "b"))
+        assertEquals(listOf("a", "b"), bundle.promptIds)
+        assertTrue(bundle.systemInstructions.indexOf("FIRST_SENTINEL") < bundle.systemInstructions.indexOf("SECOND_SENTINEL"))
     }
 
     private fun generation(): WriteGeneration {
@@ -48,7 +59,7 @@ class NovelComposerTest {
         coEvery { db.codexDao().getAllEntries() } returns listOf(entry("small", "Kept fact"), entry("huge", "DROPPED_SENTINEL".repeat(10000)))
         val assembler = mockk<WritePromptAssembler>()
         coEvery { assembler.buildPromptRenderContext(any(), any(), any(), any(), any(), any(), any()) } returns PromptRenderContext()
-        coEvery { assembler.libraryPromptBundle(any(), any(), any()) } answers { LibraryPromptBundle(thirdArg(), "Selected template", finalUserMessage = "Template message") }
+        coEvery { assembler.libraryPromptBundle(any(), any(), any()) } answers { LibraryPromptBundle(thirdArg<List<String>>(), "Selected template", finalUserMessage = "Template message") }
         every { assembler.buildPovSystemBlock(any(), any()) } returns ""
         every { assembler.buildUserMessage(any(), any(), any()) } answers { "Current scene: " + secondArg<String>() }
         return WriteGeneration(assembler, db)
@@ -56,7 +67,7 @@ class NovelComposerTest {
 
     @Test fun previewAndGenerationPreserveInstructionTargetAndGuidance() = runTest {
         val generator = generation()
-        val target = AiOverlayState(targetSceneId = "scene", promptId = "chosen", prompt = "EXPLICIT_SENTINEL", replaceBlockIndex = 0,
+        val target = AiOverlayState(targetSceneId = "scene", promptIds = listOf("chosen"), prompt = "EXPLICIT_SENTINEL", replaceBlockIndex = 0,
             sourceParagraphText = "Before SELECTED_SENTINEL after", replaceStart = 7, replaceEnd = 24)
         val first = generator.prepareStream(target, "Scene", null, "book", true, false, 8000) as WriteGenerationPrep.Ready
         val second = generator.prepareStream(target, "Scene", null, "book", true, false, 8000) as WriteGenerationPrep.Ready

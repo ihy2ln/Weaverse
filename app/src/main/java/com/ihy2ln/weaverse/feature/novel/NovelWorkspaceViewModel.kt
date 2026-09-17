@@ -32,6 +32,19 @@ class NovelWorkspaceViewModel @Inject constructor(private val db: WeaverseDataba
     private val settings: SettingsRepository, private val media: MediaRepository,
     private val history: com.ihy2ln.weaverse.feature.shell.WorkspaceHistory,
     private val stamps: com.ihy2ln.weaverse.data.repo.SceneWriteStamps) : ViewModel() {
+    @Inject lateinit var homeHistory: com.ihy2ln.weaverse.feature.shell.HomeHistory
+    fun recordHomeLocation(sceneId: String) { viewModelScope.launch {
+        val bookId = state.value.bookId
+        if (bookId.isNotBlank() && settings.preferences.first().selectedBookId == bookId) {
+            homeHistory.record("Novel", "book", bookId, sceneId)
+        }
+    } }
+
+    fun recordWriting(sceneId: String) { viewModelScope.launch {
+        val snapshot = state.value
+        if (sceneId.isNotBlank() && snapshot.scenes.any { it.id == sceneId } && settings.preferences.first().selectedBookId == snapshot.bookId)
+            db.bookBrowsingDao().write(snapshot.bookId, sceneId, System.currentTimeMillis())
+    } }
     val status = MutableStateFlow("")
     val busy = MutableStateFlow(false)
     val state = settings.preferences.map { it.selectedBookId }.distinctUntilChanged().flatMapLatest { bookId ->

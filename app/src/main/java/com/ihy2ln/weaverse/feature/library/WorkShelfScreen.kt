@@ -1,6 +1,14 @@
 package com.ihy2ln.weaverse.feature.library
 
 import android.content.Intent
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -477,6 +485,36 @@ private fun WorkPosterCard(
             onDelete?.let { action ->
                 DropdownMenuItem(text = { Text("Delete") }, onClick = { menuOpen = false; action() })
             }
+        }
+    }
+}
+
+@Composable
+internal fun NovelBooksShelf(books: List<BrowseBook>, onOpen: (BrowseBook) -> Unit, onRead: (String) -> Unit,
+    onShelf: (String) -> Unit, onCreate: () -> Unit, onImport: () -> Unit) {
+    LazyColumn(Modifier.fillMaxSize().testTag("books-feed"), verticalArrangement = Arrangement.spacedBy(24.dp), contentPadding = PaddingValues(bottom = 28.dp)) {
+        item {
+            Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Books", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                TextButton(onClick = { onShelf("all") }) { Text("All books") }
+                var menu by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Default.Add, "Library actions") }
+                    DropdownMenu(menu, { menu = false }) {
+                        DropdownMenuItem(text = { Text("Create book") }, onClick = { menu = false; onCreate() })
+                        DropdownMenuItem(text = { Text("Import") }, onClick = { menu = false; onImport() })
+                    }
+                }
+            }
+            featuredBook(books)?.let { FeaturedBook(it, { onRead(it.id) }, { onOpen(it) }) }
+                ?: EmptyBrowse("Your next chapter starts here", "Create a book or import your library.")
+        }
+        items(listOf("reading", "writing", "list", "added") + books.map { it.book.genre }.filter { it.isNotBlank() }.distinct().sorted().map { "genre:$it" }, key = { it }) { id ->
+            val entries = booksForShelf(books, id)
+            BookCoverShelf(shelfTitle(id), entries.take(10), onOpen, { onShelf(id) }, emptyText = when (id) {
+                "reading" -> "Books you read will appear here."; "writing" -> "Return to your writing from here."
+                "list" -> "Save titles from their details page."; else -> "Your books will appear here."
+            })
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.ihy2ln.weaverse.core.ui.theme
 
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -8,19 +9,19 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
-val LocalInkTokens = staticCompositionLocalOf { tokensFor(AppThemeMode.Light) }
+val LocalInkTokens = staticCompositionLocalOf { StreamingTokens }
 
 /** The active visual identity, for the few places that vary beyond color/type. */
-val LocalAppearanceProfile = staticCompositionLocalOf { AppearanceProfile.Classic }
+val LocalAppearanceProfile = staticCompositionLocalOf { AppearanceProfile.Streaming }
 
 @Composable
 fun WeaverseTheme(
-    themeMode: AppThemeMode = AppThemeMode.Light,
-    profile: AppearanceProfile = AppearanceProfile.Classic,
+    themeMode: AppThemeMode = AppThemeMode.Dark,
+    profile: AppearanceProfile = AppearanceProfile.Streaming,
     content: @Composable () -> Unit,
 ) {
     val tokens = profile.tokens(themeMode)
-    val colorScheme = if (!themeMode.isDark) {
+    val colorScheme = if (profile == AppearanceProfile.Streaming) StreamingColors else if (!themeMode.isDark) {
         lightColorScheme(
             primary = tokens.activePill,
             onPrimary = tokens.activePillLabel,
@@ -47,6 +48,7 @@ fun WeaverseTheme(
     }
 
     CompositionLocalProvider(
+        LocalContentColor provides tokens.primaryText,
         LocalInkTokens provides tokens,
         LocalAppearanceProfile provides profile,
     ) {

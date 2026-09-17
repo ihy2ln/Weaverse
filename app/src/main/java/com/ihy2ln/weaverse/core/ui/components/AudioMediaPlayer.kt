@@ -1,5 +1,6 @@
 package com.ihy2ln.weaverse.core.ui.components
 
+import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Row
@@ -23,7 +24,6 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
-import com.ihy2ln.weaverse.core.ui.theme.InkHairline
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import java.io.File
 
@@ -60,7 +60,7 @@ fun AudioMediaPlayer(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .border(1.dp, InkHairline, RoundedCornerShape(inkRadiusSm()))
+            .border(1.dp, inkTokens().hairline, RoundedCornerShape(inkRadiusSm()))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f), RoundedCornerShape(inkRadiusSm()))
             .padding(horizontal = InkSpacing.md, vertical = InkSpacing.sm),
         verticalAlignment = Alignment.CenterVertically,

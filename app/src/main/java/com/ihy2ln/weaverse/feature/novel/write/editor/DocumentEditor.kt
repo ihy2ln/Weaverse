@@ -1,10 +1,14 @@
 package com.ihy2ln.weaverse.feature.novel.write.editor
 
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.input.pointer.pointerInput
+import com.ihy2ln.weaverse.feature.novel.write.CaretRequest
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
@@ -93,93 +97,146 @@ fun DocumentEditor(
     showInlineWritingPrompt: Boolean = false,
     showSceneBeatCard: Boolean = false,
     showContinuationBox: Boolean = false,
+    /** The AI draft shown inline in the story, if one is waiting. */
+    generatedProse: GeneratedProse? = null,
+    onAcceptGenerated: () -> Unit = {},
+    onRetryGenerated: () -> Unit = {},
+    onDiscardGenerated: () -> Unit = {},
+    onCopyGenerated: () -> Unit = {},
+    onChooseEarlierGenerated: (Int) -> Unit = {},
+    onEditGenerated: (String) -> Unit = {},
+    /** Rises whenever the caret should jump into a block after a tap off the text. */
+    caretRequest: CaretRequest? = null,
+    /** A tap that missed the text of a line; the block it landed on takes the caret. */
+    onPlaceCaret: (Int) -> Unit = {},
+    onPlaceCaretAtEnd: () -> Unit = {},
 ) {
     val tokens = inkTokens()
+    val proseAnchor = generatedProse?.let { prose ->
+        blocks.indexOfFirst { it.id == prose.afterBlockId }.takeIf { it >= 0 } ?: blocks.lastIndex
+    }
     Box(modifier = modifier) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 10.dp),
         ) {
             itemsIndexed(blocks, key = { _, block -> block.id }) { index, block ->
-                when (block) {
-                    is Paragraph -> BlockEditorField(
-                        paragraph = block,
-                        textColor = tokens.primaryText,
-                        onTextChange = { onParagraphChange(index, it) },
-                        onSlashDetected = { onSlashTrigger(index) },
-                        onBackslashDetected = { onBackslashTrigger(index) },
-                        onSelectionChange = { onSelectionChange(index, it) },
-                        onEditAction = { action, value -> onEditAction(index, action, value) },
-                        popupConfig = popupConfig,
-                        showEditPopup = editPopupBlockIndex == index,
-                        onShowEditPopupChange = { show ->
-                            onShowEditPopup(if (show) index else null)
-                        },
-                        showPromptPlaceholder = showInlineWritingPrompt,
-                        codexMentionTargets = codexMentionTargets,
-                        onMentionClick = onMentionClick,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = InkSpacing.xs),
-                    )
-                    is MediaBlock -> MediaBlockView(
-                        block = block,
-                        mediaPath = mediaPaths[block.mediaId],
-                        selected = selectedMediaBlockIndex == index,
-                        canPaste = canPasteMedia,
-                        onSelect = { onMediaSelect(index) },
-                        onRemove = { onMediaRemove(index) },
-                        onWidthChange = { onMediaWidthChange(index, it) },
-                        onMoveBy = { delta -> onMediaMoveBy(index, delta) },
-                        onStackAdjacent = { onStackMedia(index) },
-                        onMediaEditAction = { onMediaEditAction(index, it) },
-                        onDragRelease = { dy -> onMediaDragRelease(index, dy) },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    is MediaStackBlock -> MediaStackBlockView(
-                        block = block,
-                        mediaPaths = mediaPaths,
-                        selected = selectedMediaBlockIndex == index,
-                        canPaste = canPasteMedia,
-                        onSelect = { onMediaSelect(index) },
-                        onRemove = { onMediaRemove(index) },
-                        onCycle = { onCycleStack(index) },
-                        onStackAdjacent = { onStackMedia(index) },
-                        onMediaEditAction = { onMediaEditAction(index, it) },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    is SceneBeatBlock -> {
-                        if (showSceneBeatCard) {
-                            SceneBeatBlockView(
-                                block = block,
-                                onPromptChange = { onSceneBeatPromptChange(index, it) },
-                                onToggleCollapsed = { onToggleSceneBeat(index) },
-                                onGenerate = { onGenerateSceneBeat(index) },
-                                onClearText = { onClearSceneBeat(index) },
-                                onAccept = onAcceptSceneBeat,
-                                onRetry = onRetrySceneBeat,
-                                onRequestImage = onRequestBeatImage,
-                                hasImage = beatImageAttached,
-                                hasResult = sceneBeatResultIndex == index,
-                                generating = generatingSceneBeatIndex == index,
-                                codexNames = codexNames,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = InkSpacing.sm),
-                            )
-                        } else if (block.prompt.isNotBlank()) {
-                            androidx.compose.material3.Text(
-                                block.prompt,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = tokens.secondaryText,
-                                fontStyle = FontStyle.Italic,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = InkSpacing.xs),
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    when (block) {
+                        is Paragraph -> Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                // A tap anywhere on this row — including the gap around the
+                                // text — drops the caret into this line. Taps that land on the
+                                // text itself are consumed by the field before they reach here.
+                                .pointerInput(index) {
+                                    detectTapGestures { onPlaceCaret(index) }
+                                }
+                                .padding(vertical = InkSpacing.xs),
+                        ) {
+                            BlockEditorField(
+                                paragraph = block,
+                                textColor = tokens.primaryText,
+                                onTextChange = { onParagraphChange(index, it) },
+                                onSlashDetected = { onSlashTrigger(index) },
+                                onBackslashDetected = { onBackslashTrigger(index) },
+                                onSelectionChange = { onSelectionChange(index, it) },
+                                onEditAction = { action, value -> onEditAction(index, action, value) },
+                                popupConfig = popupConfig,
+                                showEditPopup = editPopupBlockIndex == index,
+                                onShowEditPopupChange = { show ->
+                                    onShowEditPopup(if (show) index else null)
+                                },
+                                showPromptPlaceholder = showInlineWritingPrompt,
+                                codexMentionTargets = codexMentionTargets,
+                                onMentionClick = onMentionClick,
+                                caretRequest = caretRequest?.takeIf { it.blockIndex == index },
+                                modifier = Modifier.fillMaxWidth(),
                             )
                         }
+                        is MediaBlock -> MediaBlockView(
+                            block = block,
+                            mediaPath = mediaPaths[block.mediaId],
+                            selected = selectedMediaBlockIndex == index,
+                            canPaste = canPasteMedia,
+                            onSelect = { onMediaSelect(index) },
+                            onRemove = { onMediaRemove(index) },
+                            onWidthChange = { onMediaWidthChange(index, it) },
+                            onMoveBy = { delta -> onMediaMoveBy(index, delta) },
+                            onStackAdjacent = { onStackMedia(index) },
+                            onMediaEditAction = { onMediaEditAction(index, it) },
+                            onDragRelease = { dy -> onMediaDragRelease(index, dy) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        is MediaStackBlock -> MediaStackBlockView(
+                            block = block,
+                            mediaPaths = mediaPaths,
+                            selected = selectedMediaBlockIndex == index,
+                            canPaste = canPasteMedia,
+                            onSelect = { onMediaSelect(index) },
+                            onRemove = { onMediaRemove(index) },
+                            onCycle = { onCycleStack(index) },
+                            onStackAdjacent = { onStackMedia(index) },
+                            onMediaEditAction = { onMediaEditAction(index, it) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        is SceneBeatBlock -> {
+                            if (showSceneBeatCard) {
+                                SceneBeatBlockView(
+                                    block = block,
+                                    onPromptChange = { onSceneBeatPromptChange(index, it) },
+                                    onToggleCollapsed = { onToggleSceneBeat(index) },
+                                    onGenerate = { onGenerateSceneBeat(index) },
+                                    onClearText = { onClearSceneBeat(index) },
+                                    onAccept = onAcceptSceneBeat,
+                                    onRetry = onRetrySceneBeat,
+                                    onRequestImage = onRequestBeatImage,
+                                    hasImage = beatImageAttached,
+                                    hasResult = sceneBeatResultIndex == index,
+                                    generating = generatingSceneBeatIndex == index,
+                                    codexNames = codexNames,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = InkSpacing.sm),
+                                )
+                            } else if (block.prompt.isNotBlank()) {
+                                androidx.compose.material3.Text(
+                                    block.prompt,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = tokens.secondaryText,
+                                    fontStyle = FontStyle.Italic,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = InkSpacing.xs),
+                                )
+                            }
+                        }
+                        else -> Unit
                     }
-                    else -> Unit
+                    if (generatedProse != null && proseAnchor == index) {
+                        GeneratedProseCard(
+                            prose = generatedProse,
+                            onAccept = onAcceptGenerated,
+                            onRetry = onRetryGenerated,
+                            onDiscard = onDiscardGenerated,
+                            onCopy = onCopyGenerated,
+                            onChooseEarlier = onChooseEarlierGenerated,
+                            onTextChange = onEditGenerated,
+                        )
+                    }
+                }
+            }
+            if (generatedProse != null && (proseAnchor == null || blocks.isEmpty())) {
+                item(key = "__generated") {
+                    GeneratedProseCard(
+                        prose = generatedProse,
+                        onAccept = onAcceptGenerated,
+                        onRetry = onRetryGenerated,
+                        onDiscard = onDiscardGenerated,
+                        onCopy = onCopyGenerated,
+                        onChooseEarlier = onChooseEarlierGenerated,
+                        onTextChange = onEditGenerated,
+                    )
                 }
             }
             if (showContinuationBox) {
@@ -187,10 +244,23 @@ fun DocumentEditor(
                     ContinuationInput(onSubmit = onContinuationSubmit)
                 }
             }
+            item(key = "__tap_to_write") {
+                // The empty page below the last line is still the page: tapping it puts
+                // the caret at the end of the manuscript instead of doing nothing.
+                Spacer(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(TapToWriteHeight)
+                        .pointerInput(Unit) { detectTapGestures { onPlaceCaretAtEnd() } },
+                )
+            }
             alwaysScrollEndSpacer()
         }
     }
 }
+
+/** Tappable dead space kept under the manuscript so the caret is always reachable. */
+private val TapToWriteHeight = 220.dp
 
 @Composable
 private fun ContinuationInput(

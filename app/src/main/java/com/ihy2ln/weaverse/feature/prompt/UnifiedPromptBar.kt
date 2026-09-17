@@ -51,7 +51,6 @@ import com.ihy2ln.weaverse.core.ui.components.InkCheckIconButton
 import com.ihy2ln.weaverse.core.ui.components.InkClearIconButton
 import com.ihy2ln.weaverse.core.ui.components.PromptActionMenuButton
 import com.ihy2ln.weaverse.core.ui.components.VoiceInputButton
-import com.ihy2ln.weaverse.core.ui.theme.InkAccentBlue
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
@@ -134,7 +133,7 @@ fun UnifiedPromptBar(
         modifier = modifier
             .clip(shape)
             .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.97f))
-            .border(1.dp, InkAccentBlue, shape)
+            .border(1.dp, inkTokens().activePill, shape)
             .padding(horizontal = if (isCollapsed) 4.dp else InkSpacing.xs, vertical = 2.dp),
     ) {
         Row(
@@ -156,7 +155,7 @@ fun UnifiedPromptBar(
                     style = MaterialTheme.typography.labelSmall,
                     fontSize = 8.sp,
                     fontWeight = FontWeight.Bold,
-                    color = InkAccentBlue,
+                    color = inkTokens().activePill,
                     maxLines = 1,
                 )
                 DropdownMenu(
@@ -349,13 +348,13 @@ fun UnifiedPromptBar(
                         targetLabel,
                         modifier = Modifier
                             .clip(RoundedCornerShape(inkRadiusSm()))
-                            .background(InkAccentBlue.copy(alpha = 0.12f))
+                            .background(inkTokens().activePill.copy(alpha = 0.12f))
                             .clickable(enabled = !streaming, onClick = onTargetClick)
                             .padding(horizontal = 3.dp, vertical = 2.dp),
                         style = MaterialTheme.typography.labelSmall,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
-                        color = InkAccentBlue,
+                        color = inkTokens().activePill,
                         maxLines = 1,
                     )
                 }
@@ -363,13 +362,13 @@ fun UnifiedPromptBar(
                     if (aiMode) "/A" else "\\M",
                     modifier = Modifier
                         .clip(RoundedCornerShape(inkRadiusSm()))
-                        .background(InkAccentBlue.copy(alpha = 0.12f))
+                        .background(inkTokens().activePill.copy(alpha = 0.12f))
                         .clickable(enabled = !streaming, onClick = onToggleMode)
                         .padding(horizontal = 3.dp, vertical = 7.dp),
                     style = MaterialTheme.typography.labelSmall,
                     fontSize = 8.sp,
                     fontWeight = FontWeight.Bold,
-                    color = InkAccentBlue,
+                    color = inkTokens().activePill,
                 )
                 if (streaming) {
                     Text(
@@ -416,7 +415,7 @@ fun UnifiedPromptBar(
                             .padding(vertical = 2.dp),
                         style = MaterialTheme.typography.titleMedium,
                         fontSize = 12.sp,
-                        color = if (addSelected) InkAccentBlue else tokens.primaryText,
+                        color = if (addSelected) inkTokens().activePill else tokens.primaryText,
                         textAlign = TextAlign.Center,
                     )
                 }
@@ -467,12 +466,12 @@ fun UnifiedPromptBar(
             Text(
                 if (aiMode) "/A" else "\\M",
                 modifier = Modifier.clip(RoundedCornerShape(inkRadiusSm()))
-                    .background(InkAccentBlue.copy(alpha = 0.12f))
+                    .background(inkTokens().activePill.copy(alpha = 0.12f))
                     .clickable(enabled = !streaming, onClick = onToggleMode)
                     .padding(horizontal = 4.dp, vertical = 7.dp),
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold,
-                color = InkAccentBlue,
+                color = inkTokens().activePill,
             )
             if (streaming) {
                 Text(
@@ -513,7 +512,7 @@ fun UnifiedPromptBar(
                         .clickable(enabled = !streaming, onClick = onAdd)
                         .padding(vertical = 3.dp),
                     style = MaterialTheme.typography.titleMedium,
-                    color = if (addSelected) InkAccentBlue else tokens.primaryText,
+                    color = if (addSelected) inkTokens().activePill else tokens.primaryText,
                     textAlign = TextAlign.Center,
                 )
             }
@@ -549,13 +548,13 @@ fun UnifiedPromptBar(
                     targetLabel,
                     modifier = Modifier
                         .clip(RoundedCornerShape(inkRadiusSm()))
-                        .background(InkAccentBlue.copy(alpha = 0.12f))
+                        .background(inkTokens().activePill.copy(alpha = 0.12f))
                         .clickable(enabled = !streaming, onClick = onTargetClick)
                         .padding(horizontal = 3.dp, vertical = 2.dp),
                     style = MaterialTheme.typography.labelSmall,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
-                    color = InkAccentBlue,
+                    color = inkTokens().activePill,
                     maxLines = 1,
                 )
             }

@@ -147,7 +147,7 @@ fun InkTextButton(
 ) {
     TextButton(
         onClick = onClick,
-        modifier = if (compact) modifier.heightIn(min = 28.dp, max = 32.dp) else modifier,
+        modifier = if (compact) modifier.heightIn(min = 32.dp) else modifier,
         enabled = enabled,
         contentPadding = if (compact) {
             PaddingValues(horizontal = InkSpacing.sm, vertical = 0.dp)

@@ -93,7 +93,13 @@ class WriteViewModel @Inject constructor(
     val effectiveModel = MutableStateFlow("")
     val templates = promptRepository.observePrompts().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val availableModels = modelCache.models
+
+    /** Text-generation models only, ready for the composer's model picker. */
+    val textModels = modelCache.models
+        .map { dtos -> modelCache.writingModels(dtos).filter { it.available } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val promptRequests = promptEntryBus.openRequests
+    private var caretNonce = 0L
     private val draftCache = mutableMapOf<String, AiOverlayState>()
     private val positions = mutableMapOf<String, SelectionState>()
     private var generationEpoch = 0L
@@ -103,7 +109,60 @@ class WriteViewModel @Inject constructor(
         if (_uiState.value.aiOverlay != null) resumeAiOverlay() else startSelectionAi("custom", "Custom")
     }
 
-    fun selectTemplate(id: String?) { _uiState.update { it.copy(aiOverlay = it.aiOverlay?.copy(promptId = id, contextPreview = "")) } }
+    fun selectTemplate(id: String?) {
+        _uiState.update { it.copy(aiOverlay = it.aiOverlay?.copy(promptIds = listOfNotNull(id), contextPreview = "")) }
+    }
+
+    /** Ticks or unticks one template; several can be combined for a single generation. */
+    fun toggleTemplate(id: String) {
+        _uiState.update { state ->
+            val overlay = state.aiOverlay ?: return@update state
+            val next = if (id in overlay.promptIds) overlay.promptIds - id else overlay.promptIds + id
+            state.copy(aiOverlay = overlay.copy(promptIds = next, contextPreview = ""))
+        }
+    }
+
+    /**
+     * Moves the caret into [blockIndex] — used when a tap lands anywhere on the page
+     * rather than directly on a line of text.
+     */
+    fun placeCaret(blockIndex: Int, offset: Int? = null) {
+        val blocks = _uiState.value.blocks
+        val index = blockIndex.coerceIn(0, (blocks.size - 1).coerceAtLeast(0))
+        if (blocks.getOrNull(index) !is Paragraph) return
+        val length = (blocks[index] as Paragraph).plainText().length
+        val caret = (offset ?: length).coerceIn(0, length)
+        caretNonce += 1
+        _uiState.update {
+            it.copy(
+                selection = SelectionState(index, caret, caret),
+                caretRequest = CaretRequest(index, caret, caretNonce),
+            )
+        }
+    }
+
+    /**
+     * Height in dp the writer dragged the prompt dock to. 0 means fit the content.
+     * Kept here so the dock reopens at the chosen size instead of snapping back.
+     */
+    val promptDockHeight = MutableStateFlow(0f)
+
+    fun setPromptDockHeight(dp: Float) { promptDockHeight.value = dp }
+
+    /** Hand edits to the draft before it is inserted. Ignored mid-stream. */
+    fun updateGeneratedDraft(text: String) {
+        _uiState.update { state ->
+            val overlay = state.aiOverlay ?: return@update state
+            if (overlay.isStreaming) return@update state
+            state.copy(aiOverlay = overlay.copy(streamingText = text))
+        }
+    }
+
+    /** Taps below the last line land on the final paragraph, at its end. */
+    fun placeCaretAtEnd() {
+        val last = _uiState.value.blocks.indexOfLast { it is Paragraph }
+        if (last >= 0) placeCaret(last)
+    }
     fun saveTemplate(name: String, duplicateId: String? = null) = viewModelScope.launch {
         val original = duplicateId?.let { promptRepository.getPrompt(it) }
         if (original != null) {
@@ -337,7 +396,7 @@ class WriteViewModel @Inject constructor(
                         anchorBlockId = beat.id,
                         prompt = beat.prompt,
                         systemInstructions = library.systemInstructions,
-                        promptId = library.promptId,
+                        promptIds = library.promptIds,
                     ),
                 )
             }
@@ -769,7 +828,7 @@ class WriteViewModel @Inject constructor(
             anchorBlockId = block?.id, sourceParagraphText = paragraph?.plainText(),
             cursorOffset = if (paragraph != null) sel.max else null, insertAfterIndex = sel.blockIndex,
             prompt = old?.prompt.orEmpty(), outputWords = old?.outputWords ?: writingSettings.value.outputWords,
-            candidates = history,
+            promptIds = old?.promptIds.orEmpty(), candidates = history,
             replaceBlockIndex = if (replace) sel.blockIndex else null,
             replaceStart = if (replace) sel.min else null, replaceEnd = if (replace) sel.max else null,
         )) }
@@ -1077,7 +1136,7 @@ class WriteViewModel @Inject constructor(
         val extracted = AiMediaRequestParser.extract(overlay.streamingText.trim())
         val text = extracted.first
         if (text.isBlank()) {
-            dismissAiOverlay()
+            finishAiDraft()
             return
         }
         val candidate = try { writeGeneration.acceptIntoBlocks(_uiState.value.blocks, overlay, text) }
@@ -1101,7 +1160,17 @@ class WriteViewModel @Inject constructor(
                 _uiState.update { it.copy(statusMessage = "Scene media requests resolved") }
             }
         }
-        dismissAiOverlay()
+        finishAiDraft()
+    }
+
+    /**
+     * Retires an accepted draft. The prose now lives in the manuscript, so the inline
+     * candidate panel must not keep showing a second copy of it.
+     */
+    private fun finishAiDraft() {
+        _uiState.update {
+            it.copy(aiOverlay = it.aiOverlay?.copy(hidden = true, streamingText = "", usageLog = ""))
+        }
     }
 
     fun discardAiResult() {

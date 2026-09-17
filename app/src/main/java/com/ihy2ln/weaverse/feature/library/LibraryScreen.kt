@@ -177,7 +177,7 @@ private fun NovelCard(
             ) {
                 Text(
                     card.book.title,
-                    fontFamily = FontFamily.Serif,
+                    fontFamily = MaterialTheme.typography.titleLarge.fontFamily,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 18.sp,
                     maxLines = 1,
@@ -261,7 +261,7 @@ private fun SeriesTab(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 group.series?.title ?: "Standalone novels",
-                                fontFamily = FontFamily.Serif,
+                                fontFamily = MaterialTheme.typography.titleLarge.fontFamily,
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,

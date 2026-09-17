@@ -48,7 +48,7 @@ import com.ihy2ln.weaverse.data.db.entities.TextGameSaveEntity
 import com.ihy2ln.weaverse.data.db.entities.RpgCampaignSaveEntity
 
 @Database(
-    entities = [
+    entities = [com.ihy2ln.weaverse.feature.library.BookBrowsing::class,com.ihy2ln.weaverse.feature.shell.HomeAccess::class,
         com.ihy2ln.weaverse.data.db.entities.NovelPromptDraft::class,
         com.ihy2ln.weaverse.data.db.entities.NovelWritingSettings::class,
         SeriesEntity::class,
@@ -83,7 +83,7 @@ import com.ihy2ln.weaverse.data.db.entities.RpgCampaignSaveEntity
         TextGameSaveEntity::class,
         RpgCampaignSaveEntity::class,
     ],
-    version = 24,
+    version = 26,
     exportSchema = false,
 )
 @TypeConverters(InkTypeConverters::class)
@@ -102,7 +102,19 @@ abstract class WeaverseDatabase : RoomDatabase() {
     abstract fun promptDao(): PromptDao
     abstract fun textGameSaveDao(): TextGameSaveDao
 
+    abstract fun homeAccessDao(): com.ihy2ln.weaverse.feature.shell.HomeAccessDao
+    abstract fun bookBrowsingDao(): com.ihy2ln.weaverse.feature.library.BookBrowsingDao
     companion object {
+        val MIGRATION_25_26 = object : Migration(25, 26) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS book_browsing (bookId TEXT NOT NULL PRIMARY KEY, synopsis TEXT NOT NULL, backdropMediaId TEXT, listedAt INTEGER NOT NULL, readAt INTEGER NOT NULL, writeAt INTEGER NOT NULL, writeSceneId TEXT NOT NULL)")
+            }
+        }
+        val MIGRATION_24_25 = object : Migration(24, 25) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS home_access (mode TEXT NOT NULL, kind TEXT NOT NULL, contentId TEXT NOT NULL, accessedAt INTEGER NOT NULL, target TEXT NOT NULL, PRIMARY KEY(mode, kind, contentId))")
+            }
+        }
         val MIGRATION_23_24 = object : Migration(23, 24) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE TABLE IF NOT EXISTS novel_prompt_drafts (sceneId TEXT NOT NULL PRIMARY KEY, stateJson TEXT NOT NULL)")

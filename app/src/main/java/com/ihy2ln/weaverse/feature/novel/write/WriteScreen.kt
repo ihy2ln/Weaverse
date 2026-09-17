@@ -58,6 +58,7 @@ import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import com.ihy2ln.weaverse.core.ui.util.adaptiveContentPadding
 import com.ihy2ln.weaverse.feature.novel.write.editor.DocumentEditor
+import com.ihy2ln.weaverse.feature.novel.write.editor.GeneratedProse
 import com.ihy2ln.weaverse.feature.novel.write.editor.SlashCommandOverlay
 import com.ihy2ln.weaverse.feature.novel.write.editor.defaultSlashCommands
 
@@ -243,6 +244,33 @@ fun WriteScreen(
                 showInlineWritingPrompt = state.showInlineWritingPrompt,
                 showSceneBeatCard = state.showSceneBeatCard,
                 showContinuationBox = state.showContinuationBox,
+                generatedProse = state.aiOverlay
+                    ?.takeIf { it.streamingText.isNotBlank() }
+                    // Scene beats already render their own result card in place.
+                    ?.takeUnless { it.commandId == "scene_beat" && state.showSceneBeatCard }
+                    ?.let { overlay ->
+                        GeneratedProse(
+                            text = overlay.streamingText,
+                            original = overlay.sourceParagraphText.orEmpty(),
+                            label = overlay.label,
+                            streaming = overlay.isStreaming,
+                            replacing = overlay.replaceBlockIndex != null,
+                            afterBlockId = overlay.anchorBlockId,
+                            earlierCount = overlay.candidates.size,
+                        )
+                    },
+                onAcceptGenerated = viewModel::acceptAiResult,
+                onRetryGenerated = viewModel::retryAiGeneration,
+                onDiscardGenerated = viewModel::discardAiResult,
+                onCopyGenerated = {
+                    val text = state.aiOverlay?.streamingText.orEmpty()
+                    if (text.isNotBlank()) clipboard.setText(AnnotatedString(text))
+                },
+                onChooseEarlierGenerated = viewModel::chooseCandidate,
+                onEditGenerated = viewModel::updateGeneratedDraft,
+                caretRequest = state.caretRequest,
+                onPlaceCaret = { index -> viewModel.placeCaret(index) },
+                onPlaceCaretAtEnd = viewModel::placeCaretAtEnd,
                 onEditAction = { index, action, value ->
                     viewModel.onSelectionChange(index, value.selection)
                     when (action) {

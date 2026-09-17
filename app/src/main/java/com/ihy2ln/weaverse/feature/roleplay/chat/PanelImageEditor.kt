@@ -94,11 +94,11 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-private val EditorBg = Color(0xFF101010)
-private val EditorPanel = Color(0xFF181818)
-private val EditorCanvas = Color(0xFF202020)
-private val EditorAccent = Color(0xFFE8C872)
-private val EditorMuted = Color(0xFF9AA0B4)
+private val EditorBg = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.background
+private val EditorPanel = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.panel
+private val EditorCanvas = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.hover
+private val EditorAccent = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.activePill
+private val EditorMuted = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.secondaryText
 /** Regions the verifier still found source lettering in. */
 private val EditorReview = Color(0xFFFF6B6B)
 
@@ -280,16 +280,16 @@ fun PanelImageEditor(
         onSurfaceVariant = Color.LightGray, surface = EditorPanel)) {
     Box(modifier = Modifier.fillMaxSize().background(EditorBg)) {
     Column(modifier = Modifier.fillMaxSize()) {
-        androidx.compose.material3.Surface(color = Color.White, contentColor = Color.Black) {
+        androidx.compose.material3.Surface(color = EditorPanel, contentColor = Color.White) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = ::closeEditor) { Text("Read", color = Color.Black) }
-                Text("EDIT", color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                TextButton(onClick = ::closeEditor) { Text("Read", color = Color.White) }
+                Text("EDIT", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 TextButton(onClick = ::undoEdit, enabled = history.canUndo && !editor.busy,
-                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = Color.Black, disabledContentColor = Color.Gray)) { Text("Undo") }
+                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = Color.White, disabledContentColor = Color.Gray)) { Text("Undo") }
                 TextButton(onClick = ::redoEdit, enabled = history.canRedo && !editor.busy,
-                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = Color.Black, disabledContentColor = Color.Gray)) { Text("Redo") }
+                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = Color.White, disabledContentColor = Color.Gray)) { Text("Redo") }
                 TextButton(onClick = { onSave(bitmap) }, enabled = !editor.busy,
-                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = Color.Black)) { Text("Save") }
+                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = Color.White)) { Text("Save") }
             }
         }
 

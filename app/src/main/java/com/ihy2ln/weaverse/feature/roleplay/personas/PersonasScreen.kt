@@ -29,7 +29,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ihy2ln.weaverse.core.ui.components.InkDeleteButton
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
-import com.ihy2ln.weaverse.core.ui.theme.InkHover
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 
@@ -85,7 +84,7 @@ fun PersonasScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable { onPersonaClick(persona.id) }
-                                    .background(InkHover.copy(alpha = 0.3f))
+                                    .background(inkTokens().hover.copy(alpha = 0.3f))
                                     .padding(horizontal = InkSpacing.md, vertical = InkSpacing.sm),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {

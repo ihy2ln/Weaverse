@@ -145,6 +145,8 @@ class BrainstormChatViewModel @Inject constructor(
         }
     }
 
+    @Inject lateinit var homeHistory: com.ihy2ln.weaverse.feature.shell.HomeHistory
+    fun recordThreadOpen(threadId: String) { viewModelScope.launch { homeHistory.record("Notes", "thread", threadId) } }
     fun selectThread(threadId: String) {
         if (_uiState.value.threadId == threadId && observeJob?.isActive == true) return
         _uiState.update { it.copy(threadId = threadId, messages = emptyList(), streamingText = "") }

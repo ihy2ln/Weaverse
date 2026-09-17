@@ -148,7 +148,7 @@ class WriteGeneration @Inject constructor(
             val render = promptAssembler.buildPromptRenderContext(bookId, sceneText, scene, included,
                 context.codexBlock, overlay.prompt, overlay.outputWords)
             val fresh = try {
-                promptAssembler.libraryPromptBundle(overlay.commandId, render, overlay.promptId)
+                promptAssembler.libraryPromptBundle(overlay.commandId, render, overlay.promptIds)
             } catch (error: IllegalStateException) {
                 return WriteGenerationPrep.Failed(error.message.orEmpty())
             }
@@ -184,7 +184,7 @@ class WriteGeneration @Inject constructor(
             // Include message framing and a conservative image allowance in the estimate.
             val used = ContextMeter.used(assembled, user) + 64 + attachments.size * 4096
             if (used + maxTokens <= contextLimit) return WriteGenerationPrep.Ready(WriteStreamPlan(
-                overlay.copy(systemInstructions = fresh.systemInstructions, promptId = fresh.promptId,
+                overlay.copy(systemInstructions = fresh.systemInstructions, promptIds = fresh.promptIds,
                     contextMeter = ContextMeterReading(used + maxTokens, contextLimit)),
                 assembled, user, maxTokens, attachments,
             ))

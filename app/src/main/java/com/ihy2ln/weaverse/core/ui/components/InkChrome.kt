@@ -13,6 +13,22 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.material.icons.filled.*
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -152,6 +168,10 @@ fun WorkspaceChrome(
     focusId: String,
     toolOptions: List<SegmentedOption>,
     activeToolId: String?,
+    onHome: () -> Unit = {},
+    onSearch: () -> Unit = {},
+    isHome: Boolean = false,
+    browsing: Boolean = false,
     onLibrary: () -> Unit,
     onSettings: () -> Unit,
     onImport: () -> Unit,
@@ -172,115 +192,87 @@ fun WorkspaceChrome(
 ) {
     val tokens = inkTokens()
     var arrangeMenu by remember { mutableStateOf<ArrangeMenu?>(null) }
-    // The bar rests at half opacity and condenses; any touch lights it up to
-    // full opacity for a moment, and open arrange menus keep it lit too.
-    var touchedAt by remember { mutableStateOf(0L) }
-    val chromeActive = arrangeMenu != null || touchedAt > 0
-    val chromeAlpha by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (chromeActive) 1f else 0.5f,
-        label = "chromeAlpha",
-    )
-    LaunchedEffect(touchedAt) {
-        if (touchedAt > 0) {
-            delay(2_500)
-            touchedAt = 0L
+    var menuOpen by remember { mutableStateOf(false) }
+    val accent = com.ihy2ln.weaverse.feature.shell.HomeAccent
+    Surface(color = tokens.panel, tonalElevation = 2.dp, modifier = modifier.fillMaxWidth()) {
+        if (browsing) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (canGoBack) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = tokens.primaryText) }
+            Text(if (androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f) "Weaver\nVerse" else "WeaverVerse", Modifier.weight(1f).padding(start = 8.dp), color = tokens.primaryText, fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+            TextButton(onClick = { menuOpen = true }) { Icon(Icons.Default.Menu, "Open navigation", tint = accent); Spacer(Modifier.width(6.dp)); Text("Modes", color = tokens.primaryText, fontFamily = FontFamily.SansSerif) }
+        } else Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.Menu, "Open navigation", tint = tokens.primaryText) }
+            if (canGoBack) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = tokens.primaryText) }
+            Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                Text(if (isHome) "WEAVERSE" else workspaceOptions.firstOrNull { it.id == workspaceId }?.label.orEmpty(), color = accent, fontWeight = FontWeight.Bold, fontSize = 11.sp, fontFamily = FontFamily.SansSerif)
+                Text(if (isHome) "Home" else bookTitle.ifBlank { modeOptions.firstOrNull { it.id == modeId }?.label.orEmpty() }, color = tokens.primaryText, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, fontFamily = FontFamily.SansSerif)
+            }
+            IconButton(onClick = onSearch) { Icon(Icons.Default.Search, "Search", tint = tokens.primaryText) }
+            IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, "Settings", tint = tokens.primaryText) }
         }
     }
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(tokens.panel)
-            .graphicsLayer { alpha = chromeAlpha }
-            .pointerInput(Unit) {
-                awaitEachGesture {
-                    awaitFirstDown(requireUnconsumed = false)
-                    touchedAt = System.currentTimeMillis()
+    if (menuOpen) Dialog(onDismissRequest = { menuOpen = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        // Compose owns this transition. A second platform fade/dim animation
+        // can flash the underlying activity as the dialog surface is attached.
+        val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
+        DisposableEffect(dialogWindow) {
+            val previousAnimations = dialogWindow?.attributes?.windowAnimations
+            val previousDim = dialogWindow?.attributes?.dimAmount
+            dialogWindow?.setWindowAnimations(0)
+            dialogWindow?.setDimAmount(0f)
+            onDispose {
+                previousAnimations?.let { dialogWindow?.setWindowAnimations(it) }
+                previousDim?.let { dialogWindow?.setDimAmount(it) }
+            }
+        }
+        var entered by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) { entered = true }
+        val entrance by animateFloatAsState(if (entered) 1f else 0f, tween(180), label = "navigationEntrance")
+        Box(Modifier.fillMaxSize().drawBehind { drawRect(androidx.compose.ui.graphics.Color.Black.copy(alpha = .4f * entrance)) }.clickable { menuOpen = false }) {
+            Surface(modifier = Modifier.widthIn(max = 360.dp).fillMaxWidth(.9f).fillMaxHeight().graphicsLayer { translationX = -size.width * (1f - entrance) }.pointerInput(Unit) { detectTapGestures {} }, color = tokens.panel, shape = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp)) {
+                Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("WEAVERSE", color = accent, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.weight(1f), fontFamily = FontFamily.SansSerif)
+                        TextButton(onClick = { menuOpen = false }) { Text("Close", fontFamily = FontFamily.SansSerif) }
+                    }
+                    Spacer(Modifier.height(20.dp))
+                    @Composable fun entry(label: String, selected: Boolean = false, enabled: Boolean = true, action: () -> Unit) {
+                        Surface(onClick = { menuOpen = false; action() }, enabled = enabled, color = if (selected) accent.copy(alpha = .14f) else androidx.compose.ui.graphics.Color.Transparent, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                            Row(Modifier.heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                val icon = when (label) {
+                                    "Home" -> Icons.Default.Home
+                                    "Novel", "Library", "Read" -> Icons.AutoMirrored.Filled.MenuBook
+                                    "RPG", "Games" -> Icons.Default.SportsEsports
+                                    "Chatting", "Chat", "Chats", "Brainstorm/Notes", "Brainstorm" -> Icons.Default.ChatBubbleOutline
+                                    "Storyboard", "Pictures" -> Icons.Default.Collections
+                                    "Settings" -> Icons.Default.Settings
+                                    else -> Icons.Default.ChevronRight
+                                }
+                                Icon(icon, null, tint = if (selected) accent else tokens.secondaryText, modifier = Modifier.size(20.dp))
+                                Text(label, color = if (!enabled) tokens.secondaryText else if (selected) accent else tokens.primaryText, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, modifier = Modifier.padding(start = 14.dp), fontFamily = FontFamily.SansSerif)
+                            }
+                        }
+                    }
+                    entry("Home", isHome, action = onHome)
+                    Text("YOUR MODES", color = tokens.secondaryText, fontSize = 10.sp, letterSpacing = 2.sp, modifier = Modifier.padding(16.dp), fontFamily = FontFamily.SansSerif)
+                    workspaceOptions.forEach { option -> entry(option.label, !isHome && option.id == workspaceId) { onWorkspace(option.id) } }
+                    TextButton(onClick = { menuOpen = false; arrangeMenu = ArrangeMenu.Workspaces }) { Text("Arrange modes", color = accent, fontFamily = FontFamily.SansSerif) }
+                    if (!isHome) {
+                        HorizontalDivider(color = tokens.hairline)
+                        Text("IN THIS MODE", color = tokens.secondaryText, fontSize = 10.sp, letterSpacing = 2.sp, modifier = Modifier.padding(16.dp), fontFamily = FontFamily.SansSerif)
+                        modeOptions.forEach { option -> entry(option.label, option.id == modeId && activeToolId == null) { onMode(option.id) } }
+                        TextButton(onClick = { menuOpen = false; arrangeMenu = ArrangeMenu.Modes }) { Text("Arrange sections", color = accent, fontFamily = FontFamily.SansSerif) }
+                    }
+                    HorizontalDivider(color = tokens.hairline)
+                    Text("TOOLS", color = tokens.secondaryText, fontSize = 10.sp, letterSpacing = 2.sp, modifier = Modifier.padding(16.dp), fontFamily = FontFamily.SansSerif)
+                    toolOptions.forEach { option -> entry(option.label, option.id == activeToolId) { onTool(if (activeToolId == option.id) null else option.id) } }
+                    entry("Library", action = onLibrary)
+                    entry("Import", action = onImport)
+                    entry("Export", action = onExport)
+                    entry("Undo", enabled = canUndo, action = onUndo)
+                    entry("Redo", enabled = canRedo, action = onRedo)
+                    entry("Settings", action = onSettings)
                 }
             }
-            .padding(top = InkSpacing.xxs)
-            .border(width = InkSpacing.hairline, color = tokens.hairline),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = InkSpacing.xs, vertical = 0.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xxs),
-        ) {
-            IconButton(onClick = onBack, enabled = canGoBack, modifier = Modifier.size(34.dp)) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", modifier = Modifier.size(20.dp))
-            }
-            IconButton(onClick = onLibrary, modifier = Modifier.size(34.dp)) {
-                Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = "Library", modifier = Modifier.size(20.dp))
-            }
-            IconButton(onClick = onSettings, modifier = Modifier.size(34.dp)) {
-                Icon(Icons.Default.Settings, contentDescription = "Settings", modifier = Modifier.size(20.dp))
-            }
-            InkMenuChip(
-                label = "Workspace",
-                options = workspaceOptions,
-                selectedId = workspaceId,
-                onSelect = onWorkspace,
-                onLongPress = { arrangeMenu = ArrangeMenu.Workspaces },
-            )
-            InkMenuChip(
-                label = "Mode",
-                options = modeOptions,
-                selectedId = modeId,
-                onSelect = onMode,
-                onLongPress = { arrangeMenu = ArrangeMenu.Modes },
-            )
-            // Focus chip removed: "Story" was the default view anyway and Pictures
-            // is reachable under Extra. Kept as a no-op parameter so callers that
-            // still drive focus state (the Pictures gallery) keep working.
-            if (focusOptions.isNotEmpty()) {
-                InkMenuChip(
-                    label = "Focus",
-                    options = focusOptions,
-                    selectedId = focusId,
-                    onSelect = onFocus,
-                )
-            }
-            // App-wide tools, grouped behind one "Extra" chip rather than spilling
-            // six tabs across the row.
-            if (toolOptions.isNotEmpty()) {
-                InkMenuChip(
-                    label = "Extra",
-                    options = toolOptions,
-                    selectedId = activeToolId.orEmpty(),
-                    onSelect = { onTool(if (activeToolId == it) null else it) },
-                )
-            }
-            InkTextButton(label = "Import", onClick = onImport)
-            InkTextButton(label = "Export", onClick = onExport)
-            InkTextButton(label = "Undo", onClick = onUndo, enabled = canUndo)
-            InkTextButton(label = "Redo", onClick = onRedo, enabled = canRedo)
-        }
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = InkSpacing.md, end = InkSpacing.md, bottom = InkSpacing.xxs),
-            contentAlignment = Alignment.CenterStart,
-        ) {
-            Text(
-                text = listOf(bookTitle, seriesTitle)
-                    .map { it.trim() }
-                    .filter { it.isNotBlank() }
-                    .distinct()
-                    .joinToString(" · "),
-                modifier = Modifier.basicMarquee(
-                    iterations = Int.MAX_VALUE,
-                    repeatDelayMillis = 1_200,
-                ),
-                color = tokens.primaryText,
-                fontFamily = FontFamily.Serif,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 13.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Clip,
-                softWrap = false,
-            )
         }
     }
     arrangeMenu?.let { target ->

@@ -1,5 +1,6 @@
 package com.ihy2ln.weaverse.feature.brainstorm
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -69,15 +70,19 @@ import androidx.compose.foundation.text.selection.SelectionContainer
  * the AI — threads on the left, the transcript in the middle, and a composer
  * with model, word range, and codex context at the bottom.
  */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun BrainstormChatScreen(
+    initialThreadId: String? = null,
     viewModel: BrainstormChatViewModel = hiltViewModel(),
 ) {
+    LaunchedEffect(initialThreadId) { initialThreadId?.let(viewModel::selectThread) }
     val state by viewModel.uiState.collectAsState()
     val tokens = inkTokens()
     val context = androidx.compose.ui.platform.LocalContext.current
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
-    var threadsOpen by rememberSaveable { mutableStateOf(true) }
+    val compact = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp / androidx.compose.ui.platform.LocalDensity.current.fontScale < 700
+    var threadsOpen by rememberSaveable { mutableStateOf(!compact) }
     var modelsOpen by remember { mutableStateOf(false) }
     var modelSearch by rememberSaveable { mutableStateOf("") }
     var showAddText by remember { mutableStateOf(false) }
@@ -119,11 +124,11 @@ fun BrainstormChatScreen(
     }
 
     Row(modifier = Modifier.fillMaxSize()) {
-        if (threadsOpen) {
+        if (threadsOpen && !compact) {
             BrainstormThreadsRail(
                 threads = state.threads,
                 selectedThreadId = state.threadId,
-                onThreadClick = viewModel::selectThread,
+                onThreadClick = { viewModel.recordThreadOpen(it); viewModel.selectThread(it) },
                 onCreate = { viewModel.createThread() },
                 onCreateSub = viewModel::createSubThread,
                 onDelete = { deleting = setOf(it) },
@@ -190,6 +195,7 @@ fun BrainstormChatScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
                     .padding(vertical = InkSpacing.xs),
                 horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
             ) {
@@ -293,6 +299,19 @@ fun BrainstormChatScreen(
                 },
                 compactSingleLine = true,
                 modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+
+    if (compact && threadsOpen) {
+        androidx.compose.material3.ModalBottomSheet(onDismissRequest = { threadsOpen = false }) {
+            BrainstormThreadsRail(
+                threads = state.threads, selectedThreadId = state.threadId,
+                onThreadClick = { viewModel.recordThreadOpen(it); viewModel.selectThread(it); threadsOpen = false },
+                onCreate = { viewModel.createThread(); threadsOpen = false },
+                onCreateSub = { viewModel.createSubThread(it); threadsOpen = false },
+                onDelete = { deleting = setOf(it) },
+                modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp),
             )
         }
     }

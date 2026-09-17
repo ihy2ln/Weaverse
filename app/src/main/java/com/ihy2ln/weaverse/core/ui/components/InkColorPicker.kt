@@ -1,5 +1,6 @@
 package com.ihy2ln.weaverse.core.ui.components
 
+import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,9 +26,6 @@ import androidx.compose.ui.unit.sp
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.CodexCategoryColors
-import com.ihy2ln.weaverse.core.ui.theme.InkHairline
-import com.ihy2ln.weaverse.core.ui.theme.InkPrimaryText
-import com.ihy2ln.weaverse.core.ui.theme.InkSecondaryText
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -39,7 +37,7 @@ fun InkColorPicker(
     customColors: List<Color> = CodexCategoryColors,
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
-        Text(text = "Color", color = InkSecondaryText, fontSize = 12.sp)
+        Text(text = "Color", color = inkTokens().secondaryText, fontSize = 12.sp)
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
             verticalArrangement = Arrangement.spacedBy(InkSpacing.sm),
@@ -53,7 +51,7 @@ fun InkColorPicker(
                         .background(color)
                         .border(
                             width = if (selectedThis) 2.dp else 1.dp,
-                            color = if (selectedThis) InkPrimaryText else InkHairline,
+                            color = if (selectedThis) inkTokens().primaryText else inkTokens().hairline,
                             shape = CircleShape,
                         )
                         .clickable { onSelect(color) },
@@ -64,14 +62,14 @@ fun InkColorPicker(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(inkRadiusSm()))
-                .border(1.dp, InkHairline, RoundedCornerShape(inkRadiusSm()))
+                .border(1.dp, inkTokens().hairline, RoundedCornerShape(inkRadiusSm()))
                 .padding(InkSpacing.md),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text(text = "Selected", color = InkSecondaryText, fontSize = 12.sp)
+            Text(text = "Selected", color = inkTokens().secondaryText, fontSize = 12.sp)
             Text(
                 text = "#%08X".format(selected.value.toInt()),
-                color = InkPrimaryText,
+                color = inkTokens().primaryText,
                 fontWeight = FontWeight.Medium,
                 fontSize = 12.sp,
             )

@@ -90,7 +90,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
 
-enum class ReaderTheme(val label: String) { Paper("Paper"), Sepia("Sepia"), Night("Night") }
+enum class ReaderTheme(val label: String) { App("App"), Paper("Paper"), Sepia("Sepia"), Night("Night") }
 
 data class ReaderScene(
     val id: String,
@@ -109,7 +109,7 @@ data class ReaderUiState(
     val currentIndex: Int = 0,
     val fontSizeSp: Int = 18,
     val lineHeight: Float = 1.65f,
-    val theme: ReaderTheme = ReaderTheme.Paper,
+    val theme: ReaderTheme = ReaderTheme.App,
     val bookmarks: Set<String> = emptySet(),
     val status: String = "",
     val loading: Boolean = true,
@@ -169,7 +169,7 @@ class ReaderViewModel @Inject constructor(
                         fontSizeSp = prefs.fontSizeSp.coerceIn(14, 28),
                         lineHeight = prefs.lineHeight,
                         theme = ReaderTheme.entries.find { it.name == prefs.readerTheme }
-                            ?: ReaderTheme.Paper,
+                            ?: ReaderTheme.App,
                         bookmarks = saved.bookmarkedSceneIds,
                         loading = false,
                         paragraphIndex = saved.paragraphIndex,
@@ -231,6 +231,7 @@ class ReaderViewModel @Inject constructor(
         _uiState.update { it.copy(paragraphIndex = paragraphIndex, scrollOffset = scrollOffset) }
         viewModelScope.launch {
             settings.setReaderScroll(state.bookId, scene.id, paragraphIndex, scrollOffset)
+            db.bookBrowsingDao().read(state.bookId, System.currentTimeMillis())
         }
     }
 
@@ -274,7 +275,7 @@ private fun ReaderBlockView(
 ) {
     val proseStyle = MaterialTheme.typography.bodyLarge.copy(
         color = palette.text,
-        fontFamily = FontFamily.Serif,
+        fontFamily = MaterialTheme.typography.bodyLarge.fontFamily,
         fontSize = fontSizeSp.sp,
         lineHeight = (fontSizeSp * lineHeight).sp,
         fontWeight = if (speaking) FontWeight.SemiBold else FontWeight.Normal,
@@ -284,7 +285,7 @@ private fun ReaderBlockView(
         is Heading -> Text(
             block.spans.joinToString("") { it.text },
             color = palette.text,
-            fontFamily = FontFamily.Serif,
+            fontFamily = MaterialTheme.typography.bodyLarge.fontFamily,
             fontWeight = FontWeight.Bold,
             fontSize = (fontSizeSp + (5 - block.level.coerceIn(1, 4)) * 2).sp,
         )
@@ -381,10 +382,12 @@ fun ReaderScreen(viewModel: ReaderViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsState()
     var settingsOpen by remember { mutableStateOf(false) }
     var contentsOpen by remember { mutableStateOf(false) }
+    val tokens = com.ihy2ln.weaverse.core.ui.theme.inkTokens()
     val palette = when (state.theme) {
+        ReaderTheme.App -> ReaderPalette(tokens.background, tokens.page, tokens.primaryText, tokens.secondaryText)
         ReaderTheme.Paper -> ReaderPalette(Color(0xFFF4F1EA), Color(0xFFFFFDF8), Color(0xFF24211D), Color(0xFF706A61))
         ReaderTheme.Sepia -> ReaderPalette(Color(0xFFE8D8B7), Color(0xFFF4E6C8), Color(0xFF3B2B1F), Color(0xFF765D47))
-        ReaderTheme.Night -> ReaderPalette(Color(0xFF101316), Color(0xFF171B1F), Color(0xFFE3E6E8), Color(0xFF9AA2A8))
+        ReaderTheme.Night -> com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.let { ReaderPalette(it.background, it.page, it.primaryText, it.secondaryText) }
     }
     val current = state.current
     val listState = rememberLazyListState(
@@ -561,7 +564,7 @@ fun ReaderScreen(viewModel: ReaderViewModel = hiltViewModel()) {
                         Text(
                             current.title,
                             color = palette.text,
-                            fontFamily = FontFamily.Serif,
+                            fontFamily = MaterialTheme.typography.bodyLarge.fontFamily,
                             fontWeight = FontWeight.Bold,
                             fontSize = (state.fontSizeSp + 8).sp,
                             modifier = Modifier.padding(top = InkSpacing.xs, bottom = InkSpacing.lg),
@@ -580,20 +583,17 @@ fun ReaderScreen(viewModel: ReaderViewModel = hiltViewModel()) {
                     }
                 }
                 HorizontalDivider(color = palette.secondary.copy(alpha = .2f))
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(InkSpacing.sm),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    InkTextButton("← Previous", viewModel::previous, enabled = state.currentIndex > 0)
+                Column(Modifier.fillMaxWidth().padding(InkSpacing.sm)) {
                     val minutes = (current.wordCount / 220f).coerceAtLeast(1f).toInt()
                     val chapterPct = (state.chapterProgress * 100).toInt()
                     Text(
                         "${state.currentIndex + 1} / ${state.scenes.size} · $chapterPct% chapter · about $minutes min",
-                        color = palette.secondary,
-                        style = MaterialTheme.typography.labelMedium,
+                        color = palette.secondary, style = MaterialTheme.typography.labelMedium,
                     )
-                    InkTextButton("Next →", viewModel::next, enabled = state.currentIndex < state.scenes.lastIndex)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        InkTextButton("← Previous", viewModel::previous, enabled = state.currentIndex > 0)
+                        InkTextButton("Next →", viewModel::next, enabled = state.currentIndex < state.scenes.lastIndex)
+                    }
                 }
                 if (state.status.isNotBlank()) {
                     Text(

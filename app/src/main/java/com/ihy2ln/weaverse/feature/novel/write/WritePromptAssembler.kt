@@ -18,11 +18,14 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 data class LibraryPromptBundle(
-    val promptId: String?,
+    val promptIds: List<String>,
     val systemInstructions: String,
     val historyMessages: List<Pair<String, String>> = emptyList(),
     val finalUserMessage: String? = null,
-)
+) {
+    /** The first template — the one whose messages frame the request. */
+    val promptId: String? get() = promptIds.firstOrNull()
+}
 
 @Singleton
 class WritePromptAssembler @Inject constructor(
@@ -41,42 +44,57 @@ class WritePromptAssembler @Inject constructor(
         else -> "Continue the scene."
     }
 
+    /**
+     * Resolves the templates behind one action. [selectedPromptIds] may hold several
+     * ticked templates: the first frames the conversation (its history and closing user
+     * turn are used) and every template contributes its system instructions, in order.
+     * An empty list falls back to the type's default template, as before.
+     */
     suspend fun libraryPromptBundle(
         commandId: String,
         renderCtx: PromptRenderContext,
-        selectedPromptId: String? = null,
+        selectedPromptIds: List<String> = emptyList(),
     ): LibraryPromptBundle {
         val type = when (commandId) {
             "extend" -> "expand"
             else -> commandId
         }
-        val prompts = promptRepository.observeByType(type).first()
-            .ifEmpty { promptRepository.observeByType(commandId).first() }
-        val prompt = selectedPromptId?.let { promptRepository.getPrompt(it) ?: error("Selected template was deleted. Choose another template.") }
-            ?: prompts.firstOrNull { it.isDefault }
-            ?: prompts.firstOrNull { it.id == "prompt-$type" }
-            ?: prompts.firstOrNull()
-        if (prompt == null) {
+        val prompts = if (selectedPromptIds.isNotEmpty()) {
+            selectedPromptIds.map {
+                promptRepository.getPrompt(it) ?: error("Selected template was deleted. Choose another template.")
+            }
+        } else {
+            val byType = promptRepository.observeByType(type).first()
+                .ifEmpty { promptRepository.observeByType(commandId).first() }
+            listOfNotNull(
+                byType.firstOrNull { it.isDefault }
+                    ?: byType.firstOrNull { it.id == "prompt-$type" }
+                    ?: byType.firstOrNull(),
+            )
+        }
+        if (prompts.isEmpty()) {
             return LibraryPromptBundle(
-                promptId = null,
+                promptIds = emptyList(),
                 systemInstructions = PromptTokens.apply(defaultPromptFor(commandId), tokenContext(renderCtx)),
             )
         }
-        val rendered = PromptRenderer.render(prompt, renderCtx)
-        val advanced = runCatching { json.parseToJsonElement(prompt.advancedJson).jsonObject }.getOrNull()
-        val guidance = advanced?.get("guidance")?.jsonPrimitive?.contentOrNull.orEmpty()
-        val bias = advanced?.get("bias")?.jsonPrimitive?.contentOrNull.orEmpty()
-        val systemInstructions = buildString {
-            append(rendered.systemText.ifBlank { prompt.description })
-            if (guidance.isNotBlank()) append("\n\nGuidance: ").append(guidance)
-            if (bias.isNotBlank()) append("\n\nBias: ").append(bias)
-        }
-        val lastTurn = rendered.messages.lastOrNull()
+        val rendered = prompts.map { PromptRenderer.render(it, renderCtx) }
+        val systemInstructions = prompts.mapIndexed { index, prompt ->
+            val advanced = runCatching { json.parseToJsonElement(prompt.advancedJson).jsonObject }.getOrNull()
+            val guidance = advanced?.get("guidance")?.jsonPrimitive?.contentOrNull.orEmpty()
+            val bias = advanced?.get("bias")?.jsonPrimitive?.contentOrNull.orEmpty()
+            buildString {
+                append(rendered[index].systemText.ifBlank { prompt.description })
+                if (guidance.isNotBlank()) append("\n\nGuidance: ").append(guidance)
+                if (bias.isNotBlank()) append("\n\nBias: ").append(bias)
+            }
+        }.filter { it.isNotBlank() }.joinToString("\n\n")
+        val lastTurn = rendered.first().messages.lastOrNull()
         val endsInUserTurn = lastTurn?.first == "user"
         return LibraryPromptBundle(
-            promptId = prompt.id,
+            promptIds = prompts.map { it.id },
             systemInstructions = systemInstructions,
-            historyMessages = if (endsInUserTurn) rendered.messages.dropLast(1) else rendered.messages,
+            historyMessages = if (endsInUserTurn) rendered.first().messages.dropLast(1) else rendered.first().messages,
             finalUserMessage = if (endsInUserTurn) lastTurn?.second else null,
         )
     }

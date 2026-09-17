@@ -62,6 +62,39 @@ class AppShellViewModel @Inject constructor(
     private val mangaDownloadRepository: MangaDownloadRepository,
 ) : ViewModel() {
     val preferences = settings.preferences
+    @Inject lateinit var homeHistory: HomeHistory
+    fun recordAccess(mode: String, kind: String, id: String, target: String = "") {
+        viewModelScope.launch { homeHistory.record(mode, kind, id, target) }
+    }
+    fun openSceneFromSearch(sceneId: String, onOpen: () -> Unit) {
+        viewModelScope.launch {
+            val scene = db.manuscriptDao().getScene(sceneId) ?: return@launch
+            val chapter = db.manuscriptDao().getChapter(scene.chapterId) ?: return@launch
+            val act = db.manuscriptDao().getAct(chapter.actId) ?: return@launch
+            settings.setSelectedBookId(act.bookId)
+            homeHistory.record("Novel", "book", act.bookId, sceneId)
+            onOpen()
+        }
+    }
+    fun openBookForBrowsing(id: String, writing: Boolean, onOpen: (String) -> Unit) {
+        viewModelScope.launch {
+            if (db.bookDao().getById(id) == null) return@launch
+            settings.setSelectedBookId(id)
+            val scenes = db.manuscriptDao().getReaderScenes(id)
+            val saved = if (writing) db.bookBrowsingDao().get(id)?.writeSceneId.orEmpty() else settings.readerState(id).first().lastSceneId
+            val target = saved.takeIf { target -> scenes.any { it.id == target } } ?: scenes.firstOrNull()?.id.orEmpty()
+            homeHistory.record("Novel", "book", id)
+            onOpen(target)
+        }
+    }
+    fun openRecent(item: HomeItem, onOpen: (HomeItem) -> Unit) {
+        viewModelScope.launch {
+            val current = homeHistory.items.first().firstOrNull { it.key == item.key } ?: return@launch
+            current.bookId?.let { settings.setSelectedBookId(it) }
+            homeHistory.record(current.mode, current.kind, current.contentId, current.target)
+            onOpen(current)
+        }
+    }
 
     fun toggleFavoriteSettingTemplate(id: String) {
         viewModelScope.launch { settings.toggleFavoriteSettingTemplate(id) }
@@ -171,6 +204,18 @@ class AppShellViewModel @Inject constructor(
                 // Every new novel/campaign gets its Discord rooms right away.
                 chatRoomSeeder.ensureRoomsForBook(book)
             }
+            val accessMode = when (vocabulary) {
+                CreateWorkVocabulary.Storyboard -> AppMode.Storyboard
+                CreateWorkVocabulary.Campaign -> AppMode.Roleplay
+                CreateWorkVocabulary.TextGame -> AppMode.Games
+                else -> AppMode.Novel
+            }
+            homeHistory.record(
+                accessMode.name,
+                if (accessMode == AppMode.Games) "chat" else "book",
+                if (accessMode == AppMode.Games) chatId.orEmpty() else book.id,
+                if (accessMode == AppMode.Roleplay) chatId.orEmpty() else "",
+            )
             onCreated(book.id, chatId)
         }
     }

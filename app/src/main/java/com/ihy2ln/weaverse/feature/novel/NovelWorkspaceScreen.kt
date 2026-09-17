@@ -45,8 +45,11 @@ fun NovelWorkspaceScreen(title: String, initialSceneId: String, initialDestinati
     val status by viewModel.status.collectAsState()
     val busy by viewModel.busy.collectAsState()
     var tab by rememberSaveable(state.bookId) { mutableStateOf(when (initialDestination) {
-        "Chat" -> "Workshop"; "Read" -> "Read"; "Review" -> "Review"; else -> "Write"
+        "Chat" -> "Workshop"; "Plan" -> "Plan"; "Read" -> "Read"; "Review" -> "Review"; else -> "Write"
     }) }
+    LaunchedEffect(initialDestination) {
+        tab = when (initialDestination) { "Chat" -> "Workshop"; "Plan" -> "Plan"; "Read" -> "Read"; "Review" -> "Review"; else -> "Write" }
+    }
     var sceneId by rememberSaveable(state.bookId) { mutableStateOf(initialSceneId) }
     val scene = state.scenes.firstOrNull { it.id == sceneId } ?: state.scenes.firstOrNull()
     var picker by rememberSaveable { mutableStateOf(false) }
@@ -56,9 +59,10 @@ fun NovelWorkspaceScreen(title: String, initialSceneId: String, initialDestinati
     var pendingMedia by rememberSaveable { mutableStateOf<String?>(null) }
     var threadId by rememberSaveable(state.bookId) { mutableStateOf<String?>(null) }
     val savedStates = rememberSaveableStateHolder()
-    LaunchedEffect(scene?.id) { scene?.let { writeModel.loadScene(it.id) } }
+    LaunchedEffect(scene?.id) { scene?.let { writeModel.loadScene(it.id); viewModel.recordHomeLocation(it.id) } }
+    LaunchedEffect(state.bookId, scene?.id, tab) { if (tab == "Write") scene?.let { viewModel.recordWriting(it.id) } }
     LaunchedEffect(writeModel) { writeModel.promptRequests.collect { tab = "Write"; if (scene != null) writeModel.openComposer() else picker = true } }
-    BackHandler { when { picker -> picker = false; tab != "Write" -> tab = "Write"; else -> onExit() } }
+    BackHandler { if (picker) picker = false else onExit() }
     Column(Modifier.fillMaxSize().imePadding()) {
         Surface(tonalElevation = 2.dp) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

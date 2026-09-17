@@ -22,10 +22,11 @@ fun InkCard(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val tokens = inkTokens()
+    val cinematic = com.ihy2ln.weaverse.core.ui.theme.appearanceProfile() == com.ihy2ln.weaverse.core.ui.theme.AppearanceProfile.Streaming
     Column(
         modifier = modifier
             .background(background, RoundedCornerShape(inkRadiusMd()))
-            .border(1.dp, tokens.hairline, RoundedCornerShape(inkRadiusMd()))
+            .then(if (cinematic) Modifier else Modifier.border(1.dp, tokens.hairline, RoundedCornerShape(inkRadiusMd())))
             .padding(InkSpacing.lg),
         content = content,
     )

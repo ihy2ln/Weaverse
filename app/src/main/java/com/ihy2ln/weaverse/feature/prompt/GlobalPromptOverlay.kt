@@ -58,7 +58,6 @@ import com.ihy2ln.weaverse.core.ui.components.mergeSpokenText
 import com.ihy2ln.weaverse.core.ui.components.rememberSpeechToText
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
-import com.ihy2ln.weaverse.core.ui.theme.InkAccentBlue
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 @OptIn(ExperimentalFoundationApi::class)
@@ -219,7 +218,7 @@ private fun PromptKindSelector(
         text = if (aiSelected) "/A" else "\\M",
         modifier = Modifier
             .clip(RoundedCornerShape(inkRadiusSm()))
-            .background(InkAccentBlue.copy(alpha = 0.14f))
+            .background(inkTokens().activePill.copy(alpha = 0.14f))
             .clickable(enabled = enabled) {
                 onSelect(if (aiSelected) PromptEntryKind.Manual else PromptEntryKind.Ai)
             }
@@ -233,7 +232,7 @@ private fun PromptKindSelector(
             .padding(horizontal = 4.dp, vertical = 7.dp),
         style = MaterialTheme.typography.labelSmall,
         fontWeight = FontWeight.Bold,
-        color = if (enabled) InkAccentBlue else tokens.secondaryText.copy(alpha = 0.5f),
+        color = if (enabled) inkTokens().activePill else tokens.secondaryText.copy(alpha = 0.5f),
         maxLines = 1,
     )
 }

@@ -1,5 +1,6 @@
 package com.ihy2ln.weaverse.feature.roleplay.presets
 
+import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,7 +22,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
-import com.ihy2ln.weaverse.core.ui.theme.InkHairline
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 
 /**
@@ -95,7 +95,7 @@ fun PresetsScreen(viewModel: PresetsViewModel = hiltViewModel()) {
                 val border = if (selected) {
                     MaterialTheme.colorScheme.primary.copy(alpha = 0.65f)
                 } else {
-                    InkHairline
+                    inkTokens().hairline
                 }
                 Column(
                     modifier = Modifier

@@ -24,6 +24,7 @@ enum class AppearanceProfile(
     val label: String,
     val blurb: String,
 ) {
+    Streaming("WeaverVerse", "Cinematic black, clear sans-serif type and soft violet accents."),
     Classic("Classic", "The original Weaverse look, with all four themes."),
     Fantasy("Fantasy", "Parchment and ink — scroll-styled serif pages."),
     Arcade("Arcade", "8-bit: hard pixel corners and a monospace HUD."),
@@ -46,6 +47,7 @@ enum class AppearanceProfile(
     val usesThemeModes: Boolean get() = this == Classic
 
     fun tokens(mode: AppThemeMode): InkThemeTokens = when (this) {
+        Streaming -> StreamingTokens
         Classic -> tokensFor(mode)
         Fantasy -> if (mode.isDark) FantasyDark else FantasyLight
         Arcade -> if (mode.isDark) ArcadeDark else ArcadeLight
@@ -65,6 +67,7 @@ enum class AppearanceProfile(
     }
 
     val typography: Typography get() = when (this) {
+        Streaming -> Typography()
         Classic -> WeaverseTypography
         Fantasy -> FantasyTypography
         Arcade -> ArcadeTypography
@@ -85,6 +88,7 @@ enum class AppearanceProfile(
 
     /** Corner rounding is the cheapest, loudest shape signal: 0dp reads as pixel art. */
     val cornerRadius: androidx.compose.ui.unit.Dp get() = when (this) {
+        Streaming -> 8.dp
         Classic -> InkSpacing.radiusMd
         Fantasy -> 4.dp
         Arcade -> 0.dp

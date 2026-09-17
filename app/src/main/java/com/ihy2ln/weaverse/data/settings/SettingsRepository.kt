@@ -27,7 +27,9 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "weaverse_settings")
+private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
+    name = "weaverse_settings", produceMigrations = { listOf(StreamingAppearanceMigration) },
+)
 
 data class SectionAppearance(
     val colorHex: String = "",
@@ -81,13 +83,13 @@ enum class ExtraPromptSurface {
 }
 
 data class UserPreferences(
-    val themeMode: AppThemeMode = AppThemeMode.Light,
+    val themeMode: AppThemeMode = AppThemeMode.Dark,
     /** Whole visual identity (palette + typography + shape); Classic = the original look. */
-    val appearanceProfile: AppearanceProfile = AppearanceProfile.Classic,
+    val appearanceProfile: AppearanceProfile = AppearanceProfile.Streaming,
     val fontSizeSp: Int = 16,
     val lineHeight: Float = 1.6f,
     /** Paper | Sepia | Night — dedicated reader palette, independent of app chrome. */
-    val readerTheme: String = "Paper",
+    val readerTheme: String = "App",
     val defaultModelRef: String = WritingModelSeeds.DEFAULT_MODEL_REF,
     /** Model used for OCR/text-region understanding in the imported manga editor. */
     val mangaVisionModelRef: String = "",
@@ -97,7 +99,7 @@ data class UserPreferences(
     val mangaImageModelRef: String = "",
     val mangaColorStyleGuide: String = "Flat, restrained colors. Follow existing shading and screentones. No added lighting or painterly effects.",
     val mangaPreserveLineArt: Boolean = true,
-    val launchMode: String = "novel",
+    val launchMode: String = "home",
     val colorCodingEnabled: Boolean = true,
     val selectedBookId: String = "book-adams-haven-1",
     val backgroundMediaId: String = "",
@@ -178,20 +180,20 @@ class SettingsRepository @Inject constructor(
 ) {
     val preferences: Flow<UserPreferences> = context.dataStore.data.map { prefs ->
         UserPreferences(
-            themeMode = AppThemeMode.entries.find { it.name == prefs[KEY_THEME] } ?: AppThemeMode.Light,
+            themeMode = AppThemeMode.entries.find { it.name == prefs[KEY_THEME] } ?: AppThemeMode.Dark,
             appearanceProfile = AppearanceProfile.entries
                 .find { it.name == prefs[KEY_APPEARANCE_PROFILE] }
-                ?: AppearanceProfile.Classic,
+                ?: AppearanceProfile.Streaming,
             fontSizeSp = prefs[KEY_FONT_SIZE] ?: 16,
             lineHeight = prefs[KEY_LINE_HEIGHT] ?: 1.6f,
-            readerTheme = prefs[KEY_READER_THEME] ?: "Paper",
+            readerTheme = prefs[KEY_READER_THEME] ?: "App",
             defaultModelRef = prefs[KEY_DEFAULT_MODEL] ?: WritingModelSeeds.DEFAULT_MODEL_REF,
             mangaVisionModelRef = prefs[KEY_MANGA_VISION_MODEL] ?: "",
             mangaTextModelRef = prefs[KEY_MANGA_TEXT_MODEL] ?: "",
             mangaImageModelRef = prefs[KEY_MANGA_IMAGE_MODEL] ?: "",
             mangaColorStyleGuide = prefs[KEY_MANGA_COLOR_STYLE] ?: UserPreferences().mangaColorStyleGuide,
             mangaPreserveLineArt = prefs[KEY_MANGA_PRESERVE_ART] ?: true,
-            launchMode = prefs[KEY_LAUNCH_MODE] ?: "novel",
+            launchMode = "home",
             colorCodingEnabled = prefs[KEY_COLOR_CODING] ?: true,
             selectedBookId = prefs[KEY_SELECTED_BOOK] ?: "book-adams-haven-1",
             backgroundMediaId = prefs[KEY_BACKGROUND_MEDIA] ?: "",

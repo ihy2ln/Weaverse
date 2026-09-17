@@ -1,5 +1,6 @@
 package com.ihy2ln.weaverse.core.ui.components
 
+import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,9 +16,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.ihy2ln.weaverse.core.ui.theme.InkHairline
-import com.ihy2ln.weaverse.core.ui.theme.InkPrimaryText
-import com.ihy2ln.weaverse.core.ui.theme.InkSecondaryText
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 
 @Composable
@@ -35,13 +33,13 @@ fun InkRail(
         modifier = modifier
             .width(width)
             .fillMaxHeight()
-            .background(Color.White)
+            .background(inkTokens().panel)
             .padding(vertical = InkSpacing.sm),
     ) {
         Text(
             text = title.uppercase(),
             modifier = Modifier.padding(horizontal = InkSpacing.lg, vertical = InkSpacing.sm),
-            color = InkPrimaryText,
+            color = inkTokens().primaryText,
             fontWeight = FontWeight.Bold,
         )
         InkSegmentedPill(
@@ -61,7 +59,7 @@ fun InkRail(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(InkHairline.copy(alpha = 0.35f))
+                .background(inkTokens().hairline.copy(alpha = 0.35f))
                 .padding(top = 1.dp),
         ) {
             bottomBar()
@@ -80,8 +78,8 @@ fun InkEmptyState(
         modifier = modifier.padding(InkSpacing.xxl),
         verticalArrangement = Arrangement.spacedBy(InkSpacing.sm),
     ) {
-        Text(text = title, color = InkPrimaryText, fontWeight = FontWeight.SemiBold)
-        Text(text = subtitle, color = InkSecondaryText)
+        Text(text = title, color = inkTokens().primaryText, fontWeight = FontWeight.SemiBold)
+        Text(text = subtitle, color = inkTokens().secondaryText)
         action()
     }
 }

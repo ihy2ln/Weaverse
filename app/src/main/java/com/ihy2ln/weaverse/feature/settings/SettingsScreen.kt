@@ -229,6 +229,7 @@ fun SettingsScreen(
 
             val profile = state.prefs.appearanceProfile
 
+            if (profile != AppearanceProfile.Streaming) {
             Text(
 
                 if (profile.usesThemeModes) "Theme" else "Theme — ${profile.label} uses light or dark",
@@ -272,7 +273,10 @@ fun SettingsScreen(
                 modifier = Modifier.padding(vertical = InkSpacing.sm),
 
             )
+            }
 
+            Text("Startup · Home", style = MaterialTheme.typography.titleSmall)
+            Text("All six modes and your recently opened content are available on Home.", style = MaterialTheme.typography.bodySmall)
             Text("Font size: ${state.prefs.fontSizeSp}sp")
 
             Slider(
