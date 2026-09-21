@@ -1,15 +1,24 @@
 package com.ihy2ln.weaverse.feature.chatting
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,6 +31,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -52,6 +63,9 @@ fun ChatPromptWindow(
 ) {
     val tokens = inkTokens()
     var templateSearch by rememberSaveable { mutableStateOf("") }
+    var emojiOpen by rememberSaveable { mutableStateOf(false) }
+    // Collapsed keeps the message box and Send, and folds everything else away.
+    var collapsed by rememberSaveable { mutableStateOf(false) }
     val keyboard = with(LocalDensity.current) { WindowInsets.ime.getBottom(this).toDp() }
     val configuration = LocalConfiguration.current
     val available = (configuration.screenHeightDp.dp - keyboard - 96.dp).coerceAtLeast(80.dp)
@@ -68,10 +82,14 @@ fun ChatPromptWindow(
     val roomLabel = if (state.selectedRoom?.kind == ROOM_KIND_CHANNEL) "#$roomName" else roomName
 
     PromptDockShell(
-        pinnedHeightDp = draggedHeight,
+        pinnedHeightDp = if (collapsed) 118f else draggedHeight,
         onPinnedHeightChange = viewModel::setPromptDockHeight,
-        autoMaxHeight = (if (expanded) available * expandedShare else available * collapsedShare)
-            .coerceAtLeast(132.dp),
+        autoMaxHeight = if (collapsed) {
+            124.dp
+        } else {
+            (if (expanded) available * expandedShare else available * collapsedShare)
+                .coerceAtLeast(132.dp)
+        },
         modifier = modifier,
     ) {
         Row(
@@ -98,7 +116,23 @@ fun ChatPromptWindow(
                 enabled = !state.isStreaming,
                 onChange = viewModel::updateMaximumWords,
             )
-            PromptDockChip(if (expanded) "Less" else "More") { viewModel.setPromptExpanded(!expanded) }
+            if (!collapsed) {
+                PromptDockChip(if (expanded) "Less" else "More") { viewModel.setPromptExpanded(!expanded) }
+            }
+            IconButton(
+                onClick = { collapsed = !collapsed },
+                modifier = Modifier
+                    .size(28.dp)
+                    .semantics {
+                        contentDescription = if (collapsed) "Expand prompt" else "Collapse prompt"
+                    },
+            ) {
+                Icon(
+                    if (collapsed) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = null,
+                    tint = tokens.primaryText,
+                )
+            }
         }
 
         // @mention picker: narrows as the writer types, tap to complete the name.
@@ -147,7 +181,7 @@ fun ChatPromptWindow(
             ) { Text(if (state.isStreaming) "Stop" else "Send", fontSize = 13.sp) }
         }
 
-        PromptDockModelRow(
+        if (!collapsed) PromptDockModelRow(
             current = PromptModelSelection.effectiveModelRef(state.selectedModelRef, state.defaultModelRef),
             models = state.writingModels,
             enabled = !state.isStreaming,
@@ -156,18 +190,29 @@ fun ChatPromptWindow(
             searchable = true,
         )
 
-        if (expanded) {
+        if (expanded && !collapsed) {
             Row(
                 Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 PromptDockChip("Attach image", enabled = !state.isStreaming, onClick = viewModel::requestMediaPick)
+                PromptDockChip(
+                    label = "Emoji",
+                    enabled = !state.isStreaming,
+                    selected = emojiOpen,
+                    onClick = { emojiOpen = !emojiOpen },
+                )
                 PromptDockChip("Dictate", enabled = !state.isStreaming, onClick = onMicTap)
                 PromptDockChip("Roll d20", enabled = !state.isStreaming, onClick = viewModel::rollDice)
                 PromptDockChip("Retry", enabled = !state.isStreaming, onClick = viewModel::retry)
                 PromptDockChip("Continue", enabled = !state.isStreaming, onClick = viewModel::continueConversation)
                 PromptDockChip("Clear", enabled = state.input.isNotBlank(), onClick = viewModel::clearInput)
                 PromptDockChip("All models", onClick = onModelClick)
+            }
+
+            if (emojiOpen) {
+                // Rows scroll sideways: a vertical list here would fight the dock's own scroll.
+                ChatEmojiPicker { emoji -> viewModel.onInputChange(state.input + emoji) }
             }
 
             Row(
@@ -220,3 +265,43 @@ fun ChatPromptWindow(
         }
     }
 }
+
+/** Common chat emoji, three sideways-scrolling rows so it never fights the dock's scroll. */
+@Composable
+private fun ChatEmojiPicker(onPick: (String) -> Unit) {
+    val tokens = inkTokens()
+    Column(
+        Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        ChatEmoji.chunked((ChatEmoji.size + 2) / 3).forEach { row ->
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                row.forEach { emoji ->
+                    Text(
+                        emoji,
+                        fontSize = 20.sp,
+                        color = tokens.primaryText,
+                        modifier = Modifier
+                            .clickable { onPick(emoji) }
+                            .padding(horizontal = 5.dp, vertical = 3.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+private val ChatEmoji = listOf(
+    "😂", "😅", "😊", "😉", "😍", "😘",
+    "😏", "😒", "😔", "😩", "😭", "😡",
+    "😳", "😱", "🤔", "🙄", "😎", "🥰",
+    "😇", "😈", "💀", "👋", "👍", "👎",
+    "👏", "🙏", "💪", "🤝", "✌️", "🤟",
+    "❤️", "💔", "🔥", "✨", "⭐", "🎉",
+    "👀", "🧠", "💯", "✅", "❌", "❓",
+    "🍻", "☕", "🍕", "🍪", "🎮", "🎲",
+    "🗡️", "🛡️", "🔮", "🌙", "☀️",
+)

@@ -3,6 +3,19 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.9 — Emoji button and a collapsible prompt window
+
+- **Emoji** chip sits beside Attach image under "More" in the chat prompt window. It
+  opens a picker of ~54 common chat emoji in three sideways-scrolling rows — sideways
+  on purpose, since a vertical list would fight the dock's own scroll — and tapping
+  one appends it to the draft.
+- **Collapse arrow** next to Less/More folds the window down to just the message box,
+  Send and the context meter, hiding the model row and the More section; the arrow
+  flips to point up and restores everything. A collapsed dock also asks for less
+  height so the transcript gets the space.
+- Test build: `Beta.Test.Build/Weaverse-1.9-chatting-beta.apk`
+  (SHA-256 `5721C1A0BBED35E240D7C28C527917CA3437C43A2931B0DB2876376F3F81A164`).
+
 ## v1.8 — A real Direct Messages screen, one-to-one DMs, emoji
 
 - The DM envelope in the rail was a dead button on Home: it cleared the server and

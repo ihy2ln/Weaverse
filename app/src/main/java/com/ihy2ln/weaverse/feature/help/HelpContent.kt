@@ -278,6 +278,12 @@ object HelpContent {
                         "Continue, Clear, All models, and the chat quick messages.",
                 ),
                 HelpEntry(
+                    "Emoji and collapsing",
+                    "More opens an Emoji picker beside Attach image; tap one to drop it in the " +
+                        "draft. The arrow next to Less/More folds the window down to the message " +
+                        "box and Send, and back again.",
+                ),
+                HelpEntry(
                     "Quick messages",
                     "Chat-themed templates under More: Say Hi, Catch Me Up, Banter, React " +
                         "To That, Ask The Room, Make Plans, Check In On Me, Nudge For A " +

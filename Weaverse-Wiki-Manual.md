@@ -397,7 +397,10 @@ message box and **Send**, the **/A** AI versus **\M**
 manual chip, the word target (**W**), the model row — which has
 its own **Search models** box — and a live context meter.
 
-**More** opens the rest: Attach image, Dictate, Roll d20,
+The arrow beside **Less/More** folds the window down to the
+message box and Send, and back again.
+
+**More** opens the rest: Attach image, **Emoji**, Dictate, Roll d20,
 Retry, Continue, Clear, All models — and the **quick
 messages**, chat-themed templates such as Say Hi, Catch Me
 Up, Banter, React To That, Ask The Room, Make Plans, Check
