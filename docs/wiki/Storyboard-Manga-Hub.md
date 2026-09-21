@@ -84,5 +84,10 @@ Storyboard page.
 
 The filter icon above the chapter list opens **Language**, scanlator group, and a
 chapter-number range. The language picker lists only the languages that title
-actually publishes, with readable names (English (EN), French (FR)), so a series
-with seven translations narrows to the one you read. Reset clears every filter.
+actually publishes, with readable names and a chapter count — English (EN) · 617 —
+so a series with seven translations narrows to the one you read. Reset clears every
+filter.
+
+If a title advertises a language the source has no chapters for, the dialog says so
+rather than silently omitting it: licensed releases are often pulled from a source
+while the metadata still lists the language.

@@ -597,8 +597,11 @@ downloads and image cache are using, and can clear either.
 
 The filter icon above the chapter list opens **Language**,
 scanlator group, and a chapter-number range. The language
-picker lists only what that title actually publishes, so a
-series with seven translations narrows to the one you read.
+picker lists what that title actually publishes, with a
+chapter count beside each one, so a series with seven
+translations narrows to the one you read. A language the
+title advertises but has no chapters for is called out
+instead of silently missing.
 
 ---
 

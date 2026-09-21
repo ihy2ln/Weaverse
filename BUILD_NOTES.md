@@ -3,6 +3,22 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.32 — Language filter: counts, and why a language can be missing
+
+- The picker shows a chapter count per language ("English (EN) · 617", "Any (1697)"),
+  so it is obvious what each choice yields.
+- When a title advertises a translation the source carries no chapters for, the dialog
+  says so: "No chapters on this source for: English (EN)." MangaDex reports
+  `availableTranslatedLanguages` including languages whose chapters have since been
+  pulled, which is why English was absent for One Punch-Man — the API returns 0
+  English chapters for that entry, so there was nothing to filter to. Verified against
+  the API rather than guessed.
+- Filtering itself is confirmed on a title that does have English: 617 of 1697
+  chapters, every visible row EN. The predicate is unit tested for casing, padding,
+  and that "es" does not swallow "es-la".
+- Test build: `Beta.Test.Build/weaverse-v1.4.32.apk`
+  (SHA-256 `AEAA3BE6DCFCE2CA6DDD42CB6FC9E8146894CE4B0E0115A4AD2FC1AFE409DBDA`).
+
 ## v1.4.31 — Storyboard: library long-press, working storage page, Help
 
 - **Long-press a library cover** opens a sheet with the title's categories (tick to

@@ -1469,9 +1469,15 @@ private fun MihonMangaDetail(state: MangaSourceUiState, viewModel: MangaSourceVi
         state.chapters.map { it.scanlator }.filter { it.isNotBlank() }.distinct().sorted()
     }
     // Sources list every translation together; most readers want one language.
-    val languages = remember(state.chapters) {
-        state.chapters.map { it.language.trim().lowercase() }
-            .filter { it.isNotBlank() }
+    val languageCounts = remember(state.chapters) {
+        state.chapters.groupingBy { it.language.trim().lowercase() }.eachCount().filterKeys { it.isNotBlank() }
+    }
+    val languages = remember(languageCounts) { languageCounts.keys.sortedBy { mangaLanguageLabel(it) } }
+    // A title can advertise a translation whose chapters are not actually on the source —
+    // licensed releases are routinely pulled. Saying so beats looking like a missing filter.
+    val advertisedOnly = remember(manga, languageCounts) {
+        manga.languages.map { it.trim().lowercase() }
+            .filter { it.isNotBlank() && it !in languageCounts }
             .distinct()
             .sortedBy { mangaLanguageLabel(it) }
     }
@@ -1604,10 +1610,20 @@ private fun MihonMangaDetail(state: MangaSourceUiState, viewModel: MangaSourceVi
                         CatalogFilterChoice(
                             "Language",
                             languageFilter,
-                            listOf("Any" to "") + languages.map { mangaLanguageLabel(it) to it },
+                            listOf("Any (${state.chapters.size})" to "") +
+                                languages.map { "${mangaLanguageLabel(it)} · ${languageCounts[it] ?: 0}" to it },
                         ) { languageFilter = it }
-                        Spacer(Modifier.height(8.dp))
                     }
+                    if (advertisedOnly.isNotEmpty()) {
+                        Text(
+                            "No chapters on this source for: " +
+                                advertisedOnly.joinToString(", ") { mangaLanguageLabel(it) } + ".",
+                            color = MihonMuted,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
+                    if (languages.size > 1 || advertisedOnly.isNotEmpty()) Spacer(Modifier.height(8.dp))
                     if (scanlators.isNotEmpty()) {
                         CatalogFilterChoice(
                             "Scanlator / group",

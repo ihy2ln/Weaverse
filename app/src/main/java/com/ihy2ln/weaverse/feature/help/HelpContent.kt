@@ -352,8 +352,9 @@ object HelpContent {
                 HelpEntry(
                     "Filtering chapters",
                     "The filter icon above the chapter list opens Language, scanlator group, and " +
-                        "a chapter number range. Language lists only what that title publishes, " +
-                        "so a series with seven translations can be narrowed to one.",
+                        "a chapter number range. Language lists what that title publishes with a " +
+                        "chapter count each, and calls out any language the title advertises but " +
+                        "has no chapters for.",
                 ),
                 HelpEntry(
                     "Manga hub and sources",
