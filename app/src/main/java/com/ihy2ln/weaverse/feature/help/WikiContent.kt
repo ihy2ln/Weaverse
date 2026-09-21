@@ -392,8 +392,8 @@ object WikiContent {
                 Chatting uses the same resizable **prompt window** as Novel,
                 not a slim bar: drag its handle to resize, then use the
                 message box and **Send**, the **/A** AI versus **\M**
-                manual chip, the word target (**W**), the model row and a
-                live context meter.
+                manual chip, the word target (**W**), the model row — which has
+                its own **Search models** box — and a live context meter.
 
                 **More** opens the rest: Attach image, Dictate, Roll d20,
                 Retry, Continue, Clear, All models — and the **quick

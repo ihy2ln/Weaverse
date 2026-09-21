@@ -263,9 +263,17 @@ fun PromptDockModelRow(
     enabled: Boolean,
     onPick: (String) -> Unit,
     onUseDefault: () -> Unit,
+    /** Adds a filter box above the list — worth it where the cached list runs long. */
+    searchable: Boolean = false,
 ) {
     val tokens = inkTokens()
     var open by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    val shown = if (searchable && query.isNotBlank()) {
+        models.filter { it.displayName.contains(query, true) || it.id.contains(query, true) }
+    } else {
+        models
+    }
     Box(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth()
@@ -284,24 +292,41 @@ fun PromptDockModelRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        DropdownMenu(open, { open = false }) {
+        DropdownMenu(open, { open = false; query = "" }) {
+            if (searchable) {
+                Box(Modifier.width(280.dp).padding(horizontal = 8.dp, vertical = 4.dp)) {
+                    PromptDockTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        placeholder = "Search models",
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
             DropdownMenuItem(
                 text = { Text("Connected default", style = MaterialTheme.typography.bodySmall) },
                 onClick = { open = false; onUseDefault() },
             )
             HorizontalDivider(color = tokens.hairline)
-            if (models.isEmpty()) {
+            if (shown.isEmpty()) {
                 DropdownMenuItem(
                     text = {
-                        Text("No cached models — refresh them in AI settings",
-                            style = MaterialTheme.typography.bodySmall, color = tokens.secondaryText)
+                        Text(
+                            if (models.isEmpty()) {
+                                "No cached models — refresh them in AI settings"
+                            } else {
+                                "No model matches \"$query\""
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = tokens.secondaryText,
+                        )
                     },
                     onClick = { open = false },
                 )
             } else {
                 // Fixed height keeps the list lazy inside the menu's own scroll container.
                 LazyColumn(Modifier.width(280.dp).height(260.dp)) {
-                    items(models, key = { it.id }) { item ->
+                    items(shown, key = { it.id }) { item ->
                         DropdownMenuItem(
                             text = {
                                 Column {
@@ -311,7 +336,7 @@ fun PromptDockModelRow(
                                         color = tokens.secondaryText, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                             },
-                            onClick = { open = false; onPick(item.id) },
+                            onClick = { open = false; query = ""; onPick(item.id) },
                         )
                     }
                 }

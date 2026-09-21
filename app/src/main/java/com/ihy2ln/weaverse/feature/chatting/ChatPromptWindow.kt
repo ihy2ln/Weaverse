@@ -126,6 +126,7 @@ fun ChatPromptWindow(
             enabled = !state.isStreaming,
             onPick = { id -> viewModel.selectModel(id) },
             onUseDefault = viewModel::useDefaultModel,
+            searchable = true,
         )
 
         if (expanded) {

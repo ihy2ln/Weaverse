@@ -3,7 +3,17 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
-## v1.4.29-chat-codex — Codex on every send, and the person being discussed answers
+## v1.5 — Chatting: rooms of people, codex-grounded replies, rotation
+
+Versions step by 0.1 from here: 1.5, 1.6, 1.7 … (versionCode still +1 each build).
+
+### Model search in the chat prompt window
+
+- `PromptDockModelRow` takes an opt-in `searchable` flag that adds a filter box
+  above the list, matching display name or model id. Chatting turns it on; Novel
+  and RPG keep the plain list until they ask for it.
+
+### Codex on every send, and the person being discussed answers
 
 - `ChatCastResolver.codexContextFor` assembles codex context on **every** send, not
   only on a name match: entries the message names, the seated cast's own entries,
@@ -21,10 +31,10 @@ state for picking this back up in a fresh session.
 - `stripStageDirections` removes `*asterisk actions*` from replies as a safety net,
   since character cards keep reintroducing them, and the closing system block
   restates the one-line-per-speaker format last, where models follow it best.
-- Test build: `Beta.Test.Build/Weaverse-1.4.29-chatting-beta.apk`
-  (SHA-256 `C00F8897258E7B7812B511CF5B4E96AC031A8DE0B038FC3D0736E53F10736A26`).
+- Test build: `Beta.Test.Build/Weaverse-1.5-chatting-beta.apk`
+  (SHA-256 `7209C37C4F3132550108305B460AADE7DFA0D29BE21547B61EAA91105377CB46`).
 
-## v1.4.29-rotation — Landscape and portrait
+### Landscape and portrait
 
 - `MainActivity` declares `screenOrientation="fullUser"` and
   `resizeableActivity="true"`, and its `configChanges` list gained
@@ -39,10 +49,10 @@ state for picking this back up in a fresh session.
   message rows. Press-and-hold selection still works per message.
 - The chat dock also carries a concrete default height (172dp, 330dp expanded)
   instead of sizing to content, and a double-tap reset returns to that default.
-- Test build: `Beta.Test.Build/Weaverse-1.4.29-chatting-beta.apk`
+- Test build: `Beta.Test.Build/Weaverse-1.5-chatting-beta.apk`
   (SHA-256 `6CD6A210332944E07F1C100EF536C0EF7ED86583774E562BD6AA49495A3A6B2B`).
 
-## v1.4.29-chatting-rooms — Rooms with people, not a narrator
+### Rooms with people, not a narrator
 
 - Every chat room now has a real **member list** (`rp_room_members`, DB v27):
   1-5 Codex characters seeded per room, a stable cast per channel, shown as an
@@ -67,7 +77,7 @@ state for picking this back up in a fresh session.
   with all of its channels and character rooms.
 - Selectable transcript, header picture button, DM envelope in the rail, and a
   real back arrow.
-- Test build: `Beta.Test.Build/Weaverse-1.4.29-chatting-beta.apk`
+- Test build: `Beta.Test.Build/Weaverse-1.5-chatting-beta.apk`
   (SHA-256 `AB1B95769F1238E1CFE59396C72841EAB1EACB2A5BFA2A83C25E69AC8C4035BD`).
 
 ## v1.3.89-rpg-depth — Refined RPG modes and campaign loop
