@@ -3,6 +3,24 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.31 — Storyboard: library long-press, working storage page, Help
+
+- **Long-press a library cover** opens a sheet with the title's categories (tick to
+  file it, with a New category field) and **Remove from library**, which confirms
+  first and deletes any downloaded chapters along with the favourite entries.
+  `MangaSourceViewModel.removeFromLibrary` clears every category row and the local
+  files in one action. Grid and list layouts both respond.
+- **Data and storage** rows were inert placeholders (`MihonSimpleSettings` gave every
+  row an empty click handler). The page now reports the real download and cache
+  sizes, shows the actual storage path, and offers working Clear image cache and
+  Delete downloaded chapters actions, each behind a confirmation.
+- **Settings** was the same dead list; it now routes to Categories, the download
+  queue, Data and storage, sources, About and Help.
+- **Help** opens the built-in wiki at the **Storyboard** page. `WikiScreen` gained an
+  `initialPageId` so any feature can point Help at its own page.
+- Test build: `Beta.Test.Build/weaverse-v1.4.31.apk`
+  (SHA-256 `68552FB3B3F5460AB12A06990C6B95B8E3E82EC0AC5210DD7F1CA5BE5BA3C59B`).
+
 ## v1.4.30 — Chatting rooms, codex-grounded replies, rotation, manga language filter
 
 Versions continue the existing series: 1.4.29 -> 1.4.30 -> 1.4.31, and the test APK

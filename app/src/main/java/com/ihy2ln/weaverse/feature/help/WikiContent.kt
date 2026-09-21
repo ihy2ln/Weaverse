@@ -599,6 +599,14 @@ object WikiContent {
                 Text overlays themselves are unchanged: **Add text** drops
                 a draggable caption or a manga speech bubble with a tail.
             
+                ## Managing library titles
+
+                **Long-press** a cover in the Library for that title's
+                categories and **Remove from library**. Removing clears every
+                category and deletes its downloaded chapters, after a
+                confirmation. **More → Data and storage** reports what the
+                downloads and image cache are using, and can clear either.
+
                 ## Filtering chapters
 
                 The filter icon above the chapter list opens **Language**,

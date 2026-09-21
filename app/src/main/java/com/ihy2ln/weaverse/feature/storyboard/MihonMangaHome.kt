@@ -165,7 +165,7 @@ private enum class MihonDestination(val label: String, val icon: ImageVector) {
 
 private enum class MihonBrowseTab(val label: String) { Sources("Sources"), Extensions("Extensions"), Migrate("Migrate") }
 
-private enum class MihonMorePage { Downloads, Categories, Statistics, Data, Settings, About, LinkDownload, Projects }
+private enum class MihonMorePage { Downloads, Categories, Statistics, Data, Settings, About, Help, LinkDownload, Projects }
 
 private enum class LibraryDisplay { Grid, List }
 
@@ -327,6 +327,7 @@ internal fun MihonMangaHome(
                             onCreateProject = onCreateProject,
                             onOpenProject = onOpenProject,
                             onEditChapter = onEditChapter,
+                            onOpen = { morePageName = it.name },
                         )
                     }
                 }
@@ -353,6 +354,9 @@ private fun MihonLibraryScreen(
     var showFilters by rememberSaveable { mutableStateOf(false) }
     var overflow by remember { mutableStateOf(false) }
     var openedSeriesKey by rememberSaveable { mutableStateOf<String?>(null) }
+    // Long-pressed cover: remove from the library, or file it under categories.
+    var actionEntryKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var confirmRemoveKey by rememberSaveable { mutableStateOf<String?>(null) }
     val display = runCatching { LibraryDisplay.valueOf(displayName) }.getOrDefault(LibraryDisplay.Grid)
     val downloadedEntries = remember(state.downloads, state.coverPaths, state.favoriteSeries) {
         com.ihy2ln.weaverse.core.manga.groupLibraryChapters(state.downloads).map { (key, chapters) ->
@@ -458,17 +462,25 @@ private fun MihonLibraryScreen(
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 items(entries, key = { it.key }) { entry ->
-                    MihonLibraryGridItem(entry) {
-                        if (entry.chapters.isNotEmpty()) openedSeriesKey = entry.key else entry.favorite?.let(onOpenFavorite)
-                    }
+                    MihonLibraryGridItem(
+                        entry = entry,
+                        onClick = {
+                            if (entry.chapters.isNotEmpty()) openedSeriesKey = entry.key else entry.favorite?.let(onOpenFavorite)
+                        },
+                        onLongClick = { actionEntryKey = entry.key },
+                    )
                 }
             }
         } else {
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 4.dp)) {
                 lazyItems(entries, key = { it.key }) { entry ->
-                    MihonLibraryListItem(entry) {
-                        if (entry.chapters.isNotEmpty()) openedSeriesKey = entry.key else entry.favorite?.let(onOpenFavorite)
-                    }
+                    MihonLibraryListItem(
+                        entry = entry,
+                        onClick = {
+                            if (entry.chapters.isNotEmpty()) openedSeriesKey = entry.key else entry.favorite?.let(onOpenFavorite)
+                        },
+                        onLongClick = { actionEntryKey = entry.key },
+                    )
                 }
             }
         }
@@ -506,6 +518,96 @@ private fun MihonLibraryScreen(
             dismissButton = { entry.favorite?.let { manga -> TextButton(onClick = { openedSeriesKey = null; onOpenFavorite(manga) }) { Text("Source details") } } },
         )
     }
+    entries.firstOrNull { it.key == actionEntryKey }?.let { entry ->
+        val manga = entry.favorite
+        val seriesId = manga?.let { target ->
+            state.favoriteSeries.firstOrNull { it.sourceId == target.sourceId && it.remoteId == target.remoteId }?.id
+        }
+        AlertDialog(
+            onDismissRequest = { actionEntryKey = null },
+            title = { Text(entry.title) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    if (manga == null) {
+                        Text(
+                            "This title is only a local download, so it has no source entry to categorise.",
+                            color = MihonMuted,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    } else {
+                        Text("Categories", fontWeight = FontWeight.SemiBold)
+                        if (state.favoriteCategories.isEmpty()) {
+                            Text(
+                                "No categories yet — create one below.",
+                                color = MihonMuted,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        state.favoriteCategories.forEach { category ->
+                            val saved = state.favorites.any { it.seriesId == seriesId && it.categoryId == category.id }
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable { viewModel.toggleFavorite(manga, category.id) }
+                                    .padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Checkbox(saved, onCheckedChange = null)
+                                Text(category.name, Modifier.padding(start = 8.dp))
+                            }
+                        }
+                        OutlinedTextField(
+                            state.favoriteCategoryName,
+                            viewModel::setFavoriteCategoryName,
+                            label = { Text("New category") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                        )
+                        TextButton(
+                            onClick = viewModel::createFavoriteCategory,
+                            enabled = state.favoriteCategoryName.isNotBlank(),
+                        ) { Text("Create category") }
+                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                    }
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { confirmRemoveKey = entry.key; actionEntryKey = null }
+                            .padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Outlined.Delete, null, tint = MihonError)
+                        Text("Remove from library", Modifier.padding(start = 10.dp), color = MihonError)
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { actionEntryKey = null }) { Text("Done") } },
+        )
+    }
+
+    entries.firstOrNull { it.key == confirmRemoveKey }?.let { entry ->
+        AlertDialog(
+            onDismissRequest = { confirmRemoveKey = null },
+            title = { Text("Remove from library?") },
+            text = {
+                Text(
+                    if (entry.chapters.isEmpty()) {
+                        "\"${entry.title}\" is removed from every category. Nothing is downloaded, so no files are deleted."
+                    } else {
+                        "\"${entry.title}\" is removed from every category and its ${entry.chapterCount} downloaded chapters are deleted from this device."
+                    },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.removeFromLibrary(entry.favorite, entry.chapters)
+                    confirmRemoveKey = null
+                }) { Text("Remove", color = MihonError) }
+            },
+            dismissButton = { TextButton(onClick = { confirmRemoveKey = null }) { Text("Cancel") } },
+        )
+    }
+
     if (showFilters) {
         AlertDialog(
             onDismissRequest = { showFilters = false },
@@ -534,8 +636,8 @@ private fun MihonLibraryScreen(
 }
 
 @Composable
-private fun MihonLibraryGridItem(entry: MihonLibraryEntry, onClick: () -> Unit) {
-    Column(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+private fun MihonLibraryGridItem(entry: MihonLibraryEntry, onClick: () -> Unit, onLongClick: () -> Unit) {
+    Column(Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
         Box {
             AsyncImage(
                 model = entry.favorite?.let { mangaCoverRequest(it) } ?: entry.cover,
@@ -557,9 +659,12 @@ private fun MihonLibraryGridItem(entry: MihonLibraryEntry, onClick: () -> Unit) 
 }
 
 @Composable
-private fun MihonLibraryListItem(entry: MihonLibraryEntry, onClick: () -> Unit) {
+private fun MihonLibraryListItem(entry: MihonLibraryEntry, onClick: () -> Unit, onLongClick: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AsyncImage(entry.favorite?.let { mangaCoverRequest(it) } ?: entry.cover, entry.title, contentScale = ContentScale.Crop, modifier = Modifier.size(48.dp, 72.dp).clip(RoundedCornerShape(5.dp)).background(MihonSurfaceHigh))
@@ -1569,7 +1674,13 @@ private fun MihonMoreScreen(
         item { MihonPreferenceRow(Icons.Outlined.Language, "Download from web link", "Import a public chapter URL") { onOpen(MihonMorePage.LinkDownload) } }
         item { MihonPreferenceRow(Icons.Outlined.Folder, "Storyboard projects", "Open work created from manga") { onOpen(MihonMorePage.Projects) } }
         item { MihonPreferenceRow(Icons.Outlined.Info, "About") { onOpen(MihonMorePage.About) } }
-        item { MihonPreferenceRow(Icons.AutoMirrored.Outlined.HelpOutline, "Help") { } }
+        item {
+            MihonPreferenceRow(
+                Icons.AutoMirrored.Outlined.HelpOutline,
+                "Help",
+                "The built-in wiki, opened at Storyboard",
+            ) { onOpen(MihonMorePage.Help) }
+        }
     }
 }
 
@@ -1582,6 +1693,7 @@ private fun MihonMoreDetail(
     onCreateProject: () -> Unit,
     onOpenProject: (WorkShelfCard) -> Unit,
     onEditChapter: (MangaEditRequest) -> Unit,
+    onOpen: (MihonMorePage) -> Unit,
 ) {
     val title = when (page) {
         MihonMorePage.Downloads -> "Download queue"
@@ -1590,6 +1702,7 @@ private fun MihonMoreDetail(
         MihonMorePage.Data -> "Data and storage"
         MihonMorePage.Settings -> "Settings"
         MihonMorePage.About -> "About"
+        MihonMorePage.Help -> "Help"
         MihonMorePage.LinkDownload -> "Download from web link"
         MihonMorePage.Projects -> "Storyboard projects"
     }
@@ -1602,9 +1715,15 @@ private fun MihonMoreDetail(
             MihonMorePage.Downloads -> MihonDownloadQueue(state, viewModel, onEditChapter)
             MihonMorePage.Categories -> MihonCategories(state, viewModel)
             MihonMorePage.Statistics -> MihonStatistics(state)
-            MihonMorePage.Data -> MihonSimpleSettings(listOf("Storage location" to "App private storage", "Automatic backups" to "Off", "Backup and restore" to null, "Clear cache" to null))
-            MihonMorePage.Settings -> MihonSimpleSettings(listOf("General" to null, "Appearance" to "Dark theme", "Library" to null, "Reader" to null, "Downloads" to null, "Browse" to null, "Tracking" to null, "Advanced" to null))
+            MihonMorePage.Data -> MihonDataAndStorage(state, viewModel)
+            MihonMorePage.Settings -> MihonMangaSettings(state, viewModel, onOpen)
             MihonMorePage.About -> MihonAbout()
+            // The manga hub's own Help lands on the Storyboard wiki page, not the index.
+            MihonMorePage.Help -> com.ihy2ln.weaverse.feature.help.WikiScreen(
+                onClose = onBack,
+                initialPageId = "storyboard",
+                modifier = Modifier.fillMaxSize(),
+            )
             MihonMorePage.LinkDownload -> MihonLinkDownload(state, viewModel)
             MihonMorePage.Projects -> WorkShelfScreen(
                 kind = WorkShelfKind.Storyboard,
@@ -1667,10 +1786,142 @@ private fun MihonStatistics(state: MangaSourceUiState) {
     }
 }
 
+/** Data and storage: real sizes, a working cache clear, and a route to downloads. */
 @Composable
-private fun MihonSimpleSettings(items: List<Pair<String, String?>>) {
+private fun MihonDataAndStorage(state: MangaSourceUiState, viewModel: MangaSourceViewModel) {
+    // Recomputed whenever the download list changes, so the figures are never stale.
+    val summary = remember(state.downloads, state.busy) { viewModel.storageSummary() }
+    val (downloadBytes, cacheBytes) = summary
+    var showLocation by remember { mutableStateOf(false) }
+    var confirmClearCache by remember { mutableStateOf(false) }
+    var confirmDeleteDownloads by remember { mutableStateOf(false) }
+    val completed = state.downloads.count { it.status == "completed" }
+
     LazyColumn(Modifier.fillMaxSize()) {
-        lazyItems(items) { (title, subtitle) -> MihonPreferenceRow(Icons.Outlined.Settings, title, subtitle) { } }
+        item { MihonGroupHeader("Storage") }
+        item {
+            MihonPreferenceRow(Icons.Outlined.Folder, "Storage location", viewModel.storageLocation()) {
+                showLocation = true
+            }
+        }
+        item {
+            MihonPreferenceRow(
+                Icons.Outlined.GetApp,
+                "Downloaded chapters",
+                "$completed chapters · ${formatStorageSize(downloadBytes)}",
+            ) { confirmDeleteDownloads = true }
+        }
+        item {
+            MihonPreferenceRow(
+                Icons.Outlined.Storage,
+                "Clear image cache",
+                formatStorageSize(cacheBytes),
+            ) { confirmClearCache = true }
+        }
+        item { MihonGroupHeader("Library data") }
+        item {
+            MihonPreferenceRow(
+                Icons.AutoMirrored.Outlined.Label,
+                "Categories",
+                "${state.favoriteCategories.size} categories · ${state.favoriteSeries.size} titles",
+            ) { }
+        }
+    }
+
+    if (showLocation) {
+        AlertDialog(
+            onDismissRequest = { showLocation = false },
+            title = { Text("Storage location") },
+            text = {
+                Column {
+                    Text("Downloaded pages are kept in this app's private storage:", color = MihonMuted)
+                    Text(viewModel.storageLocation(), modifier = Modifier.padding(top = 8.dp))
+                    Text(
+                        "Private storage is removed when the app is uninstalled, and needs no permissions.",
+                        color = MihonMuted,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+            },
+            confirmButton = { TextButton(onClick = { showLocation = false }) { Text("Done") } },
+        )
+    }
+    if (confirmClearCache) {
+        AlertDialog(
+            onDismissRequest = { confirmClearCache = false },
+            title = { Text("Clear image cache?") },
+            text = { Text("Frees ${formatStorageSize(cacheBytes)}. Downloaded chapters and your library are left alone.") },
+            confirmButton = {
+                TextButton(onClick = { viewModel.clearImageCache(); confirmClearCache = false }) { Text("Clear") }
+            },
+            dismissButton = { TextButton(onClick = { confirmClearCache = false }) { Text("Cancel") } },
+        )
+    }
+    if (confirmDeleteDownloads) {
+        AlertDialog(
+            onDismissRequest = { confirmDeleteDownloads = false },
+            title = { Text("Delete downloaded chapters?") },
+            text = { Text("Deletes all $completed downloaded chapters (${formatStorageSize(downloadBytes)}). Library entries stay.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.downloads.distinctBy { it.mangaId }.forEach { viewModel.deleteDownloadedSeries(it) }
+                    confirmDeleteDownloads = false
+                }) { Text("Delete", color = MihonError) }
+            },
+            dismissButton = { TextButton(onClick = { confirmDeleteDownloads = false }) { Text("Cancel") } },
+        )
+    }
+}
+
+/** Settings rows that lead somewhere real instead of sitting inert. */
+@Composable
+private fun MihonMangaSettings(
+    state: MangaSourceUiState,
+    viewModel: MangaSourceViewModel,
+    onOpen: (MihonMorePage) -> Unit,
+) {
+    LazyColumn(Modifier.fillMaxSize()) {
+        item { MihonGroupHeader("Library") }
+        item {
+            MihonPreferenceRow(
+                Icons.AutoMirrored.Outlined.Label,
+                "Categories",
+                "${state.favoriteCategories.size} categories",
+            ) { onOpen(MihonMorePage.Categories) }
+        }
+        item { MihonGroupHeader("Downloads") }
+        item {
+            MihonPreferenceRow(
+                Icons.Outlined.GetApp,
+                "Download queue",
+                "${state.downloads.count { it.status != "completed" }} pending",
+            ) { onOpen(MihonMorePage.Downloads) }
+        }
+        item {
+            MihonPreferenceRow(Icons.Outlined.Storage, "Data and storage") { onOpen(MihonMorePage.Data) }
+        }
+        item { MihonGroupHeader("Browse") }
+        item {
+            MihonPreferenceRow(Icons.Outlined.Language, "Sources and extensions", "${state.sources.size} sources") {
+                onOpen(MihonMorePage.LinkDownload)
+            }
+        }
+        item { MihonGroupHeader("About") }
+        item {
+            MihonPreferenceRow(
+                Icons.Outlined.Info,
+                "Version",
+                com.ihy2ln.weaverse.BuildConfig.VERSION_NAME,
+            ) { onOpen(MihonMorePage.About) }
+        }
+        item {
+            MihonPreferenceRow(
+                Icons.AutoMirrored.Outlined.HelpOutline,
+                "Help",
+                "Open the Storyboard wiki",
+            ) { onOpen(MihonMorePage.Help) }
+        }
     }
 }
 

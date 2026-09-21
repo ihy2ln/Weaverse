@@ -59,9 +59,11 @@ private const val WIKI_LINK_TAG = "wiki_link"
 fun WikiScreen(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Page to open on first show, so a feature's Help button lands on its own page. */
+    initialPageId: String = "home",
 ) {
     val tokens = inkTokens()
-    var currentPageId by rememberSaveable { mutableStateOf("home") }
+    var currentPageId by rememberSaveable { mutableStateOf(initialPageId) }
     var query by rememberSaveable { mutableStateOf("") }
     val page = WikiContent.findById(currentPageId) ?: WikiContent.pages.first()
     val results = WikiContent.search(query)

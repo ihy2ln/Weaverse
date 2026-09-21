@@ -72,6 +72,14 @@ editor inspired by Koharu's translation steps:
 - **Save copy** writes a new picture file. The original page stays on disk.
   Use Original / Edited to compare.
 
+## Managing library titles
+
+Long-press a cover in the Library for that title's categories and **Remove from
+library**. Removing clears every category and deletes its downloaded chapters,
+after a confirmation. **More → Data and storage** reports what downloads and the
+image cache are using and can clear either; **More → Help** opens this wiki at the
+Storyboard page.
+
 ## Filtering chapters
 
 The filter icon above the chapter list opens **Language**, scanlator group, and a

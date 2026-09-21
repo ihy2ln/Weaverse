@@ -344,6 +344,12 @@ object HelpContent {
                         "Manga reads right-to-left, Comic the other way.",
                 ),
                 HelpEntry(
+                    "Managing library titles",
+                    "Long-press a cover in the manga Library for its categories and Remove from " +
+                        "library. Removing clears every category and deletes that title's " +
+                        "downloaded chapters, after a confirmation.",
+                ),
+                HelpEntry(
                     "Filtering chapters",
                     "The filter icon above the chapter list opens Language, scanlator group, and " +
                         "a chapter number range. Language lists only what that title publishes, " +

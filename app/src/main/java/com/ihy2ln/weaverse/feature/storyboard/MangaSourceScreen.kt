@@ -729,6 +729,54 @@ class MangaSourceViewModel @Inject constructor(
             .onFailure { local.value = local.value.copy(busy = false, status = it.message ?: "Could not stream this chapter.") }
     }
 
+    /**
+     * Long-press "Remove from library": drops the title from every category and deletes
+     * any chapters downloaded to this device. A title with no source entry (a bare local
+     * download) just loses its files.
+     */
+    /** Bytes used by downloaded chapter images, and by the throwaway image cache. */
+    fun storageSummary(): Pair<Long, Long> {
+        fun size(dir: java.io.File): Long =
+            if (!dir.exists()) 0L else dir.walkBottomUp().filter { it.isFile }.sumOf { it.length() }
+        return size(java.io.File(context.filesDir, "manga")) to size(context.cacheDir)
+    }
+
+    /** Where downloaded pages live, shown so the location row is not a dead end. */
+    fun storageLocation(): String = java.io.File(context.filesDir, "manga").absolutePath
+
+    /** Clears cached images. Downloads and library entries are untouched. */
+    fun clearImageCache() = viewModelScope.launch {
+        val freed = runCatching {
+            val before = context.cacheDir.walkBottomUp().filter { it.isFile }.sumOf { it.length() }
+            context.cacheDir.listFiles()?.forEach { it.deleteRecursively() }
+            before
+        }.getOrDefault(0L)
+        local.value = local.value.copy(status = "Cleared ${formatStorageSize(freed)} of cached images.")
+    }
+
+    fun removeFromLibrary(manga: MangaSearchResult?, chapters: List<MangaChapterEntity>) = viewModelScope.launch {
+        val title = manga?.title ?: chapters.firstOrNull()?.mangaTitle.orEmpty()
+        runCatching {
+            if (manga != null) {
+                val seriesId = "manga-series-${manga.sourceId}-${sha256Id(manga.remoteId)}"
+                uiState.value.favorites
+                    .filter { it.seriesId == seriesId }
+                    .forEach { repository.setFavorite(manga, it.categoryId, false) }
+            }
+            chapters.firstOrNull()?.let { repository.deleteDownloadedSeries(it) }
+        }
+            .onSuccess {
+                local.value = local.value.copy(
+                    status = if (chapters.isEmpty()) {
+                        "Removed $title from the library."
+                    } else {
+                        "Removed $title and deleted its downloaded chapters."
+                    },
+                )
+            }
+            .onFailure { local.value = local.value.copy(status = it.message ?: "Could not remove this title.") }
+    }
+
     fun deleteDownloadedSeries(chapter: MangaChapterEntity) = viewModelScope.launch {
         runCatching { repository.deleteDownloadedSeries(chapter) }
             .onSuccess { local.value = local.value.copy(status = "Deleted ${chapter.mangaTitle} and its local chapter files.") }
@@ -1315,4 +1363,12 @@ private fun downloadLabel(chapter: MangaChapterEntity): String = when (chapter.s
     "failed" -> "Failed: ${chapter.errorMessage.ifBlank { "retry available" }}"
     "stopped" -> "Stopped · retry available"
     else -> chapter.status
+}
+
+/** Human-readable byte size for the storage rows. */
+internal fun formatStorageSize(bytes: Long): String = when {
+    bytes >= 1_073_741_824 -> String.format(java.util.Locale.US, "%.1f GB", bytes / 1_073_741_824.0)
+    bytes >= 1_048_576 -> String.format(java.util.Locale.US, "%.1f MB", bytes / 1_048_576.0)
+    bytes >= 1024 -> String.format(java.util.Locale.US, "%.0f KB", bytes / 1024.0)
+    else -> "$bytes B"
 }
