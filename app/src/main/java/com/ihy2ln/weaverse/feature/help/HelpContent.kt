@@ -54,6 +54,19 @@ object HelpContent {
             title = "Novel",
             summary = "Plan · Write · Chat · Review",
             entries = listOf(
+                HelpEntry(
+                    "Starting a book",
+                    "A new book opens the same four-step start a campaign uses: Create Your Own " +
+                        "Story, the Chapter One plan, Verify Your Story, and Chapter One itself. " +
+                        "The AI takes part in three of the four — it suggests answers, drafts the " +
+                        "plan, then writes the opening scene — and each can be retried, stopped, " +
+                        "or replaced with a written fallback. Every box stays editable. " +
+                        "The company clicker (Solo, Duo, Party, Team) is a hard rule: on Solo " +
+                        "nobody joins the protagonist, though other people still appear and are " +
+                        "left behind. Finishing saves Chapter One into the book's first scene. " +
+                        "The table-only parts of the campaign start are left out — no play-as " +
+                        "role, game mode, rule system or house rules, and no reader choices.",
+                ),
                 HelpEntry("Plan", "The outline: Book, Chapter, Scene, Scene beat."),
                 HelpEntry(
                     "Write",

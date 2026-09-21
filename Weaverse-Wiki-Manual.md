@@ -135,6 +135,24 @@ hit by accident. Everything saves as you go.
 
 ## Novel and Reader
 
+### Starting a book
+
+A new book opens the same four-step start a campaign uses:
+**Create Your Own Story → Chapter One plan → Verify Your Story →
+Chapter One**. The AI takes part in three of the four — it suggests
+answers, drafts the plan, then writes the opening scene — and each of
+those can be retried, stopped, or replaced with a written fallback.
+Every box stays editable.
+
+The **company clicker** (Solo, Duo, Party, Team) is a hard rule, not a
+hint: on Solo nobody joins the protagonist, now or later, though other
+people still appear, are met, and are left behind. Finishing saves
+Chapter One into the book's first scene.
+
+The table-only parts of the campaign start are left out — no play-as
+role, game mode, rule system or house rules — and the opening scene
+offers no reader choices, because a book has none.
+
 ### Plan
 
 The outline: **Acts → Chapters → Scenes → Scene beats**, with

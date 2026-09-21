@@ -3,6 +3,31 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.34 — The novel start is the campaign's four-step start
+
+- **New `feature/novel/start/`.** The RPG's four-step opening is now the Novel's too,
+  step for step: **Create Your Own Story → Chapter One plan → Verify Your Story →
+  Chapter One**. The AI takes part in three of the four, and each of those can be
+  retried, stopped, or replaced with a written fallback, exactly as the campaign's
+  start allows.
+- The same six questions, worded for a book — *party* becomes *cast* — with AI
+  suggestions mixed into the presets, Skip, and Randomize unanswered. The outline and
+  opening-scene guideline are the RPG's own shapes, so `parseChapterPlan` and
+  `parseSceneDraft` are shared and both modes read the same JSON.
+- **The table-only parts are left out**, as marked: play-as role, game mode, rule
+  system, additional house rules, and the "No character selected" line. A novel has no
+  use for any of it, and `NovelStartPlannerTest` asserts none of that wording — nor
+  "Dungeon Master" or "d20" — reaches a novel prompt. The scene prompt also asks for an
+  empty `choices` list and the view model drops any the model returns anyway: a book
+  offers the reader no options.
+- The company clicker (Solo / Duo / Party / Team) carries over, its rule leads every
+  novel prompt and closes the scene prompt, and the choice is saved with the book.
+- Finishing writes the book's fields, the memory block every later generation reads,
+  and Chapter One's prose into the book's first scene.
+- The campaign's own start and its New campaign dialog are untouched.
+- Test build: `Beta.Test.Build/weaverse-v1.4.34.apk`
+  (SHA-256 `579F8FA469590B3D543B9AB8538EDB0259AD119DAAC893E6557E993CEBD6115C`).
+
 ## v1.4.33 — Shared story start, and a company clicker the AI obeys
 
 - New `core/story/StoryStartTemplate.kt` holds the "Create Your Own Adventure" start
