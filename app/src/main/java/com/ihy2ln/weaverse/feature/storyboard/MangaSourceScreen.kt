@@ -322,10 +322,17 @@ class MangaSourceViewModel @Inject constructor(
 
     fun applyCatalogFilters() {
         val snapshot = local.value
-        if (snapshot.nativeFilters.isNotEmpty()) search()
-        else if (snapshot.catalogSort == "latest") browse(MangaBrowseMode.Latest)
-        else if (snapshot.catalogSort == "popular") browse(MangaBrowseMode.Popular)
-        else if (snapshot.query.isBlank() && snapshot.nativeFilters.isEmpty()) browse(snapshot.catalogMode ?: MangaBrowseMode.Popular) else search()
+        // Popular/Latest ask the source for its own listing order, so they must win
+        // even when native website filters are also loaded — those two checks used
+        // to sit after the native-filters check, which is true for rawkuma/comix/
+        // mangafire the moment their filter form loads, making Popular/Latest dead.
+        when {
+            snapshot.catalogSort == "latest" -> browse(MangaBrowseMode.Latest)
+            snapshot.catalogSort == "popular" -> browse(MangaBrowseMode.Popular)
+            snapshot.nativeFilters.isNotEmpty() -> search()
+            snapshot.query.isBlank() -> browse(snapshot.catalogMode ?: MangaBrowseMode.Popular)
+            else -> search()
+        }
     }
 
     private val catalogMetadata = java.util.concurrent.ConcurrentHashMap<String, MangaSearchResult>()

@@ -17,8 +17,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -37,7 +41,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ihy2ln.weaverse.ai.ModelInfo
-import com.ihy2ln.weaverse.core.ui.components.ComposerMenuButton
 import com.ihy2ln.weaverse.core.ui.components.InkClearIconButton
 import com.ihy2ln.weaverse.core.ui.components.PromptDockChip
 import com.ihy2ln.weaverse.core.ui.components.PromptDockGrid
@@ -178,14 +181,14 @@ fun RpgPromptDock(
                 modifier = Modifier.size(26.dp),
                 onUndo = onUndoClear,
             )
-            ComposerMenuButton(
-                onMicTap = onMicTap,
-                enabled = !streaming,
-                onAdd = onAdd,
-                onRoll = onRoll,
-                onAddCharacter = onAddCharacter,
-                onAddItem = onAddItem,
-            )
+            IconButton(onClick = onMicTap, enabled = !streaming, modifier = Modifier.size(30.dp)) {
+                Icon(
+                    Icons.Default.Mic,
+                    contentDescription = "Voice input",
+                    tint = if (streaming) tokens.secondaryText else MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
         }
 
         PromptDockModelRow(
@@ -207,6 +210,10 @@ fun RpgPromptDock(
                 )
                 PromptDockChip("Retry", enabled = !streaming, onClick = onRetry)
                 PromptDockChip("Continue", enabled = !streaming, onClick = onContinue)
+                PromptDockChip("+ Media", enabled = !streaming, onClick = onAdd)
+                PromptDockChip("🎲 Roll", enabled = !streaming, onClick = onRoll)
+                PromptDockChip("+ Character", enabled = !streaming, onClick = onAddCharacter)
+                PromptDockChip("+ Item", enabled = !streaming, onClick = onAddItem)
             }
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {

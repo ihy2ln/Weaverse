@@ -24,6 +24,7 @@ import com.ihy2ln.weaverse.data.db.entities.RpCharacterEntity
 import com.ihy2ln.weaverse.data.db.entities.RpChatEntity
 import com.ihy2ln.weaverse.data.db.entities.RpMessageEntity
 import com.ihy2ln.weaverse.data.db.entities.RpPersonaEntity
+import com.ihy2ln.weaverse.data.db.entities.RpRoomMemberEntity
 import com.ihy2ln.weaverse.data.db.entities.RpgCampaignSaveEntity
 import com.ihy2ln.weaverse.data.db.entities.SceneEntity
 import com.ihy2ln.weaverse.data.db.entities.SceneRevisionEntity
@@ -324,6 +325,10 @@ interface RoleplayDao {
     @Query("SELECT * FROM rpg_campaign_saves WHERE campaignId = :campaignId LIMIT 1")
     suspend fun getRpgCampaignSave(campaignId: String): RpgCampaignSaveEntity?
 
+    /** Lets the Campaign shelf show which campaigns are still an unfinished setup draft. */
+    @Query("SELECT * FROM rpg_campaign_saves")
+    fun observeAllRpgCampaignSaves(): kotlinx.coroutines.flow.Flow<List<RpgCampaignSaveEntity>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertRpgCampaignSave(entity: RpgCampaignSaveEntity)
 
@@ -435,6 +440,23 @@ interface RoleplayDao {
 
     @Query("DELETE FROM rp_messages WHERE chatId = :chatId")
     suspend fun deleteMessagesForChat(chatId: String)
+
+    @Query("SELECT * FROM rp_room_members WHERE roomId = :roomId ORDER BY addedAt")
+    fun observeMembers(roomId: String): Flow<List<RpRoomMemberEntity>>
+
+    @Query("SELECT * FROM rp_room_members WHERE roomId = :roomId ORDER BY addedAt")
+    suspend fun getMembers(roomId: String): List<RpRoomMemberEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertMember(entity: RpRoomMemberEntity)
+
+    @Query("DELETE FROM rp_room_members WHERE roomId = :roomId AND characterId = :characterId")
+    suspend fun deleteMember(roomId: String, characterId: String)
+
+    @Query(
+        "SELECT m.* FROM rp_room_members m INNER JOIN rp_chats c ON c.id = m.roomId WHERE c.bookId = :bookId",
+    )
+    suspend fun getMembersForBook(bookId: String): List<RpRoomMemberEntity>
 }
 
 @Dao

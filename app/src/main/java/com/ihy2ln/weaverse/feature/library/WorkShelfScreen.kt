@@ -86,6 +86,26 @@ enum class WorkShelfKind(val workType: String, val heading: String, val emptyTex
     Storyboard("storyboard", "Window", "No storyboards yet. Create one to build your first page."),
 }
 
+/**
+ * Reads the `startup.step` out of a saved [com.ihy2ln.weaverse.feature.roleplay.campaign.RpgCampaignState]
+ * JSON blob and returns a shelf label for it, or null once the campaign has
+ * reached its first scene (`step == "Started"`, not a draft any more). A plain
+ * regex is enough here — `step` is a field unique to that one nested object,
+ * and it avoids pulling the full campaign model and its kotlinx.serialization
+ * deserializer into a shelf list that only needs one word out of it.
+ */
+private fun draftStepLabel(campaignStateJson: String): String? {
+    val step = Regex("\"step\"\\s*:\\s*\"(\\w+)\"").find(campaignStateJson)?.groupValues?.get(1)
+    return when (step) {
+        "Cyoa" -> "Draft · Create Your Own Adventure"
+        "GeneratingChapterPlan" -> "Draft · Creating chapter plan…"
+        "ChapterPlan" -> "Draft · Chapter plan"
+        "Verification" -> "Draft · Verify your adventure"
+        "GeneratingScene" -> "Draft · Creating opening scene…"
+        else -> null // "Started", or unrecognized — treat as a finished campaign
+    }
+}
+
 data class WorkShelfCard(
     val id: String,
     val workType: String,
@@ -110,8 +130,15 @@ class WorkShelfViewModel @Inject constructor(
         bookRepository.observeBooks(),
         db.roleplayDao().observeChats(),
         mediaRepository.observeAll(),
-    ) { books, chats, media ->
+        db.roleplayDao().observeAllRpgCampaignSaves(),
+    ) { books, chats, media, campaignSaves ->
         val mediaById = media.associateBy { it.id }
+        // A campaign whose saved startup step hasn't reached Started is still an
+        // unfinished CYOA/chapter-plan draft — label it so it's easy to find and
+        // resume from the shelf, alongside campaigns that are already playable.
+        val draftLabelByCampaignId = campaignSaves.mapNotNull { save ->
+            draftStepLabel(save.stateJson)?.let { save.campaignId to it }
+        }.toMap()
         val typed = books.filter { it.workType in setOf("novel", "campaign", "text_game", "storyboard") }
             .map { book ->
                 val chat = chats.firstOrNull { it.bookId == book.id }
@@ -122,7 +149,11 @@ class WorkShelfViewModel @Inject constructor(
                     bookId = book.id,
                     chatId = chat?.id,
                     title = book.title,
-                    subtitle = book.genre,
+                    subtitle = if (book.workType == "campaign") {
+                        draftLabelByCampaignId[book.id] ?: book.genre
+                    } else {
+                        book.genre
+                    },
                     preferredStoryboardMode = if (
                         book.tense.equals("Comic", true) ||
                         book.tense.equals("Webtoon", true) ||

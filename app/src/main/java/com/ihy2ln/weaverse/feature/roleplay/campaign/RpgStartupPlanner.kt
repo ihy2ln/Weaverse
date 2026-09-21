@@ -22,12 +22,12 @@ private val cyoaQuestionIds = listOf("plot", "goal", "scene", "party", "tone", "
 fun cyoaSuggestionPrompt(setup: RpgCampaignSetupSnapshot): String = """
 You are an RPG campaign planner. Return ONLY one JSON object with exactly these keys:
 {"plot":["","",""],"goal":["","",""],"scene":["","",""],"party":["","",""],"tone":["","",""],"complication":["","",""]}
-Give three concise, distinct, tappable answers per question. Tailor every suggestion to this campaign rather than repeating generic fantasy defaults.
+Give three concise, distinct, tappable answers per question. Tailor every suggestion to this campaign rather than repeating generic fantasy defaults — in particular, reflect the setting details and house rules preset below wherever they change what's plausible or in tone.
 Campaign title: ${setup.title}
 Setting: ${setup.setting}
-Mode: ${setup.modeId}
+${if (setup.settingDetails.isNotBlank()) "Setting details: ${setup.settingDetails}\n" else ""}Mode: ${setup.modeId}
 Rule system: ${setup.ruleSystem}
-House rules: ${setup.houseRules}
+${if (setup.houseRulePreset.isNotBlank()) "House rules preset: ${setup.houseRulePreset}\n" else ""}House rules: ${setup.houseRules}
 Characters: ${setup.characters}
 POV and tense: ${setup.pointOfView}; ${setup.tense}
 Player role: ${setup.playerRole}
@@ -159,14 +159,16 @@ private fun extractJsonObject(text: String): JsonObject? {
 fun chapterPlanPrompt(setup: RpgCampaignSetupSnapshot, plan: RpgAdventurePlan): String = """
 You are preparing Chapter One for an RPG campaign. Return ONLY one JSON object matching this shape:
 {"outline":{"workingTitle":"","premise":"","primaryObjective":"","antagonist":"","importantLocations":"","beats":[{"id":"beat-1","title":"","summary":"","completed":false}],"optionalBeat":"","majorChallenge":"","climax":"","possibleOutcomes":""},"openingScene":{"title":"","locationAndAtmosphere":"","startingCast":"","immediateObjective":"","conflictAndStakes":"","complication":"","firstDecisionHook":"","sceneArtTags":""}}
-Create 3 to 5 flexible beats. Do not write the actual scene yet.
+Create 3 to 5 flexible beats. Do not write the actual scene yet. The setting
+details and house rules preset below are the player's chosen templates for
+this campaign — honor them in tone, stakes, and what the world allows.
 
 CAMPAIGN SETUP
 Title: ${setup.title}
 Setting: ${setup.setting}
-Mode: ${setup.modeId}
+${if (setup.settingDetails.isNotBlank()) "Setting details: ${setup.settingDetails}\n" else ""}Mode: ${setup.modeId}
 Rules: ${setup.ruleSystem}
-House rules: ${setup.houseRules}
+${if (setup.houseRulePreset.isNotBlank()) "House rules preset: ${setup.houseRulePreset}\n" else ""}House rules: ${setup.houseRules}
 Characters: ${setup.characters}
 POV: ${setup.pointOfView}
 Tense: ${setup.tense}

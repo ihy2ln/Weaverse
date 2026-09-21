@@ -3349,19 +3349,31 @@ class RoleplayChatViewModel @Inject constructor(
     // ------------------------------------------------- structured RPG startup wizard
 
     private fun setupSnapshot(chat: RpChatEntity): RpgCampaignSetupSnapshot {
+        val note = chat.authorsNote
         fun line(label: String): String = Regex("(?im)^" + Regex.escape(label) + ":\\s*(.*)$")
-            .find(chat.authorsNote)?.groupValues?.getOrNull(1)?.trim().orEmpty()
+            .find(note)?.groupValues?.getOrNull(1)?.trim().orEmpty()
+        // Setting Details and House Rules are saved as bare preset ids ("frontier",
+        // "cinematic", "custom"), so the CYOA/Chapter Plan prompts need the actual
+        // guidance text resolved here — the id alone tells the model nothing.
+        val settingDetailId = line("Setting details preset")
+        val settingDetails = effectiveSettingDetailTemplates()
+            .firstOrNull { it.id.equals(settingDetailId, ignoreCase = true) }?.details.orEmpty()
+        val houseRuleId = line("House rules preset")
+        val houseRulePreset = CampaignHouseRuleTemplates
+            .firstOrNull { it.id.equals(houseRuleId, ignoreCase = true) }?.directive.orEmpty()
         return RpgCampaignSetupSnapshot(
             title = chat.title,
             setting = line("Setting").ifBlank { "Open fantasy setting" },
-            modeId = rpgCombatRulesetFromSetup(chat.authorsNote).id,
+            modeId = rpgCombatRulesetFromSetup(note).id,
             ruleSystem = line("Rules system").ifBlank { "D&D d20" },
             houseRules = Regex("(?im)^House rules:\\s*([\\s\\S]*?)(?=\\n\\n|\\z)")
-                .find(chat.authorsNote)?.groupValues?.getOrNull(1)?.trim().orEmpty(),
+                .find(note)?.groupValues?.getOrNull(1)?.trim().orEmpty(),
             characters = line("Main character(s)"),
             pointOfView = line("Narrative point of view").ifBlank { "Third-person multiple" },
             tense = line("Narrative tense").ifBlank { "Past tense" },
             playerRole = line("Player role").ifBlank { "Adventurer" },
+            settingDetails = settingDetails,
+            houseRulePreset = houseRulePreset,
         )
     }
 

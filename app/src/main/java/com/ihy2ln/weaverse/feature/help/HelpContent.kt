@@ -121,10 +121,12 @@ object HelpContent {
                 HelpEntry(
                     "Scene choices and action bubbles",
                     "Scene One and later scenes show three AI choice cards plus a fourth custom " +
-                        "action. Just above the prompt are Actions (observe, move, use, help), " +
-                        "Thoughts (recall, study, consider), and Other RPG actions (speak, ask, " +
-                        "persuade, search, or prepare for the selected mode). These are shortcuts, " +
-                        "not a replacement for freeform play.",
+                        "action, as cards inside the expanded prompt dock, right above the input. " +
+                        "Five chips there — Actions (observe, move, use, help), Thoughts (recall, " +
+                        "study, consider), Dialogue (speak, persuade, intimidate, lie), Combat " +
+                        "(attack, defend, retreat, enter combat), and Roleplay (react in " +
+                        "character, view the roster) — switch a grid of shortcuts. These fill " +
+                        "the composer rather than replacing freeform play.",
                 ),
                 HelpEntry(
                     "Text selection and scene art",
@@ -215,34 +217,65 @@ object HelpContent {
             entries = listOf(
                 HelpEntry(
                     "Servers are your works",
-                    "The left rail lists every novel and campaign as a server icon; the " +
-                        "house button is Home, where direct messages live. Opening a server " +
-                        "for the first time auto-creates #general, #lore, and #brainstorm " +
-                        "channels, plus one live room per tied character.",
+                    "The left rail lists every novel and campaign as a server icon. The " +
+                        "house button is Home; the envelope marked DM right below it opens " +
+                        "direct messages from anywhere. Opening a server for the first time " +
+                        "auto-creates #general, #lore, and #brainstorm, plus one room per " +
+                        "character tied to the work.",
                 ),
                 HelpEntry(
-                    "Channels and character rooms",
-                    "Text channels chat with an AI narrator that knows the work's title, " +
-                        "genre, point of view, tense, and style guide. Character rooms talk " +
-                        "to that character in person. The + buttons add custom channels or " +
-                        "character rooms; long-press a room to delete it.",
+                    "Who is in a room",
+                    "Every room seats 1-5 people from the work's Codex characters, shown as " +
+                        "an avatar strip under the room header. Each channel gets its own " +
+                        "stable cast, so #general and #lore are not the same crowd. " +
+                        "Long-press an avatar to remove that person.",
                 ),
                 HelpEntry(
-                    "@mentions",
-                    "Type @CharacterName in any room (full name or unambiguous first name) " +
-                        "and that character joins the AI's reply, voiced from their card.",
+                    "@mentions pull people in",
+                    "Type @Name (full name or unambiguous first name) and that person is " +
+                        "added to the room for good, with a joined line in the history. They " +
+                        "answer first and others may chime in, each as their own message " +
+                        "with their own avatar.",
                 ),
                 HelpEntry(
-                    "Direct messages",
-                    "Friends (the sub-mode tab) lists everyone you can talk to; tapping a " +
-                        "friend opens their DM under Home. The composer there has the full " +
-                        "word range, AI/manual toggle, retry, cancel, and context meter.",
+                    "Rooms keep their place",
+                    "Each room keeps its own unsent draft, scroll position, and history, so " +
+                        "switching rooms and coming back lands you where you left off. " +
+                        "Drafts survive a restart and the server reopens on your last room.",
                 ),
                 HelpEntry(
-                    "New people",
-                    "Meet someone writes a new character. One arrives each day when you " +
-                        "have an OpenRouter key; offline it is skipped and retried later. " +
-                        "Turn it off in Settings.",
+                    "Reading and sending",
+                    "Message text is selectable — press and hold to select and copy. The " +
+                        "picture button in the room header attaches an image, which posts " +
+                        "into the room and renders inline.",
+                ),
+                HelpEntry(
+                    "Home",
+                    "Home lists Recent Conversations, then Direct Messages, then a section " +
+                        "per server with all of its channels and character rooms. Friends " +
+                        "lists everyone you can talk to; Meet someone writes a new character " +
+                        "daily when you have an OpenRouter key.",
+                ),
+                HelpEntry(
+                    "The prompt window",
+                    "Chatting uses the same resizable prompt window as Novel, not a slim " +
+                        "bar: drag to resize, then use the message box and Send, the /A AI " +
+                        "versus \\M manual chip, the word target, the model row, and a live " +
+                        "context meter. More opens Attach image, Dictate, Roll d20, Retry, " +
+                        "Continue, Clear, All models, and the chat quick messages.",
+                ),
+                HelpEntry(
+                    "Quick messages",
+                    "Chat-themed templates under More: Say Hi, Catch Me Up, Banter, React " +
+                        "To That, Ask The Room, Make Plans, Check In On Me, Nudge For A " +
+                        "Reply, Continue Chat, and Out of Character Note. Tick as many as " +
+                        "you want; they layer in the order picked.",
+                ),
+                HelpEntry(
+                    "Chat voice, not prose",
+                    "Replies are written as chat messages: first person, present tense, " +
+                        "short. No narrator, no scene-setting, no third-person description, " +
+                        "no asterisk stage directions.",
                 ),
             ),
         ),
@@ -369,16 +402,36 @@ object HelpContent {
                 HelpEntry(
                     "Prompts",
                     "Slash opens the AI prompt, backslash opens manual entry, from " +
-                        "anywhere. The PROMPT dock collapses to one line with its arrow.",
+                        "anywhere. Novel and RPG share one dock design; drag the thin handle " +
+                        "along its top to resize it, double-tap the handle to snap back to " +
+                        "automatic sizing.",
                 ),
                 HelpEntry(
                     "The composer controls",
-                    "W sets the minimum and maximum word count the AI targets. /A is AI " +
-                        "generation, \\M files your text without calling a model. Tap ✓ to " +
-                        "send; hold ✓ for retry and continue; while streaming, × cancels. " +
+                    "W sets the minimum and maximum word count the AI targets, in a four-digit " +
+                        "box. /A is AI generation, \\M files your text without calling a model. " +
+                        "Model opens a scrollable list of cached OpenRouter models instead of a " +
+                        "typed provider/model box. Generate sends; while streaming, × cancels. " +
                         "The context meter shows roughly how full the model's window is. " +
                         "The maximum is a target: the AI may go slightly over it to finish " +
                         "the final sentence instead of cutting the reply off mid-sentence.",
+                ),
+                HelpEntry(
+                    "Templates and presets",
+                    "Expand the dock for a two-column grid below the composer. In Novel this " +
+                        "holds prompt templates — tick several at once and they layer in the " +
+                        "order picked, numbered 1, 2, 3…, each contributing its own system " +
+                        "instructions to the same generation. In RPG the same grid holds turn " +
+                        "presets, switched by Actions / Thoughts / Dialogue / Combat / Roleplay chips.",
+                ),
+                HelpEntry(
+                    "The generated draft",
+                    "A finished AI draft renders inline in the story, in a panel with a " +
+                        "contrasting fill and outline, and it is directly editable there before " +
+                        "you choose Insert, Retry, Compare, Copy, or Discard. A line such as " +
+                        "[MEDIA type=image query=…] inside a draft is not image generation — it " +
+                        "asks the app to search your existing media library for a matching " +
+                        "asset, and is dropped silently if nothing matches.",
                 ),
                 HelpEntry(
                     "Backspace clear with hold-to-undo",

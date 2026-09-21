@@ -375,6 +375,20 @@ data class RpMessageEntity(
     val promptTokens: Int = 0,
     val completionTokens: Int = 0,
     val costUsd: Double = 0.0,
+    /** Display name when the speaker is not a stored character (parsed multi-speaker replies). */
+    val speakerName: String = "",
+)
+
+/** One member of a Chatting room's cast — seeded with the room, or pulled in later by an @mention. */
+@Entity(tableName = "rp_room_members", primaryKeys = ["roomId", "characterId"])
+data class RpRoomMemberEntity(
+    val roomId: String,
+    val characterId: String,
+    /** Codex entry this member was materialized from, when there is one. */
+    val codexEntryId: String? = null,
+    /** true = seeded with the room, false = pulled in later by an @mention. */
+    val seeded: Boolean = true,
+    val addedAt: Long = System.currentTimeMillis(),
 )
 
 @Entity(tableName = "media")

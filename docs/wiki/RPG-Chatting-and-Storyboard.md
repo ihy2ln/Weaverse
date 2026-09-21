@@ -86,10 +86,62 @@ character's linked inventory.
 
 ## Chatting
 
-Chatting opens at Chats. Friends/Contacts starts conversations; Chats provides
-search, filters, unread badges, a collapsible thread sidebar, avatars, speaker
-colors, timestamps, grouped bubbles, and day dividers. Hold a chat for its menu
-and use selection plus Quick remove for batch cleanup.
+Chatting is a Discord-style space for your works. The left rail lists every
+novel and campaign as a server icon; the house button is Home, and the
+envelope marked **DM** directly under it opens direct messages from anywhere.
+Opening a server auto-creates **#general**, **#lore** and **#brainstorm**, plus
+one room per character tied to the work.
+
+### Who is in a room
+
+Every room seats **1-5 people** drawn from the work's Codex characters, shown
+as an avatar strip under the room header. Each channel gets its own stable
+cast, so #general and #lore are not the same crowd; character rooms seat that
+character plus a couple of others. Long-press an avatar to remove that person.
+
+### @mentions pull people in
+
+Type **@Name** — full name or an unambiguous first name — and that person is
+added to the room for good, with a joined line in the history. They answer
+first, and anyone else seated there may chime in. Each speaker lands as its own
+message with its own avatar.
+
+### Rooms keep their place
+
+Each room keeps its own unsent draft, scroll position and history, so switching
+between rooms and back lands you where you left off. Drafts survive a restart,
+and a server reopens on the room you had last.
+
+### Reading and sending
+
+Message text is selectable — press and hold to select and copy. The picture
+button in the room header attaches an image, which posts into the room and
+renders inline.
+
+### Home
+
+Home lists **Recent Conversations**, then **Direct Messages**, then a section
+per server with all of its channels and character rooms. Friends lists everyone
+you can talk to; Meet someone writes a new character daily when an OpenRouter
+key is set. Hold a chat for its menu and use selection plus Quick remove for
+batch cleanup.
+
+### The prompt window
+
+Chatting uses the same resizable prompt window as Novel, not a slim bar: drag
+the handle to resize, then use the message box and **Send**, the **/A** AI
+versus **\M** manual chip, the word target (**W**), the model row and a live
+context meter. **More** opens Attach image, Dictate, Roll d20, Retry, Continue,
+Clear, All models — and the chat quick messages (Say Hi, Catch Me Up, Banter,
+React To That, Ask The Room, Make Plans, Check In On Me, Nudge For A Reply,
+Continue Chat, Out of Character Note). Tick as many as you want; they layer in
+the order picked.
+
+### Chat voice, not prose
+
+Replies are written as chat messages: first person, present tense, short. There
+is no narrator — no scene-setting, no third-person description, no asterisk
+stage directions.
 
 ## Storyboard
 

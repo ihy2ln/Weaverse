@@ -22,6 +22,15 @@ data class RpgCampaignSetupSnapshot(
     val pointOfView: String = "Third-person multiple",
     val tense: String = "Past tense",
     val playerRole: String = "Adventurer",
+    /**
+     * The chosen Setting Details preset's own guidance text (Frontier, City,
+     * Wilds, War, or a custom preset) — blank when the campaign uses no
+     * preset. Kept separate from [setting] (the Setting Template) so the CYOA
+     * and Chapter Plan prompts can be told about both templates, not just one.
+     */
+    val settingDetails: String = "",
+    /** The chosen Additional House Rules preset's own guidance text (Cinematic, Gritty, Heroic, Political, or a custom preset). */
+    val houseRulePreset: String = "",
 )
 
 @Serializable

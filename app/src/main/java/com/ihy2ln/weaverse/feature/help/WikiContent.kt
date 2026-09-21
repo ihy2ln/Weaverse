@@ -158,7 +158,12 @@ object WikiContent {
                   exact spot.
                 - **Slash commands** insert codex entries and beats without
                   leaving the keyboard.
-                - The prompt dock lives here — see [[Prompts and AI]].
+                - **Tap anywhere on a line** — not only exactly on the text
+                  — to move the caret there; tap the empty space below the
+                  last line to jump to the very end of the scene.
+                - The prompt dock lives here, and a generated draft renders
+                  inline in the manuscript where it will land — editable
+                  before you insert it. See [[Prompts and AI]].
 
                 ## Read
 
@@ -226,10 +231,11 @@ object WikiContent {
                 - **Text Reactions** — written or dictated actions with legal
                   action checks and risky-action previews.
 
-                **Other RPG → Enter combat** opens the native screen for the
-                saved campaign mode. An immediate AI encounter opens the same
-                screen automatically after its narration is saved. Active
-                rounds survive force-close and resume.
+                **Roleplay → Enter combat** (in the expanded prompt dock)
+                opens the native screen for the saved campaign mode. An
+                immediate AI encounter opens the same screen automatically
+                after its narration is saved. Active rounds survive
+                force-close and resume.
 
                 A battle may use a temporary override. Victory, defeat,
                 retreat or surrender restores the saved campaign mode for the
@@ -254,10 +260,13 @@ object WikiContent {
                 ## Scene actions and artwork
 
                 Every scene provides three AI choices and a fourth custom
-                action. Above the prompt, **Actions**, **Thoughts**, and
-                **Other RPG** menus provide common roleplaying shortcuts while
-                preserving freeform input. Select story text to reveal
-                **Add text to…** and open the existing capture popup.
+                action, shown as cards right above the input in the prompt
+                dock — see [[Prompts and AI]]. Expand the dock and the
+                **Actions**, **Thoughts**, **Dialogue**, **Combat**, and
+                **Roleplay** chips switch a grid of common shortcuts while
+                preserving freeform input.
+                Select story text to reveal **Add text to…** and open the
+                existing capture popup.
 
                 The AI supplies scene-art tags or an eligible asset ID. The
                 app ranks local library images against the scene prose,
@@ -283,9 +292,10 @@ object WikiContent {
                 consequences. **Previous** browses saved scenes; **Next
                 scene ›** and **Stay here** control pacing.
 
-                Tap **Character cards** in the scene header, or use **Other
-                RPG → View tactical roster cards / View party character
-                sheets**, to inspect the player and active party outside
+                Tap **Character cards** in the scene header, or use
+                **Roleplay → View tactical roster cards / View party
+                character sheets** in the dock, to inspect the player and
+                active party outside
                 combat. Tactical cards show ATK, DEF, SUP, SPD, AP, EP and a
                 signature card; d20 mode shows the six abilities and modifiers.
                 Each card opens its complete editable sheet. Newly created
@@ -321,46 +331,83 @@ object WikiContent {
                 {{figure:chatting}}
 
                 The left rail lists every novel and campaign as a server
-                icon; the house button is **Home**, where direct messages
-                live. Opening a server for the first time auto-creates
-                **#general**, **#lore** and **#brainstorm**, plus one live
-                room per tied character (campaign roster members, and novel
-                characters linked through the Codex).
+                icon. The house button is **Home**; directly under it the
+                **envelope marked DM** opens your direct messages from
+                anywhere. Opening a server for the first time auto-creates
+                **#general**, **#lore** and **#brainstorm**, plus one room
+                per character tied to the work.
 
-                ## Channels and character rooms
+                ## Who is in a room
 
-                - **Text channels** chat with an AI narrator that knows the
-                  work's title, genre, point of view, tense and style guide.
-                - **Character rooms** talk to that character in person,
-                  seeded with their greeting.
+                Every room is seeded with **1-5 people** drawn from the
+                work's Codex characters, shown as an avatar strip under the
+                room header. Each channel gets its own stable cast, so
+                #general and #lore are not the same crowd. Character rooms
+                seat that character plus a couple of others. **Long-press**
+                an avatar to remove that person from the room.
+
+                - **Text channels** are group chats with the people seated
+                  there — never a narrator.
+                - **Character rooms** are that person's own room, seeded
+                  with their greeting.
                 - The **+** beside Text Channels adds a custom channel; the
                   **+** beside Characters adds a character room.
                 - **Long-press** a room to delete it (and its history).
 
-                ## @mentions
+                ## @mentions pull people in
 
-                Type **@CharacterName** in any room — full name, or an
-                unambiguous first name — and that character joins the AI's
-                reply, voiced from their card. Mention several to get a
-                group response.
+                Type **@Name** — full name, or an unambiguous first name —
+                and that person is added to the room for good, with a
+                "joined" line in the history. They answer first, and anyone
+                else seated there may chime in if they have something to
+                add. Each speaker lands as their own message with their own
+                avatar, the way a real group chat reads.
 
-                ## Direct messages
+                ## Rooms keep their place
 
-                **Friends** (the second sub-mode tab) lists everyone you can
-                talk to. **Meet someone** writes a new character daily when
-                you have an OpenRouter key. Tapping a friend opens their DM
-                under Home. Old messenger chats appear as DMs too, with real
-                unread badges and previews.
+                Switching rooms no longer resets anything: each room keeps
+                its own unsent draft, its own scroll position and its own
+                history, so moving between them and back lands you exactly
+                where you left off. Drafts survive an app restart, and the
+                server reopens on the room you had last.
 
-                ## The composer
+                ## Reading and sending
 
-                The same dock as everywhere: word range (**W**), **/A** AI
-                versus **\\M** manual entry, the model picker, ✓ send with
-                hold-menu retry and continue, × cancel while streaming, a
-                live context meter, and the ⌫ clear with hold-to-undo. The
-                **+** attaches pictures (they render inline in the chat),
-                **🎲** appends a d20 roll, and **🎤** dictates. See
-                [[Prompts and AI]].
+                Message text is selectable — press and hold to select and
+                copy. The **picture button** in the room header attaches an
+                image, which posts straight into the room and renders
+                inline.
+
+                ## Home
+
+                Home lists **Recent Conversations** first, then **Direct
+                Messages**, then a section per server listing all of its
+                channels and character rooms, so nothing is more than a tap
+                away. **Friends** lists everyone you can talk to; **Meet
+                someone** writes a new character daily when you have an
+                OpenRouter key.
+
+                ## The prompt window
+
+                Chatting uses the same resizable **prompt window** as Novel,
+                not a slim bar: drag its handle to resize, then use the
+                message box and **Send**, the **/A** AI versus **\M**
+                manual chip, the word target (**W**), the model row and a
+                live context meter.
+
+                **More** opens the rest: Attach image, Dictate, Roll d20,
+                Retry, Continue, Clear, All models — and the **quick
+                messages**, chat-themed templates such as Say Hi, Catch Me
+                Up, Banter, React To That, Ask The Room, Make Plans, Check
+                In On Me and Nudge For A Reply. Tick as many as you want;
+                they layer in the order picked. See [[Prompts and AI]].
+
+                ## Chat voice, not prose
+
+                Replies are written as chat messages: first person, present
+                tense, short. No narration, no scene-setting, no
+                third-person description and no asterisk stage directions —
+                a chat app only has what someone types.
             """.trimIndent(),
         ),
         Page(
@@ -604,39 +651,101 @@ object WikiContent {
                 ## The prompt dock
 
                 **/** opens an AI prompt and **\\** opens manual entry from
-                any writing surface. The dock collapses to one line so it
-                never covers your page.
-
-                ## Composer controls
+                any writing surface — Novel Write, RPG Adventure, Chatting,
+                Brainstorm. Novel and RPG share one dock design; Chatting and
+                Brainstorm use the same controls in a slightly simpler shell.
 
                 {{figure:prompts}}
 
-                Every prompt window — Novel, RPG, Chatting, Brainstorm —
-                carries the same controls:
+                ## Resizing the dock
 
-                - **W min–max** — the word range the AI targets. The app
-                  finishes on a complete sentence and may allow a small
-                  overrun rather than cut prose off mid-sentence.
+                Drag the thin handle along the top of the dock up or down to
+                make it taller or shorter — the instruction box grows with
+                it, so a taller dock is a taller place to write, not empty
+                space. **Double-tap the handle** to snap back to automatic
+                sizing. The dock remembers your dragged height for the rest
+                of the session; it resets to automatic the next time you
+                open the app.
+
+                ## Compact control row
+
+                - **W min–max** — a four-digit box for each end of the word
+                  range the AI targets (up to 9999). The app finishes on a
+                  complete sentence and may allow a small overrun rather
+                  than cut prose off mid-sentence.
                 - **/A vs \\M** — AI generation versus filing your text
                   without calling a model.
-                - **✓ send** — tap to send. **Hold ✓** for ↻ retry (redo the
-                  last reply) and » continue (keep going).
-                - **× cancel** — appears while the AI is streaming.
-                - **⌫ clear** — tap deletes your draft; **press and hold
-                  restores it**.
-                - **+ attach** — import pictures/videos that ride along with
-                  the next message and render inline in the chat panes.
-                - **🎲 roll** — appends a fresh `[d20: N]` to the draft.
-                - **🎤 dictate** — speech becomes text in the draft.
-                - **Context meter** — `context: used / limit`, a live
-                  estimate for the chosen model.
+                - **Model ▾** — tap to open a scrolling list of the cached
+                  OpenRouter text models. No provider/model string to type by
+                  hand; pick one and it's saved for that book or campaign.
+                - **More / Less** — expands the dock to show templates or
+                  presets, the model row, and (in Novel) context preview and
+                  attachments.
+                - **Generate / Send**, **×** to cancel a stream, the clear
+                  **⌫** (press and hold to undo a clear), and the mic, roll,
+                  and add-media controls sit in the input row itself.
+
+                ## Novel: multiple templates at once
+
+                Expand the dock and the lower half shows every saved prompt
+                template in a two-column grid split by dividing lines. Tap
+                any number of them — they layer in the order you tapped
+                them, numbered **1.**, **2.**, and so on, and every ticked
+                template contributes its system instructions to the same
+                generation. **Clear** drops back to the action's default
+                template. Save a new template, or duplicate the current
+                selection's first template, right below the grid.
+
+                ## RPG: Actions, Thoughts, Dialogue, Combat, Roleplay
+
+                The same grid holds turn presets instead of templates: five
+                chips — **Actions**, **Thoughts**, **Dialogue**, **Combat**,
+                and **Roleplay** — switch which column of quick moves is
+                showing. Tapping a preset fills it straight into the
+                composer; the two entries that aren't text (viewing the
+                roster, entering combat) open their own screen instead. When
+                the AI offers "Choose the party's direction" moves for the
+                current beat, those cards now appear inside the dock, right
+                above the input, instead of floating over the story — pick
+                one to load it into the box, still editable before you send.
+                **Retry**, **Continue**, and the media/roll/roster/inventory
+                shortcuts sit together in that same expanded row, next to
+                each other rather than tucked behind a separate menu.
+
+                ## The generated draft lives in the story
+
+                A finished AI draft no longer opens in a separate review
+                box. It renders **inline in the manuscript**, right where it
+                will land, in a panel with a contrasting fill and outline so
+                it can never be mistaken for text that's already part of the
+                page. While it's sitting there you can **edit it directly**
+                — fix a line, delete a stray media request, rewrite a
+                sentence — before choosing **Insert / Replace**, **Retry**,
+                **Compare** (against the original passage), **Copy**, or
+                **Discard**. Earlier candidates from the same session stay
+                one tap away as **Earlier 1**, **Earlier 2**, and so on.
+
+                A line like `[MEDIA type=image query=… tags=…]` that
+                sometimes appears in a draft is not an image-generation
+                request — the AI is asking the app to search your **existing**
+                media library for a matching asset. Nothing is downloaded or
+                invented; if nothing in your library matches, the line is
+                simply dropped when you insert the text.
+
+                ## Tap anywhere to place the caret
+
+                In Novel Write, tapping anywhere on a line of prose — not
+                only exactly on the text — moves the text caret there and
+                focuses that line. Tapping the empty space below the last
+                line moves the caret to the very end of the scene, so there
+                is always somewhere to tap to keep writing.
 
                 ## Models and keys
 
-                Models picks any OpenRouter text model, per surface, with
-                the Settings default underneath. Keys are stored encrypted
-                in Settings (OpenRouter, OpenAI, Anthropic, Gemini). Without
-                a key everything except generation still works.
+                Keys are stored encrypted in Settings (OpenRouter, OpenAI,
+                Anthropic, Gemini). Without a key everything except AI
+                generation still works. **Refresh models** in Settings →
+                Writing keeps the dock's model list current.
 
                 ## Prompt Collection
 
@@ -648,7 +757,10 @@ object WikiContent {
                 ## Usage
 
                 Every AI reply records prompt/completion tokens and cost;
-                the usage line under each composer shows the last call.
+                the usage line under each composer shows the last call, and
+                Novel's context meter reads `context: used / limit` — a
+                live estimate for the chosen model, including the output
+                reserve and any attached image.
             """.trimIndent(),
         ),
         Page(

@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -82,7 +83,6 @@ import coil3.compose.AsyncImage
 import com.ihy2ln.weaverse.core.text.CodexMentionTag
 import com.ihy2ln.weaverse.core.text.CodexMentionTarget
 import com.ihy2ln.weaverse.core.text.findCodexMentions
-import com.ihy2ln.weaverse.core.ui.components.CollapsibleUsageStrip
 import com.ihy2ln.weaverse.core.ui.components.InkOutlinedButton
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
 import com.ihy2ln.weaverse.core.ui.components.mergeSpokenText
@@ -129,6 +129,7 @@ fun rpgPresetGroups(mode: RpgCombatRuleset): List<RpgPresetGroup> {
             texts(
                 "Look around carefully", "Move closer cautiously", "Interact with the environment",
                 "Use a carried item", "Help a party member", "Wait and observe",
+                "Search the area thoroughly", "Take cover", "Sneak past unnoticed",
             ),
         ),
         RpgPresetGroup(
@@ -136,19 +137,91 @@ fun rpgPresetGroups(mode: RpgCombatRuleset): List<RpgPresetGroup> {
             texts(
                 "Think through the situation", "Recall relevant knowledge", "Study their intentions",
                 "Consider the risks", "Focus on a suspicious detail", "Reflect on the party's goal",
+                "Weigh the options", "Guess what happens next",
+            ),
+        ),
+        RpgPresetGroup(
+            "Dialogue",
+            texts(
+                "Speak to a nearby character", "Ask a direct question", "Attempt to persuade them",
+                "Try to intimidate them", "Offer a deal or bargain", "Lie convincingly",
+                "Comfort or reassure them", "Introduce yourself",
+            ),
+        ),
+        RpgPresetGroup(
+            "Combat",
+            listOf(RpgPreset(RpgPresetCombat, "Enter " + mode.label + " combat")) + texts(
+                "Attack the nearest threat", "Defend and hold position", "Use a combat ability",
+                "Retreat to safety", "Check the party's condition", "Call for a tactical regroup",
             ),
         ),
         RpgPresetGroup(
             "Roleplay",
-            listOf(
-                RpgPreset(RpgPresetParty, partyOption),
-                RpgPreset(RpgPresetCombat, "Enter " + mode.label + " combat"),
-            ) + texts(
-                "Speak to a nearby character", "Ask a direct question", "Attempt to persuade them",
-                "Search for clues", "Check the party's condition",
+            listOf(RpgPreset(RpgPresetParty, partyOption)) + texts(
+                "Describe how you're feeling", "Recall a memory from your backstory",
+                "Bond with a party member", "Stay in character and react",
+                "Search for clues", "Break the tension with humor",
             ),
         ),
     )
+}
+
+/**
+ * The scene-art tag line and the usage line, together: one collapsible strip instead of
+ * two rows stacked above the prompt dock. Collapsed by a single tap on its header; each
+ * line scrolls horizontally rather than wrapping, so neither can grow taller than one row
+ * no matter how long the AI's own tag text or the usage summary runs.
+ */
+@Composable
+private fun RpgSceneInfoStrip(
+    sceneArtLabel: String?,
+    usageText: String,
+    modifier: Modifier = Modifier,
+) {
+    if (sceneArtLabel.isNullOrBlank() && usageText.isBlank()) return
+    val tokens = inkTokens()
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Column(modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Scene info",
+                style = MaterialTheme.typography.labelSmall,
+                color = tokens.secondaryText,
+                modifier = Modifier.weight(1f),
+            )
+            Text(if (expanded) "▴" else "▾", style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
+        }
+        if (expanded) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                sceneArtLabel?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tokens.secondaryText,
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    )
+                }
+                if (usageText.isNotBlank()) {
+                    Text(
+                        usageText,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tokens.secondaryText,
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -1153,15 +1226,13 @@ fun AdventurePlayScreen(
                 modifier = Modifier.padding(horizontal = InkSpacing.lg),
             )
         }
-        state.rpgSceneArt?.let { art ->
-            Text(
-                "AI scene art · ${art.category}${art.mood.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()} · ${art.assetId}",
-                style = MaterialTheme.typography.labelSmall,
-                color = tokens.secondaryText,
-                modifier = Modifier.padding(horizontal = InkSpacing.lg),
-            )
-        }
-        CollapsibleUsageStrip(state.lastUsage, Modifier.padding(horizontal = InkSpacing.lg))
+        RpgSceneInfoStrip(
+            sceneArtLabel = state.rpgSceneArt?.let { art ->
+                "AI scene art · ${art.category}${art.mood.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()} · ${art.assetId}"
+            },
+            usageText = state.lastUsage,
+            modifier = Modifier.padding(horizontal = InkSpacing.lg),
+        )
         if (selectionAddTextVisible) Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = InkSpacing.lg),
             horizontalArrangement = Arrangement.End,

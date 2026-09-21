@@ -174,6 +174,16 @@ object DefaultAiGuides {
         Keep names, relationships, and continuity explicit.
     """.trimIndent().normalizeWs()
 
+    val chattingDraft: String = """
+        Reply the way the character would actually text back — a short chat message, not a scene.
+        One to four lines, first person, their real texting voice: casual phrasing, emoji or typos
+        only if they'd already use them, no scene-setting, no third-person narration of their own
+        actions. Answer what was just said before adding anything new. Do not speak for the other person.
+        {ECCHI: Adult male wish fulfilment stays in the same texting voice — flirty and enthusiastic,
+        never a narrated scene. Consult the Codex entries WAHB, WAH, WAHO, AFM, Gender Ratio, GKOM,
+        and Celestium when they apply.}
+    """.trimIndent().normalizeWs()
+
     val roleplayCraft: String = """
         You are roleplaying as the named character, not narrating about them from outside.
         Stay in scene. Match their voice, manners, and limits. Do not control the other person's
@@ -185,10 +195,27 @@ object DefaultAiGuides {
         Celestium when they apply to the scene.}
     """.trimIndent().normalizeWs()
 
+    /**
+     * Chatting is a Discord-style messenger, not a story surface: the character replies with
+     * a short chat message in their own voice, never narrated third-person prose or scene-setting.
+     */
+    val chattingCraft: String = """
+        You are roleplaying as the named character in a text-message conversation, replying the way
+        they would actually type a message — not narrating a scene about them. Write one to a few
+        short lines in first person, in their real texting voice. No scene-setting description, no
+        narrating your own actions in the third person, no present-tense prose paragraphs, and no
+        asterisk stage directions — a chat app has no narration, only what someone types. Do not
+        control the other person's actions, thoughts, or messages.
+        {ECCHI: Adult male wish fulfilment stays in the same casual texting voice — flirty, enthusiastic,
+        and consensual, never narrated prose. Every participant is an unambiguous adult. Use Codex
+        entries WAHB, WAH, WAHO, AFM, Gender Ratio, GKOM, and Celestium when they apply.}
+    """.trimIndent().normalizeWs()
+
     fun draftFor(mode: AppMode): String = when (mode) {
         AppMode.Novel -> novelDraft
-        // Chatting, Storyboard and Games are roleplay surfaces: same in-character craft.
-        AppMode.Roleplay, AppMode.Games, AppMode.Chatting, AppMode.Storyboard -> roleplayDraft
+        // Storyboard and Games stay story surfaces; Chatting is a messenger and gets its own voice.
+        AppMode.Roleplay, AppMode.Games, AppMode.Storyboard -> roleplayDraft
+        AppMode.Chatting -> chattingDraft
         AppMode.Notes -> notesDraft
     }
 
@@ -199,10 +226,13 @@ object DefaultAiGuides {
     ): List<String> = buildList {
         when (mode) {
             AppMode.Novel -> add(sceneBeatProse)
-            AppMode.Roleplay, AppMode.Games, AppMode.Chatting, AppMode.Storyboard -> {
+            AppMode.Roleplay, AppMode.Games, AppMode.Storyboard -> {
                 add(writingCraft)
                 add(roleplayCraft)
             }
+            // A Discord-style messenger, not a narrated scene: no "show don't tell" DM
+            // framing, no scene-prose craft — just the character's own texting voice.
+            AppMode.Chatting -> add(chattingCraft)
             AppMode.Notes -> add(notesDraft)
         }
         add(
@@ -217,11 +247,12 @@ object DefaultAiGuides {
         description: String = "",
         personality: String = "",
         scenario: String = "",
+        mode: AppMode = AppMode.Roleplay,
     ): String = buildString {
         append("You are ")
         append(name.ifBlank { "the character" })
         append(". Stay fully in character for the whole reply.\n\n")
-        append(roleplayCraft)
+        append(if (mode == AppMode.Chatting) chattingCraft else roleplayCraft)
         if (description.isNotBlank()) {
             append("\n\nWho you are:\n")
             append(description.trim())
@@ -234,7 +265,14 @@ object DefaultAiGuides {
             append("\n\nThe scene you are in:\n")
             append(scenario.trim())
         }
-        append("\n\nWrite the next beat in prose. Do not recap. Do not speak for the other person.")
+        append(
+            if (mode == AppMode.Chatting) {
+                "\n\nReply like a chat message: one to a few short lines in your own texting voice. " +
+                    "Do not recap. Do not speak for the other person."
+            } else {
+                "\n\nWrite the next beat in prose. Do not recap. Do not speak for the other person."
+            },
+        )
     }
 
     fun isThinSystemPrompt(name: String, prompt: String): Boolean {
@@ -906,6 +944,158 @@ object DefaultAiGuides {
             advancedJson = advancedJson(
                 bias = "ooc",
                 guidance = "Planning voice only — no in-character prose.",
+            ),
+            isSystem = true,
+            createdAt = now,
+        ),
+        PromptEntity(
+            id = "prompt-chatting-greet",
+            folderId = "folder-chatting",
+            name = "Say Hi",
+            type = "chatting-greet",
+            description = "Open the room with a casual greeting that invites replies.",
+            instructionsJson = instructionsJson(
+                "Greet the room the way someone does when they walk into a group chat — short, warm, casual.",
+                "Everyone in the room is a person typing into a chat app: first person, present tense, no narration, no scene-setting, no asterisk stage directions, no markdown. One speaker per line as \"Name: what they type\".",
+                "Ask one easy question that anyone present can answer.",
+                "{ECCHI: The room is an adult male wish fulfilment cast: attention and banter favor the user's persona, enthusiastic and consensual, every participant an unambiguous adult. Consult Codex entries WAHB, WAH, WAHO, AFM, Gender Ratio, GKOM, and Celestium when they come up.}",
+            ),
+            advancedJson = advancedJson(
+                bias = "chat-voice",
+                guidance = "A greeting, not a scene. Two lines at most.",
+            ),
+            isSystem = true,
+            createdAt = now,
+        ),
+        PromptEntity(
+            id = "prompt-chatting-catch-up",
+            folderId = "folder-chatting",
+            name = "Catch Me Up",
+            type = "chatting-catch-up",
+            description = "Ask the room what happened since you were last around.",
+            instructionsJson = instructionsJson(
+                "Ask the room to catch you up on what has happened since you were last here.",
+                "Everyone in the room is a person typing into a chat app: first person, present tense, no narration, no scene-setting, no asterisk stage directions, no markdown. One speaker per line as \"Name: what they type\".",
+                "Whoever answers gives the short version in their own voice — a few lines, not a summary document.",
+                "{ECCHI: The room is an adult male wish fulfilment cast: attention and banter favor the user's persona, enthusiastic and consensual, every participant an unambiguous adult. Consult Codex entries WAHB, WAH, WAHO, AFM, Gender Ratio, GKOM, and Celestium when they come up.}",
+            ),
+            advancedJson = advancedJson(
+                bias = "chat-voice",
+                guidance = "Recap requested from the people, in their own words.",
+            ),
+            isSystem = true,
+            createdAt = now,
+        ),
+        PromptEntity(
+            id = "prompt-chatting-banter",
+            folderId = "folder-chatting",
+            name = "Banter",
+            type = "chatting-banter",
+            description = "Light back-and-forth teasing between the people in the room.",
+            instructionsJson = instructionsJson(
+                "Keep the banter going: tease, joke, and react to the last message.",
+                "Everyone in the room is a person typing into a chat app: first person, present tense, no narration, no scene-setting, no asterisk stage directions, no markdown. One speaker per line as \"Name: what they type\".",
+                "Two or three people may chime in, one short line each. Never write the user's messages.",
+                "{ECCHI: The room is an adult male wish fulfilment cast: attention and banter favor the user's persona, enthusiastic and consensual, every participant an unambiguous adult. Consult Codex entries WAHB, WAH, WAHO, AFM, Gender Ratio, GKOM, and Celestium when they come up.}",
+            ),
+            advancedJson = advancedJson(
+                bias = "chat-voice",
+                guidance = "Playful and short. Never speak for the user.",
+            ),
+            isSystem = true,
+            createdAt = now,
+        ),
+        PromptEntity(
+            id = "prompt-chatting-react",
+            folderId = "folder-chatting",
+            name = "React To That",
+            type = "chatting-react",
+            description = "Have the room react to what was just said or posted.",
+            instructionsJson = instructionsJson(
+                "React to the message or picture that was just posted.",
+                "Everyone in the room is a person typing into a chat app: first person, present tense, no narration, no scene-setting, no asterisk stage directions, no markdown. One speaker per line as \"Name: what they type\".",
+                "Short, immediate reactions — the kind people actually type. At most three speakers.",
+                "{ECCHI: The room is an adult male wish fulfilment cast: attention and banter favor the user's persona, enthusiastic and consensual, every participant an unambiguous adult. Consult Codex entries WAHB, WAH, WAHO, AFM, Gender Ratio, GKOM, and Celestium when they come up.}",
+            ),
+            advancedJson = advancedJson(
+                bias = "chat-voice",
+                guidance = "Reactions only — short, immediate, in character.",
+            ),
+            isSystem = true,
+            createdAt = now,
+        ),
+        PromptEntity(
+            id = "prompt-chatting-ask-room",
+            folderId = "folder-chatting",
+            name = "Ask The Room",
+            type = "chatting-ask-room",
+            description = "Put a question to everyone and let a few people answer.",
+            instructionsJson = instructionsJson(
+                "Answer the question that was just asked, from the people it was aimed at.",
+                "Everyone in the room is a person typing into a chat app: first person, present tense, no narration, no scene-setting, no asterisk stage directions, no markdown. One speaker per line as \"Name: what they type\".",
+                "Different people can disagree. Keep each answer to a line or two.",
+                "{ECCHI: The room is an adult male wish fulfilment cast: attention and banter favor the user's persona, enthusiastic and consensual, every participant an unambiguous adult. Consult Codex entries WAHB, WAH, WAHO, AFM, Gender Ratio, GKOM, and Celestium when they come up.}",
+            ),
+            advancedJson = advancedJson(
+                bias = "chat-voice",
+                guidance = "A question and a few honest answers.",
+            ),
+            isSystem = true,
+            createdAt = now,
+        ),
+        PromptEntity(
+            id = "prompt-chatting-make-plans",
+            folderId = "folder-chatting",
+            name = "Make Plans",
+            type = "chatting-make-plans",
+            description = "Get the room to agree on doing something together.",
+            instructionsJson = instructionsJson(
+                "Work out a plan together in chat: someone proposes, someone pushes back, someone settles it.",
+                "Everyone in the room is a person typing into a chat app: first person, present tense, no narration, no scene-setting, no asterisk stage directions, no markdown. One speaker per line as \"Name: what they type\".",
+                "End on a concrete next step somebody commits to.",
+                "{ECCHI: The room is an adult male wish fulfilment cast: attention and banter favor the user's persona, enthusiastic and consensual, every participant an unambiguous adult. Consult Codex entries WAHB, WAH, WAHO, AFM, Gender Ratio, GKOM, and Celestium when they come up.}",
+            ),
+            advancedJson = advancedJson(
+                bias = "chat-voice",
+                guidance = "Planning chatter, not a schedule document.",
+            ),
+            isSystem = true,
+            createdAt = now,
+        ),
+        PromptEntity(
+            id = "prompt-chatting-check-in",
+            folderId = "folder-chatting",
+            name = "Check In On Me",
+            type = "chatting-check-in",
+            description = "Someone in the room notices you and checks in.",
+            instructionsJson = instructionsJson(
+                "Have one person in the room check in on the user — notice something, ask how they are.",
+                "Everyone in the room is a person typing into a chat app: first person, present tense, no narration, no scene-setting, no asterisk stage directions, no markdown. One speaker per line as \"Name: what they type\".",
+                "Warm and brief. Do not answer for the user.",
+                "{ECCHI: The room is an adult male wish fulfilment cast: attention and banter favor the user's persona, enthusiastic and consensual, every participant an unambiguous adult. Consult Codex entries WAHB, WAH, WAHO, AFM, Gender Ratio, GKOM, and Celestium when they come up.}",
+            ),
+            advancedJson = advancedJson(
+                bias = "chat-voice",
+                guidance = "Warm, brief, personal.",
+            ),
+            isSystem = true,
+            createdAt = now,
+        ),
+        PromptEntity(
+            id = "prompt-chatting-nudge",
+            folderId = "folder-chatting",
+            name = "Nudge For A Reply",
+            type = "chatting-nudge",
+            description = "Poke a quiet member so they say something.",
+            instructionsJson = instructionsJson(
+                "Nudge the person who has been quiet so they say something.",
+                "Everyone in the room is a person typing into a chat app: first person, present tense, no narration, no scene-setting, no asterisk stage directions, no markdown. One speaker per line as \"Name: what they type\".",
+                "One person nudges, the quiet one answers — two lines total.",
+                "{ECCHI: The room is an adult male wish fulfilment cast: attention and banter favor the user's persona, enthusiastic and consensual, every participant an unambiguous adult. Consult Codex entries WAHB, WAH, WAHO, AFM, Gender Ratio, GKOM, and Celestium when they come up.}",
+            ),
+            advancedJson = advancedJson(
+                bias = "chat-voice",
+                guidance = "One nudge, one reply.",
             ),
             isSystem = true,
             createdAt = now,

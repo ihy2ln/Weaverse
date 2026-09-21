@@ -147,8 +147,23 @@ internal class PublicHtmlMangaSourceAdapter(
     override suspend fun searchPage(query: String, page: Int, filters: FilterList): List<MangaSearchResult> {
         if (!descriptor.supportsNativeFilters) return searchPage(query, page)
         val url = WebsiteCatalogFilters.url(config.baseUrl, config.id, query, page, filters)
-        return if (config.id == "rawkuma") rawkumaPage("filters:${url.substringBefore("&page=")}", page, url)
-        else fetchCatalog(listOf(url))
+        if (config.id != "rawkuma") return fetchCatalog(listOf(url))
+        val results = rawkumaPage("filters:${url.substringBefore("&page=")}", page, url)
+        // Verified against the live site: Rawkuma's own "Order By" control does not
+        // reorder its /manga/ listing server-side for any value (the request we send
+        // is byte-identical to what its own "Search" button submits, and the response
+        // comes back in the same order regardless of the_orderby). Title and Rating
+        // are re-sorted here from fields we already parse; Date and Popular have no
+        // reliable per-item signal in the catalog HTML to sort by locally, so those
+        // still just reflect whatever order the site happened to return.
+        val orderBy = filters.list.filterIsInstance<WebsiteSelect>()
+            .firstOrNull { it.parameter == "the_orderby" }
+            ?.let { it.options.getOrNull(it.state)?.value }
+        return when (orderBy) {
+            "title" -> results.sortedBy { it.title.lowercase() }
+            "rating" -> results.sortedByDescending { it.score.toDoubleOrNull() ?: it.rating.toDoubleOrNull() ?: Double.NEGATIVE_INFINITY }
+            else -> results
+        }
     }
 
     override suspend fun search(query: String): List<MangaSearchResult> {

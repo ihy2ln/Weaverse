@@ -22,12 +22,23 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.MailOutline
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -84,9 +95,12 @@ fun DiscordChatScreen(
     val state by viewModel.uiState.collectAsState()
     val tokens = inkTokens()
 
-    // Keep the VM's selection in step with the shell-owned state.
+    // Keep the VM's selection in step with the shell-owned state. When both props change
+    // together (e.g. opening a recent conversation in a different server from Home),
+    // selectedRoomId is already the new target here, so the server switch skips its own
+    // "return to the last room" lookup instead of racing to override this room choice.
     androidx.compose.runtime.LaunchedEffect(selectedServerId) {
-        viewModel.selectServer(selectedServerId)
+        viewModel.selectServer(selectedServerId, autoRestoreLastRoom = selectedRoomId == null)
     }
     androidx.compose.runtime.LaunchedEffect(selectedRoomId) {
         viewModel.selectRoom(selectedRoomId)
@@ -115,16 +129,32 @@ fun DiscordChatScreen(
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
         val compact = maxWidth / androidx.compose.ui.platform.LocalDensity.current.fontScale < 700.dp
         var channelsOpen by rememberSaveable { mutableStateOf(selectedRoomId == null) }
-        androidx.activity.compose.BackHandler(compact && !channelsOpen) { channelsOpen = true }
+        // Back-to-list must also clear the actual room selection, not just toggle this
+        // local flag — otherwise the room list still shows the old room as selected, and
+        // tapping it again is a no-op that just reopens the same conversation.
+        val backToRoomList = { channelsOpen = true; onRoomSelect(null) }
+        val openDirectMessages = { channelsOpen = true; onRoomSelect(null); onServerSelect(null) }
+        androidx.activity.compose.BackHandler(compact && !channelsOpen) { backToRoomList() }
         androidx.compose.runtime.LaunchedEffect(state.selectedRoomId) {
-            if (state.selectedRoomId != null) channelsOpen = false
+            channelsOpen = state.selectedRoomId == null
         }
         Row(modifier = Modifier.fillMaxSize().background(tokens.background)) {
             if (!compact || channelsOpen) {
-                ServerRail(servers = state.servers, selectedServerId = selectedServerId, onSelect = onServerSelect)
+                ServerRail(
+                    servers = state.servers,
+                    selectedServerId = selectedServerId,
+                    dmSelected = state.selectedRoom?.kind == ROOM_KIND_DM || selectedServerId == null,
+                    onOpenDirectMessages = openDirectMessages,
+                    onSelect = onServerSelect,
+                )
                 ChannelSidebar(
                     state = state,
                     onRoomSelect = { onRoomSelect(it); channelsOpen = false },
+                    onOpenRecent = { room ->
+                        onServerSelect(room.bookId)
+                        onRoomSelect(room.chatId)
+                        channelsOpen = false
+                    },
                     onAddChannel = { channelDialogOpen = true },
                     onAddCharacter = { pickerOpen = true },
                     onDeleteRoom = { pendingDeleteRoomId = it },
@@ -132,9 +162,21 @@ fun DiscordChatScreen(
                 )
             }
             if (!compact || !channelsOpen) Column(Modifier.weight(1f).fillMaxHeight()) {
-                if (compact) TextButton(onClick = { channelsOpen = true }) { Text("← Conversations") }
+                if (compact) {
+                    IconButton(
+                        onClick = backToRoomList,
+                        modifier = Modifier.semantics { contentDescription = "Back to conversations" },
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = null,
+                            tint = tokens.primaryText,
+                        )
+                    }
+                }
                 MessagePane(
                     state = state, viewModel = viewModel, onOpenFriends = onOpenFriends,
+                    onOpenDirectMessages = openDirectMessages,
                     promptCollapsed = promptCollapsed, onPromptCollapsedChange = { promptCollapsed = it },
                     onModelClick = { modelsOpen = true },
                     onMicTap = { if (!state.isStreaming) startDictate() },
@@ -224,6 +266,8 @@ fun DiscordChatScreen(
 private fun ServerRail(
     servers: List<DiscordServerUi>,
     selectedServerId: String?,
+    dmSelected: Boolean,
+    onOpenDirectMessages: () -> Unit,
     onSelect: (String?) -> Unit,
 ) {
     val tokens = inkTokens()
@@ -241,6 +285,10 @@ private fun ServerRail(
             colorHex = null,
             selected = selectedServerId == null,
             onClick = { onSelect(null) },
+        )
+        DmRailButton(
+            selected = selectedServerId == null && dmSelected,
+            onClick = onOpenDirectMessages,
         )
         Box(
             modifier = Modifier
@@ -307,6 +355,7 @@ private fun ServerIcon(
 private fun ChannelSidebar(
     state: DiscordChatUiState,
     onRoomSelect: (String?) -> Unit,
+    onOpenRecent: (DiscordRoomUi) -> Unit,
     onAddChannel: () -> Unit,
     onAddCharacter: () -> Unit,
     onDeleteRoom: (String) -> Unit,
@@ -341,6 +390,15 @@ private fun ChannelSidebar(
         Spacer(Modifier.height(InkSpacing.sm))
 
         if (state.selectedServerId == null) {
+            if (state.recentConversations.isNotEmpty()) {
+                CategoryHeader("Recent Conversations")
+                RecentConversationList(
+                    rooms = state.recentConversations,
+                    selectedRoomId = state.selectedRoomId,
+                    onOpenRecent = onOpenRecent,
+                )
+                Spacer(Modifier.height(InkSpacing.sm))
+            }
             CategoryHeader("Direct Messages")
             if (state.directMessages.isEmpty()) {
                 SidebarHint("No DMs yet — open Contacts and tap a friend.")
@@ -351,6 +409,17 @@ private fun ChannelSidebar(
                 onRoomSelect = onRoomSelect,
                 onDeleteRoom = onDeleteRoom,
             )
+            // Recent is capped and sorted by activity, so every server's channels and
+            // character sub-rooms are also listed in full underneath it.
+            state.serverSections.forEach { section ->
+                Spacer(Modifier.height(InkSpacing.sm))
+                CategoryHeader(section.title)
+                RecentConversationList(
+                    rooms = section.channels + section.characterRooms,
+                    selectedRoomId = state.selectedRoomId,
+                    onOpenRecent = onOpenRecent,
+                )
+            }
         } else {
             CategoryHeaderRow(label = "Text Channels", trailing = "+", onTrailing = onAddChannel)
             RoomList(
@@ -420,6 +489,88 @@ private fun SidebarHint(text: String) {
         color = inkTokens().secondaryText,
         modifier = Modifier.padding(horizontal = InkSpacing.lg, vertical = InkSpacing.xxs),
     )
+}
+
+/** Most recently active rooms across every server — each row shows which one it's from. */
+@Composable
+private fun RecentConversationList(
+    rooms: List<DiscordRoomUi>,
+    selectedRoomId: String?,
+    onOpenRecent: (DiscordRoomUi) -> Unit,
+) {
+    rooms.forEach { room ->
+        RecentConversationRow(
+            room = room,
+            selected = room.chatId == selectedRoomId,
+            onClick = { onOpenRecent(room) },
+        )
+    }
+}
+
+@Composable
+private fun RecentConversationRow(
+    room: DiscordRoomUi,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val tokens = inkTokens()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = InkSpacing.sm, vertical = 2.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (selected) tokens.activePill else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+    ) {
+        if (room.kind == ROOM_KIND_CHANNEL) {
+            Text(
+                "#",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = tokens.secondaryText,
+            )
+        } else {
+            com.ihy2ln.weaverse.feature.roleplay.friends.CharacterAvatar(
+                name = room.name,
+                colorHex = room.avatarColorHex,
+                size = 22.dp,
+            )
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                room.name,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (selected) tokens.activePillLabel else tokens.primaryText,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (room.serverTitle.isNotBlank()) {
+                Text(
+                    room.serverTitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (selected) tokens.activePillLabel else tokens.secondaryText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        if (room.unread > 0) {
+            Text(
+                room.unread.toString(),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.primary)
+                    .padding(horizontal = 6.dp, vertical = 1.dp),
+            )
+        }
+    }
 }
 
 @Composable
@@ -504,6 +655,7 @@ private fun MessagePane(
     state: DiscordChatUiState,
     viewModel: DiscordChatViewModel,
     onOpenFriends: () -> Unit,
+    onOpenDirectMessages: () -> Unit,
     promptCollapsed: Boolean,
     onPromptCollapsedChange: (Boolean) -> Unit,
     onModelClick: () -> Unit,
@@ -550,6 +702,25 @@ private fun MessagePane(
                     )
                 }
             }
+            if (room != null) {
+                // Lives in the header, not the prompt bar: the compact composer row has no
+                // spare width, and crowding it squeezes the other controls out.
+                IconButton(
+                    onClick = { viewModel.requestMediaPick() },
+                    modifier = Modifier
+                        .size(34.dp)
+                        .semantics { contentDescription = "Send a picture" },
+                ) {
+                    Icon(
+                        Icons.Outlined.Image,
+                        contentDescription = null,
+                        tint = if (state.hasPendingMedia) tokens.activePill else tokens.primaryText,
+                    )
+                }
+            }
+            if (state.selectedServerId != null) {
+                DmRailButton(selected = false, onClick = onOpenDirectMessages)
+            }
             InkTextButton(
                 label = "Friends",
                 onClick = onOpenFriends,
@@ -559,6 +730,9 @@ private fun MessagePane(
         if (room == null) {
             EmptyPaneHint(state)
         } else {
+            if (room.kind != ROOM_KIND_DM && state.members.isNotEmpty()) {
+                MemberStrip(members = state.members, onRemove = viewModel::removeMember)
+            }
             MessageList(state, viewModel, Modifier.weight(1f))
             if (state.lastUsage.isNotBlank()) {
                 Text(
@@ -579,15 +753,85 @@ private fun MessagePane(
                         .padding(horizontal = InkSpacing.lg, vertical = InkSpacing.xxs),
                 )
             }
-            DiscordComposer(
+            ChatPromptWindow(
                 state = state,
                 viewModel = viewModel,
                 roomName = room.name,
-                promptCollapsed = promptCollapsed,
-                onPromptCollapsedChange = onPromptCollapsedChange,
                 onModelClick = onModelClick,
                 onMicTap = onMicTap,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
             )
+        }
+    }
+}
+
+/** Rail shortcut to Home's Direct Messages: an envelope carrying a "DM" label. */
+@Composable
+private fun DmRailButton(selected: Boolean, onClick: () -> Unit) {
+    val tokens = inkTokens()
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .clip(if (selected) RoundedCornerShape(14.dp) else CircleShape)
+            .background(if (selected) tokens.activePill else tokens.hover)
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = "Direct Messages" },
+        contentAlignment = Alignment.Center,
+    ) {
+        val ink = if (selected) tokens.activePillLabel else tokens.primaryText
+        Icon(
+            Icons.Outlined.MailOutline,
+            contentDescription = null,
+            tint = ink,
+            modifier = Modifier.size(34.dp),
+        )
+        Text(
+            "DM",
+            style = MaterialTheme.typography.labelSmall,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            color = ink,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+    }
+}
+
+/** Compact avatar strip for who's seated in the room; long-press to remove. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun MemberStrip(members: List<DiscordMemberUi>, onRemove: (String) -> Unit) {
+    val tokens = inkTokens()
+    LazyRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(tokens.background)
+            .padding(horizontal = InkSpacing.lg, vertical = InkSpacing.xs),
+        horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+    ) {
+        items(members, key = { it.characterId }) { member ->
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .combinedClickable(onClick = {}, onLongClick = { onRemove(member.characterId) })
+                    .padding(InkSpacing.xxs),
+            ) {
+                com.ihy2ln.weaverse.feature.roleplay.friends.CharacterAvatar(
+                    name = member.name,
+                    colorHex = member.colorHex,
+                    size = 32.dp,
+                )
+                Text(
+                    member.name,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.secondaryText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.width(48.dp),
+                    textAlign = TextAlign.Center,
+                )
+            }
         }
     }
 }
@@ -598,81 +842,41 @@ private fun MessagePane(
  * meter, backspace clear with hold-to-undo).
  */
 @Composable
-private fun DiscordComposer(
-    state: DiscordChatUiState,
-    viewModel: DiscordChatViewModel,
-    roomName: String,
-    promptCollapsed: Boolean,
-    onPromptCollapsedChange: (Boolean) -> Unit,
-    onModelClick: () -> Unit,
-    onMicTap: () -> Unit,
+private fun MentionAutocompleteRow(
+    candidates: List<DiscordMemberUi>,
+    memberIds: Set<String>,
+    onPick: (String) -> Unit,
 ) {
-    var minimumWordsText by rememberSaveable { mutableStateOf(state.minimumWords.toString()) }
-    var maximumWordsText by rememberSaveable { mutableStateOf(state.maximumWords.toString()) }
-    androidx.compose.runtime.LaunchedEffect(state.minimumWords) {
-        if (minimumWordsText.toIntOrNull() != state.minimumWords) {
-            minimumWordsText = state.minimumWords.toString()
-        }
-    }
-    androidx.compose.runtime.LaunchedEffect(state.maximumWords) {
-        if (maximumWordsText.toIntOrNull() != state.maximumWords) {
-            maximumWordsText = state.maximumWords.toString()
-        }
-    }
-    val minimumWordsValue = minimumWordsText.toIntOrNull()
-    val maximumWordsValue = maximumWordsText.toIntOrNull()
-    val wordRangeValid = minimumWordsValue != null && maximumWordsValue != null &&
-        minimumWordsValue in PromptWordLimit.Minimum..PromptWordLimit.Maximum &&
-        maximumWordsValue in PromptWordLimit.Minimum..PromptWordLimit.Maximum &&
-        minimumWordsValue <= maximumWordsValue
-    val canSend = (state.input.isNotBlank() || state.hasPendingMedia) && !state.isStreaming &&
-        (!state.aiMode || wordRangeValid)
-
-    UnifiedPromptBar(
-        value = state.input,
-        onValueChange = viewModel::onInputChange,
-        placeholder = "Message #${roomName}",
-        collapsed = promptCollapsed,
-        onCollapsedChange = onPromptCollapsedChange,
-        contextLabel = state.contextMeterLabel,
-        minimumWords = minimumWordsText,
-        maximumWords = maximumWordsText,
-        onMinimumWordsChange = { value ->
-            minimumWordsText = value.filter(Char::isDigit).take(4)
-            minimumWordsText.toIntOrNull()?.let(viewModel::updateMinimumWords)
-        },
-        onMaximumWordsChange = { value ->
-            maximumWordsText = value.filter(Char::isDigit).take(4)
-            maximumWordsText.toIntOrNull()?.let(viewModel::updateMaximumWords)
-        },
-        wordRangeValid = wordRangeValid,
-        modelLabel = PromptModelSelection.shortLabel(
-            PromptModelSelection.effectiveModelRef(state.selectedModelRef, state.defaultModelRef),
-            state.writingModels,
-        ),
-        onModelClick = onModelClick,
-        aiMode = state.aiMode,
-        onToggleMode = viewModel::toggleAiMode,
-        streaming = state.isStreaming,
-        canSubmit = canSend,
-        canClear = state.input.isNotBlank() && !state.isStreaming,
-        onSubmit = viewModel::send,
-        onCancel = viewModel::cancelGeneration,
-        onClear = viewModel::clearInput,
-        onUndoClear = viewModel::undoClearInput,
-        onRetry = viewModel::retry,
-        onContinue = viewModel::continueConversation,
-        onMicTap = onMicTap,
-        onRoll = viewModel::rollDice,
-        onAdd = viewModel::requestMediaPick,
-        onSpoken = { spoken ->
-            viewModel.onInputChange(mergeSpokenText(viewModel.currentInput(), spoken))
-        },
-        compactSingleLine = true,
+    val tokens = inkTokens()
+    LazyRow(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = InkSpacing.lg, vertical = InkSpacing.xs),
-    )
+            .padding(horizontal = InkSpacing.lg, vertical = InkSpacing.xxs),
+        horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+    ) {
+        items(candidates, key = { it.characterId }) { candidate ->
+            val isMember = candidate.characterId in memberIds
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(InkSpacing.xxs),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(tokens.hover)
+                    .clickable { onPick(candidate.name) }
+                    .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
+            ) {
+                com.ihy2ln.weaverse.feature.roleplay.friends.CharacterAvatar(
+                    name = candidate.name,
+                    colorHex = candidate.colorHex,
+                    size = 18.dp,
+                )
+                Text(candidate.name, style = MaterialTheme.typography.labelMedium, color = tokens.primaryText)
+                if (!isMember) {
+                    Text("+ add", style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -710,7 +914,34 @@ private fun MessageList(
     modifier: Modifier = Modifier,
 ) {
     val tokens = inkTokens()
-    LazyColumn(modifier = modifier) {
+    val roomId = state.selectedRoomId
+    val listState = rememberSaveable(roomId, saver = LazyListState.Saver) { LazyListState() }
+    LaunchedEffect(roomId) {
+        if (roomId == null) return@LaunchedEffect
+        val saved = viewModel.scrollFor(roomId)
+        if (saved != null) {
+            listState.scrollToItem(saved.first, saved.second)
+        } else if (state.messages.isNotEmpty()) {
+            listState.scrollToItem((listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0))
+        }
+    }
+    LaunchedEffect(roomId, state.messages.size) {
+        if (roomId == null) return@LaunchedEffect
+        val totalItems = listState.layoutInfo.totalItemsCount
+        val atBottom = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index == totalItems - 1
+        if (viewModel.scrollFor(roomId) == null || atBottom) {
+            listState.scrollToItem((totalItems - 1).coerceAtLeast(0))
+        }
+    }
+    LaunchedEffect(roomId) {
+        if (roomId == null) return@LaunchedEffect
+        snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
+            .collect { (index, offset) -> viewModel.rememberScroll(roomId, index, offset) }
+    }
+    // One container around the whole list so a press-and-hold can drag a selection
+    // across several messages, the way a normal chat transcript behaves.
+    SelectionContainer(modifier = modifier) {
+        LazyColumn(state = listState) {
         if (state.messages.isEmpty() && !state.isStreaming) {
             item(key = "empty") {
                 Text(
@@ -725,18 +956,15 @@ private fun MessageList(
         if (state.isStreaming) {
             item(key = "streaming") {
                 StreamingRow(
-                    authorName = state.selectedRoom?.let { room ->
-                        if (room.kind == ROOM_KIND_CHANNEL && room.characterId == null) {
-                            "${state.selectedServer?.title ?: "The"} Narrator"
-                        } else {
-                            room.name
-                        }
-                    } ?: "Narrator",
+                    authorName = state.members.firstOrNull()?.name
+                        ?: state.selectedRoom?.name
+                        ?: "…",
                     text = state.streamingText,
                 )
             }
         }
-        alwaysScrollEndSpacer()
+            alwaysScrollEndSpacer()
+        }
     }
 }
 
@@ -760,12 +988,16 @@ private fun LazyListScope.DayGroupedMessages(
             message.createdAt - previous.createdAt < GROUP_WINDOW_MS &&
             viewModel.dayLabel(previous.createdAt) == day
         item(key = message.id) {
-            MessageRow(
-                message = message,
-                grouped = grouped,
-                timeFull = viewModel.timestampFull(message.createdAt),
-                timeShort = viewModel.timestampShort(message.createdAt),
-            )
+            if (message.isSystem) {
+                SystemMessageRow(message.text)
+            } else {
+                MessageRow(
+                    message = message,
+                    grouped = grouped,
+                    timeFull = viewModel.timestampFull(message.createdAt),
+                    timeShort = viewModel.timestampShort(message.createdAt),
+                )
+            }
         }
     }
 }
@@ -788,6 +1020,23 @@ private fun DayDivider(label: String) {
                 .clip(RoundedCornerShape(8.dp))
                 .background(tokens.background)
                 .padding(horizontal = InkSpacing.sm, vertical = 2.dp),
+        )
+    }
+}
+
+/** A join/system line — centered and dimmed, not a chat bubble. */
+@Composable
+private fun SystemMessageRow(text: String) {
+    val tokens = inkTokens()
+    Box(
+        modifier = Modifier.fillMaxWidth().padding(vertical = InkSpacing.xxs),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelSmall,
+            color = tokens.secondaryText,
+            textAlign = TextAlign.Center,
         )
     }
 }

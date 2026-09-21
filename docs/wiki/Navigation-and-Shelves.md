@@ -9,9 +9,11 @@ The **Modes** button opens one drawer containing Home, modes, the current mode's
 sections, and shared tools. Use **Arrange modes** or **Arrange sections** to change
 their order. The mode order controls Home shelves after Books, which stays first.
 
-Browsing uses its own dark appearance and a **Home · Books · Search · My List**
-bottom bar. It does not change editor or reader themes. Writing retains its own
-toolbar without the browsing header or bottom navigation.
+Browsing uses its own dark appearance and a **Home · Search · My List**
+bottom bar — Books no longer has its own tab there, since Home's Books shelf
+and its **See all** already open the same grid. It does not change editor or
+reader themes. Writing retains its own toolbar without the browsing header or
+bottom navigation.
 
 Books offers Continue Reading, Continue Writing, My List, Recently Added, and
 populated genre shelves. **See all** opens a searchable grid; **All books** keeps

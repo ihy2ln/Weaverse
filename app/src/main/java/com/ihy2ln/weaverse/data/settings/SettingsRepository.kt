@@ -22,6 +22,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -352,6 +353,24 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setReaderPosition(bookId: String, sceneId: String) {
         context.dataStore.edit { it[stringPreferencesKey("reader_last_$bookId")] = sceneId }
+    }
+
+    /** The room/channel the writer last had open in this server, so Chatting reopens there. */
+    suspend fun lastChatRoom(bookId: String): String =
+        context.dataStore.data.map { it[stringPreferencesKey("chat_last_room_$bookId")].orEmpty() }.first()
+
+    suspend fun setLastChatRoom(bookId: String, chatId: String) {
+        context.dataStore.edit { it[stringPreferencesKey("chat_last_room_$bookId")] = chatId }
+    }
+
+    /** The unsent draft left in a Chatting room, so it survives an app restart. */
+    suspend fun chatDraft(roomId: String): String =
+        context.dataStore.data.map { it[stringPreferencesKey("chat_draft_$roomId")].orEmpty() }.first()
+
+    suspend fun setChatDraft(roomId: String, draft: String) {
+        context.dataStore.edit {
+            if (draft.isBlank()) it.remove(stringPreferencesKey("chat_draft_$roomId")) else it[stringPreferencesKey("chat_draft_$roomId")] = draft
+        }
     }
 
     suspend fun setReaderScroll(bookId: String, sceneId: String, paragraphIndex: Int, scrollOffset: Int) {

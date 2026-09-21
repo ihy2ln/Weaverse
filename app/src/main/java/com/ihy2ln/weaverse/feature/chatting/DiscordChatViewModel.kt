@@ -22,6 +22,7 @@ import com.ihy2ln.weaverse.data.db.entities.RpCharacterEntity
 import com.ihy2ln.weaverse.data.db.entities.RpChatEntity
 import com.ihy2ln.weaverse.data.db.entities.RpMessageEntity
 import com.ihy2ln.weaverse.data.db.entities.RpPersonaEntity
+import com.ihy2ln.weaverse.data.db.entities.RpRoomMemberEntity
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
 import com.ihy2ln.weaverse.feature.prompt.PromptModelSelection
 import com.ihy2ln.weaverse.feature.prompt.PromptWordLimit
@@ -69,6 +70,8 @@ data class DiscordRoomUi(
     val unread: Int = 0,
     val preview: String = "",
     val lastMessageAt: Long = 0L,
+    /** The server this room belongs to; blank for a true DM. Shown on cross-server recent rows. */
+    val serverTitle: String = "",
 )
 
 /** One rendered message row in the Discord pane. */
@@ -78,10 +81,28 @@ data class DiscordMessageUi(
     val authorColorHex: String,
     val isUser: Boolean,
     val isBot: Boolean,
+    val isSystem: Boolean = false,
     val text: String,
     val hasMedia: Boolean,
     val mediaPaths: List<String> = emptyList(),
     val createdAt: Long,
+)
+
+/** One seat in a room's member strip. */
+data class DiscordMemberUi(
+    val characterId: String,
+    val name: String,
+    val colorHex: String,
+    val monogram: String,
+    val joinedViaMention: Boolean,
+)
+
+/** One server's rooms as shown on the Home screen: its channels, then its character sub-rooms. */
+data class DiscordServerSection(
+    val bookId: String,
+    val title: String,
+    val channels: List<DiscordRoomUi>,
+    val characterRooms: List<DiscordRoomUi>,
 )
 
 data class DiscordChatUiState(
@@ -91,6 +112,16 @@ data class DiscordChatUiState(
     val selectedServer: DiscordServerUi? = null,
     val rooms: List<DiscordRoomUi> = emptyList(),
     val directMessages: List<DiscordRoomUi> = emptyList(),
+    /** Most recently active conversations across every server, channel, and character room — shown on Home. */
+    val recentConversations: List<DiscordRoomUi> = emptyList(),
+    /** Chat-themed quick messages shown in the prompt window's template picker. */
+    val templates: List<com.ihy2ln.weaverse.data.db.entities.PromptEntity> = emptyList(),
+    /** Templates ticked for the next send, layered in the order they were picked. */
+    val selectedTemplateIds: List<String> = emptyList(),
+    /** Prompt window expanded ("More") vs the two-row default. */
+    val promptExpanded: Boolean = false,
+    /** Every server's channels and character sub-rooms, for browsing from Home. */
+    val serverSections: List<DiscordServerSection> = emptyList(),
     val selectedRoomId: String? = null,
     val selectedRoom: DiscordRoomUi? = null,
     val messages: List<DiscordMessageUi> = emptyList(),
@@ -113,6 +144,10 @@ data class DiscordChatUiState(
     val mediaPickRequestId: Long = 0,
     /** Shows when the + button has staged media for the next message. */
     val hasPendingMedia: Boolean = false,
+    /** Cast seated in the selected room, for the member strip and @mention autocomplete. */
+    val members: List<DiscordMemberUi> = emptyList(),
+    /** The work's wider cast, for @mention autocomplete beyond who's already seated. */
+    val mentionCandidates: List<DiscordMemberUi> = emptyList(),
 ) {
     val wordRangeValid: Boolean
         get() = minimumWords in PromptWordLimit.Minimum..PromptWordLimit.Maximum &&
@@ -136,6 +171,7 @@ class DiscordChatViewModel @Inject constructor(
     private val aiGeneration: AiGenerationService,
     private val settings: SettingsRepository,
     private val roomSeeder: ChatRoomSeeder,
+    private val castResolver: ChatCastResolver,
     private val modelCache: OpenRouterModelCache,
     private val mediaRepository: com.ihy2ln.weaverse.core.media.MediaRepository,
 ) : ViewModel() {
@@ -149,9 +185,15 @@ class DiscordChatViewModel @Inject constructor(
     private var contextLimit: Int = ContextMeter.DEFAULT_LIMIT
     private var generateJob: Job? = null
     private var boundRoom: RpChatEntity? = null
+    /** Latest chat rows, so a server switch can rebuild its sidebar without waiting on the DB. */
+    private var allChats: List<RpChatEntity> = emptyList()
     private var lastClearedInput: String = ""
     /** Media attached via the dock's + button, sent with the next message. */
     private var pendingMedia: List<com.ihy2ln.weaverse.data.db.entities.MediaEntity> = emptyList()
+
+    private val draftsByRoom = mutableMapOf<String, String>()
+    private val messageCacheByRoom = mutableMapOf<String, List<DiscordMessageUi>>()
+    private val scrollByRoom = mutableMapOf<String, Pair<Int, Int>>()
 
     private val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
     private val dateFormat = SimpleDateFormat("MMMM d, yyyy", Locale.getDefault())
@@ -191,8 +233,16 @@ class DiscordChatViewModel @Inject constructor(
                         loading = false,
                     )
                 }
+                allChats = chats
                 rebuildRooms(chats)
                 refreshBadges()
+            }
+        }
+        viewModelScope.launch {
+            db.promptDao().observeAll().collect { prompts ->
+                val chat = prompts.filter { it.folderId == CHAT_PROMPT_FOLDER || it.folderId == CUSTOM_PROMPT_FOLDER }
+                    .sortedBy { it.name.lowercase() }
+                _uiState.update { it.copy(templates = chat) }
             }
         }
         viewModelScope.launch {
@@ -218,12 +268,25 @@ class DiscordChatViewModel @Inject constructor(
                 refreshContextMeter()
             }
         }
+        viewModelScope.launch {
+            _uiState.map { it.selectedRoomId }.distinctUntilChanged().flatMapLatest { roomId ->
+                if (roomId.isNullOrBlank()) flowOf(emptyList()) else db.roleplayDao().observeMembers(roomId)
+            }.collect { members ->
+                publishMembers(members)
+            }
+        }
     }
 
-    fun selectServer(bookId: String?) {
+    /**
+     * [autoRestoreLastRoom] should be false when the caller is about to explicitly select a
+     * room of its own right after (e.g. opening a recent conversation from Home) — otherwise
+     * the async "return to the last room" lookup below can race and override that choice.
+     */
+    fun selectServer(bookId: String?, autoRestoreLastRoom: Boolean = true) {
         if (_uiState.value.selectedServerId == bookId) return
         generateJob?.cancel()
         generateJob = null
+        _uiState.value.selectedRoomId?.let { draftsByRoom[it] = _uiState.value.input }
         _uiState.update {
             it.copy(
                 selectedServerId = bookId,
@@ -231,25 +294,48 @@ class DiscordChatViewModel @Inject constructor(
                 selectedRoomId = null,
                 selectedRoom = null,
                 messages = emptyList(),
+                members = emptyList(),
+                mentionCandidates = emptyList(),
+                input = "",
                 isStreaming = false,
                 streamingText = "",
             )
         }
+        // The chats flow only re-emits when the database changes, so without this the
+        // freshly selected server would show an empty sidebar until something wrote a row.
+        rebuildRooms(allChats)
         if (bookId != null) {
-            // Defensive catch-up for legacy works; new works are seeded at creation.
-            viewModelScope.launch { booksById[bookId]?.let { roomSeeder.ensureRoomsForBook(it) } }
+            viewModelScope.launch {
+                refreshBadges()
+                // Defensive catch-up for legacy works; new works are seeded at creation.
+                booksById[bookId]?.let { roomSeeder.ensureRoomsForBook(it) }
+                if (!autoRestoreLastRoom) return@launch
+                // Return to whichever room or sub-room the writer had open last time,
+                // instead of always landing back on the room list.
+                val lastRoomId = settings.lastChatRoom(bookId)
+                if (lastRoomId.isNotBlank() && db.roleplayDao().getChat(lastRoomId)?.bookId == bookId) {
+                    selectRoom(lastRoomId)
+                }
+            }
         }
     }
 
     fun selectRoom(chatId: String?) {
+        if (_uiState.value.selectedRoomId == chatId) return
         generateJob?.cancel()
         generateJob = null
+        val previousRoomId = _uiState.value.selectedRoomId
+        val previousDraft = _uiState.value.input
+        if (previousRoomId != null) draftsByRoom[previousRoomId] = previousDraft
         _uiState.update {
             it.copy(
                 selectedRoomId = chatId,
                 selectedRoom = it.rooms.find { r -> r.chatId == chatId }
                     ?: it.directMessages.find { r -> r.chatId == chatId },
-                messages = emptyList(),
+                messages = chatId?.let { id -> messageCacheByRoom[id] }.orEmpty(),
+                members = emptyList(),
+                mentionCandidates = emptyList(),
+                input = chatId?.let { id -> draftsByRoom[id] }.orEmpty(),
                 isStreaming = false,
                 streamingText = "",
                 errorMessage = "",
@@ -257,6 +343,14 @@ class DiscordChatViewModel @Inject constructor(
         }
         if (chatId != null) {
             viewModelScope.launch {
+                if (previousRoomId != null) settings.setChatDraft(previousRoomId, previousDraft)
+                if (!draftsByRoom.containsKey(chatId)) {
+                    val savedDraft = settings.chatDraft(chatId)
+                    if (savedDraft.isNotBlank() && _uiState.value.selectedRoomId == chatId) {
+                        draftsByRoom[chatId] = savedDraft
+                        _uiState.update { it.copy(input = savedDraft) }
+                    }
+                }
                 db.roleplayDao().getChat(chatId)?.let { chat ->
                     boundRoom = chat
                     if (chat.lastReadAt < System.currentTimeMillis() - READ_GRACE_MS) {
@@ -264,14 +358,56 @@ class DiscordChatViewModel @Inject constructor(
                         db.roleplayDao().upsertChat(read)
                         boundRoom = read
                     }
+                    // Remember this room (or sub-room) as the server's last-visited spot,
+                    // so reopening the server returns here instead of the room list.
+                    chat.bookId?.let { bookId -> settings.setLastChatRoom(bookId, chatId) }
+                    val book = chat.bookId?.let { booksById[it] }
+                    val cast = book?.let { castResolver.castForBook(it) }.orEmpty().map { character ->
+                        DiscordMemberUi(
+                            characterId = character.id,
+                            name = character.name,
+                            colorHex = avatarColorHexFor(character.name, character.colorHex),
+                            monogram = monogramOf(character.name),
+                            joinedViaMention = false,
+                        )
+                    }
+                    if (_uiState.value.selectedRoomId == chatId) {
+                        _uiState.update { it.copy(mentionCandidates = cast) }
+                    }
                 }
             }
         } else {
             boundRoom = null
+            if (previousRoomId != null) {
+                viewModelScope.launch { settings.setChatDraft(previousRoomId, previousDraft) }
+            }
         }
     }
 
+    /** Height the writer dragged the prompt window to; 0 sizes to content. */
+    val promptDockHeight = MutableStateFlow(0f)
+
+    fun setPromptDockHeight(dp: Float) { promptDockHeight.value = dp }
+
+    fun setPromptExpanded(expanded: Boolean) {
+        _uiState.update { it.copy(promptExpanded = expanded) }
+    }
+
+    fun toggleTemplate(id: String) {
+        _uiState.update {
+            val next = if (id in it.selectedTemplateIds) it.selectedTemplateIds - id else it.selectedTemplateIds + id
+            it.copy(selectedTemplateIds = next)
+        }
+        refreshContextMeter()
+    }
+
+    fun clearTemplates() {
+        _uiState.update { it.copy(selectedTemplateIds = emptyList()) }
+        refreshContextMeter()
+    }
+
     fun onInputChange(value: String) {
+        _uiState.value.selectedRoomId?.let { draftsByRoom[it] = value }
         _uiState.update { it.copy(input = value, errorMessage = "") }
         refreshContextMeter()
     }
@@ -295,8 +431,40 @@ class DiscordChatViewModel @Inject constructor(
 
     fun attachMedia(uris: List<android.net.Uri>) {
         viewModelScope.launch {
-            pendingMedia = runCatching { mediaRepository.importFromUris(uris) }.getOrDefault(emptyList())
-            _uiState.update { it.copy(hasPendingMedia = pendingMedia.isNotEmpty()) }
+            val imported = runCatching { mediaRepository.importFromUris(uris) }
+            imported.onFailure { err ->
+                // A silently swallowed import used to look exactly like "nothing happened".
+                _uiState.update {
+                    it.copy(
+                        hasPendingMedia = false,
+                        errorMessage = "Could not attach that picture: " +
+                            (err.message?.takeIf { m -> m.isNotBlank() } ?: err::class.simpleName.orEmpty()),
+                    )
+                }
+            }
+            val media = imported.getOrDefault(emptyList())
+            if (media.isEmpty()) return@launch
+            pendingMedia = pendingMedia + media
+            _uiState.update { it.copy(hasPendingMedia = true, errorMessage = "") }
+            // Post the picture straight away; waiting for text made it look like nothing attached.
+            val room = boundRoom ?: return@launch
+            val now = System.currentTimeMillis()
+            db.roleplayDao().upsertMessage(
+                RpMessageEntity(
+                    id = "rpm-$now",
+                    chatId = room.id,
+                    swipeGroupId = "sw-$now",
+                    swipeIndex = 0,
+                    isActiveSwipe = true,
+                    role = "user",
+                    contentJson = userMessageDocument("", media).toJson(),
+                    createdAt = now,
+                    displayMode = "messenger",
+                ),
+            )
+            pendingMedia = emptyList()
+            db.roleplayDao().upsertChat(room.copy(updatedAt = now))
+            _uiState.update { it.copy(hasPendingMedia = false) }
         }
     }
 
@@ -396,11 +564,27 @@ class DiscordChatViewModel @Inject constructor(
         viewModelScope.launch {
             db.roleplayDao().getMessages(chatId).forEach { db.roleplayDao().deleteMessage(it.id) }
             db.roleplayDao().deleteChat(chatId)
+            draftsByRoom.remove(chatId)
+            messageCacheByRoom.remove(chatId)
+            scrollByRoom.remove(chatId)
             if (_uiState.value.selectedRoomId == chatId) {
-                _uiState.update { it.copy(selectedRoomId = null, selectedRoom = null, messages = emptyList()) }
+                _uiState.update { it.copy(selectedRoomId = null, selectedRoom = null, messages = emptyList(), members = emptyList()) }
             }
         }
     }
+
+    /** Member strip long-press: removes a character's seat in the selected room. */
+    fun removeMember(characterId: String) {
+        val roomId = _uiState.value.selectedRoomId ?: return
+        viewModelScope.launch { castResolver.removeMember(roomId, characterId) }
+    }
+
+    /** Persists the message list's scroll position for the room, so it's restored on return. */
+    fun rememberScroll(roomId: String, index: Int, offset: Int) {
+        scrollByRoom[roomId] = index to offset
+    }
+
+    fun scrollFor(roomId: String): Pair<Int, Int>? = scrollByRoom[roomId]
 
     fun send() {
         val state = _uiState.value
@@ -434,6 +618,7 @@ class DiscordChatViewModel @Inject constructor(
                 pendingMedia = emptyList()
                 _uiState.update { it.copy(hasPendingMedia = false) }
                 _uiState.update { it.copy(input = "", isStreaming = true, streamingText = "", errorMessage = "") }
+                invitesForMentions(room, userText)
                 generateReply(room, userText, now, userMessageAlreadyStored = true)
             }
         } else {
@@ -497,9 +682,14 @@ class DiscordChatViewModel @Inject constructor(
             }
             val messages = db.roleplayDao().getMessagesForMode(room.id, "messenger")
                 .filter { it.isActiveSwipe }
-            val lastReply = messages.lastOrNull { it.role != "user" } ?: return@launch
-            val lastUser = messages.lastOrNull { it.role == "user" } ?: return@launch
-            db.roleplayDao().deleteMessage(lastReply.id)
+            val lastUserIndex = messages.indexOfLast { it.role == "user" }
+            if (lastUserIndex == -1) return@launch
+            val lastUser = messages[lastUserIndex]
+            // A single AI turn can fan out into several messages (one per speaker);
+            // retry clears the whole trailing run, not just the last row.
+            val trailingReplies = messages.drop(lastUserIndex + 1).filter { it.role == "char" }
+            if (trailingReplies.isEmpty()) return@launch
+            trailingReplies.forEach { db.roleplayDao().deleteMessage(it.id) }
             _uiState.update { it.copy(isStreaming = true, streamingText = "", errorMessage = "") }
             val userText = documentFromJson(lastUser.contentJson).plainText().trim()
             generateReply(room, userText, lastUser.createdAt, userMessageAlreadyStored = true)
@@ -534,11 +724,11 @@ class DiscordChatViewModel @Inject constructor(
     ) {
         val state = _uiState.value
         val now = baseTimestamp
-        val mentioned = mentionedCharacters(userText)
+        val members = castResolver.membersOf(room.id)
+        val mentioned = resolveMentions(userText, room).map { it.character }
         val roomCharacter = room.characterId?.let { charactersById[it] }
-        val replySpeaker = roomCharacter ?: mentioned.singleOrNull()
         val history = db.roleplayDao().getMessagesForMode(room.id, "messenger")
-            .filter { it.isActiveSwipe }
+            .filter { it.isActiveSwipe && it.role != "system" }
             .takeLast(HISTORY_LIMIT)
             .map { msg ->
                 val role = if (msg.role == "user") "user" else "assistant"
@@ -546,7 +736,7 @@ class DiscordChatViewModel @Inject constructor(
             }
         val persona = roomSeeder.defaultPersona()
         val book = room.bookId?.let { booksById[it] }
-        val system = buildSystemBlocks(room, book, roomCharacter, persona, mentioned, state.maximumWords)
+        val system = buildSystemBlocks(room, book, roomCharacter, persona, members, mentioned, state.maximumWords)
         val maxTokens = (state.maximumWords * 1.7 + 192).toInt().coerceIn(192, 8192)
         val builder = StringBuilder()
         var usageText = ""
@@ -619,22 +809,41 @@ class DiscordChatViewModel @Inject constructor(
             }
             return
         }
-        val reply = RpMessageEntity(
-            id = "rpm-${now + 1}",
-            chatId = room.id,
-            swipeGroupId = "sw-$now",
-            swipeIndex = 0,
-            isActiveSwipe = true,
-            role = "char",
-            speakerCharacterId = replySpeaker?.id,
-            contentJson = Document.fromPlainText(replyText).toJson(),
-            createdAt = System.currentTimeMillis(),
-            displayMode = "messenger",
-            promptTokens = promptTokens,
-            completionTokens = completionTokens,
-            costUsd = costUsd,
-        )
-        db.roleplayDao().upsertMessage(reply)
+        // A reply with no parsed "Name:" belongs to whoever was addressed — never a narrator.
+        val fallbackSpeaker = roomCharacter ?: mentioned.firstOrNull() ?: members.firstOrNull()
+        val bookTitle = book?.title.orEmpty()
+        val lines = parseSpeakerLines(replyText, members + listOfNotNull(fallbackSpeaker))
+        val replyBase = System.currentTimeMillis()
+        lines.forEachIndexed { index, line ->
+            db.roleplayDao().upsertMessage(
+                RpMessageEntity(
+                    id = "rpm-${replyBase + index}",
+                    chatId = room.id,
+                    swipeGroupId = "sw-$now",
+                    swipeIndex = 0,
+                    isActiveSwipe = true,
+                    role = "char",
+                    speakerCharacterId = line.character?.id,
+                    speakerName = if (line.character != null) {
+                        ""
+                    } else {
+                        // The model sometimes still signs a line as a narrator/host/app for the
+                        // work; rooms only contain people, so that becomes the addressed person.
+                        val raw = line.displayName.trim()
+                        val narratorish = raw.isBlank() ||
+                            NARRATOR_WORDS.any { word -> raw.contains(word, ignoreCase = true) } ||
+                            (bookTitle.isNotBlank() && raw.contains(bookTitle, ignoreCase = true))
+                        if (narratorish) fallbackSpeaker?.name.orEmpty() else raw
+                    },
+                    contentJson = Document.fromPlainText(line.text).toJson(),
+                    createdAt = replyBase + index * MULTI_SPEAKER_STAGGER_MS,
+                    displayMode = "messenger",
+                    promptTokens = if (index == 0) promptTokens else 0,
+                    completionTokens = if (index == 0) completionTokens else 0,
+                    costUsd = if (index == 0) costUsd else 0.0,
+                ),
+            )
+        }
         db.roleplayDao().upsertChat(room.copy(updatedAt = System.currentTimeMillis()))
         _uiState.update {
             it.copy(isStreaming = false, streamingText = "", lastUsage = usageText)
@@ -649,7 +858,8 @@ class DiscordChatViewModel @Inject constructor(
         val book = room.bookId?.let { booksById[it] }
         viewModelScope.launch {
             val persona = roomSeeder.defaultPersona()
-            val system = buildSystemBlocks(room, book, roomCharacter, persona, emptyList(), state.maximumWords)
+            val members = castResolver.membersOf(room.id)
+            val system = buildSystemBlocks(room, book, roomCharacter, persona, members, emptyList(), state.maximumWords)
             val historyTokens = db.roleplayDao().getMessagesForMode(room.id, "messenger")
                 .filter { it.isActiveSwipe }
                 .sumOf { ContextMeter.estimateTokens(documentFromJson(it.contentJson).plainText()) }
@@ -678,10 +888,35 @@ class DiscordChatViewModel @Inject constructor(
             .filter { it.roomKind == ROOM_KIND_DM || (it.roomKind.isEmpty() && it.displayMode == "messenger" && it.bookId == null) }
             .sortedByDescending { it.updatedAt }
             .map { it.toRoomUi() }
+        val recent = chats
+            .filter {
+                it.displayMode == "messenger" &&
+                    (it.roomKind in ROOM_KINDS || it.roomKind == ROOM_KIND_DM ||
+                        (it.roomKind.isEmpty() && it.bookId == null))
+            }
+            .sortedByDescending { it.updatedAt }
+            .take(RECENT_CONVERSATIONS_LIMIT)
+            .map { it.toRoomUi() }
+        val sections = chats
+            .filter { it.bookId != null && it.displayMode == "messenger" && it.roomKind in ROOM_KINDS }
+            .groupBy { it.bookId!! }
+            .mapNotNull { (bookId, roomsForBook) ->
+                val title = booksById[bookId]?.title ?: return@mapNotNull null
+                val ui = roomsForBook.sortedBy { r -> r.createdAt }.map { r -> r.toRoomUi() }
+                DiscordServerSection(
+                    bookId = bookId,
+                    title = title,
+                    channels = ui.filter { r -> r.kind == ROOM_KIND_CHANNEL },
+                    characterRooms = ui.filter { r -> r.kind == ROOM_KIND_CHARACTER },
+                )
+            }
+            .sortedBy { it.title.lowercase() }
         _uiState.update {
             it.copy(
                 rooms = selectedRooms,
                 directMessages = dms,
+                recentConversations = recent,
+                serverSections = sections,
                 selectedRoom = (selectedRooms + dms).find { r -> r.chatId == it.selectedRoomId },
             )
         }
@@ -700,25 +935,41 @@ class DiscordChatViewModel @Inject constructor(
             monogram = monogramOf(title),
             topic = authorsNote,
             lastMessageAt = updatedAt,
+            serverTitle = bookId?.let { booksById[it]?.title }.orEmpty(),
         )
     }
 
     private suspend fun publishMessages(messages: List<RpMessageEntity>) {
         val state = _uiState.value
-        val room = state.selectedRoom
-        val roomCharacter = state.selectedRoom?.characterId?.let { charactersById[it] }
+        val roomId = messages.firstOrNull()?.chatId ?: state.selectedRoomId ?: return
+        val room = (state.rooms + state.directMessages).find { it.chatId == roomId } ?: state.selectedRoom
+        val roomCharacter = room?.characterId?.let { charactersById[it] }
         val serverTitle = state.selectedServer?.title
+        val memberNames = state.members.map { it.name }
         val rows = messages
             .filter { it.isActiveSwipe }
             .map { msg ->
                 val character = msg.speakerCharacterId?.let { charactersById[it] }
                 val isUser = msg.role == "user"
-                val authorName = when {
+                val isSystem = msg.role == "system"
+                val rawAuthor = when {
                     isUser -> "You"
                     character != null -> character.name
+                    msg.speakerName.isNotBlank() -> msg.speakerName
                     roomCharacter != null -> roomCharacter.name
-                    serverTitle != null -> "$serverTitle Narrator"
-                    else -> "Narrator"
+                    else -> ""
+                }
+                // Also scrubs narrator bylines already sitting in older history.
+                val narratorish = !isUser && !isSystem && character == null && (
+                    rawAuthor.isBlank() ||
+                        NARRATOR_WORDS.any { rawAuthor.contains(it, ignoreCase = true) } ||
+                        (serverTitle != null && rawAuthor.contains(serverTitle, ignoreCase = true))
+                    )
+                val authorName = when {
+                    !narratorish && rawAuthor.isNotBlank() -> rawAuthor
+                    roomCharacter != null -> roomCharacter.name
+                    memberNames.isNotEmpty() -> memberNames.first()
+                    else -> "Unknown"
                 }
                 DiscordMessageUi(
                     id = msg.id,
@@ -726,14 +977,35 @@ class DiscordChatViewModel @Inject constructor(
                     authorColorHex = character?.let { avatarColorHexFor(it.name, it.colorHex) }
                         ?: avatarColorHexFor(authorName, null),
                     isUser = isUser,
-                    isBot = !isUser && character == null,
+                    // Only a message we cannot attribute to any person is an app/bot line.
+                    isBot = !isUser && !isSystem && authorName == "Unknown",
+                    isSystem = isSystem,
                     text = documentFromJson(msg.contentJson).plainText().trim(),
                     hasMedia = documentFromJson(msg.contentJson).hasMedia(),
                     mediaPaths = mediaPathsOf(msg),
                     createdAt = msg.createdAt,
                 )
             }
-        _uiState.update { it.copy(messages = rows) }
+        messageCacheByRoom[roomId] = rows
+        // Guards against a late emission for a room the user has already left.
+        if (_uiState.value.selectedRoomId == roomId) {
+            _uiState.update { it.copy(messages = rows) }
+        }
+    }
+
+    /** Publishes the selected room's seated cast for the member strip and @mention autocomplete. */
+    private fun publishMembers(members: List<RpRoomMemberEntity>) {
+        val rows = members.mapNotNull { member ->
+            val character = charactersById[member.characterId] ?: return@mapNotNull null
+            DiscordMemberUi(
+                characterId = character.id,
+                name = character.name,
+                colorHex = avatarColorHexFor(character.name, character.colorHex),
+                monogram = monogramOf(character.name),
+                joinedViaMention = !member.seeded,
+            )
+        }
+        _uiState.update { it.copy(members = rows) }
     }
 
     /** Resolvable image paths from a message's media blocks, for inline display. */
@@ -753,10 +1025,11 @@ class DiscordChatViewModel @Inject constructor(
 
     private suspend fun refreshBadges() {
         val state = _uiState.value
-        val allRooms = state.rooms + state.directMessages
+        val allRooms = (state.rooms + state.directMessages + state.recentConversations).distinctBy { it.chatId }
         if (allRooms.isEmpty()) return
         var changed = false
-        val updated = allRooms.map { room ->
+        val badges = mutableMapOf<String, Pair<Int, String>>()
+        allRooms.forEach { room ->
             val chat = db.roleplayDao().getChat(room.chatId)
             val unread = chat?.let { db.roleplayDao().countUnread(it.id, it.lastReadAt) } ?: 0
             val latest = db.roleplayDao().getLatestMessage(room.chatId)
@@ -765,14 +1038,18 @@ class DiscordChatViewModel @Inject constructor(
                 (if (msg.role == "user") "You: " else "") + text
             }.orEmpty().take(90)
             if (unread != room.unread || preview != room.preview) changed = true
-            room.copy(unread = unread, preview = preview)
+            badges[room.chatId] = unread to preview
         }
         if (!changed) return
+        fun List<DiscordRoomUi>.applyBadges() = map { room ->
+            val badge = badges[room.chatId] ?: return@map room
+            room.copy(unread = badge.first, preview = badge.second)
+        }
         _uiState.update { current ->
             current.copy(
-                rooms = updated.filter { it.bookId != null && it.kind != ROOM_KIND_DM }
-                    .filter { r -> current.rooms.any { it.chatId == r.chatId } },
-                directMessages = updated.filter { r -> current.directMessages.any { it.chatId == r.chatId } },
+                rooms = current.rooms.applyBadges(),
+                directMessages = current.directMessages.applyBadges(),
+                recentConversations = current.recentConversations.applyBadges(),
                 selectedRoom = (current.rooms + current.directMessages)
                     .find { it.chatId == current.selectedRoomId },
             )
@@ -781,23 +1058,41 @@ class DiscordChatViewModel @Inject constructor(
 
     // ----------------------------------------------------------- prompting
 
-    private fun mentionedCharacters(text: String): List<RpCharacterEntity> {
+    /** An @mentioned character, and whether they were already seated in the room. */
+    private data class MentionHit(val character: RpCharacterEntity, val wasAlreadyMember: Boolean)
+
+    /**
+     * Resolves @mentions against the room's current members, then the work's wider cast
+     * (campaign roster + codex characters, materializing a codex entry on the spot when
+     * it has no character card yet). No longer matches every character in the app.
+     */
+    private suspend fun resolveMentions(text: String, room: RpChatEntity): List<MentionHit> {
         if (!text.contains('@')) return emptyList()
-        val matched = mutableSetOf<String>()
-        charactersById.values.forEach { character ->
-            val full = Regex("@${Regex.escape(character.name)}", RegexOption.IGNORE_CASE)
-            if (full.containsMatchIn(text)) {
-                matched.add(character.id)
-                return@forEach
-            }
-            val firstName = character.name.trim().split(Regex("\\s+")).firstOrNull().orEmpty()
-            if (firstName.length >= 3 &&
-                Regex("@${Regex.escape(firstName)}\\b", RegexOption.IGNORE_CASE).containsMatchIn(text)
-            ) {
-                matched.add(character.id)
-            }
+        val members = castResolver.membersOf(room.id)
+        val memberIds = members.map { it.id }.toSet()
+        val book = room.bookId?.let { booksById[it] }
+        val candidates = (members + (book?.let { castResolver.castForBook(it) }.orEmpty())).distinctBy { it.id }
+        return matchMentionedCharacters(text, candidates).map { MentionHit(it, it.id in memberIds) }
+    }
+
+    /** Pulls any newly @mentioned character into the room, with a visible join line. */
+    private suspend fun invitesForMentions(room: RpChatEntity, text: String) {
+        resolveMentions(text, room).filterNot { it.wasAlreadyMember }.forEach { hit ->
+            castResolver.addMember(room.id, hit.character, seeded = false)
+            db.roleplayDao().upsertMessage(
+                RpMessageEntity(
+                    id = "rpm-${UUID.randomUUID()}",
+                    chatId = room.id,
+                    swipeGroupId = "sw-${UUID.randomUUID()}",
+                    swipeIndex = 0,
+                    isActiveSwipe = true,
+                    role = "system",
+                    contentJson = Document.fromPlainText("@${hit.character.name} joined #${room.title}").toJson(),
+                    createdAt = System.currentTimeMillis(),
+                    displayMode = "messenger",
+                ),
+            )
         }
-        return matched.mapNotNull { charactersById[it] }
     }
 
     private fun buildSystemBlocks(
@@ -805,6 +1100,7 @@ class DiscordChatViewModel @Inject constructor(
         book: BookEntity?,
         roomCharacter: RpCharacterEntity?,
         persona: RpPersonaEntity,
+        members: List<RpCharacterEntity>,
         mentioned: List<RpCharacterEntity>,
         outputWords: Int,
     ): List<String> {
@@ -814,26 +1110,34 @@ class DiscordChatViewModel @Inject constructor(
                 character = roomCharacter,
                 persona = persona,
                 outputWords = outputWords,
+                mode = com.ihy2ln.weaverse.feature.shell.AppMode.Chatting,
             )
             book?.let {
                 blocks += "This conversation takes place inside the server for \"${it.title}\"" +
                     " (${it.workType}). Stay true to that world."
             }
+            blocks += "You are texting in a chat app, not writing a story. Reply in first person as " +
+                "${roomCharacter.name} with what they would actually type: short, casual, present tense. " +
+                "No narration, no third-person description of yourself, no asterisk actions, no markdown."
         } else {
             blocks += buildString {
-                appendLine("You are the AI narrator hosting a Discord-style server dedicated to a creative work.")
+                appendLine(
+                    "You ARE the people in this group chat — never a narrator, host, or app. " +
+                        "There is no narrator in this room.",
+                )
                 if (book != null) {
-                    appendLine("The server is for \"${book.title}\" (${book.workType}).")
-                    if (book.genre.isNotBlank()) appendLine("Genre: ${book.genre}.")
-                    if (book.pov.isNotBlank()) appendLine("Point of view: ${book.pov}.")
-                    if (book.tense.isNotBlank()) appendLine("Tense: ${book.tense}.")
-                    if (book.styleGuide.isNotBlank()) appendLine("Style guide: ${book.styleGuide}")
+                    appendLine("Everyone here knows the world of \"${book.title}\" and can talk about it.")
+                    if (book.genre.isNotBlank()) appendLine("Genre of that world: ${book.genre}.")
                 }
-                appendLine("You are speaking in the #${room.title} channel.")
+                appendLine("This is the #${room.title} channel.")
                 if (room.authorsNote.isNotBlank()) appendLine("Channel topic: ${room.authorsNote}")
                 append(
-                    "Reply like a knowledgeable, welcoming server host and narrator: discuss the work, " +
-                        "answer questions about its world, and keep the conversation lively. Keep it under $outputWords words.",
+                    "Write ONLY what a person types into a chat app: first person, present tense, " +
+                        "casual and short. This is a live conversation, not a story or a novel — " +
+                        "no prose, no scene-setting, no third-person description of anyone's body, " +
+                        "face, clothing, or movements, no asterisk actions, no markdown. " +
+                        "Every line is \"Name: what they type\" and nothing else. " +
+                        "Keep each line under $outputWords words.",
                 )
             }
             persona.takeIf { it.name.isNotBlank() || it.description.isNotBlank() }?.let {
@@ -841,12 +1145,30 @@ class DiscordChatViewModel @Inject constructor(
                     "Do not write their messages for them."
             }
         }
-        if (mentioned.isNotEmpty()) {
-            blocks += "The user @mentioned characters. Voice each mentioned character when they speak, " +
-                "preferring their lines formatted as \"Name: what they say\", and stay true to each card:"
-            mentioned.forEach { character ->
-                blocks += RoleplayPromptBuilder.characterBlock(character)
+        val rosterMembers = members.filterNot { it.id == roomCharacter?.id }
+        if (rosterMembers.isNotEmpty()) {
+            blocks += "People in #${room.title}: ${rosterMembers.joinToString(", ") { it.name }}."
+            rosterMembers.forEach { character ->
+                blocks += RoleplayPromptBuilder.characterBlock(character, com.ihy2ln.weaverse.feature.shell.AppMode.Chatting)
             }
+        }
+        // Quick-message templates the writer ticked in the prompt window, layered in order.
+        val picked = _uiState.value.selectedTemplateIds
+        if (picked.isNotEmpty()) {
+            val byId = _uiState.value.templates.associateBy { it.id }
+            picked.mapNotNull { byId[it] }.forEach { template ->
+                val text = com.ihy2ln.weaverse.ai.prompt.decodePromptMessages(template.instructionsJson)
+                    .joinToString("\n\n") { it.content }
+                if (text.isNotBlank()) blocks += text
+            }
+        }
+        if (mentioned.isNotEmpty()) {
+            val cap = members.size.coerceAtMost(3).coerceAtLeast(1)
+            blocks += "The user addressed ${mentioned.joinToString(", ") { "@${it.name}" }}. " +
+                "${mentioned.first().name} replies first. Any of the other people in the room may reply too, " +
+                "but only if they have something relevant to add — silence is fine. Write each line as " +
+                "\"Name: what they say\" in plain text, with no markdown, no bold, and no asterisks around the " +
+                "name — one speaker per line, never narrate for the user, at most $cap lines total."
         }
         return blocks
     }
@@ -884,6 +1206,12 @@ class DiscordChatViewModel @Inject constructor(
         private val SERVER_WORK_TYPES = setOf("novel", "campaign")
         private val ROOM_KINDS = setOf(ROOM_KIND_CHANNEL, ROOM_KIND_CHARACTER)
         private const val HISTORY_LIMIT = 24
+        private const val CHAT_PROMPT_FOLDER = "folder-chatting"
+        private const val CUSTOM_PROMPT_FOLDER = "folder-custom"
+        /** Names that mean "not a person in the room" and get reassigned to the addressee. */
+        private val NARRATOR_WORDS = listOf("narrator", "narration", "system", "server host", "host bot")
+        private const val RECENT_CONVERSATIONS_LIMIT = 12
+        private const val MULTI_SPEAKER_STAGGER_MS = 1_200L
         private const val DAY_MS = 24L * 60L * 60L * 1000L
         private const val READ_GRACE_MS = 1_000L
     }

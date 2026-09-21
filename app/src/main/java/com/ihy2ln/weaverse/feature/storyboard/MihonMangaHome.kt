@@ -81,6 +81,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -1342,9 +1343,46 @@ private fun mangaCoverRequest(manga: MangaSearchResult): Any? {
     }
 }
 
+/** Chapter list ordering — client-side only, applied to whatever the source already returned. */
+private enum class ChapterSortField(val label: String) {
+    SourceOrder("Source order"), Date("Date"), ChapterNumber("Chapter #"), Title("Title")
+}
+
 @Composable
 private fun MihonMangaDetail(state: MangaSourceUiState, viewModel: MangaSourceViewModel, onEditChapter: (MangaEditRequest) -> Unit) {
     val manga = state.selected ?: return
+    var sortField by remember(manga) { mutableStateOf(ChapterSortField.SourceOrder) }
+    var sortAscending by remember(manga) { mutableStateOf(false) }
+    var scanlatorFilter by remember(manga) { mutableStateOf("") }
+    var chapterFrom by remember(manga) { mutableStateOf("") }
+    var chapterTo by remember(manga) { mutableStateOf("") }
+    var showSortMenu by remember { mutableStateOf(false) }
+    var showFilterDialog by remember { mutableStateOf(false) }
+
+    val scanlators = remember(state.chapters) {
+        state.chapters.map { it.scanlator }.filter { it.isNotBlank() }.distinct().sorted()
+    }
+    val visibleChapters = remember(state.chapters, sortField, sortAscending, scanlatorFilter, chapterFrom, chapterTo) {
+        var list = state.chapters
+        if (scanlatorFilter.isNotBlank()) list = list.filter { it.scanlator == scanlatorFilter }
+        val from = chapterFrom.toDoubleOrNull()
+        val to = chapterTo.toDoubleOrNull()
+        if (from != null || to != null) {
+            list = list.filter { chapter ->
+                val number = chapter.chapterNumber.toDoubleOrNull() ?: return@filter false
+                (from == null || number >= from) && (to == null || number <= to)
+            }
+        }
+        val ordered = when (sortField) {
+            ChapterSortField.SourceOrder -> return@remember list
+            ChapterSortField.Date -> list.sortedBy { it.dateUpload }
+            ChapterSortField.ChapterNumber -> list.sortedBy { it.chapterNumber.toDoubleOrNull() ?: Double.NEGATIVE_INFINITY }
+            ChapterSortField.Title -> list.sortedBy { it.title.lowercase() }
+        }
+        if (sortAscending) ordered else ordered.reversed()
+    }
+    val filtersActive = scanlatorFilter.isNotBlank() || chapterFrom.isNotBlank() || chapterTo.isNotBlank()
+
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
             Row(Modifier.fillMaxWidth().padding(16.dp)) {
@@ -1378,8 +1416,45 @@ private fun MihonMangaDetail(state: MangaSourceUiState, viewModel: MangaSourceVi
         if (manga.description.isNotBlank()) item {
             Text(manga.description, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), color = MihonMuted, maxLines = 6, overflow = TextOverflow.Ellipsis)
         }
-        item { MihonGroupHeader("${state.chapters.size} chapters") }
-        lazyItems(state.chapters, key = { "${it.sourceId}:${it.remoteId}" }) { chapter ->
+        item {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (filtersActive) "${visibleChapters.size} of ${state.chapters.size} chapters" else "${state.chapters.size} chapters",
+                    color = MihonPrimary,
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.weight(1f),
+                )
+                Box {
+                    IconButton(onClick = { showSortMenu = true }) {
+                        Icon(Icons.Outlined.Sort, "Sort chapters", tint = if (sortField != ChapterSortField.SourceOrder) MihonPrimary else LocalContentColor.current)
+                    }
+                    DropdownMenu(showSortMenu, { showSortMenu = false }) {
+                        ChapterSortField.entries.forEach { field ->
+                            DropdownMenuItem(
+                                text = { Text(field.label) },
+                                trailingIcon = { if (sortField == field && field != ChapterSortField.SourceOrder) Text(if (sortAscending) "↑" else "↓") },
+                                onClick = {
+                                    if (field == ChapterSortField.SourceOrder) {
+                                        sortField = field
+                                    } else if (sortField == field) {
+                                        sortAscending = !sortAscending
+                                    } else {
+                                        sortField = field
+                                        // Date and chapter # read naturally newest/highest first.
+                                        sortAscending = field == ChapterSortField.Title
+                                    }
+                                    showSortMenu = false
+                                },
+                            )
+                        }
+                    }
+                }
+                IconButton(onClick = { showFilterDialog = true }) {
+                    Icon(Icons.Outlined.FilterList, "Filter chapters", tint = if (filtersActive) MihonPrimary else LocalContentColor.current)
+                }
+            }
+        }
+        lazyItems(visibleChapters, key = { "${it.sourceId}:${it.remoteId}" }) { chapter ->
             val existing = state.downloads.firstOrNull { it.sourceId == chapter.sourceId && it.remoteId == chapter.remoteId }
             Row(Modifier.fillMaxWidth().clickable {
                 if (existing?.status == "completed") viewModel.openReader(existing.id) else viewModel.openOnlineReader(chapter)
@@ -1399,6 +1474,41 @@ private fun MihonMangaDetail(state: MangaSourceUiState, viewModel: MangaSourceVi
                 }
             }
         }
+    }
+    if (showFilterDialog) {
+        AlertDialog(
+            onDismissRequest = { showFilterDialog = false },
+            title = { Text("Filter chapters") },
+            text = {
+                Column {
+                    if (scanlators.isNotEmpty()) {
+                        CatalogFilterChoice(
+                            "Scanlator / group",
+                            scanlatorFilter,
+                            listOf("Any" to "") + scanlators.map { it to it },
+                        ) { scanlatorFilter = it }
+                    } else {
+                        Text("This source did not report scanlator groups for these chapters.", color = MihonMuted, style = MaterialTheme.typography.bodySmall)
+                    }
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                        OutlinedTextField(
+                            chapterFrom, { chapterFrom = it }, label = { Text("Chapter #") },
+                            placeholder = { Text("From") }, singleLine = true, modifier = Modifier.weight(1f),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        OutlinedTextField(
+                            chapterTo, { chapterTo = it }, label = { Text("Chapter #") },
+                            placeholder = { Text("To") }, singleLine = true, modifier = Modifier.weight(1f),
+                        )
+                    }
+                    Text("Leave a side blank for no lower/upper bound.", color = MihonMuted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
+                }
+            },
+            confirmButton = { TextButton(onClick = { showFilterDialog = false }) { Text("Done") } },
+            dismissButton = {
+                TextButton(onClick = { scanlatorFilter = ""; chapterFrom = ""; chapterTo = "" }) { Text("Reset") }
+            },
+        )
     }
 }
 

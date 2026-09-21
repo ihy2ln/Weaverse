@@ -92,6 +92,35 @@ class DefaultAiGuidesTest {
     }
 
     @Test
+    fun `chatting mode writes a texting voice, not narrated dm prose`() {
+        val roleplayBlocks = DefaultAiGuides.systemBlocks(AppMode.Roleplay, outputWords = 150)
+        val chattingBlocks = DefaultAiGuides.systemBlocks(AppMode.Chatting, outputWords = 150)
+
+        assertTrue(
+            roleplayBlocks.any { it.contains("Dungeon Master", ignoreCase = true) },
+            "Roleplay should keep its narrated-scene DM framing",
+        )
+        assertFalse(
+            chattingBlocks.any { it.contains("Dungeon Master", ignoreCase = true) },
+            "Chatting is a messenger, not a narrated scene, and should drop the DM framing",
+        )
+        assertTrue(
+            chattingBlocks.any { it.contains("text message", ignoreCase = true) || it.contains("texting voice", ignoreCase = true) },
+            "Chatting should explicitly ask for a chat-message reply",
+        )
+    }
+
+    @Test
+    fun `characterSystemPrompt for chatting mode asks for a short reply, not a scene beat`() {
+        val roleplay = DefaultAiGuides.characterSystemPrompt("Mara", mode = AppMode.Roleplay)
+        val chatting = DefaultAiGuides.characterSystemPrompt("Mara", mode = AppMode.Chatting)
+
+        assertTrue(roleplay.contains("Write the next beat in prose"))
+        assertFalse(chatting.contains("Write the next beat in prose"))
+        assertTrue(chatting.contains("chat message", ignoreCase = true))
+    }
+
+    @Test
     fun characterSystemPrompt_includesCardFields() {
         val prose = DefaultAiGuides.characterSystemPrompt(
             name = "Mara",

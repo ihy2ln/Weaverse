@@ -34,6 +34,32 @@ class RpgStartupPlannerTest {
     }
 
     @Test
+    fun `chapter plan prompt carries the chosen setting details and house rules preset`() {
+        val setup = RpgCampaignSetupSnapshot(
+            settingDetails = "War-torn frontier under active siege",
+            houseRulePreset = "Gritty: wounds and consequences linger",
+        )
+
+        val prompt = chapterPlanPrompt(setup, RpgAdventurePlan())
+
+        assertTrue("War-torn frontier under active siege" in prompt)
+        assertTrue("Gritty: wounds and consequences linger" in prompt)
+    }
+
+    @Test
+    fun `cyoa suggestion prompt carries the chosen setting details and house rules preset`() {
+        val setup = RpgCampaignSetupSnapshot(
+            settingDetails = "War-torn frontier under active siege",
+            houseRulePreset = "Gritty: wounds and consequences linger",
+        )
+
+        val prompt = cyoaSuggestionPrompt(setup)
+
+        assertTrue("War-torn frontier under active siege" in prompt)
+        assertTrue("Gritty: wounds and consequences linger" in prompt)
+    }
+
+    @Test
     fun `chapter plan parser accepts structured result`() {
         val payload = fallbackChapterPlan(RpgCampaignSetupSnapshot(), RpgAdventurePlan())
         val response = "Planning complete.\n${Json.encodeToString(payload)}"

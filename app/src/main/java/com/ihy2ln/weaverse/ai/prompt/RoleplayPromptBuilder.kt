@@ -2,20 +2,26 @@ package com.ihy2ln.weaverse.ai.prompt
 
 import com.ihy2ln.weaverse.data.db.entities.RpCharacterEntity
 import com.ihy2ln.weaverse.data.db.entities.RpPersonaEntity
+import com.ihy2ln.weaverse.feature.shell.AppMode
 
-/** Builds the system prompt the roleplay model actually receives. */
+/**
+ * Builds the system prompt the roleplay/chatting model actually receives. [mode] picks the
+ * voice: [AppMode.Roleplay] (and Games/Storyboard) write a narrated scene; [AppMode.Chatting]
+ * writes a short in-character text message instead — a messenger, not a story surface.
+ */
 object RoleplayPromptBuilder {
     fun systemBlocks(
         character: RpCharacterEntity?,
         persona: RpPersonaEntity? = null,
         outputWords: Int,
+        mode: AppMode = AppMode.Roleplay,
     ): List<String> = buildList {
-        addAll(DefaultAiGuides.systemBlocks(com.ihy2ln.weaverse.feature.shell.AppMode.Roleplay, outputWords))
-        character?.let { add(characterBlock(it)) }
+        addAll(DefaultAiGuides.systemBlocks(mode, outputWords))
+        character?.let { add(characterBlock(it, mode)) }
         persona?.takeIf { it.name.isNotBlank() || it.description.isNotBlank() }?.let { add(personaBlock(it)) }
     }.map { PromptAddOns.resolveBlocks(it) }
 
-    fun characterBlock(character: RpCharacterEntity): String {
+    fun characterBlock(character: RpCharacterEntity, mode: AppMode = AppMode.Roleplay): String {
         val system = character.systemPrompt.trim().takeIf { it.isNotBlank() }
             ?.takeUnless { DefaultAiGuides.isThinSystemPrompt(character.name, it) }
             ?: DefaultAiGuides.characterSystemPrompt(
@@ -23,6 +29,7 @@ object RoleplayPromptBuilder {
                 description = character.description,
                 personality = character.personality,
                 scenario = character.scenario,
+                mode = mode,
             )
         return buildString {
             append(system)

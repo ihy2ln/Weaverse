@@ -39,6 +39,7 @@ import com.ihy2ln.weaverse.data.db.entities.RpCharacterEntity
 import com.ihy2ln.weaverse.data.db.entities.RpChatEntity
 import com.ihy2ln.weaverse.data.db.entities.RpMessageEntity
 import com.ihy2ln.weaverse.data.db.entities.RpPersonaEntity
+import com.ihy2ln.weaverse.data.db.entities.RpRoomMemberEntity
 import com.ihy2ln.weaverse.data.db.entities.SceneCodexLinkEntity
 import com.ihy2ln.weaverse.data.db.entities.SceneEntity
 import com.ihy2ln.weaverse.data.db.entities.SceneRevisionEntity
@@ -82,8 +83,9 @@ import com.ihy2ln.weaverse.data.db.entities.RpgCampaignSaveEntity
         AiProfileEntity::class,
         TextGameSaveEntity::class,
         RpgCampaignSaveEntity::class,
+        RpRoomMemberEntity::class,
     ],
-    version = 26,
+    version = 27,
     exportSchema = false,
 )
 @TypeConverters(InkTypeConverters::class)
@@ -105,6 +107,14 @@ abstract class WeaverseDatabase : RoomDatabase() {
     abstract fun homeAccessDao(): com.ihy2ln.weaverse.feature.shell.HomeAccessDao
     abstract fun bookBrowsingDao(): com.ihy2ln.weaverse.feature.library.BookBrowsingDao
     companion object {
+        val MIGRATION_26_27 = object : Migration(26, 27) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS rp_room_members (roomId TEXT NOT NULL, characterId TEXT NOT NULL, codexEntryId TEXT, seeded INTEGER NOT NULL DEFAULT 1, addedAt INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(roomId, characterId))",
+                )
+                db.execSQL("ALTER TABLE rp_messages ADD COLUMN speakerName TEXT NOT NULL DEFAULT ''")
+            }
+        }
         val MIGRATION_25_26 = object : Migration(25, 26) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE TABLE IF NOT EXISTS book_browsing (bookId TEXT NOT NULL PRIMARY KEY, synopsis TEXT NOT NULL, backdropMediaId TEXT, listedAt INTEGER NOT NULL, readAt INTEGER NOT NULL, writeAt INTEGER NOT NULL, writeSceneId TEXT NOT NULL)")

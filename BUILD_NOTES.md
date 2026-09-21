@@ -3,6 +3,34 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.29-chatting-rooms — Rooms with people, not a narrator
+
+- Every chat room now has a real **member list** (`rp_room_members`, DB v27):
+  1-5 Codex characters seeded per room, a stable cast per channel, shown as an
+  avatar strip with long-press to remove. Codex entries without a character
+  card are materialized once through `ChatCastResolver`.
+- **@Name** resolves against the room, then the work's cast, then the Codex;
+  a non-member is added permanently with a "joined" system line. Replies are
+  split per speaker (`parseSpeakerLines`) into separate messages carrying
+  `RpMessageEntity.speakerName`, so each person gets their own avatar.
+- **No narrator**: the channel system prompt speaks as the people in the room,
+  narrator-signed replies are reassigned to the addressee, and older narrator
+  bylines are scrubbed at render. `chattingCraft` also bans asterisk stage
+  directions.
+- **Per-room state**: drafts (persisted), scroll position, and cached messages
+  are keyed by room, so switching rooms no longer resets anything.
+- `selectServer` rebuilds the room list immediately instead of waiting for the
+  next database emission (previously the sidebar looked empty).
+- **Prompt window** replaces the slim prompt bar in Chatting
+  (`ChatPromptWindow.kt`, built from the shared `PromptDock*` components), with
+  eight new chat quick-message templates in `folder-chatting`.
+- Home lists Recent Conversations, Direct Messages, then a section per server
+  with all of its channels and character rooms.
+- Selectable transcript, header picture button, DM envelope in the rail, and a
+  real back arrow.
+- Test build: `Beta.Test.Build/Weaverse-1.4.29-chatting-beta.apk`
+  (SHA-256 `AB1B95769F1238E1CFE59396C72841EAB1EACB2A5BFA2A83C25E69AC8C4035BD`).
+
 ## v1.3.89-rpg-depth — Refined RPG modes and campaign loop
 
 - RPG mode depth milestone is documented in `docs/REFINED-GDD-RPG.md` and

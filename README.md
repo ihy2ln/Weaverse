@@ -74,6 +74,18 @@ also become Roleplay cards with Messenger, DM, and manga chats.
 | **DM** | Invisible **3×3** snap canvas |
 | **Roleplay** | Invisible **6×6** manga canvas |
 
+### Chatting — a Discord-style space for your works
+- Every novel/campaign is a **server**; Home holds direct messages, reachable
+  from any room through the **DM envelope** in the rail.
+- Auto-created **#general / #lore / #brainstorm** plus a room per character,
+  each seated with **1-5 Codex characters** shown as an avatar strip.
+- **@Name** adds that person to the room for good; they reply first and other
+  members chime in, each as their own message and avatar.
+- Rooms keep their own **draft, scroll position and history** when you switch.
+- Selectable message text, inline pictures, and the same resizable **prompt
+  window** as Novel with chat-themed quick messages.
+- Replies are chat messages — first person, short, no narrator and no prose.
+
 ### Notes
 - Shared board — same notes in Novel, Roleplay, and Notes mode.
 - Mic speech-to-text.
@@ -152,6 +164,9 @@ JUnit 5 + Turbine (app), a Go launcher for the Windows `.exe` shim.
 - Earlier Codex checkpoint: [docs/CHECKPOINT-v1.3.2-CODEX-NAVIGATION.md](docs/CHECKPOINT-v1.3.2-CODEX-NAVIGATION.md)
 - **RPG Adventure checkpoint:** [docs/CHECKPOINT-v1.3.2-RPG-ADVENTURE.md](docs/CHECKPOINT-v1.3.2-RPG-ADVENTURE.md)
 - Wiki-ready guide mirror: [docs/wiki/Home.md](docs/wiki/Home.md)
+- **In-app help manual, exported:** [Weaverse-Wiki-Manual.md](Weaverse-Wiki-Manual.md)
+  — every page from Settings → Help → Wiki in one document. Regenerate with
+  `python tools/export_wiki_manual.py` after editing `WikiContent.kt`.
 - **Rebuild documentation** (architecture, data model, protocols — detailed
   enough to reconstruct this app from scratch): [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - Same content, wiki-formatted: the [repo Wiki](https://github.com/ihy2ln/weaverse/wiki)
