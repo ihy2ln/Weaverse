@@ -53,7 +53,13 @@ fun ChatPromptWindow(
     val tokens = inkTokens()
     var templateSearch by rememberSaveable { mutableStateOf("") }
     val keyboard = with(LocalDensity.current) { WindowInsets.ime.getBottom(this).toDp() }
-    val available = (LocalConfiguration.current.screenHeightDp.dp - keyboard - 96.dp).coerceAtLeast(80.dp)
+    val configuration = LocalConfiguration.current
+    val available = (configuration.screenHeightDp.dp - keyboard - 96.dp).coerceAtLeast(80.dp)
+    // Landscape leaves far less height, so the dock takes a larger share of it
+    // instead of collapsing to a sliver the message box cannot fit in.
+    val landscape = configuration.screenWidthDp > configuration.screenHeightDp
+    val collapsedShare = if (landscape) .45f else .3f
+    val expandedShare = if (landscape) .75f else .6f
     val draggedHeight by viewModel.promptDockHeight.collectAsState()
     val expanded = state.promptExpanded
     val messageLines = promptDockFieldLines(draggedHeight, if (expanded) 5 else 2)
@@ -62,7 +68,8 @@ fun ChatPromptWindow(
     PromptDockShell(
         pinnedHeightDp = draggedHeight,
         onPinnedHeightChange = viewModel::setPromptDockHeight,
-        autoMaxHeight = if (expanded) available * .6f else available * .3f,
+        autoMaxHeight = (if (expanded) available * expandedShare else available * collapsedShare)
+            .coerceAtLeast(132.dp),
         modifier = modifier,
     ) {
         Row(

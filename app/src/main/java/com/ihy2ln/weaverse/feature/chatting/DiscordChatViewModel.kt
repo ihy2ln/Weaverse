@@ -384,13 +384,27 @@ class DiscordChatViewModel @Inject constructor(
         }
     }
 
-    /** Height the writer dragged the prompt window to; 0 sizes to content. */
-    val promptDockHeight = MutableStateFlow(0f)
+    /**
+     * Height of the prompt window in dp. Unlike Novel's dock this never sizes to its
+     * content: the message list's weight wins that negotiation and collapses the window
+     * to its drag handle the moment the room has messages, so the window always carries a
+     * concrete height and a double-tap reset returns to the default rather than to auto.
+     */
+    val promptDockHeight = MutableStateFlow(DEFAULT_DOCK_HEIGHT_DP)
 
-    fun setPromptDockHeight(dp: Float) { promptDockHeight.value = dp }
+    fun setPromptDockHeight(dp: Float) {
+        promptDockHeight.value = if (dp <= 0f) DEFAULT_DOCK_HEIGHT_DP else dp
+    }
+
+    /** Grows the window when the writer opens "More" so the templates have room. */
+    fun expandPromptDock(expanded: Boolean) {
+        val floor = if (expanded) EXPANDED_DOCK_HEIGHT_DP else DEFAULT_DOCK_HEIGHT_DP
+        if (promptDockHeight.value < floor) promptDockHeight.value = floor
+    }
 
     fun setPromptExpanded(expanded: Boolean) {
         _uiState.update { it.copy(promptExpanded = expanded) }
+        expandPromptDock(expanded)
     }
 
     fun toggleTemplate(id: String) {
@@ -1206,6 +1220,10 @@ class DiscordChatViewModel @Inject constructor(
         private val SERVER_WORK_TYPES = setOf("novel", "campaign")
         private val ROOM_KINDS = setOf(ROOM_KIND_CHANNEL, ROOM_KIND_CHARACTER)
         private const val HISTORY_LIMIT = 24
+        /** Room for the action row, the message box and the model row. */
+        private const val DEFAULT_DOCK_HEIGHT_DP = 172f
+        /** Room for the extra chips and the quick-message grid under "More". */
+        private const val EXPANDED_DOCK_HEIGHT_DP = 330f
         private const val CHAT_PROMPT_FOLDER = "folder-chatting"
         private const val CUSTOM_PROMPT_FOLDER = "folder-custom"
         /** Names that mean "not a person in the room" and get reassigned to the addressee. */

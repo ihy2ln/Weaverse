@@ -3,6 +3,24 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.29-rotation — Landscape and portrait
+
+- `MainActivity` declares `screenOrientation="fullUser"` and
+  `resizeableActivity="true"`, and its `configChanges` list gained
+  `smallestScreenSize`, `density` and `uiMode`, so a rotation or resize
+  re-lays-out in place instead of redrawing the old shape.
+- Chatting's compact breakpoint is 560dp in landscape (700dp in portrait), so
+  phone landscape gets the rail + room list + conversation side by side.
+- The chat root takes `navigationBarsPadding()` and `imePadding()`.
+- **Prompt window collapse fixed**: `SelectionContainer` wrapped the message
+  `LazyColumn`, which made the list report its whole content height and eat the
+  dock's space, leaving only the drag handle. Selection moved to the individual
+  message rows. Press-and-hold selection still works per message.
+- The chat dock also carries a concrete default height (172dp, 330dp expanded)
+  instead of sizing to content, and a double-tap reset returns to that default.
+- Test build: `Beta.Test.Build/Weaverse-1.4.29-chatting-beta.apk`
+  (SHA-256 `6CD6A210332944E07F1C100EF536C0EF7ED86583774E562BD6AA49495A3A6B2B`).
+
 ## v1.4.29-chatting-rooms — Rooms with people, not a narrator
 
 - Every chat room now has a real **member list** (`rp_room_members`, DB v27):

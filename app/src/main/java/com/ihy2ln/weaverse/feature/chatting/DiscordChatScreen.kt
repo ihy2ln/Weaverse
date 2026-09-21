@@ -17,6 +17,9 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -127,7 +130,11 @@ fun DiscordChatScreen(
     }
 
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
-        val compact = maxWidth / androidx.compose.ui.platform.LocalDensity.current.fontScale < 700.dp
+        // Landscape on a phone is wide enough to show the room list beside the
+        // conversation, so it uses the two-pane layout even under the 700dp bar.
+        val scaledWidth = maxWidth / androidx.compose.ui.platform.LocalDensity.current.fontScale
+        val landscape = maxWidth > maxHeight
+        val compact = if (landscape) scaledWidth < 560.dp else scaledWidth < 700.dp
         var channelsOpen by rememberSaveable { mutableStateOf(selectedRoomId == null) }
         // Back-to-list must also clear the actual room selection, not just toggle this
         // local flag — otherwise the room list still shows the old room as selected, and
@@ -138,7 +145,15 @@ fun DiscordChatScreen(
         androidx.compose.runtime.LaunchedEffect(state.selectedRoomId) {
             channelsOpen = state.selectedRoomId == null
         }
-        Row(modifier = Modifier.fillMaxSize().background(tokens.background)) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(tokens.background)
+                // Without these the pane runs under the navigation bar and keyboard, which
+                // in landscape pushed the prompt window off the bottom of the screen.
+                .navigationBarsPadding()
+                .imePadding(),
+        ) {
             if (!compact || channelsOpen) {
                 ServerRail(
                     servers = state.servers,
@@ -761,6 +776,9 @@ private fun MessagePane(
                 onMicTap = onMicTap,
                 modifier = Modifier
                     .fillMaxWidth()
+                    // Floor so the message list's weight cannot squeeze the window down to
+                    // its drag handle, which is what happened in landscape.
+                    .heightIn(min = 148.dp)
                     .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
             )
         }
@@ -938,10 +956,7 @@ private fun MessageList(
         snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
             .collect { (index, offset) -> viewModel.rememberScroll(roomId, index, offset) }
     }
-    // One container around the whole list so a press-and-hold can drag a selection
-    // across several messages, the way a normal chat transcript behaves.
-    SelectionContainer(modifier = modifier) {
-        LazyColumn(state = listState) {
+    LazyColumn(state = listState, modifier = modifier) {
         if (state.messages.isEmpty() && !state.isStreaming) {
             item(key = "empty") {
                 Text(
@@ -963,8 +978,7 @@ private fun MessageList(
                 )
             }
         }
-            alwaysScrollEndSpacer()
-        }
+        alwaysScrollEndSpacer()
     }
 }
 
@@ -1104,11 +1118,16 @@ private fun MessageRow(
                 }
             }
             if (message.text.isNotBlank()) {
-                Text(
-                    message.text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = tokens.primaryText,
-                )
+                // Per row, not around the whole list: a SelectionContainer wrapping the
+                // LazyColumn makes it report its full content height, which squeezes the
+                // prompt window down to its drag handle.
+                SelectionContainer {
+                    Text(
+                        message.text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = tokens.primaryText,
+                    )
+                }
             }
             message.mediaPaths.take(4).forEach { path ->
                 coil3.compose.AsyncImage(
