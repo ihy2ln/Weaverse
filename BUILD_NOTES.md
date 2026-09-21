@@ -3,43 +3,6 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
-## v1.4.35 — The novel gets the four-step start
-
-- **New `feature/novel/start/`.** The RPG's four-step opening is now the Novel's too:
-  Book Setup → Create Your Own Story → Chapter One plan → opening scene, with the AI
-  taking part in the last three. `NovelStartPlanner.kt` holds the three prompts and
-  `NovelStartViewModel.kt` drives the steps; both reuse the RPG parsers
-  (`parseCyoaSuggestions`, `parseChapterPlan`, `parseSceneDraft`) so the two modes
-  agree on shape.
-- **The table-only controls are gone.** Play as, Mode, Rule system, Additional house
-  rules, and the "No character selected" line have no meaning in a book, so the novel
-  start never shows or mentions them — `NovelStartPlannerTest` asserts no prompt
-  leaks that wording.
-- The company clicker (Solo / Duo / Party / Team) carries over, and its rule leads
-  every novel prompt exactly as it does for campaigns.
-- Because the four-step start asks the story questions properly, the **New book**
-  dialog no longer asks them a second time; it stays title, genre, POV/tense and style.
-- Finishing the start writes the book's fields, the memory block every generation
-  reads, and the opening prose into the book's first scene.
-- Test build: `Beta.Test.Build/weaverse-v1.4.35.apk`
-  (SHA-256 `E3496B716F3A6FD42C67E912B5C488C49919D6328EDE4E07F617C8F8DECB4860`).
-
-## v1.4.34 — New campaign dialog trimmed to the three-step setup
-
-- The create dialog no longer carries **Play as**, **Mode**, **Rule system**, the
-  free-text **Additional house rules**, or the "No character selected" line. All of
-  them already exist in the Campaign Setup step of the three-step start (Campaign
-  Setup → Create Your Own Adventure → chapter plan and opening scene), where the AI
-  takes part, so the dialog is title, setting, cast, POV/tense, house-rules preset and
-  the company clicker.
-- The companion chips were clipping to "Part" and "Tea" on a phone: equal weights left
-  no room for the labels. The row scrolls instead, in both the create dialog and the
-  RPG start.
-- The dialog's closing hint now points at the three-step setup rather than the rules
-  system it no longer shows.
-- Test build: `Beta.Test.Build/weaverse-v1.4.34.apk`
-  (SHA-256 `ECE02E109D43956421E2935CF0993BCC87967FC8A966ED0ED0C2F17D20D6740D`).
-
 ## v1.4.33 — Shared story start, and a company clicker the AI obeys
 
 - New `core/story/StoryStartTemplate.kt` holds the "Create Your Own Adventure" start

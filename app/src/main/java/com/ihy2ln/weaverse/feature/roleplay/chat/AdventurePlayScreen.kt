@@ -1775,14 +1775,15 @@ private fun CompanionModePicker(
     ) {
         Text("Who travels with you?", style = MaterialTheme.typography.labelLarge)
         Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
         ) {
             com.ihy2ln.weaverse.core.story.StoryCompanionMode.entries.forEach { mode ->
                 androidx.compose.material3.FilterChip(
                     selected = mode == selected,
                     onClick = { onSelect(mode) },
-                    label = { Text(mode.label, maxLines = 1) },
+                    label = { Text(mode.label) },
+                    modifier = Modifier.weight(1f),
                 )
             }
         }

@@ -504,7 +504,7 @@ data class CreateWorkVocabulary(
             genreLabel = "Setting",
             povLabel = "Main character(s)",
             styleLabel = "House rules",
-            styleHint = "Mode, rule system, house rules and who you play are chosen in the three-step setup, with the AI helping.",
+            styleHint = "Choose a base rules system, then add campaign-specific rulings, tone, and boundaries.",
             campaignSpecific = true,
         )
         val TextGame = CreateWorkVocabulary(
@@ -831,8 +831,7 @@ fun CreateWorkDialog(
                                 if (isTextGame) {
                                     "Unnamed Summoner selected — narration still remains first-person."
                                 } else {
-                                    // Campaign cast is settled in the three-step setup, not here.
-                                    ""
+                                    "No character selected — the AI DM will help you create one when play begins."
                                 }
                             } else {
                                 selectedCharacters.joinToString(" · ") { "${it.name} (${it.source})" }
@@ -866,8 +865,25 @@ fun CreateWorkDialog(
                             color = tokens.secondaryText,
                         )
                     } else {
-                        // Play-as, mode, rule system and free-text house rules moved into the
-                        // three-step setup, where the AI helps decide them.
+                        Text("Play as", style = MaterialTheme.typography.labelMedium)
+                        InkSegmentedPill(
+                            options = listOf(
+                                SegmentedOption("player", "Character(s)"),
+                                SegmentedOption("dm", "Dungeon Master"),
+                            ),
+                            selectedId = campaignRoleId,
+                            onSelect = { campaignRoleId = it },
+                            compact = true,
+                        )
+                        Text(
+                            if (campaignRoleId == "dm") {
+                                "You run the world and rulings; the AI plays the selected party."
+                            } else {
+                                "You play the selected character(s); the AI runs the world and its cast."
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = tokens.secondaryText,
+                        )
                         Text("Point of view", style = MaterialTheme.typography.labelMedium)
                         Box(modifier = Modifier.fillMaxWidth()) {
                             InkOutlinedButton(
@@ -912,6 +928,55 @@ fun CreateWorkDialog(
                             compact = true,
                         )
                     }
+                    Text("Mode", style = MaterialTheme.typography.labelMedium)
+                    Text("Choose how this RPG is played. This is separate from the rules system below.", style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        InkOutlinedButton(
+                            label = CampaignGameModeTemplates.first { it.id == gameModeId }.label + " ▾",
+                            onClick = { gameModeMenuOpen = true },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        DropdownMenu(expanded = gameModeMenuOpen, onDismissRequest = { gameModeMenuOpen = false }) {
+                            CampaignGameModeTemplates.forEach { mode ->
+                                DropdownMenuItem(
+                                    text = { Column { Text(mode.label); Text(mode.description, style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText, maxLines = 3) } },
+                                    onClick = { gameModeId = mode.id; gameModeMenuOpen = false },
+                                )
+                            }
+                        }
+                    }
+                    Text("Rule system", style = MaterialTheme.typography.labelMedium)
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        InkOutlinedButton(
+                            label = CampaignRulesetTemplates.first { it.id == rulesetId }.label + " ▾",
+                            onClick = { rulesetMenuOpen = true },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        DropdownMenu(
+                            expanded = rulesetMenuOpen,
+                            onDismissRequest = { rulesetMenuOpen = false },
+                        ) {
+                            CampaignRulesetTemplates.forEach { template ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text(template.label)
+                                            Text(
+                                                template.directive,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = tokens.secondaryText,
+                                                maxLines = 3,
+                                            )
+                                        }
+                                    },
+                                    onClick = {
+                                        rulesetId = template.id
+                                        rulesetMenuOpen = false
+                                    },
+                                )
+                            }
+                        }
+                    }
                 } else {
                     OutlinedTextField(
                         value = pov,
@@ -932,16 +997,14 @@ fun CreateWorkDialog(
                         onSelect = { tense = it },
                     )
                 }
-                if (!isCampaign) {
-                    OutlinedTextField(
-                        value = styleGuide,
-                        onValueChange = { styleGuide = it },
-                        label = { Text(vocabulary.styleLabel) },
-                        minLines = 2,
-                        maxLines = 4,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
+                OutlinedTextField(
+                    value = styleGuide,
+                    onValueChange = { styleGuide = it },
+                    label = { Text(if (isCampaign) "Additional house rules" else vocabulary.styleLabel) },
+                    minLines = 2,
+                    maxLines = 4,
+                    modifier = Modifier.fillMaxWidth(),
+                )
                 if (isCampaign) {
                     Text("Additional House Rules preset", style = MaterialTheme.typography.labelMedium)
                     Box(modifier = Modifier.fillMaxWidth()) {
@@ -965,11 +1028,13 @@ fun CreateWorkDialog(
                     style = MaterialTheme.typography.labelSmall,
                     color = tokens.secondaryText,
                 )
-                // Novels ask these in their own four-step start, right after creation,
-                // so the dialog stays the short version and does not ask twice.
-                if (vocabulary.campaignSpecific) {
+                if (!vocabulary.storyboardSpecific) {
                     StoryStartSection(
-                        vocabulary = com.ihy2ln.weaverse.core.story.StoryStartVocabulary.Rpg,
+                        vocabulary = if (vocabulary.campaignSpecific) {
+                            com.ihy2ln.weaverse.core.story.StoryStartVocabulary.Rpg
+                        } else {
+                            com.ihy2ln.weaverse.core.story.StoryStartVocabulary.Novel
+                        },
                         expanded = startOpen,
                         onExpandedChange = { startOpen = it },
                         companions = companions,
@@ -1140,17 +1205,13 @@ private fun StoryStartSection(
     val tokens = inkTokens()
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("Who travels with the protagonist?", style = MaterialTheme.typography.labelLarge)
-        // Scrolls rather than sharing width equally: equal weights clipped "Party" and
-        // "Team" to "Part" and "Tea" on a phone.
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             com.ihy2ln.weaverse.core.story.StoryCompanionMode.entries.forEach { mode ->
                 androidx.compose.material3.FilterChip(
                     selected = mode == companions,
                     onClick = { onCompanions(mode) },
-                    label = { Text(mode.label, maxLines = 1) },
+                    label = { Text(mode.label) },
+                    modifier = Modifier.weight(1f),
                 )
             }
         }

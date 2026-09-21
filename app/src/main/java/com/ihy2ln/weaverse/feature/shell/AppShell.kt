@@ -159,8 +159,6 @@ fun AppShell(
     var mangaImportTitle by rememberSaveable { mutableStateOf("") }
     var mangaImportLabel by rememberSaveable { mutableStateOf("") }
     var creatingWork by remember { mutableStateOf<CreateWorkVocabulary?>(null) }
-    // A freshly created book opens the four-step start before the editor.
-    var novelStartBookId by rememberSaveable { mutableStateOf("") }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showSearch by rememberSaveable { mutableStateOf(false) }
     var showLibrary by rememberSaveable { mutableStateOf(false) }
@@ -268,24 +266,11 @@ fun AppShell(
                         else -> {
                             mode = AppMode.Novel.name
                             novelDest = NovelDestination.Plan.name
-                            novelStartBookId = bookId
                         }
                     }
                 }
             },
         )
-    }
-
-    if (novelStartBookId.isNotBlank()) {
-        androidx.compose.ui.window.Dialog(
-            onDismissRequest = { novelStartBookId = "" },
-            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
-        ) {
-            com.ihy2ln.weaverse.feature.novel.start.NovelStartScreen(
-                bookId = novelStartBookId,
-                onFinished = { novelStartBookId = "" },
-            )
-        }
     }
 
     // + Storyboard: create new, or import a whole manga/comic file.
