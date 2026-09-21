@@ -3,6 +3,23 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.00.01 — Language filter for manga chapters
+
+Version names now use the x.xx.xx form (1.00.01, 1.00.02, ...). versionCode keeps
+incrementing by one per build, since that is what Android orders upgrades by; the
+name is display only, so following 1.9 with 1.00.01 is safe.
+
+- **Filter chapters** in the Storyboard manga reader gained a **Language** picker at
+  the top of the dialog, listing only the languages that manga actually publishes.
+  It shows readable names — English (EN), French (FR) — rather than bare codes, and
+  Reset clears it with the rest.
+- MangaDex tags the JDK reads differently are overridden: `es-la` is Latin America,
+  not Laos, plus the Brazilian Portuguese, Chinese and romanized variants.
+- The picker only appears when a manga has more than one language, so single-language
+  titles keep the dialog short.
+- Test build: `Beta.Test.Build/Weaverse-1.00.01-beta.apk`
+  (SHA-256 `69A7A26ACA54098A053B8FB950F98977DC323C0C93DCB2A6B383BCED5FD6EA5F`).
+
 ## v1.9 — Emoji button and a collapsible prompt window
 
 - **Emoji** chip sits beside Attach image under "More" in the chat prompt window. It

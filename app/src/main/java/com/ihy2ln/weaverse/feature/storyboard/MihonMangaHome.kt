@@ -1354,6 +1354,7 @@ private fun MihonMangaDetail(state: MangaSourceUiState, viewModel: MangaSourceVi
     var sortField by remember(manga) { mutableStateOf(ChapterSortField.SourceOrder) }
     var sortAscending by remember(manga) { mutableStateOf(false) }
     var scanlatorFilter by remember(manga) { mutableStateOf("") }
+    var languageFilter by remember(manga) { mutableStateOf("") }
     var chapterFrom by remember(manga) { mutableStateOf("") }
     var chapterTo by remember(manga) { mutableStateOf("") }
     var showSortMenu by remember { mutableStateOf(false) }
@@ -1362,9 +1363,21 @@ private fun MihonMangaDetail(state: MangaSourceUiState, viewModel: MangaSourceVi
     val scanlators = remember(state.chapters) {
         state.chapters.map { it.scanlator }.filter { it.isNotBlank() }.distinct().sorted()
     }
-    val visibleChapters = remember(state.chapters, sortField, sortAscending, scanlatorFilter, chapterFrom, chapterTo) {
+    // Sources list every translation together; most readers want one language.
+    val languages = remember(state.chapters) {
+        state.chapters.map { it.language.trim().lowercase() }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .sortedBy { mangaLanguageLabel(it) }
+    }
+    val visibleChapters = remember(
+        state.chapters, sortField, sortAscending, scanlatorFilter, languageFilter, chapterFrom, chapterTo,
+    ) {
         var list = state.chapters
         if (scanlatorFilter.isNotBlank()) list = list.filter { it.scanlator == scanlatorFilter }
+        if (languageFilter.isNotBlank()) {
+            list = list.filter { it.language.trim().equals(languageFilter, ignoreCase = true) }
+        }
         val from = chapterFrom.toDoubleOrNull()
         val to = chapterTo.toDoubleOrNull()
         if (from != null || to != null) {
@@ -1381,7 +1394,8 @@ private fun MihonMangaDetail(state: MangaSourceUiState, viewModel: MangaSourceVi
         }
         if (sortAscending) ordered else ordered.reversed()
     }
-    val filtersActive = scanlatorFilter.isNotBlank() || chapterFrom.isNotBlank() || chapterTo.isNotBlank()
+    val filtersActive = scanlatorFilter.isNotBlank() || languageFilter.isNotBlank() ||
+        chapterFrom.isNotBlank() || chapterTo.isNotBlank()
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
@@ -1481,6 +1495,14 @@ private fun MihonMangaDetail(state: MangaSourceUiState, viewModel: MangaSourceVi
             title = { Text("Filter chapters") },
             text = {
                 Column {
+                    if (languages.size > 1) {
+                        CatalogFilterChoice(
+                            "Language",
+                            languageFilter,
+                            listOf("Any" to "") + languages.map { mangaLanguageLabel(it) to it },
+                        ) { languageFilter = it }
+                        Spacer(Modifier.height(8.dp))
+                    }
                     if (scanlators.isNotEmpty()) {
                         CatalogFilterChoice(
                             "Scanlator / group",
@@ -1506,7 +1528,12 @@ private fun MihonMangaDetail(state: MangaSourceUiState, viewModel: MangaSourceVi
             },
             confirmButton = { TextButton(onClick = { showFilterDialog = false }) { Text("Done") } },
             dismissButton = {
-                TextButton(onClick = { scanlatorFilter = ""; chapterFrom = ""; chapterTo = "" }) { Text("Reset") }
+                TextButton(onClick = {
+                    scanlatorFilter = ""
+                    languageFilter = ""
+                    chapterFrom = ""
+                    chapterTo = ""
+                }) { Text("Reset") }
             },
         )
     }
@@ -1778,4 +1805,31 @@ private fun mihonChapterLabel(chapter: MangaChapter): String = buildString {
     if (chapter.volume.isNotBlank()) append("Vol. ${chapter.volume} ")
     if (chapter.chapterNumber.isNotBlank()) append("Ch. ${chapter.chapterNumber}")
     if (isBlank()) append(chapter.title) else if (chapter.title.isNotBlank()) append(" — ${chapter.title}")
+}
+
+/**
+ * Sources use a few tags the JDK reads differently: MangaDex's "es-la" is Latin
+ * America, not Laos, and its Chinese variants are script tags rather than regions.
+ */
+private val MangaLanguageOverrides = mapOf(
+    "es-la" to "Spanish (Latin America)",
+    "pt-br" to "Portuguese (Brazil)",
+    "zh-hk" to "Chinese (Traditional)",
+    "zh-ro" to "Chinese (Romanized)",
+    "ja-ro" to "Japanese (Romanized)",
+    "ko-ro" to "Korean (Romanized)",
+)
+
+/** Readable name for a chapter's language tag, falling back to the raw code. */
+internal fun mangaLanguageLabel(code: String): String {
+    val tag = code.trim()
+    if (tag.isBlank()) return "Unknown"
+    MangaLanguageOverrides[tag.lowercase()]?.let { return "$it (${tag.uppercase()})" }
+    val locale = java.util.Locale.forLanguageTag(tag)
+    val display = locale.getDisplayName(java.util.Locale.ENGLISH)
+    return if (display.isBlank() || display.equals(tag, ignoreCase = true)) {
+        tag.uppercase()
+    } else {
+        "$display (${tag.uppercase()})"
+    }
 }

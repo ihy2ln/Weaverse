@@ -71,3 +71,10 @@ editor inspired by Koharu's translation steps:
   auto-fit, alignment, fill, stroke, and horizontal/vertical type.
 - **Save copy** writes a new picture file. The original page stays on disk.
   Use Original / Edited to compare.
+
+## Filtering chapters
+
+The filter icon above the chapter list opens **Language**, scanlator group, and a
+chapter-number range. The language picker lists only the languages that title
+actually publishes, with readable names (English (EN), French (FR)), so a series
+with seven translations narrows to the one you read. Reset clears every filter.

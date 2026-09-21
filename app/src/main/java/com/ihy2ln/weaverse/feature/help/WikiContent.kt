@@ -598,7 +598,14 @@ object WikiContent {
 
                 Text overlays themselves are unchanged: **Add text** drops
                 a draggable caption or a manga speech bubble with a tail.
-            """.trimIndent(),
+            
+                ## Filtering chapters
+
+                The filter icon above the chapter list opens **Language**,
+                scanlator group, and a chapter-number range. The language
+                picker lists only what that title actually publishes, so a
+                series with seven translations narrows to the one you read.
+""".trimIndent(),
         ),
         Page(
             id = "codex",

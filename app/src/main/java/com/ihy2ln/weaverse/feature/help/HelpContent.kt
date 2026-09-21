@@ -344,6 +344,12 @@ object HelpContent {
                         "Manga reads right-to-left, Comic the other way.",
                 ),
                 HelpEntry(
+                    "Filtering chapters",
+                    "The filter icon above the chapter list opens Language, scanlator group, and " +
+                        "a chapter number range. Language lists only what that title publishes, " +
+                        "so a series with seven translations can be narrowed to one.",
+                ),
+                HelpEntry(
                     "Manga hub and sources",
                     "Storyboard → Window opens Library, Browse, Downloads, Extensions, and Projects. " +
                         "Browse selects MangaDex, Comix, Atsumaru, MangaFire, MangaDot, or Rawkuma, " +
