@@ -96,4 +96,26 @@ class ChatMentionParsingTest {
         assertEquals("Stranger", lines[1].displayName)
         assertEquals("Wait for me!", lines[1].text)
     }
+
+    @Test
+    fun matchNamedCharacters_findsTalkAboutSomeoneWithoutAnAt() {
+        val hits = matchNamedCharacters("how is Mira holding up?", listOf(jd, mira))
+        assertEquals(listOf(mira), hits)
+    }
+
+    @Test
+    fun matchNamedCharacters_matchesAFullNameAnywhere() {
+        val hits = matchNamedCharacters("saw JD Marrow at the docks", listOf(jd, mira))
+        assertEquals(listOf(jd), hits)
+    }
+
+    @Test
+    fun matchNamedCharacters_ignoresShortFirstNamesAndNonMatches() {
+        assertTrue(matchNamedCharacters("nothing to report here", listOf(jd, mira)).isEmpty())
+    }
+
+    @Test
+    fun matchNamedCharacters_needsAWholeWord() {
+        assertTrue(matchNamedCharacters("miracles happen", listOf(mira)).isEmpty())
+    }
 }

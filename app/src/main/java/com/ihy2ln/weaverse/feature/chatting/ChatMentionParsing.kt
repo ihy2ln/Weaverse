@@ -30,6 +30,33 @@ fun matchMentionedCharacters(text: String, candidates: List<RpCharacterEntity>):
 }
 
 /**
+ * Matches plain-text talk *about* someone — no `@` needed — against [candidates]:
+ * a full name anywhere in [text], or a first name of four or more characters as a
+ * whole word. The longer floor than [matchMentionedCharacters] keeps short, common
+ * first names from turning ordinary sentences into summons.
+ */
+fun matchNamedCharacters(text: String, candidates: List<RpCharacterEntity>): List<RpCharacterEntity> {
+    if (text.isBlank()) return emptyList()
+    val matched = linkedMapOf<String, RpCharacterEntity>()
+    candidates.sortedByDescending { it.name.length }.forEach { character ->
+        if (matched.containsKey(character.id)) return@forEach
+        val full = character.name.trim()
+        if (full.isBlank()) return@forEach
+        if (Regex("\\b${Regex.escape(full)}\\b", RegexOption.IGNORE_CASE).containsMatchIn(text)) {
+            matched[character.id] = character
+            return@forEach
+        }
+        val firstName = full.split(Regex("\\s+")).firstOrNull().orEmpty().trim('"', '\'')
+        if (firstName.length >= 4 &&
+            Regex("\\b${Regex.escape(firstName)}\\b", RegexOption.IGNORE_CASE).containsMatchIn(text)
+        ) {
+            matched[character.id] = character
+        }
+    }
+    return matched.values.toList()
+}
+
+/**
  * Splits a raw reply into rows on leading `Name:` lines, matching against [members]
  * (case-insensitive, first-name tolerant). A name that doesn't match any member still
  * starts its own row, carried as [ParsedLine.displayName]. Lines with no leading name

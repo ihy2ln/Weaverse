@@ -3,6 +3,27 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.29-chat-codex — Codex on every send, and the person being discussed answers
+
+- `ChatCastResolver.codexContextFor` assembles codex context on **every** send, not
+  only on a name match: entries the message names, the seated cast's own entries,
+  and the work's always-include entries, capped at 8. Chatting previously sent
+  `usedEntries = emptyList()` and no codex text at all.
+- The prompt gains a "Codex facts ... treat them as true" block, and the context
+  meter counts it, so the cost is visible before sending.
+- Talk *about* someone now reaches them: `matchNamedCharacters` matches a full name
+  or a first name of four or more characters with no `@`, so "how is Clarity"
+  brings Clarity in to answer for herself with her codex-backed card. Capped at two
+  outsiders per message; they answer without being added to the room.
+- Unattributed replies fall back to the addressee (@mention, then the person
+  discussed) instead of the room's first member, which was mislabelling Clarity's
+  own answer as Amara.
+- `stripStageDirections` removes `*asterisk actions*` from replies as a safety net,
+  since character cards keep reintroducing them, and the closing system block
+  restates the one-line-per-speaker format last, where models follow it best.
+- Test build: `Beta.Test.Build/Weaverse-1.4.29-chatting-beta.apk`
+  (SHA-256 `C00F8897258E7B7812B511CF5B4E96AC031A8DE0B038FC3D0736E53F10736A26`).
+
 ## v1.4.29-rotation — Landscape and portrait
 
 - `MainActivity` declares `screenOrientation="fullUser"` and

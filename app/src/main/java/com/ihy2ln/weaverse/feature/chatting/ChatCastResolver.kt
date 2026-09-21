@@ -1,5 +1,7 @@
 package com.ihy2ln.weaverse.feature.chatting
 
+import com.ihy2ln.weaverse.core.text.CodexMentionTarget
+import com.ihy2ln.weaverse.core.text.findCodexMentions
 import com.ihy2ln.weaverse.core.text.plainText
 import com.ihy2ln.weaverse.core.text.documentFromJson
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
@@ -16,6 +18,8 @@ import javax.inject.Singleton
  * Codex entries without a character card get a lightweight [RpCharacterEntity] so they
  * can speak and carry a color, materialized once behind a deterministic id.
  */
+private val aliasJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+
 @Singleton
 class ChatCastResolver @Inject constructor(
     private val db: WeaverseDatabase,
@@ -63,6 +67,72 @@ class ChatCastResolver @Inject constructor(
         db.roleplayDao().upsertCharacter(character)
         return character
     }
+
+    /**
+     * Codex entries whose name or an alias appears in [text] — the people and things the
+     * message is actually talking about, whether or not they were @mentioned.
+     */
+    suspend fun codexMatchesIn(text: String, bookId: String?): List<CodexEntryEntity> {
+        if (text.isBlank()) return emptyList()
+        val entries = db.codexDao().getAllEntries().filterNot { it.disabled }
+        if (entries.isEmpty()) return emptyList()
+        val scoped = bookId?.let { id ->
+            entries.filter { it.scopeId == id || it.sheetJson.contains(id) }.ifEmpty { entries }
+        } ?: entries
+        val byId = scoped.associateBy { it.id }
+        val targets = scoped.map { entry ->
+            CodexMentionTarget(
+                entryId = entry.id,
+                name = entry.name,
+                aliases = decodeAliases(entry.aliasesJson),
+                caseSensitive = entry.caseSensitiveMatching,
+            )
+        }
+        return findCodexMentions(text, targets)
+            .mapNotNull { byId[it.entryId] }
+            .distinctBy { it.id }
+    }
+
+    /**
+     * Codex context for a room, assembled on every send so chat is never running blind:
+     * the work's always-include entries, the seated cast's own entries, and anything the
+     * message named. Deduplicated, message matches first, capped for the prompt budget.
+     */
+    suspend fun codexContextFor(
+        text: String,
+        bookId: String?,
+        members: List<RpCharacterEntity>,
+        limit: Int = 8,
+    ): List<CodexEntryEntity> {
+        val named = codexMatchesIn(text, bookId)
+        val memberEntries = members.mapNotNull { it.defaultCodexId }
+            .let { ids -> if (ids.isEmpty()) emptyList() else entriesByIds(ids) }
+        val always = alwaysIncludeEntries(bookId)
+        return (named + memberEntries + always).distinctBy { it.id }.take(limit)
+    }
+
+    /** Entries the writer flagged as always-include, scoped to the work when possible. */
+    suspend fun alwaysIncludeEntries(bookId: String?): List<CodexEntryEntity> {
+        val entries = db.codexDao().getAllEntries().filterNot { it.disabled }.filter { it.alwaysInclude }
+        if (bookId == null) return entries
+        val scoped = entries.filter { it.scopeId == bookId || it.sheetJson.contains(bookId) }
+        return scoped.ifEmpty { entries }
+    }
+
+    private suspend fun entriesByIds(ids: List<String>): List<CodexEntryEntity> {
+        val wanted = ids.toSet()
+        return db.codexDao().getAllEntries().filter { it.id in wanted && !it.disabled }
+    }
+
+    /** The character card for a codex entry, creating the lightweight one if needed. */
+    suspend fun characterForEntry(entry: CodexEntryEntity): RpCharacterEntity = materializeCharacter(entry)
+
+    /** Readable body text for a codex entry, for the prompt's reference block. */
+    fun entryText(entry: CodexEntryEntity): String =
+        documentFromJson(entry.docJson).plainText().ifBlank { entry.plainText }.trim()
+
+    private fun decodeAliases(json: String): List<String> =
+        runCatching { aliasJson.decodeFromString<List<String>>(json) }.getOrDefault(emptyList())
 
     suspend fun membersOf(roomId: String): List<RpCharacterEntity> =
         db.roleplayDao().getMembers(roomId).mapNotNull { member -> db.roleplayDao().getCharacter(member.characterId) }

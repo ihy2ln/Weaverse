@@ -750,7 +750,31 @@ class DiscordChatViewModel @Inject constructor(
             }
         val persona = roomSeeder.defaultPersona()
         val book = room.bookId?.let { booksById[it] }
-        val system = buildSystemBlocks(room, book, roomCharacter, persona, members, mentioned, state.maximumWords)
+        // Codex runs on every send, not only when a name matches: the work's always-include
+        // entries and the seated cast's own entries go in even for a plain "hey".
+        val codexEntries = castResolver.codexContextFor(userText, room.bookId, members)
+        // Talked *about* without an @: the work's cast matched by name, plus anyone a
+        // codex entry named, so they can answer instead of being discussed in absentia.
+        val cast = book?.let { castResolver.castForBook(it) }.orEmpty()
+        val namedInText = matchNamedCharacters(userText, cast)
+        val fromCodex = castResolver.codexMatchesIn(userText, room.bookId)
+            .filter { entry -> cast.any { it.defaultCodexId == entry.id } }
+            .map { castResolver.characterForEntry(it) }
+        val discussed = (namedInText + fromCodex)
+            .distinctBy { it.id }
+            .filterNot { person -> person.id == roomCharacter?.id || members.any { it.id == person.id } }
+            .take(MAX_DISCUSSED)
+        val system = buildSystemBlocks(
+            room = room,
+            book = book,
+            roomCharacter = roomCharacter,
+            persona = persona,
+            members = members,
+            mentioned = mentioned,
+            outputWords = state.maximumWords,
+            discussed = discussed,
+            codexEntries = codexEntries.map { it.name to castResolver.entryText(it) },
+        )
         val maxTokens = (state.maximumWords * 1.7 + 192).toInt().coerceIn(192, 8192)
         val builder = StringBuilder()
         var usageText = ""
@@ -763,7 +787,14 @@ class DiscordChatViewModel @Inject constructor(
                 assembled = com.ihy2ln.weaverse.ai.context.AssembledPrompt(
                     systemBlocks = system,
                     messages = history,
-                    usedEntries = emptyList(),
+                    usedEntries = codexEntries.map { entry ->
+                        com.ihy2ln.weaverse.ai.context.ContextChip(
+                            entryId = entry.id,
+                            name = entry.name,
+                            colorHex = entry.colorHex,
+                            autoDetected = true,
+                        )
+                    },
                     tokenBreakdown = emptyList(),
                 ),
                 modelRef = activeModelRef(),
@@ -805,7 +836,7 @@ class DiscordChatViewModel @Inject constructor(
             }
             return
         }
-        val replyText = PromptWordLimit.trim(builder.toString().trim(), state.maximumWords)
+        val replyText = stripStageDirections(PromptWordLimit.trim(builder.toString().trim(), state.maximumWords))
         if (replyText.isBlank()) {
             if (userMessageAlreadyStored && userText.isNotBlank() && state.input.isBlank()) {
                 _uiState.update {
@@ -823,10 +854,15 @@ class DiscordChatViewModel @Inject constructor(
             }
             return
         }
-        // A reply with no parsed "Name:" belongs to whoever was addressed — never a narrator.
-        val fallbackSpeaker = roomCharacter ?: mentioned.firstOrNull() ?: members.firstOrNull()
+        // A reply with no parsed "Name:" belongs to whoever the message was aimed at —
+        // an @mention first, then the person it was about, then the room's own character.
+        val fallbackSpeaker = mentioned.firstOrNull()
+            ?: discussed.firstOrNull()
+            ?: roomCharacter
+            ?: members.firstOrNull()
         val bookTitle = book?.title.orEmpty()
-        val lines = parseSpeakerLines(replyText, members + listOfNotNull(fallbackSpeaker))
+        val speakerPool = (members + discussed + listOfNotNull(fallbackSpeaker)).distinctBy { it.id }
+        val lines = parseSpeakerLines(replyText, speakerPool)
         val replyBase = System.currentTimeMillis()
         lines.forEachIndexed { index, line ->
             db.roleplayDao().upsertMessage(
@@ -873,7 +909,18 @@ class DiscordChatViewModel @Inject constructor(
         viewModelScope.launch {
             val persona = roomSeeder.defaultPersona()
             val members = castResolver.membersOf(room.id)
-            val system = buildSystemBlocks(room, book, roomCharacter, persona, members, emptyList(), state.maximumWords)
+            // The meter counts the codex too, since every send carries it.
+            val codexEntries = castResolver.codexContextFor(state.input, room.bookId, members)
+            val system = buildSystemBlocks(
+                room = room,
+                book = book,
+                roomCharacter = roomCharacter,
+                persona = persona,
+                members = members,
+                mentioned = emptyList(),
+                outputWords = state.maximumWords,
+                codexEntries = codexEntries.map { it.name to castResolver.entryText(it) },
+            )
             val historyTokens = db.roleplayDao().getMessagesForMode(room.id, "messenger")
                 .filter { it.isActiveSwipe }
                 .sumOf { ContextMeter.estimateTokens(documentFromJson(it.contentJson).plainText()) }
@@ -1109,6 +1156,27 @@ class DiscordChatViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Drops *asterisk stage directions* from a chat reply. The prompt forbids them and
+     * character cards keep reintroducing them; a chat app only carries what someone
+     * typed, so they are removed rather than shown.
+     */
+    private fun stripStageDirections(text: String): String {
+        val aside = Regex("""\*{1,2}[^*\n]{1,200}\*{1,2}""")
+        val runOfSpaces = Regex("""\s{2,}""")
+        return text.lines()
+            .map { line ->
+                val trimmed = line.trim()
+                // A line that is only an aside is dropped; an inline one leaves a space.
+                val cleaned = aside.replace(trimmed) { match ->
+                    if (match.value.length >= trimmed.length) "" else " "
+                }
+                runOfSpaces.replace(cleaned, " ").trim()
+            }
+            .filter { it.isNotBlank() }
+            .joinToString("\n")
+    }
+
     private fun buildSystemBlocks(
         room: RpChatEntity,
         book: BookEntity?,
@@ -1117,6 +1185,10 @@ class DiscordChatViewModel @Inject constructor(
         members: List<RpCharacterEntity>,
         mentioned: List<RpCharacterEntity>,
         outputWords: Int,
+        /** People named in the message who are not seated here, and may answer for themselves. */
+        discussed: List<RpCharacterEntity> = emptyList(),
+        /** Codex entries the message named, quoted so replies stay true to canon. */
+        codexEntries: List<Pair<String, String>> = emptyList(),
     ): List<String> {
         val blocks = mutableListOf<String>()
         if (roomCharacter != null) {
@@ -1176,13 +1248,52 @@ class DiscordChatViewModel @Inject constructor(
                 if (text.isNotBlank()) blocks += text
             }
         }
+        // Codex the message actually names — people, places, lore — so replies are
+        // grounded in canon instead of invented on the spot.
+        if (codexEntries.isNotEmpty()) {
+            blocks += "Codex facts for what this message names. Treat them as true:"
+            codexEntries.forEach { (name, text) ->
+                blocks += "$name: ${text.take(CODEX_BLOCK_CHARS)}"
+            }
+        }
+        val outsiders = discussed.filterNot { person ->
+            person.id == roomCharacter?.id || members.any { it.id == person.id }
+        }
+        if (outsiders.isNotEmpty()) {
+            blocks += "The message talks about ${outsiders.joinToString(", ") { it.name }}, " +
+                "who can read this room and may answer for themselves rather than being " +
+                "spoken about in the third person. Stay true to each card:"
+            outsiders.forEach { character ->
+                blocks += RoleplayPromptBuilder.characterBlock(character, com.ihy2ln.weaverse.feature.shell.AppMode.Chatting)
+            }
+        }
         if (mentioned.isNotEmpty()) {
-            val cap = members.size.coerceAtMost(3).coerceAtLeast(1)
+            val cap = (members.size + outsiders.size).coerceAtMost(3).coerceAtLeast(1)
             blocks += "The user addressed ${mentioned.joinToString(", ") { "@${it.name}" }}. " +
                 "${mentioned.first().name} replies first. Any of the other people in the room may reply too, " +
                 "but only if they have something relevant to add — silence is fine. Write each line as " +
                 "\"Name: what they say\" in plain text, with no markdown, no bold, and no asterisks around the " +
                 "name — one speaker per line, never narrate for the user, at most $cap lines total."
+        } else if (outsiders.isNotEmpty()) {
+            blocks += "The message is about ${outsiders.first().name}, so ${outsiders.first().name} " +
+                "answers it personally. Others in the room may add a line only if they have " +
+                "something relevant."
+        }
+        // Last block on purpose: the closest instruction to the reply is the one models
+        // follow best, and character cards keep dragging replies back toward prose.
+        val firstSpeaker = when {
+            mentioned.isNotEmpty() -> mentioned.first().name
+            outsiders.isNotEmpty() -> outsiders.first().name
+            roomCharacter != null -> roomCharacter.name
+            else -> members.firstOrNull()?.name.orEmpty()
+        }
+        blocks += buildString {
+            appendLine("Output format, no exceptions:")
+            appendLine("- Every line is \"Name: what they type\" and nothing else.")
+            if (firstSpeaker.isNotBlank()) appendLine("- The first line starts with \"$firstSpeaker:\".")
+            appendLine("- No asterisks, no *actions*, no markdown, no bold, no narration.")
+            appendLine("- No describing anyone's body, face, clothing, or movements.")
+            append("- Never write a line for the user.")
         }
         return blocks
     }
@@ -1220,6 +1331,10 @@ class DiscordChatViewModel @Inject constructor(
         private val SERVER_WORK_TYPES = setOf("novel", "campaign")
         private val ROOM_KINDS = setOf(ROOM_KIND_CHANNEL, ROOM_KIND_CHARACTER)
         private const val HISTORY_LIMIT = 24
+        /** How much of a codex entry to quote per reference block. */
+        private const val CODEX_BLOCK_CHARS = 700
+        /** Outsiders a single message can summon, so a name-dense line stays a chat. */
+        private const val MAX_DISCUSSED = 2
         /** Room for the action row, the message box and the model row. */
         private const val DEFAULT_DOCK_HEIGHT_DP = 172f
         /** Room for the extra chips and the quick-message grid under "More". */
