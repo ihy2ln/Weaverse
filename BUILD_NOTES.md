@@ -3,6 +3,27 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.35 — The novel gets the four-step start
+
+- **New `feature/novel/start/`.** The RPG's four-step opening is now the Novel's too:
+  Book Setup → Create Your Own Story → Chapter One plan → opening scene, with the AI
+  taking part in the last three. `NovelStartPlanner.kt` holds the three prompts and
+  `NovelStartViewModel.kt` drives the steps; both reuse the RPG parsers
+  (`parseCyoaSuggestions`, `parseChapterPlan`, `parseSceneDraft`) so the two modes
+  agree on shape.
+- **The table-only controls are gone.** Play as, Mode, Rule system, Additional house
+  rules, and the "No character selected" line have no meaning in a book, so the novel
+  start never shows or mentions them — `NovelStartPlannerTest` asserts no prompt
+  leaks that wording.
+- The company clicker (Solo / Duo / Party / Team) carries over, and its rule leads
+  every novel prompt exactly as it does for campaigns.
+- Because the four-step start asks the story questions properly, the **New book**
+  dialog no longer asks them a second time; it stays title, genre, POV/tense and style.
+- Finishing the start writes the book's fields, the memory block every generation
+  reads, and the opening prose into the book's first scene.
+- Test build: `Beta.Test.Build/weaverse-v1.4.35.apk`
+  (SHA-256 `E3496B716F3A6FD42C67E912B5C488C49919D6328EDE4E07F617C8F8DECB4860`).
+
 ## v1.4.34 — New campaign dialog trimmed to the three-step setup
 
 - The create dialog no longer carries **Play as**, **Mode**, **Rule system**, the

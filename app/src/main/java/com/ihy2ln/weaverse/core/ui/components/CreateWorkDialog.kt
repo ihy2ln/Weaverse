@@ -965,13 +965,11 @@ fun CreateWorkDialog(
                     style = MaterialTheme.typography.labelSmall,
                     color = tokens.secondaryText,
                 )
-                if (!vocabulary.storyboardSpecific) {
+                // Novels ask these in their own four-step start, right after creation,
+                // so the dialog stays the short version and does not ask twice.
+                if (vocabulary.campaignSpecific) {
                     StoryStartSection(
-                        vocabulary = if (vocabulary.campaignSpecific) {
-                            com.ihy2ln.weaverse.core.story.StoryStartVocabulary.Rpg
-                        } else {
-                            com.ihy2ln.weaverse.core.story.StoryStartVocabulary.Novel
-                        },
+                        vocabulary = com.ihy2ln.weaverse.core.story.StoryStartVocabulary.Rpg,
                         expanded = startOpen,
                         onExpandedChange = { startOpen = it },
                         companions = companions,

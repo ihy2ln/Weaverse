@@ -141,6 +141,24 @@ object WikiContent {
             title = "Novel and Reader",
             summary = "Plan, Write, Read, Chat, Review",
             markdown = """
+                ## Starting a book
+
+                A new book opens a four-step start, the same one campaigns
+                use: **Book Setup → Create Your Own Story → Chapter One plan
+                → opening scene**. The AI joins from step two onward — it
+                suggests answers, drafts the plan, then writes the scene —
+                and every box stays editable.
+
+                The **company clicker** (Solo, Duo, Party, Team) is a hard
+                rule, not a hint: on Solo nobody joins the protagonist, now
+                or later, though other people still appear, are met, and are
+                left behind. Finishing saves the opening into the book's
+                first scene.
+
+                The table-only parts of the campaign start — play-as role,
+                game mode, rule system, house rules — are left out, because
+                a book has no use for them.
+
                 ## Plan
 
                 The outline: **Acts → Chapters → Scenes → Scene beats**, with
