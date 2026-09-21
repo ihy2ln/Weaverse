@@ -3,11 +3,15 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
-## v1.00.01 — Language filter for manga chapters
+## v1.4.30 — Chatting rooms, codex-grounded replies, rotation, manga language filter
 
-Version names now use the x.xx.xx form (1.00.01, 1.00.02, ...). versionCode keeps
-incrementing by one per build, since that is what Android orders upgrades by; the
-name is display only, so following 1.9 with 1.00.01 is safe.
+Versions continue the existing series: 1.4.29 -> 1.4.30 -> 1.4.31, and the test APK
+is named `weaverse-v<version>.apk`. versionCode still increments by one per build.
+
+- Test build: `Beta.Test.Build/weaverse-v1.4.30.apk`
+  (SHA-256 `F8CD66EAD773F7133395E079D8BCD0029F8837A005E2F39E75E9A3FA7ABA8C71`).
+
+### Language filter for manga chapters
 
 - **Filter chapters** in the Storyboard manga reader gained a **Language** picker at
   the top of the dialog, listing only the languages that manga actually publishes.
@@ -17,10 +21,8 @@ name is display only, so following 1.9 with 1.00.01 is safe.
   not Laos, plus the Brazilian Portuguese, Chinese and romanized variants.
 - The picker only appears when a manga has more than one language, so single-language
   titles keep the dialog short.
-- Test build: `Beta.Test.Build/Weaverse-1.00.01-beta.apk`
-  (SHA-256 `69A7A26ACA54098A053B8FB950F98977DC323C0C93DCB2A6B383BCED5FD6EA5F`).
 
-## v1.9 — Emoji button and a collapsible prompt window
+### Emoji button and a collapsible prompt window
 
 - **Emoji** chip sits beside Attach image under "More" in the chat prompt window. It
   opens a picker of ~54 common chat emoji in three sideways-scrolling rows — sideways
@@ -30,10 +32,8 @@ name is display only, so following 1.9 with 1.00.01 is safe.
   Send and the context meter, hiding the model row and the More section; the arrow
   flips to point up and restores everything. A collapsed dock also asks for less
   height so the transcript gets the space.
-- Test build: `Beta.Test.Build/Weaverse-1.9-chatting-beta.apk`
-  (SHA-256 `5721C1A0BBED35E240D7C28C527917CA3437C43A2931B0DB2876376F3F81A164`).
 
-## v1.8 — A real Direct Messages screen, one-to-one DMs, emoji
+### A real Direct Messages screen, one-to-one DMs, emoji
 
 - The DM envelope in the rail was a dead button on Home: it cleared the server and
   room selection, which is where you already were. It now opens a **Direct Messages
@@ -51,10 +51,8 @@ name is display only, so following 1.9 with 1.00.01 is safe.
   rules now say emoji are welcome where they fit the character — as a reaction, a
   tone-setter, or a reply on their own — following the voice rather than decorating
   every line.
-- Test build: `Beta.Test.Build/Weaverse-1.8-chatting-beta.apk`
-  (SHA-256 `6FC7D7D984E8543EF637C4A7D06CB78523C3775171B90F66307B98BE3223C7D1`).
 
-## v1.7 — @mention autocomplete
+### @mention autocomplete
 
 - Typing `@` in a chat room opens a name picker above the message box that narrows
   as you type: `@k` offers everyone with a K name, `@kae` narrows to Kaela
@@ -66,10 +64,8 @@ name is display only, so following 1.9 with 1.00.01 is safe.
 - Helpers live in `ChatMentionParsing.kt` (`activeMentionQuery`, `rankMentionMatches`,
   `completeMention`) and are unit tested, including that `jd@host.com` is not a
   mention and that a completed mention closes the picker.
-- Test build: `Beta.Test.Build/Weaverse-1.7-chatting-beta.apk`
-  (SHA-256 `ACCEA9C9C3F70ACBF8B3578798B416699FB2F4C875590321378573B3CA603040`).
 
-## v1.6 — The person addressed answers, and the codex binds behaviour
+### The person addressed answers, and the codex binds behaviour
 
 - A room member named in the message is now the one who replies. `matchNamedCharacters`
   runs over the seated cast as well, and the fallback speaker order is @mention →
@@ -83,14 +79,10 @@ name is display only, so following 1.9 with 1.00.01 is safe.
 - The people being spoken to lead the codex selection, so their own entry binds first.
 - `stripStageDirections` keeps `*word*` emphasis and only removes multi-word asides;
   it had been eating emphasis and leaving gaps like "GKOM is , little one".
-- Test build: `Beta.Test.Build/Weaverse-1.6-chatting-beta.apk`
-  (SHA-256 `25996F6219EF0CEF6A4BD76F876E1C1DE7B7185B1D65DBF60ADED27604586FCC`).
 - Test build: 
   (SHA-256 ).
 
-## v1.5 — Chatting: rooms of people, codex-grounded replies, rotation
-
-Versions step by 0.1 from here: 1.5, 1.6, 1.7 … (versionCode still +1 each build).
+### Chatting: rooms of people, codex-grounded replies, rotation
 
 ### Model search in the chat prompt window
 
@@ -116,8 +108,6 @@ Versions step by 0.1 from here: 1.5, 1.6, 1.7 … (versionCode still +1 each bui
 - `stripStageDirections` removes `*asterisk actions*` from replies as a safety net,
   since character cards keep reintroducing them, and the closing system block
   restates the one-line-per-speaker format last, where models follow it best.
-- Test build: `Beta.Test.Build/Weaverse-1.5-chatting-beta.apk`
-  (SHA-256 `7209C37C4F3132550108305B460AADE7DFA0D29BE21547B61EAA91105377CB46`).
 
 ### Landscape and portrait
 
@@ -134,8 +124,6 @@ Versions step by 0.1 from here: 1.5, 1.6, 1.7 … (versionCode still +1 each bui
   message rows. Press-and-hold selection still works per message.
 - The chat dock also carries a concrete default height (172dp, 330dp expanded)
   instead of sizing to content, and a double-tap reset returns to that default.
-- Test build: `Beta.Test.Build/Weaverse-1.5-chatting-beta.apk`
-  (SHA-256 `6CD6A210332944E07F1C100EF536C0EF7ED86583774E562BD6AA49495A3A6B2B`).
 
 ### Rooms with people, not a narrator
 
@@ -162,8 +150,6 @@ Versions step by 0.1 from here: 1.5, 1.6, 1.7 … (versionCode still +1 each bui
   with all of its channels and character rooms.
 - Selectable transcript, header picture button, DM envelope in the rail, and a
   real back arrow.
-- Test build: `Beta.Test.Build/Weaverse-1.5-chatting-beta.apk`
-  (SHA-256 `AB1B95769F1238E1CFE59396C72841EAB1EACB2A5BFA2A83C25E69AC8C4035BD`).
 
 ## v1.3.89-rpg-depth — Refined RPG modes and campaign loop
 
