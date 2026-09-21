@@ -94,3 +94,47 @@ fun parseSpeakerLines(raw: String, members: List<RpCharacterEntity>): List<Parse
     val cleaned = rows.filter { it.text.isNotBlank() }
     return if (matchedAny && cleaned.isNotEmpty()) cleaned else listOf(ParsedLine(null, "", raw.trim()))
 }
+
+/** The `@token` currently being typed at the caret, or null when there isn't one. */
+fun activeMentionQuery(text: String, caret: Int = text.length): String? {
+    val end = caret.coerceIn(0, text.length)
+    val at = text.lastIndexOf('@', (end - 1).coerceAtLeast(0))
+    if (at < 0) return null
+    // Must start a word: "email@host" is not a mention.
+    if (at > 0 && text[at - 1].isLetterOrDigit()) return null
+    val token = text.substring(at + 1, end)
+    // A mention is one or two words — enough for "@Kaela Storm", not a whole sentence.
+    if (token.count { it == ' ' } > 1 || token.contains('\n')) return null
+    return token
+}
+
+/**
+ * Ranks [names] for an `@` [query]: names whose first or any later word starts with it
+ * come first, then anything merely containing it. A blank query offers everyone.
+ */
+fun rankMentionMatches(query: String, names: List<String>): List<String> {
+    val needle = query.trim()
+    if (needle.isBlank()) return names
+    val starts = mutableListOf<String>()
+    val wordStarts = mutableListOf<String>()
+    val contains = mutableListOf<String>()
+    names.forEach { name ->
+        val words = name.split(' ', '-', '"').filter { it.isNotBlank() }
+        when {
+            name.startsWith(needle, ignoreCase = true) -> starts += name
+            words.any { it.startsWith(needle, ignoreCase = true) } -> wordStarts += name
+            name.contains(needle, ignoreCase = true) -> contains += name
+        }
+    }
+    return starts + wordStarts + contains
+}
+
+/** Replaces the `@token` at the caret with [name], leaving a trailing space. */
+fun completeMention(text: String, caret: Int, name: String): Pair<String, Int> {
+    val end = caret.coerceIn(0, text.length)
+    val at = text.lastIndexOf('@', (end - 1).coerceAtLeast(0))
+    if (at < 0) return text to end
+    val completed = "@" + name + " "
+    val next = text.substring(0, at) + completed + text.substring(end)
+    return next to (at + completed.length)
+}

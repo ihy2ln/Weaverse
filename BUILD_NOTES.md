@@ -3,6 +3,21 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.7 — @mention autocomplete
+
+- Typing `@` in a chat room opens a name picker above the message box that narrows
+  as you type: `@k` offers everyone with a K name, `@kae` narrows to Kaela
+  Stormfang and Jasmine Kaela Buttacks. Tapping a name completes it and closes the
+  picker.
+- Ranking puts names starting with the query first, then names whose later words
+  start with it, then plain contains. Seated members show as-is; people not yet in
+  the room carry a `+` so it is clear the mention will pull them in.
+- Helpers live in `ChatMentionParsing.kt` (`activeMentionQuery`, `rankMentionMatches`,
+  `completeMention`) and are unit tested, including that `jd@host.com` is not a
+  mention and that a completed mention closes the picker.
+- Test build: `Beta.Test.Build/Weaverse-1.7-chatting-beta.apk`
+  (SHA-256 `ACCEA9C9C3F70ACBF8B3578798B416699FB2F4C875590321378573B3CA603040`).
+
 ## v1.6 — The person addressed answers, and the codex binds behaviour
 
 - A room member named in the message is now the one who replies. `matchNamedCharacters`

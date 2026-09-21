@@ -118,4 +118,42 @@ class ChatMentionParsingTest {
     fun matchNamedCharacters_needsAWholeWord() {
         assertTrue(matchNamedCharacters("miracles happen", listOf(mira)).isEmpty())
     }
+
+    // ------------------------------------------------------------ @ autocomplete
+
+    @Test
+    fun activeMentionQuery_readsTheTokenBeingTyped() {
+        assertEquals("k", activeMentionQuery("hey @k"))
+        assertEquals("kae", activeMentionQuery("hey @kae"))
+        assertEquals("", activeMentionQuery("hey @"))
+    }
+
+    @Test
+    fun activeMentionQuery_ignoresFinishedOrNonMentions() {
+        assertNull(activeMentionQuery("no mention here"))
+        assertNull(activeMentionQuery("mail me at jd@host.com"))
+        assertNull(activeMentionQuery("@Kaela Stormfang said so already"))
+    }
+
+    @Test
+    fun rankMentionMatches_narrowsAndOrders() {
+        val names = listOf("Kaela Stormfang", "Kalani Kealoha", "Jasmine Kaela Buttacks", "Amara")
+        assertEquals(
+            listOf("Kaela Stormfang", "Kalani Kealoha", "Jasmine Kaela Buttacks"),
+            rankMentionMatches("k", names),
+        )
+        assertEquals(
+            listOf("Kaela Stormfang", "Jasmine Kaela Buttacks"),
+            rankMentionMatches("kae", names),
+        )
+        assertTrue(rankMentionMatches("zz", names).isEmpty())
+    }
+
+    @Test
+    fun completeMention_replacesTheTokenAndLeavesASpace() {
+        val (text, caret) = completeMention("hey @kae", 8, "Kaela Stormfang")
+        assertEquals("hey @Kaela Stormfang ", text)
+        assertEquals(text.length, caret)
+        assertNull(activeMentionQuery(text))
+    }
 }

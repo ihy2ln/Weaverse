@@ -99,6 +99,31 @@ fun ChatPromptWindow(
             PromptDockChip(if (expanded) "Less" else "More") { viewModel.setPromptExpanded(!expanded) }
         }
 
+        // @mention picker: narrows as the writer types, tap to complete the name.
+        val mentionQuery = activeMentionQuery(state.input)
+        if (mentionQuery != null) {
+            val seated = state.members.map { it.name }
+            val everyone = (seated + state.mentionCandidates.map { it.name }).distinct()
+            val matches = rankMentionMatches(mentionQuery, everyone).take(8)
+            if (matches.isNotEmpty()) {
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    matches.forEach { name ->
+                        PromptDockChip(
+                            label = if (name in seated) name else "$name +",
+                            onClick = {
+                                val (next, _) = completeMention(state.input, state.input.length, name)
+                                viewModel.onInputChange(next)
+                            },
+                        )
+                    }
+                }
+            }
+        }
+
         Row(
             Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,

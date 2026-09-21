@@ -231,6 +231,13 @@ object HelpContent {
                         "Long-press an avatar to remove that person.",
                 ),
                 HelpEntry(
+                    "@mention autocomplete",
+                    "Typing @ opens a name picker above the message box that narrows as you " +
+                        "type: @k lists the K names, @kae narrows further. Tap a name to " +
+                        "complete it. Names with a + are not in the room yet and will be " +
+                        "pulled in when you send.",
+                ),
+                HelpEntry(
                     "@mentions pull people in",
                     "Type @Name (full name or unambiguous first name) and that person is " +
                         "added to the room for good, with a joined line in the history. They " +

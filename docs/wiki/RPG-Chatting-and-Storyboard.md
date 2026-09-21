@@ -101,6 +101,10 @@ character plus a couple of others. Long-press an avatar to remove that person.
 
 ### @mentions pull people in
 
+Typing **@** opens a name picker above the message box that narrows as you type:
+**@k** lists the K names, **@kae** narrows further. Tap a name to complete it; a
+name with a **+** is not in the room yet and will be pulled in.
+
 Type **@Name** — full name or an unambiguous first name — and that person is
 added to the room for good, with a joined line in the history. They answer
 first, and anyone else seated there may chime in. Each speaker lands as its own
