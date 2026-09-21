@@ -37,6 +37,22 @@ class ChatCastResolver @Inject constructor(
         return (roster + materialized).distinctBy { it.id }
     }
 
+    /** Every codex character across every work, as people you can write to directly. */
+    suspend fun allChatContacts(): List<RpCharacterEntity> {
+        val categories = db.codexDao().getAllCategories()
+            .filter { it.name.equals(CHARACTER_CATEGORY_NAME, ignoreCase = true) }
+            .map { it.id }
+            .toSet()
+        val entries = db.codexDao().getAllEntries()
+            .filterNot { it.disabled }
+            .filter { it.categoryId in categories }
+        val fromCodex = entries.map { materializeCharacter(it) }
+        // Characters that exist only as cards (campaign roster imports) are contacts too.
+        val cards = db.roleplayDao().getCharacters().filter { it.name.isNotBlank() }
+        // One row per person: a codex entry and its card are the same contact.
+        return (fromCodex + cards).distinctBy { it.name.trim().lowercase() }
+    }
+
     /** Codex entries in the shared Characters category relevant to [bookId]. */
     private suspend fun characterCategoryEntries(bookId: String): List<CodexEntryEntity> {
         val categories = db.codexDao().getAllCategories()

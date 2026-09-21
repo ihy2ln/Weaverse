@@ -21,6 +21,12 @@ object HelpContent {
             summary = "Home, and the three rows across the top.",
             entries = listOf(
                 HelpEntry(
+                    "Direct messages",
+                    "The DM envelope under Home opens a contacts screen listing every codex " +
+                        "character, with a search box. Tap someone to open their DM — a DM holds " +
+                        "just the two of you.",
+                ),
+                HelpEntry(
                     "Home",
                     "The book button opens Home. It is the way into every workspace, " +
                         "not just novels — a card per mode, with your novels underneath.",

@@ -373,6 +373,13 @@ copy. The **picture button** in the room header attaches an
 image, which posts straight into the room and renders
 inline.
 
+### Direct messages
+
+The **DM envelope** under Home opens a contacts screen listing
+every codex character, with a search box. Tap someone to open
+their direct message — a DM holds just the two of you, unlike a
+room, which seats a cast.
+
 ### Home
 
 Home lists **Recent Conversations** first, then **Direct
@@ -402,7 +409,8 @@ they layer in the order picked. See [Prompts and AI](#prompts-and-ai).
 Replies are written as chat messages: first person, present
 tense, short. No narration, no scene-setting, no
 third-person description and no asterisk stage directions —
-a chat app only has what someone types.
+a chat app only has what someone types. Emoji are welcome
+where they suit the character.
 
 ---
 

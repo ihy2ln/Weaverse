@@ -3,6 +3,27 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.8 — A real Direct Messages screen, one-to-one DMs, emoji
+
+- The DM envelope in the rail was a dead button on Home: it cleared the server and
+  room selection, which is where you already were. It now opens a **Direct Messages
+  contacts screen** listing every codex character, with a search box; tapping one
+  opens that person's DM, creating the one-to-one room on first use.
+- Contacts are deduplicated by name, since a codex entry and its character card are
+  the same person.
+- **A DM holds exactly one other person.** Character rooms were being seeded with the
+  character plus one or two others, so every DM-ish room showed three faces; a
+  character room is now that person's room alone, and a catch-up pass trims seeded
+  extras from rooms created by older builds. Anyone @mentioned in is still kept.
+- On a phone the contacts screen takes the full pane instead of being squeezed beside
+  the room list, and DMs no longer render a "#" channel prefix.
+- **Emoji**: `chattingCraft`, `chattingDraft`, the room prompt, and the closing output
+  rules now say emoji are welcome where they fit the character — as a reaction, a
+  tone-setter, or a reply on their own — following the voice rather than decorating
+  every line.
+- Test build: `Beta.Test.Build/Weaverse-1.8-chatting-beta.apk`
+  (SHA-256 `6FC7D7D984E8543EF637C4A7D06CB78523C3775171B90F66307B98BE3223C7D1`).
+
 ## v1.7 — @mention autocomplete
 
 - Typing `@` in a chat room opens a name picker above the message box that narrows

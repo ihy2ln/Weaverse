@@ -176,9 +176,10 @@ object DefaultAiGuides {
 
     val chattingDraft: String = """
         Reply the way the character would actually text back — a short chat message, not a scene.
-        One to four lines, first person, their real texting voice: casual phrasing, emoji or typos
-        only if they'd already use them, no scene-setting, no third-person narration of their own
-        actions. Answer what was just said before adding anything new. Do not speak for the other person.
+        One to four lines, first person, their real texting voice: casual phrasing, typos only if
+        they'd already make them, no scene-setting, no third-person narration of their own actions.
+        Emoji are fair game when they fit the character — to react, to set tone, or as a whole
+        reply — but they follow the voice, not every sentence. Answer what was just said before adding anything new. Do not speak for the other person.
         {ECCHI: Adult male wish fulfilment stays in the same texting voice — flirty and enthusiastic,
         never a narrated scene. Consult the Codex entries WAHB, WAH, WAHO, AFM, Gender Ratio, GKOM,
         and Celestium when they apply.}
@@ -204,7 +205,9 @@ object DefaultAiGuides {
         they would actually type a message — not narrating a scene about them. Write one to a few
         short lines in first person, in their real texting voice. No scene-setting description, no
         narrating your own actions in the third person, no present-tense prose paragraphs, and no
-        asterisk stage directions — a chat app has no narration, only what someone types. Do not
+        asterisk stage directions — a chat app has no narration, only what someone types. Emoji
+        are welcome where the character would use them: to react, to soften or sharpen a line, or
+        as a reply on their own. Match the character's voice rather than decorating every line. Do not
         control the other person's actions, thoughts, or messages.
         {ECCHI: Adult male wish fulfilment stays in the same casual texting voice — flirty, enthusiastic,
         and consensual, never narrated prose. Every participant is an unambiguous adult. Use Codex

@@ -140,7 +140,12 @@ fun DiscordChatScreen(
         // local flag — otherwise the room list still shows the old room as selected, and
         // tapping it again is a no-op that just reopens the same conversation.
         val backToRoomList = { channelsOpen = true; onRoomSelect(null) }
-        val openDirectMessages = { channelsOpen = true; onRoomSelect(null); onServerSelect(null) }
+        val openDirectMessages = {
+            channelsOpen = true
+            onRoomSelect(null)
+            onServerSelect(null)
+            viewModel.openDmContacts()
+        }
         androidx.activity.compose.BackHandler(compact && !channelsOpen) { backToRoomList() }
         androidx.compose.runtime.LaunchedEffect(state.selectedRoomId) {
             channelsOpen = state.selectedRoomId == null
@@ -154,7 +159,7 @@ fun DiscordChatScreen(
                 .navigationBarsPadding()
                 .imePadding(),
         ) {
-            if (!compact || channelsOpen) {
+            if ((!compact || channelsOpen) && !(compact && state.dmContactsOpen)) {
                 ServerRail(
                     servers = state.servers,
                     selectedServerId = selectedServerId,
@@ -176,7 +181,14 @@ fun DiscordChatScreen(
                     modifier = if (compact) Modifier.weight(1f) else Modifier.width(224.dp),
                 )
             }
-            if (!compact || !channelsOpen) Column(Modifier.weight(1f).fillMaxHeight()) {
+            if (state.dmContactsOpen) {
+                DmContactsPane(
+                    state = state,
+                    onPick = viewModel::openDirectMessage,
+                    onClose = viewModel::closeDmContacts,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                )
+            } else if (!compact || !channelsOpen) Column(Modifier.weight(1f).fillMaxHeight()) {
                 if (compact) {
                     IconButton(
                         onClick = backToRoomList,
@@ -785,6 +797,85 @@ private fun MessagePane(
     }
 }
 
+/** Everyone in the codex, as people you can start a direct message with. */
+@Composable
+private fun DmContactsPane(
+    state: DiscordChatUiState,
+    onPick: (String) -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tokens = inkTokens()
+    var search by rememberSaveable { mutableStateOf("") }
+    val shown = state.dmContacts.filter { it.name.contains(search, true) }
+    Column(modifier = modifier.background(tokens.page)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(tokens.background)
+                .padding(horizontal = InkSpacing.lg, vertical = InkSpacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
+        ) {
+            IconButton(onClick = onClose, modifier = Modifier.semantics { contentDescription = "Close contacts" }) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = tokens.primaryText)
+            }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "Direct Messages",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = tokens.primaryText,
+                )
+                Text(
+                    "Pick someone to write to",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.secondaryText,
+                )
+            }
+        }
+        OutlinedTextField(
+            value = search,
+            onValueChange = { search = it },
+            singleLine = true,
+            placeholder = { Text("Search contacts") },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = InkSpacing.lg, vertical = InkSpacing.xs),
+        )
+        if (state.dmContacts.isEmpty()) {
+            SidebarHint("No codex characters yet — add some in the Codex.")
+        } else if (shown.isEmpty()) {
+            SidebarHint("Nobody matches \"$search\".")
+        }
+        LazyColumn(Modifier.fillMaxWidth()) {
+            items(shown, key = { it.characterId }) { contact ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onPick(contact.characterId) }
+                        .padding(horizontal = InkSpacing.lg, vertical = InkSpacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
+                ) {
+                    com.ihy2ln.weaverse.feature.roleplay.friends.CharacterAvatar(
+                        name = contact.name,
+                        colorHex = contact.colorHex,
+                        size = 34.dp,
+                    )
+                    Text(
+                        contact.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = tokens.primaryText,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
 /** Rail shortcut to Home's Direct Messages: an envelope carrying a "DM" label. */
 @Composable
 private fun DmRailButton(selected: Boolean, onClick: () -> Unit) {
@@ -960,7 +1051,10 @@ private fun MessageList(
         if (state.messages.isEmpty() && !state.isStreaming) {
             item(key = "empty") {
                 Text(
-                    "This is the start of #${state.selectedRoom?.name.orEmpty()}.",
+                    state.selectedRoom?.let { room ->
+                        val label = if (room.kind == ROOM_KIND_CHANNEL) "#${room.name}" else room.name
+                        "This is the start of $label."
+                    }.orEmpty(),
                     style = MaterialTheme.typography.bodySmall,
                     color = tokens.secondaryText,
                     modifier = Modifier.padding(InkSpacing.lg),

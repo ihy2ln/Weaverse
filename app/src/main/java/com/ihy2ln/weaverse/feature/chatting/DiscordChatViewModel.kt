@@ -148,6 +148,10 @@ data class DiscordChatUiState(
     val members: List<DiscordMemberUi> = emptyList(),
     /** The work's wider cast, for @mention autocomplete beyond who's already seated. */
     val mentionCandidates: List<DiscordMemberUi> = emptyList(),
+    /** Every codex character, listed as a contact on the Direct Messages screen. */
+    val dmContacts: List<DiscordMemberUi> = emptyList(),
+    /** True while the Direct Messages contact list is showing. */
+    val dmContactsOpen: Boolean = false,
 ) {
     val wordRangeValid: Boolean
         get() = minimumWords in PromptWordLimit.Minimum..PromptWordLimit.Maximum &&
@@ -418,6 +422,60 @@ class DiscordChatViewModel @Inject constructor(
     fun clearTemplates() {
         _uiState.update { it.copy(selectedTemplateIds = emptyList()) }
         refreshContextMeter()
+    }
+
+    /** DM rail button: show every codex character as someone you can write to. */
+    fun openDmContacts() {
+        _uiState.update { it.copy(dmContactsOpen = true) }
+        viewModelScope.launch {
+            val contacts = castResolver.allChatContacts().map { character ->
+                DiscordMemberUi(
+                    characterId = character.id,
+                    name = character.name,
+                    colorHex = avatarColorHexFor(character.name, character.colorHex),
+                    monogram = monogramOf(character.name),
+                    joinedViaMention = false,
+                )
+            }.sortedBy { it.name.lowercase() }
+            _uiState.update { it.copy(dmContacts = contacts) }
+        }
+    }
+
+    fun closeDmContacts() {
+        _uiState.update { it.copy(dmContactsOpen = false) }
+    }
+
+    /** Opens this contact's direct message, creating the one-to-one room on first use. */
+    fun openDirectMessage(characterId: String) {
+        viewModelScope.launch {
+            val character = db.roleplayDao().getCharacter(characterId) ?: return@launch
+            val existing = db.roleplayDao().getChats().firstOrNull { chat ->
+                chat.displayMode == "messenger" &&
+                    chat.roomKind == ROOM_KIND_DM &&
+                    chat.characterId == characterId
+            }
+            val chatId = existing?.id ?: run {
+                val now = System.currentTimeMillis()
+                val chat = RpChatEntity(
+                    id = "dm-${UUID.randomUUID()}",
+                    characterId = characterId,
+                    personaId = roomSeeder.defaultPersona().id,
+                    title = character.name,
+                    authorsNote = "Direct messages with ${character.name}.",
+                    displayMode = "messenger",
+                    createdAt = now,
+                    updatedAt = now,
+                    bookId = null,
+                    roomKind = ROOM_KIND_DM,
+                )
+                db.roleplayDao().upsertChat(chat)
+                // A DM holds exactly one other person.
+                castResolver.addMember(chat.id, character, seeded = true)
+                chat.id
+            }
+            _uiState.update { it.copy(dmContactsOpen = false, selectedServerId = null, selectedServer = null) }
+            selectRoom(chatId)
+        }
     }
 
     fun onInputChange(value: String) {
@@ -1239,7 +1297,8 @@ class DiscordChatViewModel @Inject constructor(
                 if (room.authorsNote.isNotBlank()) appendLine("Channel topic: ${room.authorsNote}")
                 append(
                     "Write ONLY what a person types into a chat app: first person, present tense, " +
-                        "casual and short. This is a live conversation, not a story or a novel — " +
+                        "casual and short. Emoji are allowed and encouraged where they fit the " +
+                        "person speaking — a reaction, a tone-setter, or a reply on their own. This is a live conversation, not a story or a novel — " +
                         "no prose, no scene-setting, no third-person description of anyone's body, " +
                         "face, clothing, or movements, no asterisk actions, no markdown. " +
                         "Every line is \"Name: what they type\" and nothing else. " +
@@ -1329,6 +1388,7 @@ class DiscordChatViewModel @Inject constructor(
             appendLine("- Every line is \"Name: what they type\" and nothing else.")
             if (firstSpeaker.isNotBlank()) appendLine("- The first line starts with \"$firstSpeaker:\".")
             appendLine("- No asterisks, no *actions*, no markdown, no bold, no narration.")
+            appendLine("- Emoji are fine and in character; they are typed, not narrated.")
             appendLine("- No describing anyone's body, face, clothing, or movements.")
             append("- Never write a line for the user.")
         }

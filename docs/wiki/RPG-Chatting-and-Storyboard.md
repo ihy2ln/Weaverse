@@ -122,6 +122,12 @@ Message text is selectable — press and hold to select and copy. The picture
 button in the room header attaches an image, which posts into the room and
 renders inline.
 
+### Direct messages
+
+The **DM envelope** under Home opens a contacts screen listing every codex
+character, with a search box. Tap someone to open their direct message — a DM
+holds just the two of you, unlike a room, which seats a cast.
+
 ### Home
 
 Home lists **Recent Conversations**, then **Direct Messages**, then a section
@@ -145,7 +151,7 @@ the order picked.
 
 Replies are written as chat messages: first person, present tense, short. There
 is no narrator — no scene-setting, no third-person description, no asterisk
-stage directions.
+stage directions. Emoji are welcome where they suit the character.
 
 ## Storyboard
 

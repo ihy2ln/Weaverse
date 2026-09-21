@@ -58,12 +58,20 @@ class ChatRoomSeeder @Inject constructor(
                     topic = "A private room where ${character.name} hangs out.",
                     character = character,
                 )
+                // A character room is that person's own room: nobody else is seated here
+                // unless the writer @mentions them in.
                 castResolver.addMember(room.id, character, seeded = true)
-                (cast - character).shuffled(Random(book.id.hashCode() xor character.id.hashCode()))
-                    .take((cast.size - 1).coerceIn(0, 2))
-                    .forEach { castResolver.addMember(room.id, it, seeded = true) }
             }
         }
+
+        // Older builds seated extra people in character rooms; a character room is that
+        // person's own room, so trim anyone who was not invited by an @mention.
+        existing.filter { it.roomKind == ROOM_KIND_CHARACTER && it.characterId != null }
+            .forEach { room ->
+                db.roleplayDao().getMembers(room.id)
+                    .filter { member -> member.characterId != room.characterId && member.seeded }
+                    .forEach { member -> db.roleplayDao().deleteMember(room.id, member.characterId) }
+            }
 
         // Catch-up: rooms that already exist (from before rooms carried members) get
         // seeded now too, so this isn't limited to newly created works.

@@ -64,6 +64,8 @@ fun ChatPromptWindow(
     val expanded = state.promptExpanded
     val messageLines = promptDockFieldLines(draggedHeight, if (expanded) 5 else 2)
     val canSend = (state.input.isNotBlank() || state.hasPendingMedia) && !state.isStreaming
+    // A DM is a person, not a channel, so it carries no "#".
+    val roomLabel = if (state.selectedRoom?.kind == ROOM_KIND_CHANNEL) "#$roomName" else roomName
 
     PromptDockShell(
         pinnedHeightDp = draggedHeight,
@@ -83,7 +85,7 @@ fun ChatPromptWindow(
                 onClick = viewModel::toggleAiMode,
             )
             Text(
-                "to #$roomName",
+                "to $roomLabel",
                 Modifier.weight(1f),
                 style = MaterialTheme.typography.labelSmall,
                 color = tokens.secondaryText,
@@ -132,7 +134,7 @@ fun ChatPromptWindow(
             PromptDockTextField(
                 value = state.input,
                 onValueChange = viewModel::onInputChange,
-                placeholder = "Message #$roomName",
+                placeholder = "Message $roomLabel",
                 enabled = !state.isStreaming,
                 maxLines = messageLines,
                 modifier = Modifier.weight(1f),
