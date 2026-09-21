@@ -3,6 +3,25 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.6 — The person addressed answers, and the codex binds behaviour
+
+- A room member named in the message is now the one who replies. `matchNamedCharacters`
+  runs over the seated cast as well, and the fallback speaker order is @mention →
+  named member → person discussed → room character → first member. Previously a
+  named member was excluded as "not an outsider" and the reply fell to whoever sat
+  first in the list, so "hey Elara" was answered by Clarity.
+- Codex is framed as the world's rulebook rather than trivia: entries are split into
+  who people are and the rules that constrain them, labelled by category, with
+  instructions to obey and apply them, never to recite or explain them, and to stay
+  vague rather than invent canon the codex does not cover.
+- The people being spoken to lead the codex selection, so their own entry binds first.
+- `stripStageDirections` keeps `*word*` emphasis and only removes multi-word asides;
+  it had been eating emphasis and leaving gaps like "GKOM is , little one".
+- Test build: `Beta.Test.Build/Weaverse-1.6-chatting-beta.apk`
+  (SHA-256 `25996F6219EF0CEF6A4BD76F876E1C1DE7B7185B1D65DBF60ADED27604586FCC`).
+- Test build: 
+  (SHA-256 ).
+
 ## v1.5 — Chatting: rooms of people, codex-grounded replies, rotation
 
 Versions step by 0.1 from here: 1.5, 1.6, 1.7 … (versionCode still +1 each build).

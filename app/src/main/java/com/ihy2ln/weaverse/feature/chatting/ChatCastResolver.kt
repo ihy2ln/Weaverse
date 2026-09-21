@@ -103,12 +103,16 @@ class ChatCastResolver @Inject constructor(
         bookId: String?,
         members: List<RpCharacterEntity>,
         limit: Int = 8,
+        /** Whoever is being spoken to — their entry leads, so their own rules bind first. */
+        speakers: List<RpCharacterEntity> = emptyList(),
     ): List<CodexEntryEntity> {
+        val speakerEntries = speakers.mapNotNull { it.defaultCodexId }
+            .let { ids -> if (ids.isEmpty()) emptyList() else entriesByIds(ids) }
         val named = codexMatchesIn(text, bookId)
         val memberEntries = members.mapNotNull { it.defaultCodexId }
             .let { ids -> if (ids.isEmpty()) emptyList() else entriesByIds(ids) }
         val always = alwaysIncludeEntries(bookId)
-        return (named + memberEntries + always).distinctBy { it.id }.take(limit)
+        return (speakerEntries + named + memberEntries + always).distinctBy { it.id }.take(limit)
     }
 
     /** Entries the writer flagged as always-include, scoped to the work when possible. */
@@ -126,6 +130,22 @@ class ChatCastResolver @Inject constructor(
 
     /** The character card for a codex entry, creating the lightweight one if needed. */
     suspend fun characterForEntry(entry: CodexEntryEntity): RpCharacterEntity = materializeCharacter(entry)
+
+    /** A codex entry prepared for the prompt: what it is, and which category governs it. */
+    data class CodexRef(val name: String, val category: String, val text: String)
+
+    /** Names the category each entry belongs to, so rules read as rules and people as people. */
+    suspend fun describe(entries: List<CodexEntryEntity>): List<CodexRef> {
+        if (entries.isEmpty()) return emptyList()
+        val categories = db.codexDao().getAllCategories().associate { it.id to it.name }
+        return entries.map { entry ->
+            CodexRef(
+                name = entry.name,
+                category = categories[entry.categoryId].orEmpty(),
+                text = entryText(entry),
+            )
+        }
+    }
 
     /** Readable body text for a codex entry, for the prompt's reference block. */
     fun entryText(entry: CodexEntryEntity): String =
