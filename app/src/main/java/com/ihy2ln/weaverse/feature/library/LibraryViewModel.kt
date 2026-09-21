@@ -70,6 +70,7 @@ class LibraryViewModel @Inject constructor(
     private val exportManager: ProjectExportManager,
     private val sampleBookImporter: SampleBookImporter,
     private val workspaceHistory: WorkspaceHistory,
+    private val database: com.ihy2ln.weaverse.data.db.WeaverseDatabase,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(LibraryUiState())
     val uiState: StateFlow<LibraryUiState> = _uiState.asStateFlow()
@@ -160,10 +161,31 @@ class LibraryViewModel @Inject constructor(
                 styleGuide = details?.styleGuide.orEmpty(),
             )
             settings.setSelectedBookId(book.id)
+            // The shared story start becomes the book's memory, so every generation
+            // carries the opening the writer chose — and its company rule.
+            details?.let { saveStoryStart(book.id, it) }
             val sceneId = bookRepository.firstSceneId(book.id)
             _uiState.update { it.copy(newBookTitle = "", assignSeriesId = "") }
             onOpened(book.id, sceneId)
         }
+    }
+
+    private suspend fun saveStoryStart(bookId: String, details: NewWorkDetails) {
+        val start = com.ihy2ln.weaverse.core.story.storyStartPromptBlock(
+            companions = com.ihy2ln.weaverse.core.story.StoryCompanionMode.fromId(details.companions),
+            answers = details.storyStart,
+            vocabulary = com.ihy2ln.weaverse.core.story.StoryStartVocabulary.Novel,
+        )
+        val dao = database.novelWritingDao()
+        val existing = dao.settings(bookId)
+        dao.saveSettings(
+            (existing ?: com.ihy2ln.weaverse.data.db.entities.NovelWritingSettings(bookId = bookId)).copy(
+                companions = details.companions,
+                memory = listOf(existing?.memory.orEmpty(), start)
+                    .filter { it.isNotBlank() }
+                    .joinToString("\n\n"),
+            ),
+        )
     }
 
     fun createSeries() {

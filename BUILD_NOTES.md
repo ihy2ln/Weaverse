@@ -3,6 +3,29 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.33 — Shared story start, and a company clicker the AI obeys
+
+- New `core/story/StoryStartTemplate.kt` holds the "Create Your Own Adventure" start
+  as a mode-agnostic template: the question set, a per-mode vocabulary (RPG says
+  party/campaign, Novel says cast/book), and the prompt block. Question ids are shared,
+  so answers and prompts are interchangeable between modes.
+- **Solo / Duo / Party / Team clicker.** Company was a free-text CYOA answer, which the
+  model happily ignored — writing "solo" still produced a rescuer in the first scene.
+  It is now a first-class choice with a hard rule that names what may not happen
+  (no companion, sidekick, guide, mentor, rescuer, familiar, talking animal, AI helper;
+  nobody offers to come along or follows at a distance) while explicitly allowing other
+  people to be met, fought, and left behind.
+- The rule is injected where models actually read it: first in the RPG chapter-plan
+  prompt, first **and last** in the opening-scene prompt, and at the head of every
+  turn's system blocks during play — companions were being added mid-campaign, not
+  only at the start.
+- **Novel start**: the create dialog now offers the same start for novels, and the
+  answers plus the company rule are written into the book's memory
+  (`NovelWritingSettings`, new `companions` column, DB v28), which novel generation
+  already feeds into its system prompt.
+- Test build: `Beta.Test.Build/weaverse-v1.4.33.apk`
+  (SHA-256 `86A7D21CD2E10A0F5C5334112A1A7EA8E5B77AC54BE90238D5493F7D667E1916`).
+
 ## v1.4.32 — Language filter: counts, and why a language can be missing
 
 - The picker shows a chapter count per language ("English (EN) · 617", "Any (1697)"),

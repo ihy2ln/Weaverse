@@ -41,6 +41,10 @@ data class NewWorkDetails(
     val rulesetId: String = "",
     /** RPG presentation mode, independent from the underlying rules system. */
     val gameModeId: String = "",
+    /** Shared story start: who travels with the protagonist (Solo / Duo / Party / Team). */
+    val companions: String = com.ihy2ln.weaverse.core.story.StoryCompanionMode.Party.id,
+    /** Shared story start: CYOA answers keyed by question id. */
+    val storyStart: Map<String, String> = emptyMap(),
     val settingId: String = "",
     val settingDetailId: String = "",
     val houseRuleId: String = "",
@@ -550,6 +554,12 @@ fun CreateWorkDialog(
 ) {
     val tokens = inkTokens()
     var title by remember { mutableStateOf("") }
+    // Shared story start, offered by every mode that writes a story.
+    var companions by remember {
+        mutableStateOf(com.ihy2ln.weaverse.core.story.StoryCompanionMode.Party)
+    }
+    val startAnswers = remember { androidx.compose.runtime.mutableStateMapOf<String, String>() }
+    var startOpen by remember { mutableStateOf(false) }
     var genre by remember { mutableStateOf("") }
     var settingDetailId by remember { mutableStateOf("frontier") }
     var settingDetailMenuOpen by remember { mutableStateOf(false) }
@@ -1018,6 +1028,20 @@ fun CreateWorkDialog(
                     style = MaterialTheme.typography.labelSmall,
                     color = tokens.secondaryText,
                 )
+                if (!vocabulary.storyboardSpecific) {
+                    StoryStartSection(
+                        vocabulary = if (vocabulary.campaignSpecific) {
+                            com.ihy2ln.weaverse.core.story.StoryStartVocabulary.Rpg
+                        } else {
+                            com.ihy2ln.weaverse.core.story.StoryStartVocabulary.Novel
+                        },
+                        expanded = startOpen,
+                        onExpandedChange = { startOpen = it },
+                        companions = companions,
+                        onCompanions = { companions = it },
+                        answers = startAnswers,
+                    )
+                }
                 Text(
                     if (vocabulary.storyboardSpecific) {
                         "Only the series title is required. Main art can be set later and appears in Window."
@@ -1034,6 +1058,8 @@ fun CreateWorkDialog(
             TextButton(onClick = {
                 onCreate(
                     NewWorkDetails(
+                        companions = companions.id,
+                        storyStart = startAnswers.filterValues { it.isNotBlank() }.toMap(),
                         title = title.trim().ifBlank { vocabulary.titlePlaceholder },
                         genre = if (isCampaign) {
                             val settingLabel = effectiveSettings.firstOrNull { it.id == settingId }?.label
@@ -1159,5 +1185,59 @@ fun CreateWorkDialog(
             onDismiss = { showAddSettingDetail = false },
             onSave = onAddSettingDetail,
         )
+    }
+}
+
+/**
+ * The shared "Create Your Own Adventure" start, offered by every story mode. Collapsed
+ * by default so a quick create stays one field; the company clicker is the part that
+ * matters most, so it sits outside the fold.
+ */
+@Composable
+private fun StoryStartSection(
+    vocabulary: com.ihy2ln.weaverse.core.story.StoryStartVocabulary,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    companions: com.ihy2ln.weaverse.core.story.StoryCompanionMode,
+    onCompanions: (com.ihy2ln.weaverse.core.story.StoryCompanionMode) -> Unit,
+    answers: androidx.compose.runtime.snapshots.SnapshotStateMap<String, String>,
+) {
+    val tokens = inkTokens()
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("Who travels with the protagonist?", style = MaterialTheme.typography.labelLarge)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            com.ihy2ln.weaverse.core.story.StoryCompanionMode.entries.forEach { mode ->
+                androidx.compose.material3.FilterChip(
+                    selected = mode == companions,
+                    onClick = { onCompanions(mode) },
+                    label = { Text(mode.label) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+        Text(companions.blurb, style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
+        TextButton(onClick = { onExpandedChange(!expanded) }) {
+            Text(if (expanded) "Hide story start" else "Create your own ${vocabulary.storyNoun}")
+        }
+        if (expanded) {
+            com.ihy2ln.weaverse.core.story.storyStartQuestions(vocabulary).forEach { question ->
+                OutlinedTextField(
+                    value = answers[question.id].orEmpty(),
+                    onValueChange = { answers[question.id] = it },
+                    label = { Text(question.prompt) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    question.presets.forEach { preset ->
+                        androidx.compose.material3.FilterChip(
+                            selected = answers[question.id] == preset,
+                            onClick = { answers[question.id] = preset },
+                            label = { Text(preset) },
+                        )
+                    }
+                }
+            }
+        }
     }
 }

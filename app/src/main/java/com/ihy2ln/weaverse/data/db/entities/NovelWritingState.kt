@@ -13,4 +13,6 @@ data class NovelWritingSettings(
     val authorNote: String = "",
     val modelRef: String = "",
     val outputWords: Int = 100,
+    /** Solo / Duo / Party / Team chosen in the book's start; drives a hard prompt rule. */
+    val companions: String = com.ihy2ln.weaverse.core.story.StoryCompanionMode.Party.id,
 )

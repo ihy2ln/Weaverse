@@ -32,8 +32,8 @@ android {
         applicationId = "com.ihy2ln.weaverse"
         minSdk = 26
         targetSdk = 34
-        versionCode = 164
-        versionName = "1.4.32"
+        versionCode = 165
+        versionName = "1.4.33"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

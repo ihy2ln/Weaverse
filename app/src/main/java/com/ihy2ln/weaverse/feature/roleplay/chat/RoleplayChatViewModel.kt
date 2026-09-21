@@ -3797,6 +3797,13 @@ class RoleplayChatViewModel @Inject constructor(
         }
     }
 
+    /** Solo / Duo / Party / Team clicker in the start; drives a hard prompt rule. */
+    fun setCampaignCompanions(mode: com.ihy2ln.weaverse.core.story.StoryCompanionMode) {
+        updateRpgStartupDraft { startup ->
+            startup.copy(setup = startup.setup.copy(companions = mode.id))
+        }
+    }
+
     fun saveCyoaAnswer(questionId: String, value: String, presetId: String? = null) {
         updateRpgStartupDraft { startup ->
             val answer = RpgPlanAnswer(questionId, value, presetId, skipped = false)

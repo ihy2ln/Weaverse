@@ -157,6 +157,10 @@ private fun extractJsonObject(text: String): JsonObject? {
 }
 
 fun chapterPlanPrompt(setup: RpgCampaignSetupSnapshot, plan: RpgAdventurePlan): String = """
+${com.ihy2ln.weaverse.core.story.companionRule(
+        com.ihy2ln.weaverse.core.story.StoryCompanionMode.fromId(setup.companions),
+    )}
+
 You are preparing Chapter One for an RPG campaign. Return ONLY one JSON object matching this shape:
 {"outline":{"workingTitle":"","premise":"","primaryObjective":"","antagonist":"","importantLocations":"","beats":[{"id":"beat-1","title":"","summary":"","completed":false}],"optionalBeat":"","majorChallenge":"","climax":"","possibleOutcomes":""},"openingScene":{"title":"","locationAndAtmosphere":"","startingCast":"","immediateObjective":"","conflictAndStakes":"","complication":"","firstDecisionHook":"","sceneArtTags":""}}
 Create 3 to 5 flexible beats. Do not write the actual scene yet. The setting
@@ -299,7 +303,11 @@ fun openingScenePrompt(
         RpgCombatRuleset.DndD20 -> "D&D d20 is authoritative. Use the saved character sheet and visible deterministic d20 checks when a check is actually required."
         RpgCombatRuleset.TextReactions -> "Text Reactions is authoritative. Let written actions drive play and never silently replace them with D&D or card-combat mechanics."
     }
+    val companions = com.ihy2ln.weaverse.core.story.StoryCompanionMode.fromId(setup.companions)
+    val companionRule = com.ihy2ln.weaverse.core.story.companionRule(companions)
     return """
+${'$'}companionRule
+
 Act as the AI Dungeon Master. Write the actual playable opening scene now, using the verified campaign plan as canon.
 Return ONLY JSON: {"prose":"full scene prose","choices":["choice one","choice two","choice three"],"sceneArtTags":"comma separated tags"}.
 The prose must establish location, cast, immediate danger or opportunity, and the first objective. End at a decision point without choosing for the player. Keep the three choices actionable and distinct. Do not include planning notes or numbered choices in prose.

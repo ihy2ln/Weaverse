@@ -31,6 +31,11 @@ data class RpgCampaignSetupSnapshot(
     val settingDetails: String = "",
     /** The chosen Additional House Rules preset's own guidance text (Cinematic, Gritty, Heroic, Political, or a custom preset). */
     val houseRulePreset: String = "",
+    /**
+     * Solo / Duo / Party / Team, as picked in the start. Stored as the enum id so an
+     * older save without it still loads, defaulting to Party.
+     */
+    val companions: String = com.ihy2ln.weaverse.core.story.StoryCompanionMode.Party.id,
 )
 
 @Serializable

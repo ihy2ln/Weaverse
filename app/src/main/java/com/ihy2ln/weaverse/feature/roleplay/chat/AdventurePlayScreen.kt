@@ -420,6 +420,10 @@ private fun RpgStartupWizard(
                             }
                             RpgGenerationStatus.Idle -> Unit
                         }
+                        CompanionModePicker(
+                            selected = com.ihy2ln.weaverse.core.story.StoryCompanionMode.fromId(startup.setup.companions),
+                            onSelect = viewModel::setCampaignCompanions,
+                        )
                         adventurePlanQuestions().forEachIndexed { index, question ->
                             val answer = startup.plan.answers.firstOrNull { it.questionId == question.id }
                             val choices = (startup.cyoaSuggestions[question.id].orEmpty() + question.presets).distinct()
@@ -1752,4 +1756,41 @@ private fun CodexMentionText(
             }
         },
     )
+}
+
+/**
+ * Solo / Duo / Party / Team. A clicker rather than a typed answer, because the model
+ * reliably ignored "solo" written into a free-text box and introduced a companion
+ * anyway; this feeds a hard rule into every planning and play prompt.
+ */
+@Composable
+private fun CompanionModePicker(
+    selected: com.ihy2ln.weaverse.core.story.StoryCompanionMode,
+    onSelect: (com.ihy2ln.weaverse.core.story.StoryCompanionMode) -> Unit,
+) {
+    val tokens = inkTokens()
+    Column(
+        Modifier.fillMaxWidth().padding(vertical = InkSpacing.xs),
+        verticalArrangement = Arrangement.spacedBy(InkSpacing.xxs),
+    ) {
+        Text("Who travels with you?", style = MaterialTheme.typography.labelLarge)
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+        ) {
+            com.ihy2ln.weaverse.core.story.StoryCompanionMode.entries.forEach { mode ->
+                androidx.compose.material3.FilterChip(
+                    selected = mode == selected,
+                    onClick = { onSelect(mode) },
+                    label = { Text(mode.label) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+        Text(
+            selected.blurb,
+            style = MaterialTheme.typography.bodySmall,
+            color = tokens.secondaryText,
+        )
+    }
 }
