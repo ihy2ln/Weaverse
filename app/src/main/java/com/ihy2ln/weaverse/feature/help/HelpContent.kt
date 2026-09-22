@@ -56,8 +56,14 @@ object HelpContent {
             entries = listOf(
                 HelpEntry(
                     "Starting a book",
-                    "A new book opens the same four-step start a campaign uses: Create Your Own " +
-                        "Story, the Chapter One plan, Verify Your Story, and Chapter One itself. " +
+                    "Naming a book opens the same four-step start a campaign uses: Book Setup, " +
+                        "Create Your Own Story, the Chapter One plan and Verify Your Story, then " +
+                        "Chapter One itself. Step one carries the campaign templates across: the " +
+                        "Setting Template and Setting Details browsers with favorites and custom " +
+                        "presets, the main-character picker, the perspective dropdown, tense and " +
+                        "style guide. Template guidance written for a table is reworded on the " +
+                        "way into a book, so the cast replaces the party and the narrator " +
+                        "replaces the Dungeon Master. " +
                         "The AI takes part in three of the four — it suggests answers, drafts the " +
                         "plan, then writes the opening scene — and each can be retried, stopped, " +
                         "or replaced with a written fallback. Every box stays editable. " +

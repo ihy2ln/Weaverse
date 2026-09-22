@@ -593,6 +593,9 @@ fun CreateWorkDialog(
     var showAddSettingDetail by remember { mutableStateOf(false) }
     val isCampaign = vocabulary.campaignSpecific
     val isTextGame = vocabulary.textGameSpecific
+    // A novel asks for its name here and everything else in its own four-step start,
+    // so the dialog stays one field rather than asking the same things twice.
+    val isNovel = !vocabulary.campaignSpecific && !vocabulary.storyboardSpecific
     val effectiveSettings = CampaignSettingTemplates + customSettings
     val effectiveSettingDetails = CampaignSettingDetailTemplates + customSettingDetails
 
@@ -977,7 +980,7 @@ fun CreateWorkDialog(
                             }
                         }
                     }
-                } else {
+                } else if (!isNovel) {
                     OutlinedTextField(
                         value = pov,
                         onValueChange = { pov = it },
@@ -997,14 +1000,16 @@ fun CreateWorkDialog(
                         onSelect = { tense = it },
                     )
                 }
-                OutlinedTextField(
-                    value = styleGuide,
-                    onValueChange = { styleGuide = it },
-                    label = { Text(if (isCampaign) "Additional house rules" else vocabulary.styleLabel) },
-                    minLines = 2,
-                    maxLines = 4,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                if (!isNovel) {
+                    OutlinedTextField(
+                        value = styleGuide,
+                        onValueChange = { styleGuide = it },
+                        label = { Text(if (isCampaign) "Additional house rules" else vocabulary.styleLabel) },
+                        minLines = 2,
+                        maxLines = 4,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 if (isCampaign) {
                     Text("Additional House Rules preset", style = MaterialTheme.typography.labelMedium)
                     Box(modifier = Modifier.fillMaxWidth()) {
@@ -1023,18 +1028,16 @@ fun CreateWorkDialog(
                         }
                     }
                 }
-                Text(
-                    vocabulary.styleHint,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = tokens.secondaryText,
-                )
-                if (!vocabulary.storyboardSpecific) {
+                if (!isNovel) {
+                    Text(
+                        vocabulary.styleHint,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tokens.secondaryText,
+                    )
+                }
+                if (isCampaign) {
                     StoryStartSection(
-                        vocabulary = if (vocabulary.campaignSpecific) {
-                            com.ihy2ln.weaverse.core.story.StoryStartVocabulary.Rpg
-                        } else {
-                            com.ihy2ln.weaverse.core.story.StoryStartVocabulary.Novel
-                        },
+                        vocabulary = com.ihy2ln.weaverse.core.story.StoryStartVocabulary.Rpg,
                         expanded = startOpen,
                         onExpandedChange = { startOpen = it },
                         companions = companions,
@@ -1043,11 +1046,15 @@ fun CreateWorkDialog(
                     )
                 }
                 Text(
-                    if (vocabulary.storyboardSpecific) {
-                        "Only the series title is required. Main art can be set later and appears in Window."
-                    } else {
-                        "Only the title is needed now — the rest can be filled in later, " +
-                            "and a cover is set from the editor."
+                    when {
+                        vocabulary.storyboardSpecific ->
+                            "Only the series title is required. Main art can be set later and appears in Window."
+                        isNovel ->
+                            "Name the book and the four-step start opens next: setup and templates, " +
+                                "Create Your Own Story, the Chapter One plan, then Chapter One itself."
+                        else ->
+                            "Only the title is needed now — the rest can be filled in later, " +
+                                "and a cover is set from the editor."
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = tokens.secondaryText,

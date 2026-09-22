@@ -16,6 +16,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -25,13 +27,29 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ihy2ln.weaverse.core.story.StoryCompanionMode
+import com.ihy2ln.weaverse.core.ui.components.CampaignPerspectiveTemplates
+import com.ihy2ln.weaverse.core.ui.components.CampaignPresetBrowserDialog
+import com.ihy2ln.weaverse.core.ui.components.CampaignPresetEditorDialog
+import com.ihy2ln.weaverse.core.ui.components.CampaignSettingDetailTemplate
+import com.ihy2ln.weaverse.core.ui.components.CampaignSettingTemplate
+import com.ihy2ln.weaverse.core.ui.components.CampaignSettingTemplates
+import com.ihy2ln.weaverse.core.ui.components.CampaignSettingDetailTemplates
+import com.ihy2ln.weaverse.core.ui.components.InkChip
 import com.ihy2ln.weaverse.core.ui.components.InkOutlinedButton
+import com.ihy2ln.weaverse.core.ui.components.InkSegmentedPill
+import com.ihy2ln.weaverse.core.ui.components.SegmentedOption
+import com.ihy2ln.weaverse.core.ui.components.WorkCharacterOption
+import com.ihy2ln.weaverse.core.ui.components.campaignSettingBrowserItems
+import com.ihy2ln.weaverse.core.ui.components.campaignSettingDetailBrowserItems
 import com.ihy2ln.weaverse.core.ui.components.InkTextButton
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
@@ -49,6 +67,17 @@ import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgGenerationStatus
 fun NovelStartScreen(
     bookId: String,
     onClose: () -> Unit,
+    characterOptions: List<WorkCharacterOption> = emptyList(),
+    customSettings: List<CampaignSettingTemplate> = emptyList(),
+    customSettingDetails: List<CampaignSettingDetailTemplate> = emptyList(),
+    favoriteSettingIds: Set<String> = emptySet(),
+    favoriteSettingDetailIds: Set<String> = emptySet(),
+    onToggleSettingFavorite: (String) -> Unit = {},
+    onToggleSettingDetailFavorite: (String) -> Unit = {},
+    onAddSetting: ((String, String, String, String) -> Unit)? = null,
+    onRemoveSetting: ((String) -> Unit)? = null,
+    onAddSettingDetail: ((String, String, String, String) -> Unit)? = null,
+    onRemoveSettingDetail: ((String) -> Unit)? = null,
     viewModel: NovelStartViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -67,9 +96,31 @@ fun NovelStartScreen(
 
     Box(Modifier.fillMaxSize().background(tokens.background).padding(InkSpacing.xs)) {
         when (state.step) {
+            NovelStartStep.Setup -> StartSplit(
+                summary = { StepSummary(state, "Book Setup", "Name the book and choose its templates. Everything here can be changed later from the editor.") },
+                controls = {
+                    SetupControls(
+                        state = state,
+                        viewModel = viewModel,
+                        onClose = onClose,
+                        characterOptions = characterOptions,
+                        customSettings = customSettings,
+                        customSettingDetails = customSettingDetails,
+                        favoriteSettingIds = favoriteSettingIds,
+                        favoriteSettingDetailIds = favoriteSettingDetailIds,
+                        onToggleSettingFavorite = onToggleSettingFavorite,
+                        onToggleSettingDetailFavorite = onToggleSettingDetailFavorite,
+                        onAddSetting = onAddSetting,
+                        onRemoveSetting = onRemoveSetting,
+                        onAddSettingDetail = onAddSettingDetail,
+                        onRemoveSettingDetail = onRemoveSettingDetail,
+                    )
+                },
+            )
+
             NovelStartStep.Cyoa -> StartSplit(
                 summary = { StepSummary(state, "Create Your Own Story", "Answer in the boxes. Presets fill a box and remain editable; Skip leaves it blank.") },
-                controls = { CyoaControls(state, viewModel, onClose) },
+                controls = { CyoaControls(state, viewModel) },
             )
 
             NovelStartStep.GeneratingChapterPlan -> StartSplit(
@@ -220,8 +271,269 @@ private fun StepColumn(content: @Composable () -> Unit) {
     ) { content() }
 }
 
+/**
+ * Step one: the book's name and its templates. This is the campaign's own Setup
+ * screen — the Setting Template and Setting Details browsers with favourites and
+ * custom presets, the main-character picker, perspective and tense — minus everything
+ * that only exists for a table: play-as role, game mode, rule system, house rules.
+ */
 @Composable
-private fun CyoaControls(state: NovelStartUiState, viewModel: NovelStartViewModel, onClose: () -> Unit) {
+private fun SetupControls(
+    state: NovelStartUiState,
+    viewModel: NovelStartViewModel,
+    onClose: () -> Unit,
+    characterOptions: List<WorkCharacterOption>,
+    customSettings: List<CampaignSettingTemplate>,
+    customSettingDetails: List<CampaignSettingDetailTemplate>,
+    favoriteSettingIds: Set<String>,
+    favoriteSettingDetailIds: Set<String>,
+    onToggleSettingFavorite: (String) -> Unit,
+    onToggleSettingDetailFavorite: (String) -> Unit,
+    onAddSetting: ((String, String, String, String) -> Unit)?,
+    onRemoveSetting: ((String) -> Unit)?,
+    onAddSettingDetail: ((String, String, String, String) -> Unit)?,
+    onRemoveSettingDetail: ((String) -> Unit)?,
+) {
+    val tokens = inkTokens()
+    val setup = state.setup
+    var settingBrowserOpen by remember { mutableStateOf(false) }
+    var settingDetailBrowserOpen by remember { mutableStateOf(false) }
+    var perspectiveMenuOpen by remember { mutableStateOf(false) }
+    var showAddSetting by remember { mutableStateOf(false) }
+    var showAddSettingDetail by remember { mutableStateOf(false) }
+    var characterQuery by remember { mutableStateOf("") }
+    var selectedCharacterIds by remember { mutableStateOf(setOf<String>()) }
+    val effectiveSettings = CampaignSettingTemplates + customSettings
+    val effectiveSettingDetails = CampaignSettingDetailTemplates + customSettingDetails
+
+    StepColumn {
+        OutlinedTextField(
+            value = setup.title,
+            onValueChange = { value -> viewModel.updateSetup { it.copy(title = value) } },
+            label = { Text("Title") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value = setup.genre,
+            onValueChange = { value -> viewModel.updateSetup { it.copy(genre = value) } },
+            label = { Text("Genre") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        Text("Setting template", style = MaterialTheme.typography.labelMedium)
+        InkOutlinedButton(
+            label = (effectiveSettings.firstOrNull { it.id == setup.settingId }?.label ?: "Choose setting") + " ▸",
+            onClick = { settingBrowserOpen = true },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text("Setting Details preset", style = MaterialTheme.typography.labelMedium)
+        InkOutlinedButton(
+            label = (effectiveSettingDetails.firstOrNull { it.id == setup.settingDetailId }?.label ?: "Choose details") + " ▸",
+            onClick = { settingDetailBrowserOpen = true },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value = setup.settingDetails,
+            onValueChange = { value -> viewModel.updateSetup { it.copy(settingDetails = value) } },
+            label = { Text("Setting details") },
+            placeholder = { Text("Place, era, locations, factions, tone…") },
+            minLines = 2,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        Text("Main character(s)", style = MaterialTheme.typography.labelMedium)
+        if (characterOptions.isEmpty()) {
+            OutlinedTextField(
+                value = setup.characters,
+                onValueChange = { value -> viewModel.updateSetup { it.copy(characters = value) } },
+                label = { Text("Who the book follows") },
+                placeholder = { Text("Name them, or add Codex entries first") },
+                minLines = 2,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        } else {
+            OutlinedTextField(
+                value = characterQuery,
+                onValueChange = { characterQuery = it },
+                label = { Text("Search characters") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            val visible = if (characterQuery.isBlank()) {
+                characterOptions
+            } else {
+                characterOptions.filter { it.name.contains(characterQuery, ignoreCase = true) }
+            }
+            if (visible.isEmpty()) {
+                Text(
+                    "No characters match that search.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = tokens.secondaryText,
+                )
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                    visible.chunked(3).forEach { row ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                            row.forEach { option ->
+                                val selected = option.id in selectedCharacterIds
+                                InkChip(
+                                    label = if (selected) "✓ " + option.name else option.name,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    selected = selected,
+                                    onClick = {
+                                        selectedCharacterIds = if (selected) {
+                                            selectedCharacterIds - option.id
+                                        } else {
+                                            selectedCharacterIds + option.id
+                                        }
+                                        val names = characterOptions
+                                            .filter { it.id in selectedCharacterIds }
+                                            .joinToString(", ") { it.name }
+                                        viewModel.updateSetup { it.copy(characters = names) }
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            if (setup.characters.isNotBlank()) {
+                Text(
+                    setup.characters,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.secondaryText,
+                    maxLines = 2,
+                )
+            }
+        }
+
+        Text("Point of view", style = MaterialTheme.typography.labelMedium)
+        Box(Modifier.fillMaxWidth()) {
+            InkOutlinedButton(
+                label = (
+                    CampaignPerspectiveTemplates.firstOrNull { it.id == setup.narrativePovId }?.label
+                        ?: setup.pointOfView
+                    ) + " ▾",
+                onClick = { perspectiveMenuOpen = true },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            DropdownMenu(expanded = perspectiveMenuOpen, onDismissRequest = { perspectiveMenuOpen = false }) {
+                CampaignPerspectiveTemplates.forEach { template ->
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(template.label)
+                                Text(
+                                    novelizeGuidance(template.directive),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = tokens.secondaryText,
+                                    maxLines = 3,
+                                )
+                            }
+                        },
+                        onClick = {
+                            viewModel.selectPerspective(template.id, template.label, template.directive)
+                            perspectiveMenuOpen = false
+                        },
+                    )
+                }
+            }
+        }
+        Text("Tense", style = MaterialTheme.typography.labelMedium)
+        InkSegmentedPill(
+            options = listOf(
+                SegmentedOption("Past tense", "Past"),
+                SegmentedOption("Present tense", "Present"),
+                SegmentedOption("Future tense", "Future"),
+            ),
+            selectedId = setup.tense.ifBlank { "Past tense" },
+            onSelect = { value -> viewModel.updateSetup { it.copy(tense = value) } },
+            compact = true,
+        )
+
+        OutlinedTextField(
+            value = setup.styleGuide,
+            onValueChange = { value -> viewModel.updateSetup { it.copy(styleGuide = value) } },
+            label = { Text("Style guide") },
+            minLines = 2,
+            maxLines = 4,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(
+            "Voice, pacing, anything the AI should keep to.",
+            style = MaterialTheme.typography.labelSmall,
+            color = tokens.secondaryText,
+        )
+
+        CompanyPicker(StoryCompanionMode.fromId(setup.companions), viewModel::setCompanions)
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+            InkTextButton("Close", onClose)
+            InkOutlinedButton("Continue to the story", viewModel::openCyoa, Modifier.weight(1f))
+        }
+    }
+
+    if (settingBrowserOpen) {
+        CampaignPresetBrowserDialog(
+            title = "Setting templates",
+            items = campaignSettingBrowserItems(customSettings),
+            selectedId = setup.settingId,
+            favoriteIds = favoriteSettingIds,
+            onToggleFavorite = onToggleSettingFavorite,
+            onSelect = { preset ->
+                val directive = effectiveSettings.firstOrNull { it.id == preset.id }?.directive.orEmpty()
+                viewModel.selectSettingTemplate(preset.id, preset.label, directive)
+                settingBrowserOpen = false
+            },
+            onDismiss = { settingBrowserOpen = false },
+            onRemove = onRemoveSetting,
+            onAdd = onAddSetting?.let { { settingBrowserOpen = false; showAddSetting = true } },
+            addLabel = "Add setting template",
+        )
+    }
+    if (settingDetailBrowserOpen) {
+        CampaignPresetBrowserDialog(
+            title = "Setting details",
+            items = campaignSettingDetailBrowserItems(customSettingDetails),
+            selectedId = setup.settingDetailId,
+            favoriteIds = favoriteSettingDetailIds,
+            onToggleFavorite = onToggleSettingDetailFavorite,
+            onSelect = { preset ->
+                viewModel.selectSettingDetails(preset.id, preset.description)
+                settingDetailBrowserOpen = false
+            },
+            onDismiss = { settingDetailBrowserOpen = false },
+            onRemove = onRemoveSettingDetail,
+            onAdd = onAddSettingDetail?.let { { settingDetailBrowserOpen = false; showAddSettingDetail = true } },
+            addLabel = "Add details preset",
+        )
+    }
+    if (showAddSetting && onAddSetting != null) {
+        CampaignPresetEditorDialog(
+            title = "Add Setting Template",
+            guidanceLabel = "World guidance for the AI",
+            defaultSection = "Custom",
+            defaultTheme = "Saved templates",
+            onDismiss = { showAddSetting = false },
+            onSave = onAddSetting,
+        )
+    }
+    if (showAddSettingDetail && onAddSettingDetail != null) {
+        CampaignPresetEditorDialog(
+            title = "Add Setting Details Preset",
+            guidanceLabel = "Setting details for the AI",
+            defaultSection = "Custom",
+            defaultTheme = "Saved presets",
+            onDismiss = { showAddSettingDetail = false },
+            onSave = onAddSettingDetail,
+        )
+    }
+}
+
+@Composable
+private fun CyoaControls(state: NovelStartUiState, viewModel: NovelStartViewModel) {
     val tokens = inkTokens()
     StepColumn {
         when (state.suggestionStatus) {
@@ -278,7 +590,7 @@ private fun CyoaControls(state: NovelStartUiState, viewModel: NovelStartViewMode
         InkOutlinedButton("Randomize unanswered", viewModel::randomizeUnanswered, Modifier.fillMaxWidth())
         InkTextButton("Refresh AI suggestions", viewModel::generateSuggestions)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
-            InkTextButton("Close", onClose)
+            InkTextButton("Back to setup", viewModel::editSetup)
             InkOutlinedButton("Create chapter plan", viewModel::generateChapterPlan, Modifier.weight(1f))
         }
     }

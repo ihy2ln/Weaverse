@@ -284,6 +284,21 @@ fun AppShell(
             com.ihy2ln.weaverse.feature.novel.start.NovelStartScreen(
                 bookId = novelStartBookId,
                 onClose = { novelStartBookId = "" },
+                characterOptions = campaignCharacterOptions,
+                customSettings = com.ihy2ln.weaverse.core.ui.components.decodeCampaignSettingTemplates(
+                    prefs.customSettingTemplates,
+                ),
+                customSettingDetails = com.ihy2ln.weaverse.core.ui.components.decodeCampaignSettingDetailTemplates(
+                    prefs.customSettingDetailTemplates,
+                ),
+                favoriteSettingIds = prefs.favoriteSettingTemplateIds,
+                favoriteSettingDetailIds = prefs.favoriteSettingDetailIds,
+                onToggleSettingFavorite = shellViewModel::toggleFavoriteSettingTemplate,
+                onToggleSettingDetailFavorite = shellViewModel::toggleFavoriteSettingDetail,
+                onAddSetting = shellViewModel::addSettingTemplate,
+                onRemoveSetting = shellViewModel::removeSettingTemplate,
+                onAddSettingDetail = shellViewModel::addSettingDetailTemplate,
+                onRemoveSettingDetail = shellViewModel::removeSettingDetailTemplate,
             )
         }
     }

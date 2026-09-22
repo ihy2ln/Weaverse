@@ -97,6 +97,44 @@ class NovelStartPlannerTest {
     }
 
     @Test
+    fun `template guidance loses its table words on the way into a book`() {
+        val rewritten = novelizeGuidance(
+            "Run a campaign in the wilds. The party follows the player character, and the " +
+                "Dungeon Master withholds secrets when revealing them would undermine play.",
+        )
+        listOf("campaign", "the party", "player character", "Dungeon Master", "undermine play").forEach { term ->
+            assertFalse(rewritten.contains(term, ignoreCase = true), "rewritten guidance still says $term")
+        }
+        assertTrue(rewritten.startsWith("Set the book in the wilds"))
+        assertTrue(rewritten.contains("the cast"))
+        assertTrue(rewritten.contains("viewpoint character"))
+    }
+
+    @Test
+    fun `the every shipped setting template survives the rewrite without table words`() {
+        com.ihy2ln.weaverse.core.ui.components.CampaignSettingTemplates.forEach { template ->
+            val rewritten = novelizeGuidance(template.directive)
+            listOf("Dungeon Master", "the party", "player character").forEach { term ->
+                assertFalse(
+                    rewritten.contains(term, ignoreCase = true),
+                    "${template.label} still says $term after the rewrite",
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `setting and perspective guidance reach the prompt header`() {
+        val setup = solo.copy(
+            settingGuidance = "Set the book in a drowned coast.",
+            perspectiveGuidance = "Stay close to one viewpoint character.",
+        )
+        val prompt = novelChapterPlanPrompt(setup, plan)
+        assertTrue(prompt.contains("Setting guidance: Set the book in a drowned coast."))
+        assertTrue(prompt.contains("Perspective guidance: Stay close to one viewpoint character."))
+    }
+
+    @Test
     fun `the scene fallback offers no choices, because a book has none`() {
         val draft = fallbackNovelSceneDraft(plan, RpgOpeningSceneGuideline(startingCast = "Mira"))
         assertTrue(draft.choices.isEmpty())

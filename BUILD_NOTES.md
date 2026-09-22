@@ -3,6 +3,29 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.35 - The novel start gains step one: the name and the templates
+
+- The four-step start now begins where the campaign's does. **Step 1 is Book Setup**:
+  title, genre, the **Setting Template browser** and the **Setting Details browser** -
+  the same catalogues campaigns pick from, with favourites, custom presets, and Add /
+  Remove - the main-character picker, the perspective template dropdown, tense, style
+  guide, and the company clicker. Steps 2 to 4 are unchanged: Create Your Own Story,
+  the Chapter One plan, Verify Your Story, and Chapter One.
+- **New `novelizeGuidance`.** The Setting Template and perspective catalogues are
+  shared with campaigns, so their guidance is written for a table - parties, players,
+  GMs, play. Carried into a book unchanged it would drag the table back in through the
+  side door, so the table words are rewritten on the way through: *the party* becomes
+  *the cast*, *player character* becomes *viewpoint character*, *Dungeon Master*
+  becomes *the narrator*, *campaign* becomes *book*. The catalogue itself is untouched,
+  and a test sweeps every shipped setting template to prove none of it survives.
+- The templates' guidance is folded into the book's style guide when the start
+  finishes, the way a campaign folds its own, so every later generation reads it.
+- Because step 1 asks for all of it, the **New book dialog is now just the title**,
+  with one line saying what opens next.
+- The campaign's own start and its New campaign dialog are untouched.
+- Test build: `Beta.Test.Build/weaverse-v1.4.35.apk`
+  (SHA-256 `0BCA01174B599A30905551431023B370D8CCC816E3E98ACEB543A7D8DD75E390`).
+
 ## v1.4.34 — The novel start is the campaign's four-step start
 
 - **New `feature/novel/start/`.** The RPG's four-step opening is now the Novel's too,

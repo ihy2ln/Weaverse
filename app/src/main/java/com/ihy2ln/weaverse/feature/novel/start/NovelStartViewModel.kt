@@ -39,19 +39,19 @@ import kotlin.random.Random
  * The novel start's four steps, in the same order the campaign uses them: the story
  * questions, the chapter plan, verification, and Scene One.
  */
-enum class NovelStartStep { Cyoa, GeneratingChapterPlan, ChapterPlan, Verification, GeneratingScene, Started }
+enum class NovelStartStep { Setup, Cyoa, GeneratingChapterPlan, ChapterPlan, Verification, GeneratingScene, Started }
 
 /** Which of the four the wizard is on, for the "Step n of 4" line. */
 fun NovelStartStep.number(): Int = when (this) {
-    NovelStartStep.Cyoa -> 1
-    NovelStartStep.GeneratingChapterPlan, NovelStartStep.ChapterPlan -> 2
-    NovelStartStep.Verification, NovelStartStep.GeneratingScene -> 3
-    NovelStartStep.Started -> 4
+    NovelStartStep.Setup -> 1
+    NovelStartStep.Cyoa -> 2
+    NovelStartStep.GeneratingChapterPlan, NovelStartStep.ChapterPlan -> 3
+    NovelStartStep.Verification, NovelStartStep.GeneratingScene, NovelStartStep.Started -> 4
 }
 
 data class NovelStartUiState(
     val bookId: String = "",
-    val step: NovelStartStep = NovelStartStep.Cyoa,
+    val step: NovelStartStep = NovelStartStep.Setup,
     val setup: NovelSetupSnapshot = NovelSetupSnapshot(),
     val plan: RpgAdventurePlan = RpgAdventurePlan(),
     val chapterOutline: RpgChapterOutline = RpgChapterOutline(),
@@ -104,7 +104,36 @@ class NovelStartViewModel @Inject constructor(
         }
     }
 
-    // ---- Step 1: Create Your Own Story -------------------------------------------
+    // ---- Step 1: Book Setup ------------------------------------------------------
+
+    fun updateSetup(block: (NovelSetupSnapshot) -> NovelSetupSnapshot) =
+        _uiState.update { it.copy(setup = block(it.setup)) }
+
+    /** Picking a Setting Template carries its guidance across, reworded for a book. */
+    fun selectSettingTemplate(id: String, label: String, directive: String) = updateSetup {
+        it.copy(
+            settingId = id,
+            setting = label,
+            settingGuidance = novelizeGuidance(directive),
+        )
+    }
+
+    fun selectSettingDetails(id: String, details: String) = updateSetup {
+        it.copy(settingDetailId = id, settingDetails = novelizeGuidance(details))
+    }
+
+    fun selectPerspective(id: String, label: String, directive: String) = updateSetup {
+        it.copy(
+            narrativePovId = id,
+            pointOfView = label,
+            perspectiveGuidance = novelizeGuidance(directive),
+        )
+    }
+
+    fun openCyoa() = _uiState.update { it.copy(step = NovelStartStep.Cyoa) }
+    fun editSetup() = _uiState.update { it.copy(step = NovelStartStep.Setup) }
+
+    // ---- Step 2: Create Your Own Story -------------------------------------------
 
     fun setCompanions(mode: StoryCompanionMode) {
         _uiState.update { it.copy(setup = it.setup.copy(companions = mode.id)) }
@@ -334,7 +363,14 @@ class NovelStartViewModel @Inject constructor(
                     genre = state.setup.genre,
                     pov = state.setup.pointOfView,
                     tense = state.setup.tense,
-                    styleGuide = state.setup.styleGuide,
+                    // The templates' guidance is folded into the book's style guide, the
+                    // way a campaign folds its own, so every later generation reads it.
+                    styleGuide = listOf(
+                        state.setup.settingGuidance.takeIf { it.isNotBlank() }?.let { "Setting guidance: $it" },
+                        state.setup.settingDetails.takeIf { it.isNotBlank() }?.let { "Setting details: $it" },
+                        state.setup.perspectiveGuidance.takeIf { it.isNotBlank() }?.let { "Perspective guidance: $it" },
+                        state.setup.styleGuide.trim().takeIf { it.isNotBlank() },
+                    ).filterNotNull().joinToString("\n\n"),
                     updatedAt = System.currentTimeMillis(),
                 ),
             )

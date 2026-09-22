@@ -35,6 +35,16 @@ data class NovelSetupSnapshot(
     val styleGuide: String = "",
     /** Solo / Duo / Party / Team as an enum id, so an older save still loads. */
     val companions: String = StoryCompanionMode.Party.id,
+    /** The chosen Setting Template, by id — the same catalogue campaigns pick from. */
+    val settingId: String = "high-fantasy",
+    /** The chosen Setting Details preset, by id. */
+    val settingDetailId: String = "frontier",
+    /** The chosen narrative perspective template, by id. */
+    val narrativePovId: String = "third-limited",
+    /** The Setting Template's own guidance text for the AI. */
+    val settingGuidance: String = "",
+    /** The perspective template's own directive. */
+    val perspectiveGuidance: String = "",
 )
 
 /** One question on the Create Your Own Story step. */
@@ -112,9 +122,11 @@ private fun NovelSetupSnapshot.header(): String = buildString {
     appendLine("Title: $title")
     if (genre.isNotBlank()) appendLine("Genre: $genre")
     if (setting.isNotBlank()) appendLine("Setting: $setting")
+    if (settingGuidance.isNotBlank()) appendLine("Setting guidance: $settingGuidance")
     if (settingDetails.isNotBlank()) appendLine("Setting details: $settingDetails")
     if (characters.isNotBlank()) appendLine("Main characters: $characters")
     appendLine("POV: $pointOfView")
+    if (perspectiveGuidance.isNotBlank()) appendLine("Perspective guidance: $perspectiveGuidance")
     appendLine("Tense: $tense")
     if (styleGuide.isNotBlank()) appendLine("Style guide: $styleGuide")
     append("Company: ${StoryCompanionMode.fromId(companions).label}")
@@ -294,3 +306,36 @@ fun fallbackNovelSceneDraft(plan: RpgAdventurePlan, scene: RpgOpeningSceneGuidel
     choices = emptyList(),
     sceneArtTags = scene.sceneArtTags,
 )
+
+/**
+ * The Setting Template and perspective catalogues are shared with campaigns, so their
+ * guidance is written for a table: parties, players, GMs, and play. Carried into a book
+ * unchanged it would drag the table back in through the side door, so the table words
+ * are rewritten on the way through. The catalogue itself is untouched — campaigns keep
+ * reading the original text.
+ */
+fun novelizeGuidance(text: String): String {
+    if (text.isBlank()) return text
+    var out = text
+    listOf(
+        """\bRun a campaign in\b""" to "Set the book in",
+        """\bRun (?:a|the) campaign\b""" to "Write the book",
+        """\bplayer characters\b""" to "viewpoint characters",
+        """\bplayer character\b""" to "viewpoint character",
+        """\bplayer agency\b""" to "the reader's investment",
+        """\bthe players\b""" to "the protagonists",
+        """\bthe player\b""" to "the protagonist",
+        """\bthe party\b""" to "the cast",
+        """\bDungeon Master\b""" to "the narrator",
+        """\bGame Master\b""" to "the narrator",
+        """\bthe GM\b""" to "the narrator",
+        """\bcampaigns\b""" to "books",
+        """\bcampaign\b""" to "book",
+        """\bundermine play\b""" to "undermine the story",
+        """\bduring play\b""" to "in the story",
+        """\bin play\b""" to "in the story",
+    ).forEach { (pattern, replacement) ->
+        out = Regex(pattern, RegexOption.IGNORE_CASE).replace(out, replacement)
+    }
+    return out.trim()
+}

@@ -137,9 +137,19 @@ hit by accident. Everything saves as you go.
 
 ### Starting a book
 
-A new book opens the same four-step start a campaign uses:
-**Create Your Own Story → Chapter One plan → Verify Your Story →
-Chapter One**. The AI takes part in three of the four — it suggests
+Naming a book opens the same four-step start a campaign uses:
+**Book Setup → Create Your Own Story → Chapter One plan and Verify
+Your Story → Chapter One**.
+
+Step one carries the campaign templates across: the **Setting
+Template** and **Setting Details** browsers, with favourites, custom
+presets and Add / Remove, plus the main-character picker, the
+perspective dropdown, tense and the style guide. Template guidance
+written for a table is reworded on the way into a book — the cast
+replaces the party, the narrator replaces the Dungeon Master — so the
+catalogue is shared without the table coming with it.
+
+The AI takes part in three of the four — it suggests
 answers, drafts the plan, then writes the opening scene — and each of
 those can be retried, stopped, or replaced with a written fallback.
 Every box stays editable.
