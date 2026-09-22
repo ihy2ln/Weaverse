@@ -339,3 +339,117 @@ fun novelizeGuidance(text: String): String {
     }
     return out.trim()
 }
+
+/**
+ * Genre templates for the setup step. The field stays free text — these only fill it,
+ * and a typed genre is never overwritten.
+ */
+fun novelGenreTemplates(): List<String> = listOf(
+    "Literary fiction",
+    "Epic fantasy",
+    "Urban fantasy",
+    "Dark fantasy",
+    "Science fiction",
+    "Space opera",
+    "Cyberpunk",
+    "Post-apocalyptic",
+    "Isekai / portal fantasy",
+    "LitRPG / progression",
+    "Mystery",
+    "Thriller",
+    "Horror",
+    "Romance",
+    "Romantasy",
+    "Historical fiction",
+    "Coming of age",
+    "Slice of life",
+    "Adventure",
+    "Western",
+    "Satire / comedy",
+    "Young adult",
+)
+
+/** One style-guide template: a short label and the guidance it writes into the field. */
+data class NovelStyleGuideTemplate(
+    val id: String,
+    val label: String,
+    val guidance: String,
+)
+
+/**
+ * Style-guide templates, the style-guide counterpart to the campaign's Setting
+ * Details presets. Picking one writes its guidance into the field, where it stays
+ * editable — nothing here is locked in.
+ */
+fun novelStyleGuideTemplates(): List<NovelStyleGuideTemplate> = listOf(
+    NovelStyleGuideTemplate(
+        "clean-modern",
+        "Clean and modern",
+        "Plain, current prose. Short to medium sentences, concrete nouns, few adverbs. " +
+            "Let dialogue and action carry the scene; describe only what the viewpoint " +
+            "character would actually notice.",
+    ),
+    NovelStyleGuideTemplate(
+        "literary",
+        "Literary and close",
+        "Careful, unhurried prose with room for interiority. Favour precise images over " +
+            "explanation, let subtext do the work, and end scenes a beat earlier than " +
+            "expected. Avoid summarising a character's feelings outright.",
+    ),
+    NovelStyleGuideTemplate(
+        "cinematic",
+        "Cinematic",
+        "Write in visible shots: place, movement, gesture, line of dialogue. Keep the " +
+            "camera outside the head unless a thought changes what happens next. Short " +
+            "paragraphs, hard cuts between beats.",
+    ),
+    NovelStyleGuideTemplate(
+        "pulp",
+        "Fast and pulpy",
+        "Momentum first. Keep scenes short, start late and leave early, and end most of " +
+            "them on a turn. Plain vocabulary, active verbs, minimal scenery. Dialogue " +
+            "should be quick and a little sharper than life.",
+    ),
+    NovelStyleGuideTemplate(
+        "lyrical",
+        "Lyrical",
+        "Let rhythm matter. Vary sentence length deliberately, use imagery drawn from " +
+            "the setting rather than stock metaphor, and allow the occasional long " +
+            "sentence to carry a whole moment. Never let the sound obscure the sense.",
+    ),
+    NovelStyleGuideTemplate(
+        "dry-wit",
+        "Dry and wry",
+        "Understatement over jokes. The narration notices the absurd without pointing " +
+            "at it. Keep the comedy in the gap between what people say and what they " +
+            "mean, and never undercut a genuinely serious moment for a laugh.",
+    ),
+    NovelStyleGuideTemplate(
+        "grim",
+        "Grim and grounded",
+        "Consequences stick. Injuries cost something, weather and hunger matter, and " +
+            "violence is brief and ugly rather than choreographed. Keep the prose sober " +
+            "and specific; no grandstanding, no dwelling on cruelty for its own sake.",
+    ),
+    NovelStyleGuideTemplate(
+        "warm",
+        "Warm and character-first",
+        "People before plot. Give every scene a relationship doing something, keep " +
+            "sensory detail domestic and specific, and let quiet moments run their " +
+            "length. Conflict should come from what characters want, not from cruelty.",
+    ),
+    NovelStyleGuideTemplate(
+        "ya",
+        "Young adult voice",
+        "Close, immediate, and unfussy. A strong first-person-feeling voice even in " +
+            "third person, contemporary rhythm, and chapters that end on a pull. Take " +
+            "the protagonist's feelings seriously rather than narrating them from above.",
+    ),
+    NovelStyleGuideTemplate(
+        "light-novel",
+        "Light novel",
+        "Brisk scenes, strong character voice, and frequent dialogue. Keep description " +
+            "functional and let reactions carry the comedy or tension. Short chapters, " +
+            "clear stakes, and a hook at the end of each.",
+    ),
+)

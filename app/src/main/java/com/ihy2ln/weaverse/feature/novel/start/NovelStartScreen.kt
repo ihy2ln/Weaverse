@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -299,6 +300,8 @@ private fun SetupControls(
     var settingBrowserOpen by remember { mutableStateOf(false) }
     var settingDetailBrowserOpen by remember { mutableStateOf(false) }
     var perspectiveMenuOpen by remember { mutableStateOf(false) }
+    var styleMenuOpen by remember { mutableStateOf(false) }
+    var styleTemplateId by remember { mutableStateOf("") }
     var showAddSetting by remember { mutableStateOf(false) }
     var showAddSettingDetail by remember { mutableStateOf(false) }
     var characterQuery by remember { mutableStateOf("") }
@@ -318,9 +321,23 @@ private fun SetupControls(
             value = setup.genre,
             onValueChange = { value -> viewModel.updateSetup { it.copy(genre = value) } },
             label = { Text("Genre") },
+            placeholder = { Text("Type one, or tap a template below") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
+        // The templates only fill the field; a typed genre is never overwritten.
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+        ) {
+            items(novelGenreTemplates()) { genre ->
+                InkTextButton(
+                    label = genre,
+                    onClick = { viewModel.updateSetup { it.copy(genre = genre) } },
+                    compact = true,
+                )
+            }
+        }
 
         Text("Setting template", style = MaterialTheme.typography.labelMedium)
         InkOutlinedButton(
@@ -373,30 +390,45 @@ private fun SetupControls(
                     color = tokens.secondaryText,
                 )
             } else {
-                Column(verticalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
-                    visible.chunked(3).forEach { row ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
-                            row.forEach { option ->
-                                val selected = option.id in selectedCharacterIds
-                                InkChip(
-                                    label = if (selected) "✓ " + option.name else option.name,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    selected = selected,
-                                    onClick = {
-                                        selectedCharacterIds = if (selected) {
-                                            selectedCharacterIds - option.id
-                                        } else {
-                                            selectedCharacterIds + option.id
-                                        }
-                                        val names = characterOptions
-                                            .filter { it.id in selectedCharacterIds }
-                                            .joinToString(", ") { it.name }
-                                        viewModel.updateSetup { it.copy(characters = names) }
-                                    },
-                                )
+                // Two rows of names are visible at most; a longer cast scrolls.
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(84.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                        visible.chunked(3).forEach { row ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                                row.forEach { option ->
+                                    val selected = option.id in selectedCharacterIds
+                                    InkChip(
+                                        label = if (selected) "✓ " + option.name else option.name,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        selected = selected,
+                                        onClick = {
+                                            selectedCharacterIds = if (selected) {
+                                                selectedCharacterIds - option.id
+                                            } else {
+                                                selectedCharacterIds + option.id
+                                            }
+                                            val names = characterOptions
+                                                .filter { it.id in selectedCharacterIds }
+                                                .joinToString(", ") { it.name }
+                                            viewModel.updateSetup { it.copy(characters = names) }
+                                        },
+                                    )
+                                }
                             }
                         }
                     }
+                }
+                if (visible.size > 6) {
+                    Text(
+                        "${visible.size} characters — scroll for the rest.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tokens.secondaryText,
+                    )
                 }
             }
             if (setup.characters.isNotBlank()) {
@@ -453,16 +485,51 @@ private fun SetupControls(
             compact = true,
         )
 
+        Text("Style guide template", style = MaterialTheme.typography.labelMedium)
+        Box(Modifier.fillMaxWidth()) {
+            InkOutlinedButton(
+                label = (
+                    novelStyleGuideTemplates().firstOrNull { it.id == styleTemplateId }?.label
+                        ?: "Choose a style"
+                    ) + " ▾",
+                onClick = { styleMenuOpen = true },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            DropdownMenu(expanded = styleMenuOpen, onDismissRequest = { styleMenuOpen = false }) {
+                novelStyleGuideTemplates().forEach { template ->
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(template.label)
+                                Text(
+                                    template.guidance,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = tokens.secondaryText,
+                                    maxLines = 3,
+                                )
+                            }
+                        },
+                        onClick = {
+                            styleTemplateId = template.id
+                            // The template writes the field; it stays editable after.
+                            viewModel.updateSetup { it.copy(styleGuide = template.guidance) }
+                            styleMenuOpen = false
+                        },
+                    )
+                }
+            }
+        }
         OutlinedTextField(
             value = setup.styleGuide,
             onValueChange = { value -> viewModel.updateSetup { it.copy(styleGuide = value) } },
             label = { Text("Style guide") },
-            minLines = 2,
-            maxLines = 4,
+            placeholder = { Text("Type your own, or pick a template above") },
+            minLines = 3,
+            maxLines = 8,
             modifier = Modifier.fillMaxWidth(),
         )
         Text(
-            "Voice, pacing, anything the AI should keep to.",
+            "Voice, pacing, anything the AI should keep to. A template fills this box and stays editable.",
             style = MaterialTheme.typography.labelSmall,
             color = tokens.secondaryText,
         )

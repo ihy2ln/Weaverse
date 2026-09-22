@@ -61,7 +61,10 @@ object HelpContent {
                         "Chapter One itself. Step one carries the campaign templates across: the " +
                         "Setting Template and Setting Details browsers with favorites and custom " +
                         "presets, the main-character picker, the perspective dropdown, tense and " +
-                        "style guide. Template guidance written for a table is reworded on the " +
+                        "style guide. Genre is a typed box with a row of genre templates under " +
+                        "it, and the style guide has its own templates in a dropdown; both fill " +
+                        "the box and stay editable. The character list shows two rows and " +
+                        "scrolls for a longer cast. Template guidance written for a table is reworded on the " +
                         "way into a book, so the cast replaces the party and the narrator " +
                         "replaces the Dungeon Master. " +
                         "The AI takes part in three of the four — it suggests answers, drafts the " +

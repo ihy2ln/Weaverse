@@ -135,6 +135,40 @@ class NovelStartPlannerTest {
     }
 
     @Test
+    fun `the genre templates are distinct and short enough to read on a chip`() {
+        val genres = novelGenreTemplates()
+        assertTrue(genres.size >= 15, "too few genre templates to be worth a row")
+        assertEquals(genres.size, genres.distinct().size, "a genre template is duplicated")
+        genres.forEach { genre ->
+            assertTrue(genre.isNotBlank())
+            assertTrue(genre.length <= 24, "\"$genre\" is too long for a chip")
+        }
+    }
+
+    @Test
+    fun `every style-guide template has a unique id, a label, and real guidance`() {
+        val templates = novelStyleGuideTemplates()
+        assertTrue(templates.size >= 8)
+        assertEquals(templates.size, templates.map { it.id }.distinct().size, "a style template id is reused")
+        templates.forEach { template ->
+            assertTrue(template.label.isNotBlank())
+            assertTrue(template.guidance.length >= 80, "${template.label} guidance is too thin to steer prose")
+        }
+    }
+
+    @Test
+    fun `no style-guide template drags table words into a book`() {
+        novelStyleGuideTemplates().forEach { template ->
+            listOf("player", "the party", "Dungeon Master", "dice", "campaign").forEach { term ->
+                assertFalse(
+                    template.guidance.contains(term, ignoreCase = true),
+                    "${template.label} mentions $term",
+                )
+            }
+        }
+    }
+
+    @Test
     fun `the scene fallback offers no choices, because a book has none`() {
         val draft = fallbackNovelSceneDraft(plan, RpgOpeningSceneGuideline(startingCast = "Mira"))
         assertTrue(draft.choices.isEmpty())

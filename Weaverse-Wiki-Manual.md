@@ -144,7 +144,11 @@ Your Story → Chapter One**.
 Step one carries the campaign templates across: the **Setting
 Template** and **Setting Details** browsers, with favourites, custom
 presets and Add / Remove, plus the main-character picker, the
-perspective dropdown, tense and the style guide. Template guidance
+perspective dropdown, tense and the style guide. **Genre** is a typed box with a
+scrolling row of genre templates under it, and the **style guide**
+has its own templates in a dropdown — both fill the box and leave it
+editable. The character list shows two rows at a time and scrolls for
+a longer cast. Template guidance
 written for a table is reworded on the way into a book — the cast
 replaces the party, the narrator replaces the Dungeon Master — so the
 catalogue is shared without the table coming with it.

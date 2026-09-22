@@ -3,6 +3,21 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.36 - Genre and style-guide templates, and a capped cast list
+
+- **Genre is a typed field with templates.** The box stays free text; a scrolling row
+  of 22 genre chips underneath fills it, and a typed genre is never overwritten.
+- **Style-guide templates.** Ten of them - Clean and modern, Literary and close,
+  Cinematic, Fast and pulpy, Lyrical, Dry and wry, Grim and grounded, Warm and
+  character-first, Young adult voice, Light novel - in a dropdown that shows each
+  one's guidance. Picking one writes the field, which stays editable. A test asserts
+  none of them smuggles table words into a book.
+- **The main-character list shows two rows and scrolls.** It was growing to whatever
+  height the cast needed and pushing the rest of the step off the screen; it is now
+  capped at 84dp with a note of the total when there are more than six.
+- Test build: `Beta.Test.Build/weaverse-v1.4.36.apk`
+  (SHA-256 `14F52BE78E91A8113FCD9345CA97F9AB4DFBAB96B87D50D122673EC6D614502B`).
+
 ## v1.4.35 - The novel start gains step one: the name and the templates
 
 - The four-step start now begins where the campaign's does. **Step 1 is Book Setup**:
