@@ -158,6 +158,28 @@ class MediaRepository @Inject constructor(
     }
 
     /**
+     * The bundled art is WebP: the same pictures as PNG made the APK roughly 400 MB
+     * larger for no visible gain. A caller that still builds a `.png` path — one put
+     * together at runtime, or an older saved record — resolves to the `.webp` beside
+     * it rather than failing, so no lookup depends on remembering the change.
+     */
+    private fun resolvedAssetPath(assetPath: String): String {
+        if (runCatching { context.assets.open(assetPath).use { true } }.getOrDefault(false)) {
+            return assetPath
+        }
+        val swapped = when {
+            assetPath.endsWith(".png", ignoreCase = true) -> assetPath.dropLast(4) + ".webp"
+            assetPath.endsWith(".webp", ignoreCase = true) -> assetPath.dropLast(5) + ".png"
+            else -> return assetPath
+        }
+        return if (runCatching { context.assets.open(swapped).use { true } }.getOrDefault(false)) {
+            swapped
+        } else {
+            assetPath
+        }
+    }
+
+    /**
      * Makes an APK-bundled image a first-class Pictures-library item.
      *
      * Files keep their collection/category hierarchy in app storage and stable IDs make
@@ -175,6 +197,7 @@ class MediaRepository @Inject constructor(
         category: String = "",
         tags: String = "",
     ): MediaEntity = withContext(Dispatchers.IO) {
+        @Suppress("NAME_SHADOWING") val assetPath = resolvedAssetPath(assetPath)
         val existing = db.mediaDao().getById(id)
         if (existing != null && existing.isPackManaged() &&
             File(context.filesDir, existing.relativePath).length() > 0L

@@ -198,8 +198,8 @@ data class YardPlot(
 object TownYard {
     const val IMAGE_W = 1024f
     const val IMAGE_H = 1536f
-    const val BACKDROP = "images/adams_haven/locations/town-lot-painterly.png"
-    const val HOUSE_ART = "images/adams_haven/world/painterly-cottage.png"
+    const val BACKDROP = "images/adams_haven/locations/town-lot-painterly.webp"
+    const val HOUSE_ART = "images/adams_haven/world/painterly-cottage.webp"
 
     /** Iso origin (plot 0,0) in image-normalized space — far center of the fenced yard. */
     const val ORIGIN_NX = 0.50f

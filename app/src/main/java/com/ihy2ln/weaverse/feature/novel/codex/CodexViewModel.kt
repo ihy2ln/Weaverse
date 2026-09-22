@@ -174,7 +174,7 @@ class CodexViewModel @Inject constructor(
                 mediaRepository.registerBundledImage(
                     assetPath = card.artAssetPath,
                     id = card.mediaId,
-                    relativePath = "images/adams_haven/${card.category}/$slug.png",
+                    relativePath = "images/adams_haven/${card.category}/$slug.webp",
                     width = 941,
                     height = 1672,
                 ).id

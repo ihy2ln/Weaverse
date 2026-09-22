@@ -1926,7 +1926,7 @@ private fun MonsterCard(
             modifier = Modifier.fillMaxWidth().background(Color(0xCC21151A)).padding(horizontal = 4.dp, vertical = 2.dp),
         )
         AsyncImage(
-            model = "file:///android_asset/images/adams_haven/ui/$tierIcon.png",
+            model = "file:///android_asset/images/adams_haven/ui/$tierIcon.webp",
             contentDescription = variant?.tier?.name ?: "Enemy",
             modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(if (compact) 18.dp else 24.dp),
         )

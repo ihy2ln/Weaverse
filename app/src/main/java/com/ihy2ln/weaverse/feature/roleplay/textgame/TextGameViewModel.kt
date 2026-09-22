@@ -390,7 +390,7 @@ class TextGameViewModel @Inject constructor(
 
     private suspend fun installBundledImageLibrary(): Map<String, String> = buildMap {
         definition.collectibleCards.forEach { card ->
-            val relativePath = "images/adams_haven/${card.category}/${card.id.substringAfter('/')}.png"
+            val relativePath = "images/adams_haven/${card.category}/${card.id.substringAfter('/')}.webp"
             val media = mediaRepository.registerBundledImage(
                 assetPath = card.artAssetPath,
                 id = card.mediaId,
@@ -407,7 +407,7 @@ class TextGameViewModel @Inject constructor(
             mediaRepository.registerBundledImage(
                 assetPath = scene.artAssetPath,
                 id = scene.mediaId,
-                relativePath = "images/adams_haven/maps/${scene.id}.png",
+                relativePath = "images/adams_haven/maps/${scene.id}.webp",
                 width = scene.width,
                 height = scene.height,
                 displayName = scene.displayName,

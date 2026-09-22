@@ -25,7 +25,7 @@ fun adamsHavenTutorial(): TextGameDefinition = TextGameDefinition(
             ),
             sceneAssetType = "crossroads",
             sceneMediaId = "adams-haven-map-crossroads-four-way-textured",
-            bundledSceneAssetPath = "images/adams_haven/maps/crossroads/four-way-road-textured.png",
+            bundledSceneAssetPath = "images/adams_haven/maps/crossroads/four-way-road-textured.webp",
             choices = listOf(
                 TextGameChoice("to_dungeon", "I follow the dungeon road to the mission board", "shack"),
                 TextGameChoice("to_farm", "I inspect the unmaintained Farm", "farm"),
@@ -62,7 +62,7 @@ fun adamsHavenTutorial(): TextGameDefinition = TextGameDefinition(
             ),
             sceneAssetType = "dungeon",
             sceneMediaId = "adams-haven-locations-silverwood-forest",
-            bundledSceneAssetPath = "images/adams_haven/locations/silverwood-forest.png",
+            bundledSceneAssetPath = "images/adams_haven/locations/silverwood-forest.webp",
             missionDestinationNodeId = "summoning",
             missionRepeatDestinationNodeId = "contract",
             missionRepeatRequiredFlag = "gacha_tutorial_complete",
@@ -80,7 +80,7 @@ fun adamsHavenTutorial(): TextGameDefinition = TextGameDefinition(
             title = "The First Summoning",
             prose = "I call through the case. Kaela Stormfang answers in cold wind, and Ghislaine Dedoldia arrives in obedient fire. I choose who takes my first order.",
             sceneMediaId = "adams-haven-characters-amara-the-alluring-empress",
-            bundledSceneAssetPath = "images/adams_haven/characters/amara-the-alluring-empress.png",
+            bundledSceneAssetPath = "images/adams_haven/characters/amara-the-alluring-empress.webp",
             choices = listOf(
                 choice("choose_kestrel", "I ask Kaela to lead", "road", flag = "kestrel_leads", companion = "kestrel"),
                 choice("choose_sable", "I ask Ghislaine to scout", "road", flag = "sable_scouts", companion = "sable"),
@@ -94,7 +94,7 @@ fun adamsHavenTutorial(): TextGameDefinition = TextGameDefinition(
             prose = "Blue roots shine beneath my boots. Ahead, Warden raises a draining lantern while Stinger prepares to mend every wound my cards make.",
             sceneAssetType = "dungeon",
             sceneMediaId = "adams-haven-locations-silverwood-forest",
-            bundledSceneAssetPath = "images/adams_haven/locations/silverwood-forest.png",
+            bundledSceneAssetPath = "images/adams_haven/locations/silverwood-forest.webp",
             choices = listOf(
                 choice("burst_plan", "I prepare a burst attack", "battle", flag = "burst_plan"),
                 choice("transfer_plan", "I plan an energy transfer", "battle", flag = "transfer_plan"),
@@ -108,7 +108,7 @@ fun adamsHavenTutorial(): TextGameDefinition = TextGameDefinition(
             prose = "I choose a living target, command affordable cards from our shared hand, and end the turn when my formation is spent. Every enemy intent remains visible to me.",
             sceneAssetType = "battle",
             sceneMediaId = "adams-haven-locations-silverbrook-adventure-guild",
-            bundledSceneAssetPath = "images/adams_haven/locations/silverbrook-adventure-guild.png",
+            bundledSceneAssetPath = "images/adams_haven/locations/silverbrook-adventure-guild.webp",
             encounterId = "first_encounter",
             victoryNodeId = "reward",
             defeatNodeId = "defeat",
@@ -121,7 +121,7 @@ fun adamsHavenTutorial(): TextGameDefinition = TextGameDefinition(
             title = "The Card That Remembers",
             prose = "Three cards rise from the broken lantern. The draw follows the case's seed, but I choose which promise becomes permanent.",
             sceneMediaId = "adams-haven-objects-celestium",
-            bundledSceneAssetPath = "images/adams_haven/objects/celestium.png",
+            bundledSceneAssetPath = "images/adams_haven/objects/celestium.webp",
             rewardDestinationNodeId = "gacha",
         ),
         TextGameNode(
@@ -130,7 +130,7 @@ fun adamsHavenTutorial(): TextGameDefinition = TextGameDefinition(
             title = "The First Summoning Draw",
             prose = "I carry the first permanent card back to the Haven crossroads. The case opens a local summoning tutorial: two seeded draws bring new allies into my roster before the first real mission.",
             sceneMediaId = "adams-haven-objects-celestium",
-            bundledSceneAssetPath = "images/adams_haven/objects/celestium.png",
+            bundledSceneAssetPath = "images/adams_haven/objects/celestium.webp",
             choices = listOf(
                 TextGameChoice(
                     id = "continue_after_gacha",
@@ -214,7 +214,7 @@ fun adamsHavenTutorial(): TextGameDefinition = TextGameDefinition(
             prose = "I work the kitchen that turns harvest into a packed dish. Whatever I cook here rides into the next run as a visible buff — FarmSim's pantry rule, kept simple for the text game.",
             sceneAssetType = "farm",
             sceneMediaId = "adams-haven-map-world-kitchen",
-            bundledSceneAssetPath = "images/adams_haven/world/kitchen.png",
+            bundledSceneAssetPath = "images/adams_haven/world/kitchen.webp",
             choices = listOf(
                 TextGameChoice(
                     id = "kitchen_cook",
@@ -234,7 +234,7 @@ fun adamsHavenTutorial(): TextGameDefinition = TextGameDefinition(
             prose = "I check the barn that keeps tools, seed sacks, and the quieter half of farm work. Nothing grows in here — it only holds what my Clearing needs between battles.",
             sceneAssetType = "farm",
             sceneMediaId = "adams-haven-map-world-barn",
-            bundledSceneAssetPath = "images/adams_haven/world/barn.png",
+            bundledSceneAssetPath = "images/adams_haven/world/barn.webp",
             choices = listOf(
                 TextGameChoice(
                     id = "barn_store_seed",
@@ -362,7 +362,7 @@ fun adamsHavenTutorial(): TextGameDefinition = TextGameDefinition(
             prose = "I push into the Deck Hall where the run deck is decided. Every deployed ally contributes their equipped moves, and bonds at the Frosted Mug make those cards hit harder when partners stand together.",
             sceneAssetType = "deck_hall",
             sceneMediaId = "adams-haven-map-world-deck-hall",
-            bundledSceneAssetPath = "images/adams_haven/world/deck_hall.png",
+            bundledSceneAssetPath = "images/adams_haven/world/deck_hall.webp",
             choices = listOf(
                 TextGameChoice(
                     id = "deck_review_roster",
@@ -389,7 +389,7 @@ fun adamsHavenTutorial(): TextGameDefinition = TextGameDefinition(
             prose = "I stand in the Guild Hall while the contract board stays warm and the roster list stays honest. I weigh promotions, recruits, and which danger deserves my party's next descent.",
             sceneAssetType = "guild_hall",
             sceneMediaId = "adams-haven-map-world-guild-hall",
-            bundledSceneAssetPath = "images/adams_haven/world/guild_hall.png",
+            bundledSceneAssetPath = "images/adams_haven/world/guild_hall.webp",
             choices = listOf(
                 TextGameChoice("guild_to_missions", "I study the mission board", "shack"),
                 TextGameChoice(
@@ -409,7 +409,7 @@ fun adamsHavenTutorial(): TextGameDefinition = TextGameDefinition(
             prose = "I settle into Helda's hearth where bruised parties mend and allies learn each other. A night under one roof is how I deepen bonds before the next delve.",
             sceneAssetType = "inn",
             sceneMediaId = "adams-haven-map-world-frosted-mug",
-            bundledSceneAssetPath = "images/adams_haven/world/frosted_mug.png",
+            bundledSceneAssetPath = "images/adams_haven/world/frosted_mug.webp",
             choices = listOf(
                 TextGameChoice(
                     id = "mug_rest",
@@ -434,7 +434,7 @@ fun adamsHavenTutorial(): TextGameDefinition = TextGameDefinition(
             prose = "I walk the Silverbrook stalls where gold buys the study, never the result. Move tomes and CYA charms crowd beside seed packets and field kits I can carry home.",
             sceneAssetType = "market",
             sceneMediaId = "adams-haven-map-world-market",
-            bundledSceneAssetPath = "images/adams_haven/world/market.png",
+            bundledSceneAssetPath = "images/adams_haven/world/market.webp",
             choices = listOf(
                 TextGameChoice(
                     id = "market_buy_seed",
@@ -468,7 +468,7 @@ fun adamsHavenTutorial(): TextGameDefinition = TextGameDefinition(
             prose = "I face the Forest Gate — a hole in the world boundary, not a building. Beyond it the Silverwood remembers every floor I have opened, so I clear what I can, make camp, and walk back with it.",
             sceneAssetType = "dungeon",
             sceneMediaId = "adams-haven-map-world-gate",
-            bundledSceneAssetPath = "images/adams_haven/world/gate.png",
+            bundledSceneAssetPath = "images/adams_haven/world/gate.webp",
             choices = listOf(
                 TextGameChoice("gate_to_missions", "I take the road to the mission board", "shack"),
                 TextGameChoice("gate_enter_dungeon", "I descend into the Silverwood", "shack"),
@@ -481,7 +481,7 @@ fun adamsHavenTutorial(): TextGameDefinition = TextGameDefinition(
             title = "Home in the Third Space",
             prose = "I set my permanent card inside the case and study the repaired expedition board. Home restores my footing and lets me turn shelter into protection for the next fight.",
             sceneMediaId = "adams-haven-locations-adams-haven",
-            bundledSceneAssetPath = "images/adams_haven/locations/adams-haven.png",
+            bundledSceneAssetPath = "images/adams_haven/locations/adams-haven.webp",
             sceneMotionMediaId = "adams-haven-motion-home",
             bundledSceneMotionAssetPath = "videos/adams_haven/home.mp4",
             choices = listOf(
@@ -551,7 +551,7 @@ fun adamsHavenTutorial(): TextGameDefinition = TextGameDefinition(
             prose = "I find a glassroot sentinel cornering a creature called the Ruinous Maw. The contract pays for restraint, but my card case hums for a decisive draw.",
             sceneAssetType = "dungeon",
             sceneMediaId = "adams-haven-locations-silverwood-forest",
-            bundledSceneAssetPath = "images/adams_haven/locations/silverwood-forest.png",
+            bundledSceneAssetPath = "images/adams_haven/locations/silverwood-forest.webp",
             choices = listOf(
                 choice("protect_the_road", "I protect the road and challenge both threats", "contract_battle", flag = "protected_road"),
                 choice("follow_the_maw", "I follow the Maw's trail before striking", "contract_battle", flag = "followed_maw"),
@@ -565,7 +565,7 @@ fun adamsHavenTutorial(): TextGameDefinition = TextGameDefinition(
             prose = "The shelter I prepare absorbs the opening pressure. My permanent card lends the party Haven Guard, and I decide whether to spend recovered SP or rely on our shared combo.",
             sceneAssetType = "battle",
             sceneMediaId = "adams-haven-characters-ruinous-maw",
-            bundledSceneAssetPath = "images/adams_haven/characters/ruinous-maw.png",
+            bundledSceneAssetPath = "images/adams_haven/characters/ruinous-maw.webp",
             encounterId = "silverwood_contract",
             victoryNodeId = "contract_reward",
             defeatNodeId = "defeat",
@@ -580,7 +580,7 @@ fun adamsHavenTutorial(): TextGameDefinition = TextGameDefinition(
             title = "A Second Name in the Case",
             prose = "The glassroot releases three more character cards. I choose one, while the battle's passage of time ripens the lanternroot behind my shack.",
             sceneMediaId = "adams-haven-objects-celestium-clone-bodies",
-            bundledSceneAssetPath = "images/adams_haven/objects/celestium-clone-bodies.png",
+            bundledSceneAssetPath = "images/adams_haven/objects/celestium-clone-bodies.webp",
             rewardDestinationNodeId = "return_farm",
         ),
         TextGameNode(
@@ -749,7 +749,7 @@ fun adamsHavenTutorial(): TextGameDefinition = TextGameDefinition(
             title = "A Meal Before the Gate",
             prose = "At Home, I turn the Farm's dish and the House's shelter into a run-start modifier. The final patrol proves that no hub stands apart from combat.",
             sceneMediaId = "adams-haven-locations-adams-haven",
-            bundledSceneAssetPath = "images/adams_haven/locations/adams-haven.png",
+            bundledSceneAssetPath = "images/adams_haven/locations/adams-haven.webp",
             choices = listOf(
                 TextGameChoice(
                     id = "serve_meal",
@@ -773,7 +773,7 @@ fun adamsHavenTutorial(): TextGameDefinition = TextGameDefinition(
             prose = "I meet the gatebreaker with a stronger coat, a meal's warmth, and Home's guard already around my formation. Every earlier scene now changes this fight.",
             sceneAssetType = "battle",
             sceneMediaId = "adams-haven-characters-ruinous-maw",
-            bundledSceneAssetPath = "images/adams_haven/characters/ruinous-maw.png",
+            bundledSceneAssetPath = "images/adams_haven/characters/ruinous-maw.webp",
             encounterId = "haven_gate",
             victoryNodeId = "final_reward",
             defeatNodeId = "defeat",
@@ -788,7 +788,7 @@ fun adamsHavenTutorial(): TextGameDefinition = TextGameDefinition(
             title = "The Haven Answers",
             prose = "A final set of cards answers the balanced loop I build. I choose one to carry beyond this prototype chapter.",
             sceneMediaId = "adams-haven-objects-celestium-clone-bodies",
-            bundledSceneAssetPath = "images/adams_haven/objects/celestium-clone-bodies.png",
+            bundledSceneAssetPath = "images/adams_haven/objects/celestium-clone-bodies.webp",
             rewardDestinationNodeId = "chapter_complete",
         ),
         TextGameNode(
@@ -797,7 +797,7 @@ fun adamsHavenTutorial(): TextGameDefinition = TextGameDefinition(
             title = "Two Cards Against the Dark",
             prose = "Silverwood quiets behind me. Battle feeds Farm and Town, Farm feeds Home, and Home prepares my next battle. Three permanent cards now answer my case.",
             sceneMediaId = "adams-haven-locations-elysium-vale",
-            bundledSceneAssetPath = "images/adams_haven/locations/elysium-vale.png",
+            bundledSceneAssetPath = "images/adams_haven/locations/elysium-vale.webp",
         ),
         TextGameNode(
             id = "defeat",
@@ -805,7 +805,7 @@ fun adamsHavenTutorial(): TextGameDefinition = TextGameDefinition(
             title = "The Lantern Goes Dark",
             prose = "My case pulls me back to the shack before the road can keep me. I can restart and change my targets, cards, preparation, or turn timing.",
             sceneMediaId = "adams-haven-locations-adams-haven",
-            bundledSceneAssetPath = "images/adams_haven/locations/adams-haven.png",
+            bundledSceneAssetPath = "images/adams_haven/locations/adams-haven.webp",
         ),
     ),
     cards = listOf(

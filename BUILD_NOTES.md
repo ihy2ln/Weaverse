@@ -3,6 +3,23 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.38 - The APK drops from 531 MB to 124 MB
+
+- **The bundled art was PNG.** 183 of them, 409 MB, for pictures that WebP stores in
+  56 MB at quality 88 - an 86% saving with nothing visible lost. The 153 files that
+  were already WebP were fine all along, which is what pointed at the PNGs.
+- **The bundled videos were over-encoded.** 69 four-second H.264 loops at ~2.2 Mbps;
+  re-encoded once at CRF 30 they come to 38 MB instead of 68 MB.
+- Every bundled reference now points at `.webp`, and `MediaRepository.resolvedAssetPath`
+  falls back from `.png` to the `.webp` beside it (and back), so a path built at
+  runtime or held in an older saved record still resolves instead of failing.
+- Two `TextGameEngineTest` assertions that pinned card art to `.png` now expect
+  `.webp`, which is what the art actually is.
+- Result: **531 MB to 124 MB**, a 77% cut, with no change to how the app works and
+  nothing to import. Of what is left, 72 MB is images, 39 MB videos, 11 MB code.
+- Test build: `Beta.Test.Build/weaverse-v1.4.38.apk`
+  (SHA-256 `F4B6A66C3F0F09CD3C348F15E357EE08C5383B701A4C46F626BE8CCB0D25C2FD`).
+
 ## v1.4.37 - The novel start sets the scene up, it does not write it
 
 - Step 4 no longer writes a whole opening scene. It writes **the set-up: one paragraph,

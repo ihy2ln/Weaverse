@@ -48,8 +48,8 @@ data class HavenBoardState(
 )
 
 object HavenBoardRules {
-    const val TOWN_BACKDROP = "images/adams_haven/haven/boards/town.png"
-    const val FARM_BACKDROP = "images/adams_haven/haven/boards/farm.png"
+    const val TOWN_BACKDROP = "images/adams_haven/haven/boards/town.webp"
+    const val FARM_BACKDROP = "images/adams_haven/haven/boards/farm.webp"
 
     /** Shared card back and plot marker from the Adams Haven settlement card set. */
     const val CARD_BACK = "images/adams_haven/haven/tables/settlement_card_back.webp"

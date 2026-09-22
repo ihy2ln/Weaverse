@@ -81,7 +81,7 @@ object FarmBuildings {
             visitChoiceId = "visit_kitchen",
             unlockFarmLevel = 1,
             footprint = FarmLayout.KITCHEN,
-            artAssetPath = "images/adams_haven/world/kitchen.png",
+            artAssetPath = "images/adams_haven/world/kitchen.webp",
         ),
         FarmBuildingDef(
             id = "barn",
@@ -91,7 +91,7 @@ object FarmBuildings {
             visitChoiceId = "visit_barn",
             unlockFarmLevel = 2,
             footprint = FarmLayout.BARN,
-            artAssetPath = "images/adams_haven/world/barn.png",
+            artAssetPath = "images/adams_haven/world/barn.webp",
         ),
     )
 
@@ -146,7 +146,7 @@ object TownRules {
             coinCost = 5,
             materialCost = 2,
             streetSlot = StreetSlot(slot = 1, side = StreetSide.Left, depth = 0.78f),
-            artAssetPath = "images/adams_haven/world/deck_hall.png",
+            artAssetPath = "images/adams_haven/world/deck_hall.webp",
             defaultPlotId = TownYard.defaultPlotId("deck_hall"),
         ),
         TownBuildingDef(
@@ -160,7 +160,7 @@ object TownRules {
             coinCost = 3,
             materialCost = 1,
             streetSlot = StreetSlot(slot = 2, side = StreetSide.Right, depth = 0.58f),
-            artAssetPath = "images/adams_haven/world/frosted_mug.png",
+            artAssetPath = "images/adams_haven/world/frosted_mug.webp",
             defaultPlotId = TownYard.defaultPlotId("frosted_mug"),
         ),
         TownBuildingDef(
@@ -174,7 +174,7 @@ object TownRules {
             coinCost = 4,
             materialCost = 1,
             streetSlot = StreetSlot(slot = 3, side = StreetSide.Left, depth = 0.48f),
-            artAssetPath = "images/adams_haven/world/market.png",
+            artAssetPath = "images/adams_haven/world/market.webp",
             defaultPlotId = TownYard.defaultPlotId("market"),
         ),
         TownBuildingDef(
@@ -188,7 +188,7 @@ object TownRules {
             coinCost = 8,
             materialCost = 4,
             streetSlot = StreetSlot(slot = 4, side = StreetSide.Left, depth = 0.30f),
-            artAssetPath = "images/adams_haven/world/guild_hall.png",
+            artAssetPath = "images/adams_haven/world/guild_hall.webp",
             defaultPlotId = TownYard.defaultPlotId("guild_hall"),
         ),
         TownBuildingDef(
@@ -202,7 +202,7 @@ object TownRules {
             coinCost = 12,
             materialCost = 6,
             streetSlot = StreetSlot(slot = 5, side = StreetSide.Right, depth = 0.38f),
-            artAssetPath = "images/adams_haven/world/workbench.png",
+            artAssetPath = "images/adams_haven/world/workbench.webp",
             defaultPlotId = TownYard.defaultPlotId("workshop"),
         ),
         TownBuildingDef(
@@ -217,7 +217,7 @@ object TownRules {
             coinCost = 18,
             materialCost = 9,
             streetSlot = StreetSlot(slot = 6, side = StreetSide.Center, depth = 0.20f),
-            artAssetPath = "images/adams_haven/world/well.png",
+            artAssetPath = "images/adams_haven/world/well.webp",
             defaultPlotId = TownYard.defaultPlotId("plaza"),
         ),
         TownBuildingDef(
@@ -230,7 +230,7 @@ object TownRules {
             coinIncome = 0,
             autoBuiltOnUnlock = true,
             streetSlot = StreetSlot(slot = 7, side = StreetSide.Center, depth = 0.06f),
-            artAssetPath = "images/adams_haven/world/gate.png",
+            artAssetPath = "images/adams_haven/world/gate.webp",
             defaultPlotId = TownYard.defaultPlotId("forest_gate"),
         ),
     )

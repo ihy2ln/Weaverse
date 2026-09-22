@@ -78,7 +78,7 @@ private fun collectible(category: String, slug: String, title: String) = TextGam
     title = title,
     category = category,
     mediaId = "adams-haven-$category-$slug",
-    artAssetPath = "images/adams_haven/$category/$slug.png",
+    artAssetPath = "images/adams_haven/$category/$slug.webp",
     motionAssetPath = "videos/adams_haven/$category/$slug.mp4",
     motionMediaId = "adams-haven-motion-$category-$slug",
 )

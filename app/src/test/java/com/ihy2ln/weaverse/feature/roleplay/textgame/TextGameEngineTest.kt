@@ -392,7 +392,7 @@ class TextGameEngineTest {
         assertTrue(definition.nodes.all { it.prose.contains(Regex("\\b(I|my|me)\\b", RegexOption.IGNORE_CASE)) })
         assertEquals(69, definition.collectibleCards.size)
         assertEquals(69, definition.collectibleCards.map { it.id }.distinct().size)
-        assertTrue(definition.collectibleCards.all { it.artAssetPath.endsWith(".png") })
+        assertTrue(definition.collectibleCards.all { it.artAssetPath.endsWith(".webp") })
         listOf("home").forEach { nodeId ->
             val node = definition.node(nodeId)!!
             assertNotNull(node.sceneMotionMediaId)
@@ -501,7 +501,7 @@ class TextGameEngineTest {
         assertTrue(cards.all { it.motionAssetPath != null && it.motionMediaId != null })
         assertTrue(cards.all { it.motionAssetPath!!.startsWith("videos/adams_haven/") })
         assertTrue(cards.all { it.motionAssetPath!!.endsWith(".mp4") })
-        assertTrue(cards.all { it.artAssetPath.endsWith(".png") })
+        assertTrue(cards.all { it.artAssetPath.endsWith(".webp") })
         val sample = cards.first()
         assertEquals(
             "videos/adams_haven/${sample.category}/${sample.id.substringAfter('/')}.mp4",
