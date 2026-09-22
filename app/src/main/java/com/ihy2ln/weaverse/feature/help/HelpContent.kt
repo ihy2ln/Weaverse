@@ -58,7 +58,9 @@ object HelpContent {
                     "Starting a book",
                     "Naming a book opens the same four-step start a campaign uses: Book Setup, " +
                         "Create Your Own Story, the Chapter One plan and Verify Your Story, then " +
-                        "Chapter One itself. Step one carries the campaign templates across: the " +
+                        "the opening set-up. The last step writes one paragraph at most - the " +
+                        "place, who is present, and the first problem - and then stops; the scene " +
+                        "itself is yours to write. Step one carries the campaign templates across: the " +
                         "Setting Template and Setting Details browsers with favorites and custom " +
                         "presets, the main-character picker, the perspective dropdown, tense and " +
                         "style guide. Genre is a typed box with a row of genre templates under " +

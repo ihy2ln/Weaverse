@@ -3,6 +3,23 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.37 - The novel start sets the scene up, it does not write it
+
+- Step 4 no longer writes a whole opening scene. It writes **the set-up: one paragraph,
+  maximum** - the place, who is present, and the first problem - and then stops. The
+  scene itself is the writer's to write.
+- The limit is enforced, not requested. Models treat "one paragraph" as a suggestion,
+  so `firstParagraphOnly` cuts whatever comes back to its first paragraph before it
+  reaches the book, and the token budget drops from 2400 to 400. A paragraph wrapped
+  over several lines still survives intact.
+- The prompt no longer asks for "finished prose" or a closing hook, and says plainly
+  that no dialogue exchange, action sequence, resolution or second paragraph belongs
+  in the answer. The written fallback is one paragraph too.
+- The step is renamed **Opening Set-Up** throughout, so it no longer promises a chapter
+  it does not deliver.
+- Test build: `Beta.Test.Build/weaverse-v1.4.37.apk`
+  (SHA-256 `FC9E96F3C2F45556F2429ADEDBE325E83580ABE3DDDB3FADA283927C5687863D`).
+
 ## v1.4.36 - Genre and style-guide templates, and a capped cast list
 
 - **Genre is a typed field with templates.** The box stays free text; a scrolling row

@@ -144,17 +144,17 @@ fun NovelStartScreen(
             )
 
             NovelStartStep.Verification -> StartSplit(
-                summary = { StepSummary(state, "Verify Your Story", "Review the book, your answers, the outline, and the opening scene before Chapter One is written.") },
+                summary = { StepSummary(state, "Verify Your Story", "Review the book, your answers, the outline, and the opening scene before the set-up paragraph is written.") },
                 controls = { VerificationControls(state, viewModel) },
             )
 
             NovelStartStep.GeneratingScene -> StartSplit(
-                summary = { StepSummary(state, "Chapter One", "The verified plan is being written as the book's opening scene.") },
+                summary = { StepSummary(state, "Opening Set-Up", "The verified plan is being turned into a single paragraph that sets the opening scene up for you.") },
                 controls = {
                     GenerationPanel(
                         state = state,
-                        label = "Writing Chapter One",
-                        working = "The AI is writing the opening scene. It lands in the book's first scene once it is saved.",
+                        label = "Setting up the opening",
+                        working = "The AI is writing the set-up paragraph. It lands in the book's first scene once it is saved.",
                         onRetry = viewModel::verifyAndWriteOpeningScene,
                         onFallback = viewModel::useAuthoredOpeningScene,
                         onCancel = viewModel::cancelGeneration,
@@ -163,7 +163,7 @@ fun NovelStartScreen(
             )
 
             NovelStartStep.Started -> StartSplit(
-                summary = { StepSummary(state, "Chapter One", "The opening scene is saved into the book's first scene. Edit it here, or open the book and keep writing.") },
+                summary = { StepSummary(state, "Opening Set-Up", "One paragraph, saved into the book's first scene. The scene itself is yours to write — edit the set-up here, or open the book and carry on.") },
                 controls = { OpeningProseControls(state, viewModel, onClose) },
             )
         }
@@ -781,7 +781,7 @@ private fun VerificationControls(state: NovelStartUiState, viewModel: NovelStart
             },
         )
         InkTextButton("Edit the chapter plan", viewModel::editChapterPlan)
-        InkOutlinedButton("Verify and write Chapter One", viewModel::verifyAndWriteOpeningScene, Modifier.fillMaxWidth())
+        InkOutlinedButton("Verify and set up the opening", viewModel::verifyAndWriteOpeningScene, Modifier.fillMaxWidth())
     }
 }
 
@@ -799,8 +799,8 @@ private fun OpeningProseControls(state: NovelStartUiState, viewModel: NovelStart
             value = state.sceneDraft?.prose.orEmpty(),
             onValueChange = viewModel::editSceneProse,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Chapter One") },
-            minLines = 12,
+            label = { Text("Opening set-up") },
+            minLines = 5,
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
             InkTextButton("Back to verification", viewModel::openVerification)

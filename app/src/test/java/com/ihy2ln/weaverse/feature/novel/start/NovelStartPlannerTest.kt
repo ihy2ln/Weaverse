@@ -169,6 +169,48 @@ class NovelStartPlannerTest {
     }
 
     @Test
+    fun `the opening prompt asks for a set-up paragraph, not a scene`() {
+        val prompt = novelOpeningScenePrompt(solo, plan, RpgChapterOutline(), RpgOpeningSceneGuideline())
+        assertTrue(prompt.contains("ONE PARAGRAPH, MAXIMUM"))
+        assertTrue(prompt.contains("not the scene itself"))
+        assertFalse(prompt.contains("the full scene"))
+        assertFalse(prompt.contains("finished prose"))
+    }
+
+    @Test
+    fun `a model that ignores the limit is cut back to one paragraph`() {
+        val overrun = """
+            The rain had not stopped in three days.
+
+            "You are late," she said, and did not look up.
+
+            He sat down anyway.
+        """.trimIndent()
+        val cut = firstParagraphOnly(overrun)
+        assertEquals("The rain had not stopped in three days.", cut)
+        assertFalse(cut.contains("You are late"))
+    }
+
+    @Test
+    fun `a paragraph wrapped over several lines survives intact`() {
+        val wrapped = "The rain had not stopped\nin three days, and the road\nwas gone."
+        assertEquals("The rain had not stopped in three days, and the road was gone.", firstParagraphOnly(wrapped))
+    }
+
+    @Test
+    fun `trimming an empty or blank draft does not crash`() {
+        assertEquals("", firstParagraphOnly(""))
+        assertEquals("", firstParagraphOnly("   \n\n  "))
+    }
+
+    @Test
+    fun `the scene fallback is a single paragraph`() {
+        val draft = fallbackNovelSceneDraft(plan, RpgOpeningSceneGuideline(startingCast = "Mira"))
+        assertFalse(draft.prose.contains("\n"), "the fallback set-up should be one paragraph")
+        assertEquals(draft.prose, firstParagraphOnly(draft.prose))
+    }
+
+    @Test
     fun `the scene fallback offers no choices, because a book has none`() {
         val draft = fallbackNovelSceneDraft(plan, RpgOpeningSceneGuideline(startingCast = "Mira"))
         assertTrue(draft.choices.isEmpty())

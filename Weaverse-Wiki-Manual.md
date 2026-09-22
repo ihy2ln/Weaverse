@@ -139,7 +139,11 @@ hit by accident. Everything saves as you go.
 
 Naming a book opens the same four-step start a campaign uses:
 **Book Setup → Create Your Own Story → Chapter One plan and Verify
-Your Story → Chapter One**.
+Your Story → the opening set-up**.
+
+The last step writes **one paragraph at most** — the place, who is
+present, and the first problem — and then stops. It sets the scene
+up; writing the scene is yours.
 
 Step one carries the campaign templates across: the **Setting
 Template** and **Setting Details** browsers, with favourites, custom

@@ -268,12 +268,18 @@ fun novelOpeningScenePrompt(
     return """
 $rule
 
-Write the opening scene of this novel now, as finished prose, using the verified plan
-below as canon. Return ONLY JSON: {"prose":"the full scene","choices":[],"sceneArtTags":"comma separated tags"}.
-Write in ${setup.pointOfView.lowercase()} and ${setup.tense.lowercase()}. Establish the place, the people
-present, and the first problem, and end on a line that carries the reader into the next
-scene. Leave "choices" empty: this is a book, so there are no options to offer and no
-player to address. No planning notes, no headings, no rules or dice language.
+Write the SET-UP of the opening scene, not the scene itself. Return ONLY JSON:
+{"prose":"one paragraph","choices":[],"sceneArtTags":"comma separated tags"}.
+
+ONE PARAGRAPH, MAXIMUM. This is a hard limit. Set the reader down in the place, show
+who is present, and let the first problem be felt — then stop. Do not carry the scene
+forward: no dialogue exchange, no sequence of actions, no resolution, no chapter, and
+no second paragraph. The writer takes it from here, so leave them somewhere worth
+starting rather than finishing the moment for them.
+
+Write in ${setup.pointOfView.lowercase()} and ${setup.tense.lowercase()}. Leave "choices" empty: this is a book,
+so there are no options to offer and no player to address. No planning notes, no
+headings, no rules or dice language.
 
 ${setup.header()}
 
@@ -288,7 +294,6 @@ Cast present: ${scene.startingCast}
 Immediate objective: ${scene.immediateObjective}
 Conflict and stakes: ${scene.conflictAndStakes}
 Complication: ${scene.complication}
-Closing hook: ${scene.firstDecisionHook}
 Art tags: ${scene.sceneArtTags}
 
 $rule
@@ -296,16 +301,32 @@ $rule
 }
 
 fun fallbackNovelSceneDraft(plan: RpgAdventurePlan, scene: RpgOpeningSceneGuideline): RpgSceneDraft = RpgSceneDraft(
-    prose = buildString {
-        appendLine(scene.locationAndAtmosphere.ifBlank { "The scene opens where the story begins." })
-        appendLine()
-        appendLine(scene.startingCast.ifBlank { plan.answer("cast", "The protagonist") } + " is here, and the day has not gone as planned.")
-        appendLine()
-        append(scene.complication.ifBlank { "Something is about to go wrong." })
-    },
+    // One paragraph, like the generated version: the set-up, not the scene.
+    prose = listOf(
+        scene.locationAndAtmosphere.ifBlank { "The story opens where it begins." }.trimEnd('.') + ".",
+        scene.startingCast.ifBlank { plan.answer("cast", "The protagonist") } + " is here.",
+        scene.complication.ifBlank { "Something is about to go wrong." }.trimEnd('.') + ".",
+    ).joinToString(" "),
     choices = emptyList(),
     sceneArtTags = scene.sceneArtTags,
 )
+
+/**
+ * The paragraph limit, enforced rather than requested. Models treat "one paragraph"
+ * as a suggestion and hand back a whole scene, so whatever comes back is cut to its
+ * first paragraph before it reaches the book.
+ */
+fun firstParagraphOnly(prose: String): String {
+    val trimmed = prose.trim()
+    if (trimmed.isEmpty()) return trimmed
+    // A blank line is the usual break; a bare newline is one too, since a model that
+    // ignored the limit tends to start its next beat on the very next line.
+    return trimmed.lineSequence()
+        .map { it.trim() }
+        .takeWhile { it.isNotEmpty() }
+        .joinToString(" ")
+        .trim()
+}
 
 /**
  * The Setting Template and perspective catalogues are shared with campaigns, so their

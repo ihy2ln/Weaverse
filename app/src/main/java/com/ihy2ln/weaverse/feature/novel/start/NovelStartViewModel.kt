@@ -275,7 +275,8 @@ class NovelStartViewModel @Inject constructor(
             }
             val text = generate(
                 novelOpeningScenePrompt(state.setup, state.plan, state.chapterOutline, state.openingScene),
-                maxTokens = 2400,
+                // A paragraph, not a scene — the budget says so as well as the prompt.
+                maxTokens = 400,
             ) { progress -> _uiState.update { it.copy(generationProgress = progress) } }
             val parsed = text?.let { parseSceneDraft(it) }
                 ?: text?.takeIf { it.isNotBlank() }?.let { RpgSceneDraft(prose = it.trim()) }
@@ -287,10 +288,14 @@ class NovelStartViewModel @Inject constructor(
                     )
                 }
             } else {
+                val completed = completeSceneDraft(parsed, fallbackNovelSceneDraft(state.plan, state.openingScene))
                 applySceneDraft(
-                    completeSceneDraft(parsed, fallbackNovelSceneDraft(state.plan, state.openingScene))
+                    completed.copy(
                         // A book offers no choices; drop any the model insisted on.
-                        .copy(choices = emptyList()),
+                        choices = emptyList(),
+                        // And one paragraph means one, whatever the model sent back.
+                        prose = firstParagraphOnly(completed.prose),
+                    ),
                 )
             }
         }
