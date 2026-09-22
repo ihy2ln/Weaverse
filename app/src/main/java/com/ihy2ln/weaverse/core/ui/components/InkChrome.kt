@@ -271,6 +271,15 @@ fun WorkspaceChrome(
                     entry("Undo", enabled = canUndo, action = onUndo)
                     entry("Redo", enabled = canRedo, action = onRedo)
                     entry("Settings", action = onSettings)
+                    // Which build this is, so a bug report can name it without digging
+                    // through Android's app info.
+                    Text(
+                        "v${com.ihy2ln.weaverse.BuildConfig.VERSION_NAME}",
+                        color = tokens.secondaryText,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.SansSerif,
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp),
+                    )
                 }
             }
         }

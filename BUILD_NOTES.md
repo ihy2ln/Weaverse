@@ -3,6 +3,14 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.39 - The build number is on screen
+
+- The modes sidebar shows the running version under **Settings**, at the bottom, drawn
+  from `BuildConfig.VERSION_NAME` so it can never drift from the build. Testing a
+  stack of APKs and guessing which one is installed was the whole problem.
+- Test build: `Beta.Test.Build/weaverse-v1.4.39.apk`
+  (SHA-256 `722E3A5F5404C3A2DA4A038C9AC01260102FAE7FB9507700E4526F10EE116E26`).
+
 ## v1.4.38 - The APK drops from 531 MB to 124 MB
 
 - **The bundled art was PNG.** 183 of them, 409 MB, for pictures that WebP stores in
