@@ -168,10 +168,12 @@ class NovelcrafterImporter @Inject constructor(
             }
         }
 
+        val fallbackCategoryId = categoryIds.values.firstOrNull()
         parsed.codexEntries.forEach { entry ->
             val (catName, colorIndex) = folderToCategory[entry.categoryFolder.lowercase()]
                 ?: ("Notes" to 9)
-            val categoryId = categoryIds[catName] ?: categoryIds.values.first()
+            // An export with no recognizable codex folders would otherwise blow up here.
+            val categoryId = categoryIds[catName] ?: fallbackCategoryId ?: return@forEach
             val bodyText = buildString {
                 append(entry.body.trim())
                 if (entry.notes.isNotBlank()) {

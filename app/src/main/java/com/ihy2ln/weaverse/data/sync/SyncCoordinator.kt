@@ -57,6 +57,7 @@ import io.ktor.server.routing.put
 import io.ktor.server.routing.routing
 import io.ktor.utils.io.jvm.javaio.copyTo
 import io.ktor.utils.io.jvm.javaio.toInputStream
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -95,7 +96,6 @@ class SyncCoordinator @Inject constructor(
     private val settings: SettingsRepository,
     private val novelcrafterImporter: NovelcrafterImporter,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
@@ -113,6 +113,13 @@ class SyncCoordinator @Inject constructor(
         ),
     )
     val state: StateFlow<SyncUiSnapshot> = _state.asStateFlow()
+
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO +
+            CoroutineExceptionHandler { _, error ->
+                _state.update { it.copy(lastError = error.message ?: "Sync failed") }
+            },
+    )
 
     init {
         scope.launch {
@@ -240,8 +247,12 @@ class SyncCoordinator @Inject constructor(
                         return@post
                     }
                     val incoming = File(syncDir, "import-${System.currentTimeMillis()}.zip")
-                    call.receiveChannel().copyTo(incoming.outputStream())
-                    val bytes = incoming.readBytes()
+                    val bytes = try {
+                        incoming.outputStream().use { out -> call.receiveChannel().copyTo(out) }
+                        incoming.readBytes()
+                    } finally {
+                        incoming.delete()
+                    }
                     if (!NovelcrafterZipParser.looksLikeNovelcrafterZipBytes(bytes)) {
                         call.respond(
                             ImportZipResult(
@@ -283,8 +294,12 @@ class SyncCoordinator @Inject constructor(
                         return@post
                     }
                     val incoming = File(syncDir, "incoming-${System.currentTimeMillis()}.zip")
-                    call.receiveChannel().copyTo(incoming.outputStream())
-                    restorePackage(incoming)
+                    try {
+                        incoming.outputStream().use { out -> call.receiveChannel().copyTo(out) }
+                        restorePackage(incoming)
+                    } finally {
+                        incoming.delete()
+                    }
                     call.respond(SyncPushResult(true, "Applied on Android host — restart app to reload DB"))
                 }
             }
@@ -390,7 +405,11 @@ class SyncCoordinator @Inject constructor(
             response.bodyAsChannel().toInputStream().use { input ->
                 incoming.outputStream().use { input.copyTo(it) }
             }
-            restorePackage(incoming)
+            try {
+                restorePackage(incoming)
+            } finally {
+                incoming.delete()
+            }
             settings.setLastSyncAt(System.currentTimeMillis())
             _state.update {
                 it.copy(
