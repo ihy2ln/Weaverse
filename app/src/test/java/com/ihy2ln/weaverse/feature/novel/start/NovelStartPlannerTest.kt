@@ -211,6 +211,77 @@ class NovelStartPlannerTest {
     }
 
     @Test
+    fun `saved progress survives a round trip`() {
+        val progress = NovelStartProgress(
+            stepId = "ChapterPlan",
+            setup = solo.copy(title = "The Long Walk Home", settingId = "high-fantasy"),
+            answers = listOf(
+                NovelSavedAnswer("plot", "A difficult homecoming"),
+                NovelSavedAnswer("goal", skipped = true),
+            ),
+            outline = NovelSavedOutline(
+                workingTitle = "The First Sign",
+                premise = "Something surfaces",
+                beats = listOf(NovelSavedBeat("beat-1", "The Opening", "It lands")),
+                sceneCast = "Mira",
+            ),
+            openingProse = "The rain had not stopped.",
+            updatedAt = 42L,
+        )
+        val restored = decodeNovelStartProgress(encodeNovelStartProgress(progress))
+        assertEquals(progress, restored)
+    }
+
+    @Test
+    fun `a blank or broken saved start decodes to nothing rather than throwing`() {
+        assertNull(decodeNovelStartProgress(""))
+        assertNull(decodeNovelStartProgress("   "))
+        assertNull(decodeNovelStartProgress("{ not json"))
+        assertNull(decodeNovelStartProgress("[]"))
+    }
+
+    @Test
+    fun `the resume summary names the step that was reached`() {
+        fun summary(step: String, answers: List<NovelSavedAnswer> = emptyList()) =
+            novelStartProgressSummary(NovelStartProgress(stepId = step, answers = answers))
+
+        assertTrue(summary("Setup").contains("setup", ignoreCase = true))
+        assertTrue(
+            summary("Cyoa", listOf(NovelSavedAnswer("plot", "x"), NovelSavedAnswer("goal", skipped = true)))
+                .contains("2 of 6"),
+        )
+        assertTrue(summary("ChapterPlan").contains("Chapter One"))
+        assertTrue(summary("Verification").contains("verify", ignoreCase = true))
+        assertTrue(summary("Started").contains("set-up", ignoreCase = true))
+    }
+
+    @Test
+    fun `a saved outline converts back to the shapes the wizard edits`() {
+        val saved = NovelSavedOutline(
+            workingTitle = "The First Sign",
+            premise = "Something surfaces",
+            beats = listOf(NovelSavedBeat("beat-1", "The Opening", "It lands", completed = true)),
+            sceneTitle = "Chapter One",
+            sceneCast = "Mira",
+            sceneComplication = "A deadline",
+        )
+        val outline = saved.toOutline()
+        assertEquals("The First Sign", outline.workingTitle)
+        assertEquals(1, outline.beats.size)
+        assertTrue(outline.beats.first().completed)
+
+        val scene = saved.toSceneGuideline()
+        assertEquals("Mira", scene.startingCast)
+        assertEquals("A deadline", scene.complication)
+    }
+
+    @Test
+    fun `an outline with no title still restores a usable chapter name`() {
+        assertEquals("Chapter One", NovelSavedOutline().toOutline().workingTitle)
+        assertEquals("Chapter One", NovelSavedOutline().toSceneGuideline().title)
+    }
+
+    @Test
     fun `the scene fallback offers no choices, because a book has none`() {
         val draft = fallbackNovelSceneDraft(plan, RpgOpeningSceneGuideline(startingCast = "Mira"))
         assertTrue(draft.choices.isEmpty())

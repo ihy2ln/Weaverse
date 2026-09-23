@@ -95,6 +95,37 @@ fun NovelStartScreen(
         }
     }
 
+    val resumable = state.resumable
+    if (resumable != null) {
+        Box(Modifier.fillMaxSize().background(tokens.background).padding(InkSpacing.xs)) {
+            StartPane(Modifier.fillMaxSize()) {
+                Column(
+                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(InkSpacing.sm),
+                ) {
+                    Text("Pick up where you left off?", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(
+                        "This book has a start you did not finish.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = tokens.secondaryText,
+                    )
+                    Text(
+                        novelStartProgressSummary(resumable),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    if (resumable.setup.title.isNotBlank()) {
+                        Text(resumable.setup.title, style = MaterialTheme.typography.bodyMedium)
+                    }
+                    InkOutlinedButton("Continue", viewModel::resume, Modifier.fillMaxWidth())
+                    InkTextButton("Start over", viewModel::startOver)
+                    InkTextButton("Close", onClose)
+                }
+            }
+        }
+        return
+    }
+
     Box(Modifier.fillMaxSize().background(tokens.background).padding(InkSpacing.xs)) {
         when (state.step) {
             NovelStartStep.Setup -> StartSplit(
@@ -538,8 +569,14 @@ private fun SetupControls(
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
             InkTextButton("Close", onClose)
+            InkTextButton("Start over", viewModel::startOver)
             InkOutlinedButton("Continue to the story", viewModel::openCyoa, Modifier.weight(1f))
         }
+        Text(
+            "Your answers are kept as you go — closing this and coming back offers to continue.",
+            style = MaterialTheme.typography.labelSmall,
+            color = tokens.secondaryText,
+        )
     }
 
     if (settingBrowserOpen) {

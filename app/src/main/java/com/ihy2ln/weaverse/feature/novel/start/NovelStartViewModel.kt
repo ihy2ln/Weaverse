@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import kotlin.random.Random
@@ -65,6 +66,8 @@ data class NovelStartUiState(
     val suggestionProgress: Int = 0,
     val suggestionError: String = "",
     val saved: Boolean = false,
+    /** A half-finished start found on open; non-null until Continue or Start over. */
+    val resumable: NovelStartProgress? = null,
 )
 
 /**
@@ -84,13 +87,14 @@ class NovelStartViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(NovelStartUiState())
     val uiState: StateFlow<NovelStartUiState> = _uiState.asStateFlow()
     private var job: Job? = null
+    private var progressJob: Job? = null
 
     fun load(bookId: String) {
         if (_uiState.value.bookId == bookId) return
         viewModelScope.launch {
             val book = bookRepository.getBook(bookId) ?: return@launch
             val saved = db.novelWritingDao().settings(bookId)
-            _uiState.value = NovelStartUiState(
+            val fresh = NovelStartUiState(
                 bookId = bookId,
                 setup = NovelSetupSnapshot(
                     title = book.title.ifBlank { "Untitled Book" },
@@ -101,13 +105,53 @@ class NovelStartViewModel @Inject constructor(
                     companions = StoryCompanionMode.fromId(saved?.companions).id,
                 ),
             )
+            // A half-finished start asks before doing anything, so reopening never
+            // throws away work and never silently resumes something forgotten.
+            val progress = decodeNovelStartProgress(saved?.startProgress.orEmpty())
+            _uiState.value = if (progress == null) fresh else fresh.copy(resumable = progress)
         }
+    }
+
+    /** Picks up the saved start exactly where it stopped. */
+    fun resume() {
+        val progress = _uiState.value.resumable ?: return
+        _uiState.update { state ->
+            state.copy(
+                resumable = null,
+                step = runCatching { NovelStartStep.valueOf(progress.stepId) }.getOrDefault(NovelStartStep.Setup)
+                    // A step that was mid-generation resumes at the screen before it,
+                    // because the generation itself did not survive the close.
+                    .let { step ->
+                        when (step) {
+                            NovelStartStep.GeneratingChapterPlan -> NovelStartStep.Cyoa
+                            NovelStartStep.GeneratingScene -> NovelStartStep.Verification
+                            else -> step
+                        }
+                    },
+                setup = progress.setup,
+                plan = RpgAdventurePlan(
+                    progress.answers.map { RpgPlanAnswer(it.questionId, it.value, skipped = it.skipped) },
+                ),
+                chapterOutline = progress.outline?.toOutline() ?: state.chapterOutline,
+                openingScene = progress.outline?.toSceneGuideline() ?: state.openingScene,
+                sceneDraft = progress.openingProse.takeIf { it.isNotBlank() }?.let { RpgSceneDraft(prose = it) },
+            )
+        }
+    }
+
+    /** Throws the saved start away and begins again at step one. */
+    fun startOver() {
+        val state = _uiState.value
+        _uiState.value = NovelStartUiState(bookId = state.bookId, setup = state.setup.copy())
+        viewModelScope.launch { clearSavedProgress() }
     }
 
     // ---- Step 1: Book Setup ------------------------------------------------------
 
-    fun updateSetup(block: (NovelSetupSnapshot) -> NovelSetupSnapshot) =
+    fun updateSetup(block: (NovelSetupSnapshot) -> NovelSetupSnapshot) {
         _uiState.update { it.copy(setup = block(it.setup)) }
+        saveProgressSoon()
+    }
 
     /** Picking a Setting Template carries its guidance across, reworded for a book. */
     fun selectSettingTemplate(id: String, label: String, directive: String) = updateSetup {
@@ -130,8 +174,8 @@ class NovelStartViewModel @Inject constructor(
         )
     }
 
-    fun openCyoa() = _uiState.update { it.copy(step = NovelStartStep.Cyoa) }
-    fun editSetup() = _uiState.update { it.copy(step = NovelStartStep.Setup) }
+    fun openCyoa() = goTo(NovelStartStep.Cyoa)
+    fun editSetup() = goTo(NovelStartStep.Setup)
 
     // ---- Step 2: Create Your Own Story -------------------------------------------
 
@@ -140,14 +184,18 @@ class NovelStartViewModel @Inject constructor(
         viewModelScope.launch { persistCompanions(mode) }
     }
 
-    fun saveAnswer(questionId: String, value: String) = _uiState.update { state ->
-        state.copy(plan = state.plan.withAnswer(RpgPlanAnswer(questionId, value)))
+    fun saveAnswer(questionId: String, value: String) {
+        _uiState.update { state -> state.copy(plan = state.plan.withAnswer(RpgPlanAnswer(questionId, value))) }
+        saveProgressSoon()
     }
 
     fun selectPreset(questionId: String, value: String) = saveAnswer(questionId, value)
 
-    fun skipQuestion(questionId: String) = _uiState.update { state ->
-        state.copy(plan = state.plan.withAnswer(RpgPlanAnswer(questionId, "", skipped = true)))
+    fun skipQuestion(questionId: String) {
+        _uiState.update { state ->
+            state.copy(plan = state.plan.withAnswer(RpgPlanAnswer(questionId, "", skipped = true)))
+        }
+        saveProgressSoon()
     }
 
     fun randomizeUnanswered() = _uiState.update { state ->
@@ -239,25 +287,40 @@ class NovelStartViewModel @Inject constructor(
         applyChapterPlan(fallbackNovelChapterPlan(state.setup, state.plan))
     }
 
-    private fun applyChapterPlan(payload: RpgChapterPlanPayload) = _uiState.update {
-        it.copy(
-            step = NovelStartStep.ChapterPlan,
-            chapterOutline = payload.outline,
-            openingScene = payload.openingScene,
-            generationStatus = RpgGenerationStatus.Complete,
-            generationProgress = 100,
-            generationError = "",
-        )
+    private fun applyChapterPlan(payload: RpgChapterPlanPayload) {
+        _uiState.update {
+            it.copy(
+                step = NovelStartStep.ChapterPlan,
+                chapterOutline = payload.outline,
+                openingScene = payload.openingScene,
+                generationStatus = RpgGenerationStatus.Complete,
+                generationProgress = 100,
+                generationError = "",
+            )
+        }
+        saveProgressSoon()
     }
 
-    fun updateChapterOutline(next: RpgChapterOutline) = _uiState.update { it.copy(chapterOutline = next) }
-    fun updateOpeningScene(next: RpgOpeningSceneGuideline) = _uiState.update { it.copy(openingScene = next) }
+    fun updateChapterOutline(next: RpgChapterOutline) {
+        _uiState.update { it.copy(chapterOutline = next) }
+        saveProgressSoon()
+    }
+
+    fun updateOpeningScene(next: RpgOpeningSceneGuideline) {
+        _uiState.update { it.copy(openingScene = next) }
+        saveProgressSoon()
+    }
 
     // ---- Step 3: verification ----------------------------------------------------
 
-    fun openVerification() = _uiState.update { it.copy(step = NovelStartStep.Verification) }
-    fun editCyoa() = _uiState.update { it.copy(step = NovelStartStep.Cyoa) }
-    fun editChapterPlan() = _uiState.update { it.copy(step = NovelStartStep.ChapterPlan) }
+    fun openVerification() = goTo(NovelStartStep.Verification)
+    fun editCyoa() = goTo(NovelStartStep.Cyoa)
+    fun editChapterPlan() = goTo(NovelStartStep.ChapterPlan)
+
+    private fun goTo(step: NovelStartStep) {
+        _uiState.update { it.copy(step = step) }
+        saveProgressSoon()
+    }
 
     // ---- Step 4: Scene One -------------------------------------------------------
 
@@ -319,8 +382,11 @@ class NovelStartViewModel @Inject constructor(
         viewModelScope.launch { save(draft.prose) }
     }
 
-    fun editSceneProse(value: String) = _uiState.update {
-        it.copy(sceneDraft = (it.sceneDraft ?: RpgSceneDraft()).copy(prose = value), saved = false)
+    fun editSceneProse(value: String) {
+        _uiState.update {
+            it.copy(sceneDraft = (it.sceneDraft ?: RpgSceneDraft()).copy(prose = value), saved = false)
+        }
+        saveProgressSoon()
     }
 
     fun saveSceneProse() {
@@ -423,7 +489,51 @@ class NovelStartViewModel @Inject constructor(
                 }
             }
         }
+        // The start is done, so there is nothing left to come back to.
+        clearSavedProgress()
         _uiState.update { it.copy(saved = true) }
+    }
+
+    /**
+     * Writes the start's progress after each change, debounced so typing does not hit
+     * the database on every keystroke. The wizard has no Save button by design: the
+     * work should still be there whether it was closed on purpose or not.
+     */
+    private fun saveProgressSoon() {
+        val state = _uiState.value
+        if (state.bookId.isBlank() || state.resumable != null) return
+        progressJob?.cancel()
+        progressJob = viewModelScope.launch {
+            delay(400)
+            writeProgress(
+                NovelStartProgress(
+                    stepId = state.step.name,
+                    setup = state.setup,
+                    answers = state.plan.answers.map {
+                        NovelSavedAnswer(it.questionId, it.value, it.skipped)
+                    },
+                    outline = state.chapterOutline.toSaved(state.openingScene),
+                    openingProse = state.sceneDraft?.prose.orEmpty(),
+                    updatedAt = System.currentTimeMillis(),
+                ),
+            )
+        }
+    }
+
+    private suspend fun writeProgress(progress: NovelStartProgress) {
+        val bookId = _uiState.value.bookId.ifBlank { return }
+        val existing = db.novelWritingDao().settings(bookId)
+        db.novelWritingDao().saveSettings(
+            (existing ?: NovelWritingSettings(bookId = bookId))
+                .copy(startProgress = encodeNovelStartProgress(progress)),
+        )
+    }
+
+    private suspend fun clearSavedProgress() {
+        val bookId = _uiState.value.bookId.ifBlank { return }
+        progressJob?.cancel()
+        val existing = db.novelWritingDao().settings(bookId) ?: return
+        db.novelWritingDao().saveSettings(existing.copy(startProgress = ""))
     }
 
     private suspend fun persistCompanions(mode: StoryCompanionMode) {
@@ -473,3 +583,53 @@ class NovelStartViewModel @Inject constructor(
 
 private fun RpgAdventurePlan.withAnswer(answer: RpgPlanAnswer): RpgAdventurePlan =
     copy(answers = answers.filterNot { it.questionId == answer.questionId } + answer)
+
+private fun RpgChapterOutline.toSaved(scene: RpgOpeningSceneGuideline): NovelSavedOutline? {
+    val empty = premise.isBlank() && primaryObjective.isBlank() && beats.isEmpty() &&
+        scene.locationAndAtmosphere.isBlank() && scene.startingCast.isBlank()
+    if (empty) return null
+    return NovelSavedOutline(
+        workingTitle = workingTitle,
+        premise = premise,
+        primaryObjective = primaryObjective,
+        antagonist = antagonist,
+        importantLocations = importantLocations,
+        beats = beats.map { NovelSavedBeat(it.id, it.title, it.summary, it.completed) },
+        optionalBeat = optionalBeat,
+        majorChallenge = majorChallenge,
+        climax = climax,
+        possibleOutcomes = possibleOutcomes,
+        sceneTitle = scene.title,
+        sceneLocation = scene.locationAndAtmosphere,
+        sceneCast = scene.startingCast,
+        sceneObjective = scene.immediateObjective,
+        sceneConflict = scene.conflictAndStakes,
+        sceneComplication = scene.complication,
+        sceneHook = scene.firstDecisionHook,
+        sceneArtTags = scene.sceneArtTags,
+    )
+}
+
+internal fun NovelSavedOutline.toOutline(): RpgChapterOutline = RpgChapterOutline(
+    workingTitle = workingTitle.ifBlank { "Chapter One" },
+    premise = premise,
+    primaryObjective = primaryObjective,
+    antagonist = antagonist,
+    importantLocations = importantLocations,
+    beats = beats.map { com.ihy2ln.weaverse.feature.roleplay.campaign.RpgChapterBeat(it.id, it.title, it.summary, it.completed) },
+    optionalBeat = optionalBeat,
+    majorChallenge = majorChallenge,
+    climax = climax,
+    possibleOutcomes = possibleOutcomes,
+)
+
+internal fun NovelSavedOutline.toSceneGuideline(): RpgOpeningSceneGuideline = RpgOpeningSceneGuideline(
+    title = sceneTitle.ifBlank { "Chapter One" },
+    locationAndAtmosphere = sceneLocation,
+    startingCast = sceneCast,
+    immediateObjective = sceneObjective,
+    conflictAndStakes = sceneConflict,
+    complication = sceneComplication,
+    firstDecisionHook = sceneHook,
+    sceneArtTags = sceneArtTags,
+)

@@ -47,6 +47,73 @@ data class NovelSetupSnapshot(
     val perspectiveGuidance: String = "",
 )
 
+/**
+ * Everything the four-step start needs to pick up where it was left. Saved on each
+ * change, cleared when the start is finished, so reopening a half-done start offers
+ * to continue rather than silently beginning again.
+ */
+@Serializable
+data class NovelStartProgress(
+    /** The step to return to, as [NovelStartStep] names it. */
+    val stepId: String = "Setup",
+    val setup: NovelSetupSnapshot = NovelSetupSnapshot(),
+    val answers: List<NovelSavedAnswer> = emptyList(),
+    val outline: NovelSavedOutline? = null,
+    val openingProse: String = "",
+    val updatedAt: Long = 0L,
+)
+
+@Serializable
+data class NovelSavedAnswer(val questionId: String, val value: String = "", val skipped: Boolean = false)
+
+/** The chapter plan, flattened so it serializes without dragging in the RPG types. */
+@Serializable
+data class NovelSavedOutline(
+    val workingTitle: String = "",
+    val premise: String = "",
+    val primaryObjective: String = "",
+    val antagonist: String = "",
+    val importantLocations: String = "",
+    val beats: List<NovelSavedBeat> = emptyList(),
+    val optionalBeat: String = "",
+    val majorChallenge: String = "",
+    val climax: String = "",
+    val possibleOutcomes: String = "",
+    val sceneTitle: String = "",
+    val sceneLocation: String = "",
+    val sceneCast: String = "",
+    val sceneObjective: String = "",
+    val sceneConflict: String = "",
+    val sceneComplication: String = "",
+    val sceneHook: String = "",
+    val sceneArtTags: String = "",
+)
+
+@Serializable
+data class NovelSavedBeat(val id: String, val title: String, val summary: String, val completed: Boolean = false)
+
+private val progressJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+
+fun encodeNovelStartProgress(progress: NovelStartProgress): String =
+    runCatching { progressJson.encodeToString(NovelStartProgress.serializer(), progress) }.getOrDefault("")
+
+fun decodeNovelStartProgress(raw: String): NovelStartProgress? {
+    if (raw.isBlank()) return null
+    return runCatching { progressJson.decodeFromString(NovelStartProgress.serializer(), raw) }.getOrNull()
+}
+
+/** A one-line description of how far the saved start got, for the resume prompt. */
+fun novelStartProgressSummary(progress: NovelStartProgress): String {
+    val answered = progress.answers.count { it.value.isNotBlank() || it.skipped }
+    return when (progress.stepId) {
+        "Setup" -> "Book setup, part-way through"
+        "Cyoa", "GeneratingChapterPlan" -> "Your story questions — $answered of 6 answered"
+        "ChapterPlan" -> "The Chapter One plan"
+        "Verification", "GeneratingScene" -> "Ready to verify"
+        else -> "The opening set-up"
+    }
+}
+
 /** One question on the Create Your Own Story step. */
 data class NovelStartQuestion(
     val id: String,

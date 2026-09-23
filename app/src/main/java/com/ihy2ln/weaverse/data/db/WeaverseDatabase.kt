@@ -85,7 +85,7 @@ import com.ihy2ln.weaverse.data.db.entities.RpgCampaignSaveEntity
         RpgCampaignSaveEntity::class,
         RpRoomMemberEntity::class,
     ],
-    version = 28,
+    version = 29,
     exportSchema = false,
 )
 @TypeConverters(InkTypeConverters::class)
@@ -107,6 +107,11 @@ abstract class WeaverseDatabase : RoomDatabase() {
     abstract fun homeAccessDao(): com.ihy2ln.weaverse.feature.shell.HomeAccessDao
     abstract fun bookBrowsingDao(): com.ihy2ln.weaverse.feature.library.BookBrowsingDao
     companion object {
+        val MIGRATION_28_29 = object : Migration(28, 29) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE novel_writing_settings ADD COLUMN startProgress TEXT NOT NULL DEFAULT ''")
+            }
+        }
         val MIGRATION_27_28 = object : Migration(27, 28) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE novel_writing_settings ADD COLUMN companions TEXT NOT NULL DEFAULT 'party'")

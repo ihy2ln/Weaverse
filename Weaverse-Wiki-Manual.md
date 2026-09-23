@@ -145,6 +145,12 @@ The last step writes **one paragraph at most** — the place, who is
 present, and the first problem — and then stops. It sets the scene
 up; writing the scene is yours.
 
+Your progress is kept as you go. Close the start part-way and
+reopening it asks whether to **Continue** — with a line saying how far
+you got — or **Start over**. Finishing clears it, so a finished book
+never asks. The RPG campaign start works the same way, with its own
+**Start over** on the questions and verification steps.
+
 Step one carries the campaign templates across: the **Setting
 Template** and **Setting Details** browsers, with favourites, custom
 presets and Add / Remove, plus the main-character picker, the

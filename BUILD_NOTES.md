@@ -3,6 +3,26 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.40 - Leave the four-step start and come back to it
+
+- **Novel.** The start now keeps its progress as you go - the step you were on, the
+  setup, every answer, the chapter plan and the opening set-up - in a new
+  `startProgress` column on `novel_writing_settings` (DB 28 to 29). Reopening a
+  half-finished start asks first: **Continue**, with a line saying how far it got
+  ("Your story questions - 4 of 6 answered"), or **Start over**. Finishing the start
+  clears the saved progress, so a finished book never asks.
+- Saving is debounced by 400 ms, so typing does not hit the database on every
+  keystroke, and there is no Save button: the work should be there whether the wizard
+  was closed on purpose or not. A step that was mid-generation resumes at the screen
+  before it, because the generation itself does not survive the close.
+- **RPG.** The campaign start already kept everything, so it already resumed - what it
+  had no way to do was begin again. **Start over** now sits on the CYOA step and on
+  the verification step, and resets the four steps while keeping the campaign setup
+  itself, which came from the create dialog rather than from the steps being restarted.
+- Both modes say plainly that answers are kept, so leaving does not feel like a risk.
+- Test build: `Beta.Test.Build/weaverse-v1.4.40.apk`
+  (SHA-256 `6F7FFF8FC83EBAB3EBC89F4B8D72F2593446CB6BDB008144E26EC3D09ADE477A`).
+
 ## v1.4.39 - The build number is on screen
 
 - The modes sidebar shows the running version under **Settings**, at the bottom, drawn

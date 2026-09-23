@@ -441,7 +441,13 @@ private fun RpgStartupWizard(
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
                             InkTextButton("Back to Campaign Setup", viewModel::beginCampaignSetup)
                             InkTextButton("Save Draft", viewModel::saveAdventurePlan)
+                            InkTextButton("Start over", viewModel::restartCampaignStart)
                         }
+                        Text(
+                            "Your answers are kept as you go — leaving and coming back returns you here.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = tokens.secondaryText,
+                        )
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
                             InkOutlinedButton("Create chapter plan", viewModel::generateChapterPlan, Modifier.weight(1f))
                         }
@@ -538,7 +544,10 @@ private fun RpgStartupWizard(
                             appendLine("Decision: ${startup.openingScene.firstDecisionHook}")
                             append("Art tags: ${startup.openingScene.sceneArtTags}")
                         })
-                        InkTextButton("Edit Chapter Plan", viewModel::editChapterPlan)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                            InkTextButton("Edit Chapter Plan", viewModel::editChapterPlan)
+                            InkTextButton("Start over", viewModel::restartCampaignStart)
+                        }
                         InkOutlinedButton("Verify and Generate Scene One", viewModel::verifyAndGenerateOpeningScene, Modifier.fillMaxWidth())
                     }
                 },

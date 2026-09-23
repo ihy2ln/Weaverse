@@ -4015,6 +4015,22 @@ class RoleplayChatViewModel @Inject constructor(
         viewModelScope.launch { updateRpgStartup { it.copy(step = RpgStartupStep.ChapterPlan, generationStatus = RpgGenerationStatus.Idle, generationProgress = 100) } }
     }
 
+    /**
+     * Throws the whole four-step start away and begins again at the CYOA questions.
+     * The campaign's own setup — title, setting, mode, rules, party — is kept, since
+     * that came from the create dialog rather than from the steps being restarted.
+     */
+    fun restartCampaignStart() {
+        viewModelScope.launch {
+            updateRpgStartup { current ->
+                RpgStartupState(
+                    step = RpgStartupStep.Cyoa,
+                    setup = current.setup,
+                )
+            }
+        }
+    }
+
     fun reviseRemainingChapterOutline(revisedBeats: List<com.ihy2ln.weaverse.feature.roleplay.campaign.RpgChapterBeat>) {
         viewModelScope.launch {
             updateRpgStartup { startup ->

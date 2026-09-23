@@ -68,7 +68,9 @@ object HelpContent {
                         "the box and stay editable. The character list shows two rows and " +
                         "scrolls for a longer cast. Template guidance written for a table is reworded on the " +
                         "way into a book, so the cast replaces the party and the narrator " +
-                        "replaces the Dungeon Master. " +
+                        "replaces the Dungeon Master. Your progress is kept as you go: close the " +
+                        "start part-way and reopening it offers Continue, with a line saying how " +
+                        "far you got, or Start over. Finishing clears it. " +
                         "The AI takes part in three of the four — it suggests answers, drafts the " +
                         "plan, then writes the opening scene — and each can be retried, stopped, " +
                         "or replaced with a written fallback. Every box stays editable. " +
