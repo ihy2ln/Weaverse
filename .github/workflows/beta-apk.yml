@@ -4,6 +4,11 @@ name: Beta APK
 # beta.test.build/ on the chosen branch, so it can be grabbed straight from the repo.
 on:
   workflow_dispatch:
+  # Manual runs only work once this file is on the default branch; until then, a push that
+  # changes this workflow on a branch builds the beta APK for that branch.
+  push:
+    paths:
+      - .github/workflows/beta-apk.yml
 
 permissions:
   contents: write
