@@ -56,8 +56,8 @@ import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
         PromptEntity::class,
         AiProfileEntity::class,
     ],
-    version = 5,
-    exportSchema = false,
+    version = WeaverseDatabase.VERSION,
+    exportSchema = true,
 )
 @TypeConverters(InkTypeConverters::class)
 abstract class WeaverseDatabase : RoomDatabase() {
@@ -70,4 +70,12 @@ abstract class WeaverseDatabase : RoomDatabase() {
     abstract fun roleplayDao(): RoleplayDao
     abstract fun mediaDao(): MediaDao
     abstract fun promptDao(): PromptDao
+
+    companion object {
+        /**
+         * Current schema version. Bumping it requires a matching entry in
+         * [DatabaseMigrations.ALL] — `DatabaseMigrationsTest` fails the build otherwise.
+         */
+        const val VERSION = 5
+    }
 }

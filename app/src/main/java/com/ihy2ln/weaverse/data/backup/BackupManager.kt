@@ -2,6 +2,7 @@ package com.ihy2ln.weaverse.data.backup
 
 import android.content.Context
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
+import com.ihy2ln.weaverse.sync.SyncPackage
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -80,16 +81,20 @@ class BackupManager @Inject constructor(
                         FileOutputStream(out).use { zip.copyTo(it) }
                     }
                     BackupArchives.mediaRelativePath(name) != null -> {
-                        val relative = BackupArchives.mediaRelativePath(name)!!
-                        val outFile = File(File(context.filesDir, "media"), relative)
-                        outFile.parentFile?.mkdirs()
-                        FileOutputStream(outFile).use { zip.copyTo(it) }
+                        val relative = BackupArchives.mediaRelativePath(name).orEmpty()
+                        val outFile = SyncPackage.safeChild(File(context.filesDir, "media"), relative)
+                        if (outFile != null) {
+                            outFile.parentFile?.mkdirs()
+                            FileOutputStream(outFile).use { zip.copyTo(it) }
+                        }
                     }
                     BackupArchives.settingsRelativePath(name) != null -> {
-                        val relative = BackupArchives.settingsRelativePath(name)!!
-                        val outFile = File(File(context.filesDir, "datastore"), relative)
-                        outFile.parentFile?.mkdirs()
-                        FileOutputStream(outFile).use { zip.copyTo(it) }
+                        val relative = BackupArchives.settingsRelativePath(name).orEmpty()
+                        val outFile = SyncPackage.safeChild(File(context.filesDir, "datastore"), relative)
+                        if (outFile != null) {
+                            outFile.parentFile?.mkdirs()
+                            FileOutputStream(outFile).use { zip.copyTo(it) }
+                        }
                     }
                 }
                 zip.closeEntry()

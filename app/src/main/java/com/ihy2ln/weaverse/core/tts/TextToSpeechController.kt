@@ -64,21 +64,29 @@ class TextToSpeechController @Inject constructor(
     suspend fun playAudioFile(file: File) = withContext(Dispatchers.Main) {
         stop()
         suspendCancellableCoroutine { cont ->
-            val player = MediaPlayer().apply {
-                setDataSource(file.absolutePath)
-                setOnPreparedListener {
-                    start()
+            val player = MediaPlayer()
+            // A missing or unplayable audio file must not take the app down mid-playback.
+            val prepared = runCatching {
+                player.setDataSource(file.absolutePath)
+                player.setOnPreparedListener {
+                    player.start()
                     if (cont.isActive) cont.resume(Unit)
                 }
-                setOnErrorListener { _, _, _ ->
+                player.setOnErrorListener { _, _, _ ->
                     if (cont.isActive) cont.resume(Unit)
                     true
                 }
-                setOnCompletionListener {
-                    release()
+                player.setOnCompletionListener {
+                    it.release()
                     mediaPlayer = null
                 }
-                prepareAsync()
+                player.prepareAsync()
+            }.isSuccess
+            if (!prepared) {
+                runCatching { player.release() }
+                mediaPlayer = null
+                if (cont.isActive) cont.resume(Unit)
+                return@suspendCancellableCoroutine
             }
             mediaPlayer = player
             cont.invokeOnCancellation {

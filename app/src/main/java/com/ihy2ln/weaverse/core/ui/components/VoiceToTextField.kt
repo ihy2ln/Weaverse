@@ -2,6 +2,7 @@ package com.ihy2ln.weaverse.core.ui.components
 
 import android.Manifest
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.speech.RecognizerIntent
@@ -30,6 +31,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.ihy2ln.weaverse.ai.WeaverseAiLog
 import com.ihy2ln.weaverse.core.ui.LocalPromptShortcutHandler
 import com.ihy2ln.weaverse.core.ui.consumePromptShortcut
 import java.util.Locale
@@ -59,7 +61,7 @@ fun rememberSpeechToText(onSpoken: (String) -> Unit): () -> Unit {
     ) { granted ->
         if (granted && pendingSpeech) {
             pendingSpeech = false
-            launchSpeech(context.packageManager, speechLauncher::launch)
+            launchSpeech(speechLauncher::launch)
         } else {
             pendingSpeech = false
         }
@@ -71,7 +73,7 @@ fun rememberSpeechToText(onSpoken: (String) -> Unit): () -> Unit {
             Manifest.permission.RECORD_AUDIO,
         ) == PackageManager.PERMISSION_GRANTED
         if (granted) {
-            launchSpeech(context.packageManager, speechLauncher::launch)
+            launchSpeech(speechLauncher::launch)
         } else {
             pendingSpeech = true
             permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
@@ -165,16 +167,20 @@ fun VoiceToTextField(
     )
 }
 
-private fun launchSpeech(
-    packageManager: PackageManager,
-    launch: (Intent) -> Unit,
-) {
+private fun launchSpeech(launch: (Intent) -> Unit) {
+    val languageTag = Locale.getDefault().toLanguageTag()
     val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+        // EXTRA_LANGUAGE is an IETF tag string; passing a Locale object is silently ignored.
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE, languageTag)
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, languageTag)
         putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak now")
     }
-    if (intent.resolveActivity(packageManager) != null) {
+    // resolveActivity can return null on Android 11+ even when a recognizer exists, so try the
+    // launch and fall back on the explicit "no recognizer installed" signal instead.
+    try {
         launch(intent)
+    } catch (e: ActivityNotFoundException) {
+        WeaverseAiLog.e("no speech recognizer available", e)
     }
 }

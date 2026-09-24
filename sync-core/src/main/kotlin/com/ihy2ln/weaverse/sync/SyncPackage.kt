@@ -93,17 +93,41 @@ object SyncPackage {
      */
     fun extractTo(zipFile: File, workDir: File) {
         workDir.mkdirs()
+        val root = workDir.canonicalFile
         ZipInputStream(FileInputStream(zipFile)).use { zip ->
             var entry = zip.nextEntry
             while (entry != null) {
                 if (!entry.isDirectory) {
-                    val out = File(workDir, entry.name)
-                    out.parentFile?.mkdirs()
-                    FileOutputStream(out).use { zip.copyTo(it) }
+                    val out = safeChild(root, entry.name)
+                    if (out != null) {
+                        out.parentFile?.mkdirs()
+                        FileOutputStream(out).use { zip.copyTo(it) }
+                    }
                 }
                 zip.closeEntry()
                 entry = zip.nextEntry
             }
+        }
+    }
+
+    /**
+     * Resolves [entryName] inside [root], or returns null when the entry would land outside it.
+     *
+     * ZIP entry names come from whatever wrote the archive — including a peer pushing over the
+     * sync API — so `../` segments and absolute paths have to be rejected rather than followed.
+     */
+    fun safeChild(root: File, entryName: String): File? {
+        val normalized = entryName.replace('\\', '/').trim()
+        if (normalized.isEmpty() || normalized.startsWith("/")) return null
+        if (normalized.length > 1 && normalized[1] == ':') return null
+        if (normalized.split('/').any { it == ".." }) return null
+        val rootPath = root.canonicalFile
+        val candidate = File(rootPath, normalized).canonicalFile
+        val prefix = rootPath.path + File.separator
+        return if (candidate.path == rootPath.path || candidate.path.startsWith(prefix)) {
+            candidate
+        } else {
+            null
         }
     }
 

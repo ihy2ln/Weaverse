@@ -55,8 +55,10 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import io.ktor.server.routing.routing
+import io.ktor.util.cio.readChannel
 import io.ktor.utils.io.jvm.javaio.copyTo
 import io.ktor.utils.io.jvm.javaio.toInputStream
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -95,7 +97,6 @@ class SyncCoordinator @Inject constructor(
     private val settings: SettingsRepository,
     private val novelcrafterImporter: NovelcrafterImporter,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
@@ -114,6 +115,13 @@ class SyncCoordinator @Inject constructor(
     )
     val state: StateFlow<SyncUiSnapshot> = _state.asStateFlow()
 
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO +
+            CoroutineExceptionHandler { _, error ->
+                _state.update { it.copy(lastError = error.message ?: "Sync failed") }
+            },
+    )
+
     init {
         scope.launch {
             settings.preferences.collect { prefs ->
@@ -127,11 +135,21 @@ class SyncCoordinator @Inject constructor(
             }
         }
         scope.launch {
+            // Poll every 20 s while the hub answers; back off to 5 min while it doesn't, so an
+            // offline desktop doesn't cost a network round-trip three times a minute.
+            var interval = AUTO_SYNC_INTERVAL_MS
             while (isActive) {
-                delay(20_000)
+                delay(interval)
                 val snap = _state.value
                 if (snap.autoSync && snap.peerHost.isNotBlank() && snap.peerPin.isNotBlank()) {
-                    runCatching { quietSync() }
+                    val reachable = runCatching { quietSync() }.getOrDefault(false)
+                    interval = if (reachable) {
+                        AUTO_SYNC_INTERVAL_MS
+                    } else {
+                        (interval * 2).coerceAtMost(AUTO_SYNC_MAX_BACKOFF_MS)
+                    }
+                } else {
+                    interval = AUTO_SYNC_INTERVAL_MS
                 }
             }
         }
@@ -240,8 +258,12 @@ class SyncCoordinator @Inject constructor(
                         return@post
                     }
                     val incoming = File(syncDir, "import-${System.currentTimeMillis()}.zip")
-                    call.receiveChannel().copyTo(incoming.outputStream())
-                    val bytes = incoming.readBytes()
+                    val bytes = try {
+                        incoming.outputStream().use { out -> call.receiveChannel().copyTo(out) }
+                        incoming.readBytes()
+                    } finally {
+                        incoming.delete()
+                    }
                     if (!NovelcrafterZipParser.looksLikeNovelcrafterZipBytes(bytes)) {
                         call.respond(
                             ImportZipResult(
@@ -283,8 +305,12 @@ class SyncCoordinator @Inject constructor(
                         return@post
                     }
                     val incoming = File(syncDir, "incoming-${System.currentTimeMillis()}.zip")
-                    call.receiveChannel().copyTo(incoming.outputStream())
-                    restorePackage(incoming)
+                    try {
+                        incoming.outputStream().use { out -> call.receiveChannel().copyTo(out) }
+                        restorePackage(incoming)
+                    } finally {
+                        incoming.delete()
+                    }
                     call.respond(SyncPushResult(true, "Applied on Android host — restart app to reload DB"))
                 }
             }
@@ -327,14 +353,15 @@ class SyncCoordinator @Inject constructor(
         scope.launch { settings.setAutoSync(enabled) }
     }
 
-    private suspend fun quietSync() {
+    /** Returns whether the hub answered; push/pull pair on their own when they run. */
+    private suspend fun quietSync(): Boolean {
         val host = normalizeHost(_state.value.peerHost)
         val pin = _state.value.peerPin
-        if (host.isBlank() || pin.isBlank()) return
-        runCatching { pair(host, pin) }
-        val remote = runCatching {
-            client.get("$host/api/status").body<SyncStatusResponse>().lastSyncAt ?: 0L
-        }.getOrDefault(0L)
+        if (host.isBlank() || pin.isBlank()) return true
+        val status = runCatching {
+            client.get("$host/api/status").body<SyncStatusResponse>()
+        }.getOrNull() ?: return false
+        val remote = status.lastSyncAt ?: 0L
         val localDb = context.getDatabasePath("weaverse.db")
         val localMtime = if (localDb.exists()) localDb.lastModified() else 0L
         val last = settings.preferences.first().lastSyncAt
@@ -344,6 +371,7 @@ class SyncCoordinator @Inject constructor(
             pushToPeer()
             settings.setLastSyncAt(System.currentTimeMillis())
         }
+        return true
     }
 
     suspend fun pushToPeer() = withContext(Dispatchers.IO) {
@@ -359,7 +387,9 @@ class SyncCoordinator @Inject constructor(
             val result = client.post("$host/api/sync/push") {
                 header("X-Weaverse-Token", token)
                 contentType(ContentType.Application.OctetStream)
-                setBody(zip.readBytes())
+                // Stream the package from disk; readBytes() held the whole library in memory
+                // and could run the app out of heap on a large media folder.
+                setBody(zip.readChannel())
             }.body<SyncPushResult>()
             if (result.ok) settings.setLastSyncAt(System.currentTimeMillis())
             _state.update {
@@ -390,7 +420,11 @@ class SyncCoordinator @Inject constructor(
             response.bodyAsChannel().toInputStream().use { input ->
                 incoming.outputStream().use { input.copyTo(it) }
             }
-            restorePackage(incoming)
+            try {
+                restorePackage(incoming)
+            } finally {
+                incoming.delete()
+            }
             settings.setLastSyncAt(System.currentTimeMillis())
             _state.update {
                 it.copy(
@@ -483,3 +517,6 @@ class SyncCoordinator @Inject constructor(
         }.getOrDefault("")
     }
 }
+
+private const val AUTO_SYNC_INTERVAL_MS = 20_000L
+private const val AUTO_SYNC_MAX_BACKOFF_MS = 5 * 60_000L

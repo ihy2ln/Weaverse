@@ -22,7 +22,7 @@ val defaultSlashCommands = listOf(
     SlashCommand("expand", "Expand", "Expand the selected text."),
     SlashCommand("image", "Insert Image", "Add an image block to the scene."),
     SlashCommand("video", "Insert Video", "Add a video block to the scene."),
-    SlashCommand("heading", "Heading", "Convert line to heading."),
+    SlashCommand("heading", "Heading", "Make this line a bold heading line."),
 )
 
 @Composable

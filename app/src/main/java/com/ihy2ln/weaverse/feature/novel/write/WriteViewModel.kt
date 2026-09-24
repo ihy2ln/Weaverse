@@ -812,7 +812,9 @@ class WriteViewModel @Inject constructor(
         val index = _uiState.value.slashBlockIndex ?: return
         viewModelScope.launch {
             when (command.id) {
-                "image" -> {
+                // The picker behind both is PickVisualMedia.ImageAndVideo, so /video opens the
+                // same chooser instead of dropping an empty placeholder block in the document.
+                "image", "video" -> {
                     _uiState.update {
                         it.copy(
                             pickImageBlockIndex = index,
@@ -823,27 +825,15 @@ class WriteViewModel @Inject constructor(
                     }
                     return@launch
                 }
-                "video" -> {
-                    val media = mediaRepository.registerPlaceholderImage()
-                    val path = mediaRepository.resolveFile(media).absolutePath
-                    val block = MediaBlock(
-                        id = UUID.randomUUID().toString(),
-                        mediaId = media.id,
-                        kind = MediaKind.Video,
-                    )
-                    updateBlocksSync(recordHistory = true) { blocks ->
-                        blocks[index] = Paragraph(blocks[index].id, listOf(Span("")))
-                        blocks.add(index + 1, block)
-                    }
-                    _uiState.update { it.copy(mediaPaths = it.mediaPaths + (media.id to path)) }
-                }
                 "scene_beat" -> {
                     updateBlocksSync(recordHistory = true) { blocks ->
-                        if (blocks[index] is Paragraph) {
-                            blocks[index] = Paragraph(blocks[index].id, listOf(Span("")))
+                        // index came from the slash trigger; the document may have moved on.
+                        val current = blocks.getOrNull(index)
+                        if (current is Paragraph) {
+                            blocks[index] = Paragraph(current.id, listOf(Span("")))
                         }
                         blocks.add(
-                            index + 1,
+                            (index + 1).coerceIn(0, blocks.size),
                             SceneBeatBlock(
                                 id = UUID.randomUUID().toString(),
                                 prompt = "",
@@ -855,8 +845,9 @@ class WriteViewModel @Inject constructor(
                 }
                 "continue", "expand", "shorten", "extend", "replace" -> {
                     updateBlocksSync(recordHistory = true) { blocks ->
-                        if (blocks[index] is Paragraph) {
-                            blocks[index] = Paragraph(blocks[index].id, listOf(Span("")))
+                        val current = blocks.getOrNull(index)
+                        if (current is Paragraph) {
+                            blocks[index] = Paragraph(current.id, listOf(Span("")))
                         }
                     }
                     val library = libraryPromptBundle(command.id, PromptRenderContext())
@@ -876,9 +867,23 @@ class WriteViewModel @Inject constructor(
                     }
                     return@launch
                 }
+                "heading" -> updateBlocksSync(recordHistory = true) { blocks ->
+                    // Style the line in place and keep its text. The generic branch below blanks
+                    // the paragraph, so /heading used to look like it deleted what you typed.
+                    // (A dedicated Heading block has no editor renderer yet, so this stays a
+                    // paragraph and remains editable.)
+                    val current = blocks.getOrNull(index)
+                    if (current is Paragraph) {
+                        val spans = current.spans.ifEmpty { listOf(Span("")) }
+                        blocks[index] = current.copy(
+                            spans = spans.map { span -> span.copy(marks = span.marks + Mark.Bold) },
+                        )
+                    }
+                }
                 else -> updateBlocksSync(recordHistory = true) { blocks ->
-                    if (blocks[index] is Paragraph) {
-                        blocks[index] = Paragraph(blocks[index].id, listOf(Span("")))
+                    val current = blocks.getOrNull(index)
+                    if (current is Paragraph) {
+                        blocks[index] = Paragraph(current.id, listOf(Span("")))
                     }
                 }
             }

@@ -1,0 +1,2 @@
+Weaverse debug APK
+Built from commit b0d07cb on 2026-09-24T01:27Z

@@ -63,6 +63,96 @@ repo): [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and the equivalent
 that an AI with no access to this repo, working from those docs alone,
 could reconstruct the module layout, data model, and core protocols.
 
+## Hardening pass (2026-09-23)
+
+A review pass aimed at "gold" stability — crash safety, untrusted-input
+handling, and editor buttons that quietly did nothing.
+
+**Crash / stability**
+- `WeaverseApp.onCreate` ran seeding, the bundled-sample import, and the sync
+  warm-up in a bare `appScope.launch`. `SupervisorJob` does not catch what a
+  child coroutine throws, so any failure there reached the default handler and
+  force-closed the app on launch. Each step is now wrapped and logged, and the
+  scope carries a `CoroutineExceptionHandler`.
+- `SyncCoordinator`'s scope got the same treatment; failures now surface as
+  `lastError` in the sync UI instead of taking the process down.
+- `TextToSpeechController.playAudioFile` built a `MediaPlayer` and called
+  `setDataSource` outside any guard: a missing or unplayable file threw and
+  leaked the player. It now releases and resumes cleanly.
+- `WriteViewModel.applySlashCommand` indexed `blocks[index]` with an index
+  captured when the `/` was typed. If the document had changed in between
+  (streamed prose, an undo) that threw `IndexOutOfBoundsException`. All block
+  access there is bounds-checked.
+- `NovelcrafterImporter` called `categoryIds.values.first()` as a fallback,
+  which threw on an export with no recognizable codex folders.
+
+**Untrusted ZIP input**
+- `SyncPackage.extractTo` resolved entry names straight against the work dir,
+  so `../` entries could write outside it (Zip Slip). Entry names now go
+  through `SyncPackage.safeChild`, which rejects traversal, absolute and
+  drive-qualified paths. This path is reachable from `POST /api/sync/push`,
+  i.e. from a paired peer over the network. Covered by new tests in
+  `SyncPackageTest`.
+- `BackupManager.restoreFrom` extracted media and settings entries the same
+  way; it now uses the same guard.
+- The sync server wrote uploads with `copyTo(incoming.outputStream())`,
+  leaking the stream, and never deleted the temp ZIPs. Both fixed.
+
+**Buttons that did nothing**
+- Mic / speech-to-text: `intent.resolveActivity(packageManager)` returns null
+  on Android 11+ without a `<queries>` declaration, so the mic button was a
+  no-op on modern devices. Added the `RecognitionService` /
+  `RECOGNIZE_SPEECH` queries, dropped the resolve check in favour of catching
+  `ActivityNotFoundException`, and passed `EXTRA_LANGUAGE` as an IETF tag
+  string (it was being handed a `Locale` object, which is ignored).
+- `/video` in the Write editor inserted a zero-byte placeholder media block
+  and never opened a picker. It now opens the same chooser as `/image`, whose
+  contract is already `PickVisualMedia.ImageAndVideo`.
+- `/heading` fell through to the generic branch, which blanked the line —
+  it looked like the command deleted your text. It now styles the line in
+  place (`Heading` blocks have no renderer in `DocumentEditor` yet, so the
+  line stays an editable paragraph).
+- `gradlew` was committed without its executable bit, so `./gradlew` failed.
+
+**Known gaps (not addressed here)**
+- The Android module could not be compiled in the review environment
+  (`dl.google.com` is blocked by the sandbox network policy, so AGP and the
+  androidx artifacts cannot be resolved). `:sync-core:test` and
+  `:desktop:compileKotlin` were run and pass; the `app/` changes are
+  reviewed-but-unbuilt and need a CI or local `assembleDebug` run.
+- `/api/import` (Android and desktop) still reads the uploaded Novelcrafter
+  ZIP into memory, because `NovelcrafterZipParser` takes a `ByteArray`.
+  Fine for typical exports; a streaming parser is the fix if they grow large.
+  (`pushToPeer` now streams the sync package from disk — fixed 2026-09-24.)
+- `DocumentEditor` renders only `Paragraph`, `MediaBlock`, `MediaStackBlock`
+  and `SceneBeatBlock`. `Heading`, `Quote`, `ListItem`, `Divider` and
+  `CodeBlock` exist in the model but would render as blank gaps.
+- The auto-sync loop still runs for the lifetime of the process (now backing
+  off to 5 min while the hub is unreachable). Pausing it in the background
+  would need `lifecycle-process`.
+
+## Room migrations (2026-09-24)
+
+`DatabaseModule` used `fallbackToDestructiveMigration()`, so any schema
+bump silently wiped the user's library. Now:
+
+- `DatabaseMigrations.ALL` holds every `Migration(n, n+1)` from v5 on, and
+  the builder only allows destructive fallback for v1–v4 — versions that
+  shipped with `exportSchema = false`, so their layout was never recorded
+  and a real migration can't be written for them.
+- `PreMigrationBackup` copies `weaverse.db` (+ WAL/SHM) to
+  `files/backups/pre-migration-v<old>-to-v<new>-<ts>.db` before Room opens
+  an older database, keeping the last 3.
+- Downgrades (older APK, or a sync package from a newer peer) are rebuilt
+  instead of crashing on open.
+- `DatabaseMigrationsTest` fails if `WeaverseDatabase.VERSION` is bumped
+  without a matching migration — a forgotten migration is a red build, not
+  a wiped phone or a crash on launch.
+- `exportSchema = true` with `room.schemaLocation = app/schemas`. **The
+  first build after this change generates `app/schemas/…/5.json`; commit
+  it** — it is the baseline the next migration is written against. (It
+  could not be generated in the review environment; see above.)
+
 ## Version history (from InkForge, condensed)
 
 Full narrative entries for each of these lived in InkForge's own
