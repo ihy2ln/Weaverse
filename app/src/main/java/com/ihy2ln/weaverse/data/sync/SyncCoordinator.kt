@@ -55,6 +55,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import io.ktor.server.routing.routing
+import io.ktor.util.cio.readChannel
 import io.ktor.utils.io.jvm.javaio.copyTo
 import io.ktor.utils.io.jvm.javaio.toInputStream
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -374,7 +375,9 @@ class SyncCoordinator @Inject constructor(
             val result = client.post("$host/api/sync/push") {
                 header("X-Weaverse-Token", token)
                 contentType(ContentType.Application.OctetStream)
-                setBody(zip.readBytes())
+                // Stream the package from disk; readBytes() held the whole library in memory
+                // and could run the app out of heap on a large media folder.
+                setBody(zip.readChannel())
             }.body<SyncPushResult>()
             if (result.ok) settings.setLastSyncAt(System.currentTimeMillis())
             _state.update {

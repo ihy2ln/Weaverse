@@ -120,9 +120,10 @@ handling, and editor buttons that quietly did nothing.
   androidx artifacts cannot be resolved). `:sync-core:test` and
   `:desktop:compileKotlin` were run and pass; the `app/` changes are
   reviewed-but-unbuilt and need a CI or local `assembleDebug` run.
-- `pushToPeer` sends the whole sync package with `zip.readBytes()`, and
-  `/api/import` reads the whole upload into memory — both are OOM risks on a
-  large library and should stream instead.
+- `/api/import` (Android and desktop) still reads the uploaded Novelcrafter
+  ZIP into memory, because `NovelcrafterZipParser` takes a `ByteArray`.
+  Fine for typical exports; a streaming parser is the fix if they grow large.
+  (`pushToPeer` now streams the sync package from disk — fixed 2026-09-24.)
 - `DocumentEditor` renders only `Paragraph`, `MediaBlock`, `MediaStackBlock`
   and `SceneBeatBlock`. `Heading`, `Quote`, `ListItem`, `Divider` and
   `CodeBlock` exist in the model but would render as blank gaps.

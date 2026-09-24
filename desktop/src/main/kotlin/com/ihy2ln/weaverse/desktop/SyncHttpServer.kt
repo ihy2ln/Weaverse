@@ -248,12 +248,17 @@ class SyncHttpServer(
                 }
                 val incoming = File(dataDir, "incoming/import-${System.currentTimeMillis()}.zip")
                 incoming.parentFile?.mkdirs()
-                call.receiveChannel().copyTo(incoming.outputStream())
-                if (!incoming.exists() || incoming.length() < 32) {
+                // Close (and so flush) the file before measuring or reading it.
+                val bytes = try {
+                    incoming.outputStream().use { out -> call.receiveChannel().copyTo(out) }
+                    if (incoming.length() < 32) null else incoming.readBytes()
+                } finally {
+                    incoming.delete()
+                }
+                if (bytes == null) {
                     call.respond(ImportZipResult(false, "Empty ZIP"))
                     return@post
                 }
-                val bytes = incoming.readBytes()
                 if (!NovelcrafterZipParser.looksLikeNovelcrafterZipBytes(bytes)) {
                     call.respond(
                         HttpStatusCode.BadRequest,
@@ -293,17 +298,23 @@ class SyncHttpServer(
                 }
                 val incoming = File(dataDir, "incoming/push-${System.currentTimeMillis()}.zip")
                 incoming.parentFile?.mkdirs()
-                call.receiveChannel().copyTo(incoming.outputStream())
-                if (!incoming.exists() || incoming.length() < 32) {
-                    call.respond(SyncPushResult(false, "Empty package"))
-                    return@post
+                try {
+                    // Close (and so flush) the file before measuring or restoring it; an unflushed
+                    // stream made large pushes look truncated or empty.
+                    incoming.outputStream().use { out -> call.receiveChannel().copyTo(out) }
+                    if (incoming.length() < 32) {
+                        call.respond(SyncPushResult(false, "Empty package"))
+                        return@post
+                    }
+                    SyncPackage.restoreInto(
+                        incoming,
+                        DesktopPaths.dbFile(dataDir),
+                        DesktopPaths.mediaDir(dataDir),
+                    )
+                    incoming.copyTo(DesktopPaths.latestSyncZip(dataDir), overwrite = true)
+                } finally {
+                    incoming.delete()
                 }
-                SyncPackage.restoreInto(
-                    incoming,
-                    DesktopPaths.dbFile(dataDir),
-                    DesktopPaths.mediaDir(dataDir),
-                )
-                incoming.copyTo(DesktopPaths.latestSyncZip(dataDir), overwrite = true)
                 lastSyncAt.set(System.currentTimeMillis())
                 call.respond(SyncPushResult(true, "Library updated on desktop host"))
             }
