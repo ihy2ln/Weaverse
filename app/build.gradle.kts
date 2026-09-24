@@ -9,6 +9,12 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+ksp {
+    // Exported schemas are the record future migrations are written and tested against.
+    // Commit the generated app/schemas/ JSON alongside every version bump.
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 android {
     namespace = "com.ihy2ln.weaverse"
     compileSdk = 35

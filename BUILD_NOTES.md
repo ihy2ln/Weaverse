@@ -120,9 +120,6 @@ handling, and editor buttons that quietly did nothing.
   androidx artifacts cannot be resolved). `:sync-core:test` and
   `:desktop:compileKotlin` were run and pass; the `app/` changes are
   reviewed-but-unbuilt and need a CI or local `assembleDebug` run.
-- `DatabaseModule` uses `fallbackToDestructiveMigration()` at schema
-  version 5: an upgrade that bumps the version silently wipes user data.
-  Real migrations are the gold-status fix.
 - `pushToPeer` sends the whole sync package with `zip.readBytes()`, and
   `/api/import` reads the whole upload into memory — both are OOM risks on a
   large library and should stream instead.
@@ -130,6 +127,28 @@ handling, and editor buttons that quietly did nothing.
   and `SceneBeatBlock`. `Heading`, `Quote`, `ListItem`, `Divider` and
   `CodeBlock` exist in the model but would render as blank gaps.
 - The auto-sync loop polls every 20 s for the lifetime of the process.
+
+## Room migrations (2026-09-24)
+
+`DatabaseModule` used `fallbackToDestructiveMigration()`, so any schema
+bump silently wiped the user's library. Now:
+
+- `DatabaseMigrations.ALL` holds every `Migration(n, n+1)` from v5 on, and
+  the builder only allows destructive fallback for v1–v4 — versions that
+  shipped with `exportSchema = false`, so their layout was never recorded
+  and a real migration can't be written for them.
+- `PreMigrationBackup` copies `weaverse.db` (+ WAL/SHM) to
+  `files/backups/pre-migration-v<old>-to-v<new>-<ts>.db` before Room opens
+  an older database, keeping the last 3.
+- Downgrades (older APK, or a sync package from a newer peer) are rebuilt
+  instead of crashing on open.
+- `DatabaseMigrationsTest` fails if `WeaverseDatabase.VERSION` is bumped
+  without a matching migration — a forgotten migration is a red build, not
+  a wiped phone or a crash on launch.
+- `exportSchema = true` with `room.schemaLocation = app/schemas`. **The
+  first build after this change generates `app/schemas/…/5.json`; commit
+  it** — it is the baseline the next migration is written against. (It
+  could not be generated in the review environment; see above.)
 
 ## Version history (from InkForge, condensed)
 
