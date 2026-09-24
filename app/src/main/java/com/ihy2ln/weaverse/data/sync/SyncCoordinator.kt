@@ -135,11 +135,21 @@ class SyncCoordinator @Inject constructor(
             }
         }
         scope.launch {
+            // Poll every 20 s while the hub answers; back off to 5 min while it doesn't, so an
+            // offline desktop doesn't cost a network round-trip three times a minute.
+            var interval = AUTO_SYNC_INTERVAL_MS
             while (isActive) {
-                delay(20_000)
+                delay(interval)
                 val snap = _state.value
                 if (snap.autoSync && snap.peerHost.isNotBlank() && snap.peerPin.isNotBlank()) {
-                    runCatching { quietSync() }
+                    val reachable = runCatching { quietSync() }.getOrDefault(false)
+                    interval = if (reachable) {
+                        AUTO_SYNC_INTERVAL_MS
+                    } else {
+                        (interval * 2).coerceAtMost(AUTO_SYNC_MAX_BACKOFF_MS)
+                    }
+                } else {
+                    interval = AUTO_SYNC_INTERVAL_MS
                 }
             }
         }
@@ -343,14 +353,15 @@ class SyncCoordinator @Inject constructor(
         scope.launch { settings.setAutoSync(enabled) }
     }
 
-    private suspend fun quietSync() {
+    /** Returns whether the hub answered; push/pull pair on their own when they run. */
+    private suspend fun quietSync(): Boolean {
         val host = normalizeHost(_state.value.peerHost)
         val pin = _state.value.peerPin
-        if (host.isBlank() || pin.isBlank()) return
-        runCatching { pair(host, pin) }
-        val remote = runCatching {
-            client.get("$host/api/status").body<SyncStatusResponse>().lastSyncAt ?: 0L
-        }.getOrDefault(0L)
+        if (host.isBlank() || pin.isBlank()) return true
+        val status = runCatching {
+            client.get("$host/api/status").body<SyncStatusResponse>()
+        }.getOrNull() ?: return false
+        val remote = status.lastSyncAt ?: 0L
         val localDb = context.getDatabasePath("weaverse.db")
         val localMtime = if (localDb.exists()) localDb.lastModified() else 0L
         val last = settings.preferences.first().lastSyncAt
@@ -360,6 +371,7 @@ class SyncCoordinator @Inject constructor(
             pushToPeer()
             settings.setLastSyncAt(System.currentTimeMillis())
         }
+        return true
     }
 
     suspend fun pushToPeer() = withContext(Dispatchers.IO) {
@@ -505,3 +517,6 @@ class SyncCoordinator @Inject constructor(
         }.getOrDefault("")
     }
 }
+
+private const val AUTO_SYNC_INTERVAL_MS = 20_000L
+private const val AUTO_SYNC_MAX_BACKOFF_MS = 5 * 60_000L

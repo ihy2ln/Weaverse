@@ -127,7 +127,9 @@ handling, and editor buttons that quietly did nothing.
 - `DocumentEditor` renders only `Paragraph`, `MediaBlock`, `MediaStackBlock`
   and `SceneBeatBlock`. `Heading`, `Quote`, `ListItem`, `Divider` and
   `CodeBlock` exist in the model but would render as blank gaps.
-- The auto-sync loop polls every 20 s for the lifetime of the process.
+- The auto-sync loop still runs for the lifetime of the process (now backing
+  off to 5 min while the hub is unreachable). Pausing it in the background
+  would need `lifecycle-process`.
 
 ## Room migrations (2026-09-24)
 
