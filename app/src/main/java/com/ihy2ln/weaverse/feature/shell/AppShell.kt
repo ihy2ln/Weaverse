@@ -74,7 +74,8 @@ import com.ihy2ln.weaverse.core.ui.components.WorkspaceChrome
 import com.ihy2ln.weaverse.core.ui.components.VerticalResizeHandle
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
-import com.ihy2ln.weaverse.core.ui.theme.ProfileBackgroundArt
+import com.ihy2ln.weaverse.core.ui.theme.AppBackdrop
+import com.ihy2ln.weaverse.core.ui.theme.BackdropStyle
 import com.ihy2ln.weaverse.core.ui.util.resolveSectionColor
 import com.ihy2ln.weaverse.feature.export.ExportImportScreen
 import com.ihy2ln.weaverse.feature.library.LibraryScreen
@@ -205,6 +206,22 @@ fun AppShell(
         if (mode == AppMode.Novel.name) return false
         shellViewModel.openPrompt(kind)
         return true
+    }
+    /** The + menu's "From CYOA template": a new novel or campaign that opens at verification. */
+    fun createFromTemplate(vocabulary: CreateWorkVocabulary) {
+        shellViewModel.createFromTemplate(vocabulary) { bookId, chatId ->
+            showHome = false
+            showLibrary = false
+            if (vocabulary == CreateWorkVocabulary.Campaign) {
+                mode = AppMode.Roleplay.name
+                rpDest = RoleplayDestination.Chats.name
+                selectedRpChatId = chatId
+            } else {
+                mode = AppMode.Novel.name
+                novelDest = NovelDestination.Plan.name
+                novelStartBookId = bookId
+            }
+        }
     }
     creatingWork?.let { vocabulary ->
         CreateWorkDialog(
@@ -495,7 +512,7 @@ fun AppShell(
         val userBackgroundVideo = shellInfo.backgroundVideoPath
         val showProfileArt =
             userBackgroundImage == null && userBackgroundVideo == null && prefs.profileBackgroundEnabled
-        if (!isBookBrowsing) when {
+        when {
             userBackgroundVideo != null -> LoopingVideoBackground(
                 path = userBackgroundVideo,
                 modifier = Modifier.fillMaxSize(),
@@ -507,14 +524,16 @@ fun AppShell(
                 contentScale = ContentScale.Crop,
                 alpha = 1f,
             )
-            showProfileArt -> ProfileBackgroundArt(
+            showProfileArt -> AppBackdrop(
+                style = BackdropStyle.fromName(prefs.backdropStyle),
                 profile = prefs.appearanceProfile,
                 modifier = Modifier.fillMaxSize(),
             )
         }
+        // Glass clarity sets how much wallpaper shows through every page, Home included.
         val shellWash =
             if (showProfileArt || userBackgroundImage != null || userBackgroundVideo != null) {
-                bgColor.copy(alpha = bgColor.alpha * 0.86f)
+                bgColor.copy(alpha = bgColor.alpha * (1f - prefs.glassClarityPercent.coerceIn(0, 80) / 100f * 0.8f))
             } else {
                 bgColor
             }
@@ -828,6 +847,7 @@ fun AppShell(
                             selectedSceneId = scene; mode = AppMode.Novel.name; showHome = false; novelDest = NovelDestination.Write.name
                         } },
                         onCreate = { creatingWork = CreateWorkVocabulary.Novel },
+                        onCreateFromTemplate = { createFromTemplate(CreateWorkVocabulary.Novel) },
                         onImport = { showExport = true },
                         onExport = { id -> shellViewModel.openBookForBrowsing(id, false) { showExport = true } },
                         modes = workspaceOptions.map { AppMode.valueOf(it.id) },
@@ -1072,6 +1092,7 @@ fun AppShell(
                                 NovelDestination.Bookshelf -> WorkShelfScreen(
                                     kind = WorkShelfKind.Novel,
                                     onCreate = { creatingWork = CreateWorkVocabulary.Novel },
+                                    onCreateFromTemplate = { createFromTemplate(CreateWorkVocabulary.Novel) },
                                     onExport = { bookId ->
                                         shellViewModel.setSelectedBookId(bookId)
                                         showExport = true
@@ -1238,6 +1259,7 @@ fun AppShell(
                                         WorkShelfScreen(
                                             kind = WorkShelfKind.Campaign,
                                             onCreate = { creatingWork = CreateWorkVocabulary.Campaign },
+                                    onCreateFromTemplate = { createFromTemplate(CreateWorkVocabulary.Campaign) },
                                             onOpen = { card ->
                                                 card.bookId?.let { bookId ->
                                                     shellViewModel.openCampaign(bookId) { sessionId ->
@@ -1252,6 +1274,7 @@ fun AppShell(
                                 RoleplayDestination.Campaign -> WorkShelfScreen(
                                     kind = WorkShelfKind.Campaign,
                                     onCreate = { creatingWork = CreateWorkVocabulary.Campaign },
+                                    onCreateFromTemplate = { createFromTemplate(CreateWorkVocabulary.Campaign) },
                                     onOpen = { card ->
                                         card.bookId?.let { bookId ->
                                             shellViewModel.openCampaign(bookId) { sessionId ->

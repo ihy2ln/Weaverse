@@ -118,6 +118,10 @@ fun NovelStartScreen(
                         Text(resumable.setup.title, style = MaterialTheme.typography.bodyMedium)
                     }
                     InkOutlinedButton("Continue", viewModel::resume, Modifier.fillMaxWidth())
+                    if (state.hasCyoaCheckpoint) {
+                        InkTextButton("Back to CYOA set up", viewModel::restoreCyoaCheckpoint)
+                    }
+                    InkTextButton("Start from template", viewModel::startFromTemplate)
                     InkTextButton("Start over", viewModel::startOver)
                     InkTextButton("Close", onClose)
                 }
@@ -572,6 +576,7 @@ private fun SetupControls(
             InkTextButton("Start over", viewModel::startOver)
             InkOutlinedButton("Continue to the story", viewModel::openCyoa, Modifier.weight(1f))
         }
+        SaveSlotBar(state, viewModel, offerTemplate = true, offerSave = true)
         Text(
             "Your answers are kept as you go — closing this and coming back offers to continue.",
             style = MaterialTheme.typography.labelSmall,
@@ -697,6 +702,7 @@ private fun CyoaControls(state: NovelStartUiState, viewModel: NovelStartViewMode
             InkTextButton("Back to setup", viewModel::editSetup)
             InkOutlinedButton("Create chapter plan", viewModel::generateChapterPlan, Modifier.weight(1f))
         }
+        SaveSlotBar(state, viewModel, offerTemplate = false, offerSave = true)
     }
 }
 
@@ -757,6 +763,7 @@ private fun ChapterPlanControls(state: NovelStartUiState, viewModel: NovelStartV
             InkOutlinedButton("Regenerate", viewModel::generateChapterPlan, Modifier.weight(1f))
         }
         InkOutlinedButton("Continue to verification", viewModel::openVerification, Modifier.fillMaxWidth())
+        SaveSlotBar(state, viewModel, offerTemplate = false, offerSave = true)
     }
 }
 
@@ -819,6 +826,7 @@ private fun VerificationControls(state: NovelStartUiState, viewModel: NovelStart
         )
         InkTextButton("Edit the chapter plan", viewModel::editChapterPlan)
         InkOutlinedButton("Verify and set up the opening", viewModel::verifyAndWriteOpeningScene, Modifier.fillMaxWidth())
+        SaveSlotBar(state, viewModel, offerTemplate = false, offerSave = true)
     }
 }
 
@@ -849,6 +857,35 @@ private fun OpeningProseControls(state: NovelStartUiState, viewModel: NovelStart
 }
 
 /** The company clicker: the one constraint models reliably ignore, so it is explicit. */
+/**
+ * The start's save slots: the "CYOA set up" checkpoint, and the starting template
+ * that skips straight to verification.
+ */
+@Composable
+private fun SaveSlotBar(
+    state: NovelStartUiState,
+    viewModel: NovelStartViewModel,
+    offerTemplate: Boolean,
+    offerSave: Boolean,
+) {
+    val tokens = inkTokens()
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+        if (offerTemplate) InkTextButton("Start from template", viewModel::startFromTemplate)
+        if (state.hasCyoaCheckpoint) InkTextButton("Back to CYOA set up", viewModel::restoreCyoaCheckpoint)
+        if (offerSave) InkTextButton("Save as template", viewModel::saveAsTemplate)
+    }
+    if (state.slotMessage.isNotBlank()) {
+        Text(state.slotMessage, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+    } else if (offerTemplate) {
+        Text(
+            if (state.hasSavedTemplate) "Start from template loads your saved template and skips to verification."
+            else "Start from template fills every answer and the chapter plan, and skips to verification.",
+            style = MaterialTheme.typography.labelSmall,
+            color = tokens.secondaryText,
+        )
+    }
+}
+
 @Composable
 private fun CompanyPicker(selected: StoryCompanionMode, onSelect: (StoryCompanionMode) -> Unit) {
     Column(

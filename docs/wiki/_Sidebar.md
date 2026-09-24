@@ -3,6 +3,7 @@
 - [Home](Home)
 - [Getting Started](Getting-Started)
 - [Navigation and Shelves](Navigation-and-Shelves)
+- [Appearance](Appearance)
 - [Codex and Notes](Codex-and-Notes)
 - [Novel and Reader](Novel-and-Reader)
 - [RPG, Chatting, and Storyboard](RPG-Chatting-and-Storyboard)

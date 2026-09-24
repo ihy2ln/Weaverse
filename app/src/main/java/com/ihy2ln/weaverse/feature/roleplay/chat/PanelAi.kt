@@ -246,6 +246,7 @@ object PanelAi {
         modelRef: String,
         path: String,
         targetLanguage: String,
+        maxDim: Int = 1800,
     ): List<PanelTextRegion>? {
         val raw = ask(
             ai = ai,
@@ -263,7 +264,7 @@ object PanelAi {
                 "Return ONLY a JSON array: [{\"x\":0,\"y\":0,\"w\":100,\"h\":40,\"original\":\"...\",\"translation\":\"...\",\"language\":\"ja\"}]. " +
                 "Use an empty original when a region is decorative. Do not merge separate bubbles or place the " +
                 "box around a blank area merely to make the translated text fit.",
-            maxDim = 1800,
+            maxDim = maxDim,
         ) ?: return null
         return parseTranslatedRegions(raw)
     }
@@ -346,15 +347,30 @@ object PanelAi {
         modelRef: String,
         originals: List<String>,
         targetLanguage: String,
+        /** The Vision model's own reading of each line, made while looking at the page. */
+        drafts: List<String> = emptyList(),
+        /** A second attempt at lines the first answer left untranslated. */
+        strict: Boolean = false,
     ): List<String>? {
         if (originals.isEmpty()) return emptyList()
-        val numbered = originals.mapIndexed { index, text -> "${index + 1}. $text" }.joinToString("\n")
+        val numbered = originals.mapIndexed { index, text ->
+            val draft = drafts.getOrNull(index)?.trim().orEmpty()
+            "${index + 1}. $text" + if (draft.isNotBlank()) "   (page-reader draft: $draft)" else ""
+        }.joinToString("\n")
         val result = ai.complete(
-            userMessage = "Translate each numbered line into $targetLanguage. " +
+            userMessage = "These numbered lines are the lettering of ONE comic page, in reading order, so use the " +
+                "neighbouring lines as context for who is speaking and what is happening. " +
+                "Translate each numbered line into $targetLanguage. A page-reader draft, when given, came from a " +
+                "model that saw the artwork: keep what it got right and fix what it got wrong. " +
+                "Keep each line about as short as the original so it fits the same balloon. " +
                 "Return ONLY a JSON array of strings in the same order, no numbers, no commentary. " +
                 "When the target is English, use English letters only: never copy Japanese, Chinese, Korean, " +
                 "Arabic, Cyrillic, or any other source-script characters into the answer. Preserve names and " +
-                "sound effects as readable English transliteration when needed.\n\n$numbered",
+                "sound effects as readable English transliteration when needed; a sound effect becomes an " +
+                "English sound word (e.g. BAM, THUD, GASP), never the romanized source." +
+                (if (strict) " Every line MUST come back translated: none may be blank and none may repeat the " +
+                    "source text. For a line that is only an interjection or noise, give the closest English one." else "") +
+                "\n\n$numbered",
             assembled = AssembledPrompt(
                 systemBlocks = listOf(
                     "You are a manga translator. Answer with a raw JSON array of strings only.",
@@ -407,6 +423,40 @@ object PanelAi {
             ?.map { text -> if (language.equals("English", ignoreCase = true)) normalizeEnglishText(text) else text.trim() }
     }
 
+    /**
+     * Rewrites lines that overflow their balloon to at most the given length, keeping the
+     * meaning. Returns null when the answer is unusable.
+     */
+    suspend fun shortenTexts(
+        ai: AiGenerationService,
+        modelRef: String,
+        texts: List<String>,
+        maxChars: List<Int>,
+    ): List<String>? {
+        if (texts.isEmpty()) return emptyList()
+        val numbered = texts.mapIndexed { index, text ->
+            "${index + 1}. (at most ${maxChars.getOrElse(index) { text.length }} characters) $text"
+        }.joinToString("\n")
+        val result = ai.complete(
+            userMessage = "These English manga lines do not fit their speech balloons. Rewrite each one to its " +
+                "character limit, keeping meaning, tone and names; drop filler words first. Return ONLY a JSON " +
+                "array of strings in the same order, English letters only.\n\n$numbered",
+            assembled = AssembledPrompt(
+                systemBlocks = listOf("You are a manga letterer fitting dialogue into balloons. Return a raw JSON array only."),
+                messages = emptyList(),
+                usedEntries = emptyList(),
+                tokenBreakdown = emptyList(),
+            ),
+            modelRef = modelRef,
+            maxTokens = 1024,
+            temperature = 0.2,
+        )
+        val array = extractJsonArray(result.text.trim()) ?: return null
+        return runCatching {
+            regionJson.decodeFromString(ListSerializer(String.serializer()), array)
+        }.getOrNull()?.takeIf { it.size == texts.size }?.map(::normalizeEnglishText)
+    }
+
     /** Removes model wrappers that otherwise become visible as part of the lettering. */
     internal fun normalizeEnglishText(text: String): String = text
         .trim()
@@ -446,7 +496,9 @@ object PanelAi {
     internal fun invalidEnglishRegionIndexes(regions: List<PanelTextRegion>): List<Int> =
         regions.mapIndexedNotNull { index, region ->
             val translated = normalizeEnglishText(region.translation)
-            val copiedSource = region.original.isNotBlank() && translated.isNotBlank() &&
+            // "!!", "…" and "?!" read the same in every language, so copying a line with no
+            // letters in it is correct, not a missed translation.
+            val copiedSource = region.original.any(Char::isLetter) && translated.isNotBlank() &&
                 translated.equals(normalizeEnglishText(region.original), ignoreCase = true)
             if (!region.visible) return@mapIndexedNotNull null
             if (containsForeignScript(translated) || copiedSource ||
@@ -506,6 +558,34 @@ object PanelAi {
             )
         }
         return ForeignTextVerification(passed = residual.isEmpty(), residualRegions = residual)
+    }
+
+    /**
+     * Slow-quality review of a colorized page. Returns what is wrong with it, or an empty list
+     * when it is finished; null when the review could not run.
+     */
+    suspend fun reviewColorization(
+        ai: AiGenerationService,
+        modelRef: String,
+        imageBytes: ByteArray,
+        guide: String,
+    ): List<String>? {
+        val bitmap = android.graphics.BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size) ?: return null
+        val attachment = try { imageAttachmentFor(bitmap) } finally { bitmap.recycle() } ?: return null
+        val raw = ask(
+            ai = ai,
+            modelRef = modelRef,
+            instruction = "Review this colorized manga page against the requested treatment: " +
+                regionJson.encodeToString(String.serializer(), guide.take(600)) + ". " +
+                "List every concrete problem: areas left grey or uncolored, colour bleeding across lines, " +
+                "inconsistent skin or hair colour, changed faces or linework, altered or missing lettering. " +
+                "Return ONLY a JSON array of short strings, or [] when the page is finished.",
+            attachment = attachment,
+        ) ?: return null
+        val array = extractJsonArray(raw) ?: return null
+        return runCatching {
+            regionJson.decodeFromString(ListSerializer(String.serializer()), array)
+        }.getOrNull()?.map { it.trim() }?.filter { it.isNotBlank() }
     }
 
     /** Smallest edge used for square-ish brush math in the editor. */

@@ -438,8 +438,8 @@ object HelpContent {
             entries = listOf(
                 HelpEntry(
                     "Profile",
-                    "A whole look — palette, lettering and corners together. Classic, " +
-                        "Fantasy, Arcade, Synthwave, Chill, Tabletop.",
+                    "A whole look — palette, lettering and corners together, on every page " +
+                        "including Home. Each card in Settings is a live miniature of that profile.",
                 ),
                 HelpEntry(
                     "Theme",
@@ -449,6 +449,17 @@ object HelpContent {
                 HelpEntry(
                     "Section colours",
                     "Layer on top of any profile. Reset section colours undoes them.",
+                ),
+                HelpEntry(
+                    "Wallpaper and glass",
+                    "Pick theme art, a Windows-style wallpaper (Bloom, Glow, Bliss) or an " +
+                        "Apple-style one (Big Sur, Monterey, Ventura, Sonoma, Sequoia). It sits " +
+                        "behind every page, Home included. Glass sets how much shows through panels.",
+                ),
+                HelpEntry(
+                    "Font size and line height",
+                    "Scale every page, menu and dialog, and loosen or tighten the space " +
+                        "between lines. The book reader keeps its own size under Reader text.",
                 ),
             ),
         ),

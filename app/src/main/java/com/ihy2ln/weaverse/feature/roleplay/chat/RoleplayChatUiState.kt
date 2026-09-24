@@ -317,6 +317,12 @@ data class RoleplayChatUiState(
     /** Stage-based progress for campaign-outline generation (1..100, 0 when inactive). */
     val adventurePlanProgress: Int = 0,
     val rpgStartup: RpgStartupState? = null,
+    /** The campaign has a "CYOA set up" checkpoint to return to. */
+    val rpgHasCyoaCheckpoint: Boolean = false,
+    /** A campaign starting template has been saved; otherwise the built-in one is used. */
+    val rpgHasSavedTemplate: Boolean = false,
+    /** A short confirmation after a checkpoint or template action. */
+    val rpgSlotMessage: String = "",
     val sceneNumber: Int = 1,
     val totalScenes: Int = 1,
     val canGoToPreviousScene: Boolean = false,
@@ -347,6 +353,10 @@ data class RoleplayChatUiState(
     val mangaEditBusy: Boolean = false,
     val mangaEditAction: String = "",
     val mangaEditCurrent: Int = 0,
+    /** How far through the current item the running job is, 0..1, for the progress bar. */
+    val mangaEditItemProgress: Float = 0f,
+    /** Fast / Medium / Slow for manga translation and colorizing. */
+    val mangaAiQuality: MangaAiQuality = MangaAiQuality.Medium,
     val mangaEditTotal: Int = 0,
     /** Pages and source regions that failed the post-render foreign-text check. */
     val mangaTranslationReviewPageIds: Set<String> = emptySet(),

@@ -24,6 +24,12 @@ tasks.register<Exec>("stageMediaPacks") {
     )
 }
 
+// Room writes each schema version here; MigrationTest reads them to prove every
+// upgrade keeps the user's data. Commit new files in app/schemas with each bump.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 android {
     namespace = "com.ihy2ln.weaverse"
     compileSdk = 35
@@ -32,8 +38,8 @@ android {
         applicationId = "com.ihy2ln.weaverse"
         minSdk = 26
         targetSdk = 34
-        versionCode = 172
-        versionName = "1.4.40"
+        versionCode = 179
+        versionName = "1.4.47"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -61,13 +67,15 @@ android {
                 "proguard-rules.pro",
             )
             val keystorePath = System.getenv("KEYSTORE_PATH")
-            // Always assign a signingConfig so `assembleRelease` produces a signed,
-            // installable APK even with no keystore configured — falls back to the
-            // debug key rather than leaving the release build type unsigned.
-            signingConfig = if (!keystorePath.isNullOrBlank()) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
+            // A release signed with a different key cannot update the installed app;
+            // Android forces an uninstall and every novel, chat and save is lost. The
+            // debug-key fallback is only allowed when explicitly requested for a
+            // throwaway local build (-PallowDebugSignedRelease=true).
+            val allowDebugSigned = providers.gradleProperty("allowDebugSignedRelease").orNull == "true"
+            signingConfig = when {
+                !keystorePath.isNullOrBlank() -> signingConfigs.getByName("release")
+                allowDebugSigned -> signingConfigs.getByName("debug")
+                else -> null
             }
         }
         debug {
@@ -75,7 +83,7 @@ android {
             versionNameSuffix = "-debug"
             // Keep locally installable test builds visually distinct from the
             // production app so testers cannot accidentally reopen an older release.
-            resValue("string", "app_name", "Weaverse Test 1.4.28")
+            resValue("string", "app_name", "Weaverse Test ${defaultConfig.versionName}")
         }
     }
 

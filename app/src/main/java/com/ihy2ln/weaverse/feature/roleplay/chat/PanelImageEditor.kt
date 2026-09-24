@@ -94,11 +94,11 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-private val EditorBg = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.background
-private val EditorPanel = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.panel
-private val EditorCanvas = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.hover
-private val EditorAccent = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.activePill
-private val EditorMuted = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.secondaryText
+private val EditorBg: Color @androidx.compose.runtime.Composable get() = com.ihy2ln.weaverse.core.ui.theme.inkTokens().background
+private val EditorPanel: Color @androidx.compose.runtime.Composable get() = com.ihy2ln.weaverse.core.ui.theme.inkTokens().panel
+private val EditorCanvas: Color @androidx.compose.runtime.Composable get() = com.ihy2ln.weaverse.core.ui.theme.inkTokens().hover
+private val EditorAccent: Color @androidx.compose.runtime.Composable get() = com.ihy2ln.weaverse.core.ui.theme.inkTokens().activePill
+private val EditorMuted: Color @androidx.compose.runtime.Composable get() = com.ihy2ln.weaverse.core.ui.theme.inkTokens().secondaryText
 /** Regions the verifier still found source lettering in. */
 private val EditorReview = Color(0xFFFF6B6B)
 
@@ -123,12 +123,36 @@ internal fun ModelChoice(
             onClick = { onExpandedChange(true) },
             enabled = models.isNotEmpty(),
         )
+        // Model lists run to hundreds of entries, so the menu opens with a search field.
+        var query by remember(expanded) { mutableStateOf("") }
+        val shown = remember(models, query) {
+            val terms = query.trim().lowercase().split(Regex("\\s+")).filter { it.isNotBlank() }
+            if (terms.isEmpty()) models else models.filter { model ->
+                val haystack = "${model.displayName} ${model.id}".lowercase()
+                terms.all { it in haystack }
+            }
+        }
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { onExpandedChange(false) },
-            modifier = Modifier.heightIn(max = 360.dp),
+            modifier = Modifier.heightIn(max = 420.dp),
         ) {
-            models.forEach { model ->
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                placeholder = { Text("Search models") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+            )
+            if (shown.isEmpty()) {
+                Text(
+                    "No model matches \"$query\".",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = EditorMuted,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+            shown.forEach { model ->
                 DropdownMenuItem(
                     text = {
                         Column {

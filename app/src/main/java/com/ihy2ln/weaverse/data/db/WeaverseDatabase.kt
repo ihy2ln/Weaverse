@@ -86,7 +86,7 @@ import com.ihy2ln.weaverse.data.db.entities.RpgCampaignSaveEntity
         RpRoomMemberEntity::class,
     ],
     version = 29,
-    exportSchema = false,
+    exportSchema = true,
 )
 @TypeConverters(InkTypeConverters::class)
 abstract class WeaverseDatabase : RoomDatabase() {
@@ -107,14 +107,23 @@ abstract class WeaverseDatabase : RoomDatabase() {
     abstract fun homeAccessDao(): com.ihy2ln.weaverse.feature.shell.HomeAccessDao
     abstract fun bookBrowsingDao(): com.ihy2ln.weaverse.feature.library.BookBrowsingDao
     companion object {
+        /** Adds a column only if an interrupted earlier upgrade has not already added it. */
+        private fun SupportSQLiteDatabase.addColumnIfMissing(table: String, column: String, definition: String) {
+            val exists = query("PRAGMA table_info(`$table`)").use { c ->
+                val nameIndex = c.getColumnIndex("name")
+                generateSequence { if (c.moveToNext()) c.getString(nameIndex) else null }.any { it == column }
+            }
+            if (!exists) execSQL("ALTER TABLE `$table` ADD COLUMN `$column` $definition")
+        }
+
         val MIGRATION_28_29 = object : Migration(28, 29) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE novel_writing_settings ADD COLUMN startProgress TEXT NOT NULL DEFAULT ''")
+                db.addColumnIfMissing("novel_writing_settings", "startProgress", "TEXT NOT NULL DEFAULT ''")
             }
         }
         val MIGRATION_27_28 = object : Migration(27, 28) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE novel_writing_settings ADD COLUMN companions TEXT NOT NULL DEFAULT 'party'")
+                db.addColumnIfMissing("novel_writing_settings", "companions", "TEXT NOT NULL DEFAULT 'party'")
             }
         }
         val MIGRATION_26_27 = object : Migration(26, 27) {
@@ -399,5 +408,37 @@ abstract class WeaverseDatabase : RoomDatabase() {
                 )
             }
         }
+
+        /**
+         * Every schema step, in order. Registered by DatabaseModule and checked by
+         * MigrationTest; bumping the database version without adding a step here
+         * fails the test instead of wiping the user's data.
+         */
+        val ALL_MIGRATIONS: Array<Migration> = arrayOf(
+            MIGRATION_5_6,
+            MIGRATION_6_7,
+            MIGRATION_7_8,
+            MIGRATION_8_9,
+            MIGRATION_9_10,
+            MIGRATION_10_11,
+            MIGRATION_11_12,
+            MIGRATION_12_13,
+            MIGRATION_13_14,
+            MIGRATION_14_15,
+            MIGRATION_15_16,
+            MIGRATION_16_17,
+            MIGRATION_17_18,
+            MIGRATION_18_19,
+            MIGRATION_19_20,
+            MIGRATION_20_21,
+            MIGRATION_21_22,
+            MIGRATION_22_23,
+            MIGRATION_23_24,
+            MIGRATION_24_25,
+            MIGRATION_25_26,
+            MIGRATION_26_27,
+            MIGRATION_27_28,
+            MIGRATION_28_29,
+        )
     }
 }

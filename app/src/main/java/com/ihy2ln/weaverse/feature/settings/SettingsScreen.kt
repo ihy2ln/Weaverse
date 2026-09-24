@@ -7,6 +7,29 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.runtime.CompositionLocalProvider
+import com.ihy2ln.weaverse.core.ui.theme.LocalAppearanceProfile
+import com.ihy2ln.weaverse.core.ui.theme.LocalInkTokens
+import com.ihy2ln.weaverse.core.ui.theme.ProfileBackgroundArt
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
+import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material3.SliderDefaults
+import com.ihy2ln.weaverse.core.ui.components.glassPanel
+import com.ihy2ln.weaverse.core.ui.theme.AppBackdrop
+import com.ihy2ln.weaverse.core.ui.theme.BackdropStyle
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
+import com.ihy2ln.weaverse.data.settings.UserPreferences
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -93,7 +116,8 @@ fun SettingsScreen(
 
     val state by viewModel.uiState.collectAsState()
 
-    var appearanceExpanded by rememberSaveable { mutableStateOf(false) }
+    var appearanceExpanded by rememberSaveable { mutableStateOf(true) }
+    var generalExpanded by rememberSaveable { mutableStateOf(false) }
     var promptEntryExpanded by rememberSaveable { mutableStateOf(true) }
     var topicMediaExpanded by rememberSaveable { mutableStateOf(true) }
     var openRouterExpanded by rememberSaveable { mutableStateOf(true) }
@@ -144,190 +168,227 @@ fun SettingsScreen(
 
     ) {
 
+        Text(
+            "Settings",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            color = inkTokens().primaryText,
+            modifier = Modifier.padding(top = InkSpacing.sm),
+        )
+        Text(
+            "Make Weaverse yours — every page follows these choices.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = inkTokens().secondaryText,
+            modifier = Modifier.padding(bottom = InkSpacing.lg),
+        )
+
         ExpandableSection(
-
             title = "Appearance",
-
+            subtitle = "${state.prefs.appearanceProfile.label} · ${wallpaperLabel(state.prefs)} · text ${state.prefs.uiTextScalePercent}%",
+            icon = Icons.Default.Palette,
             expanded = appearanceExpanded,
-
             onToggle = { appearanceExpanded = !appearanceExpanded },
-
         ) {
+            AppearancePreview(state.prefs)
 
-            Text("Profile", style = MaterialTheme.typography.labelLarge)
-
-            Text(
-
-                "A whole look — colors, lettering and corners together.",
-
-                style = MaterialTheme.typography.bodySmall,
-
-                color = inkTokens().secondaryText,
-
-            )
-
-            // Profile picker as visual cards: each shows its own palette.
+            SettingHeading("Profile", "A whole look — colors, lettering, corners and wallpaper together.")
+            // Each card is a miniature of the profile itself: its art, a glass panel,
+            // its typeface and its corner shape, so picking one is picking what you see.
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = InkSpacing.sm)
-                    .height(96.dp)
+                    .height(IntrinsicSize.Min)
                     .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
             ) {
                 AppearanceProfile.entries.forEach { profileEntry ->
-                    val selected = profileEntry == state.prefs.appearanceProfile
-                    val swatches = profileEntry.tokens(AppThemeMode.Light)
-                    val darkSwatches = profileEntry.tokens(AppThemeMode.Dark)
-                    Column(
-                        modifier = Modifier
-                            .width(112.dp)
-                            .fillMaxHeight()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(swatches.background)
-                            .border(
-                                width = if (selected) 2.dp else 1.dp,
-                                color = if (selected) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    swatches.hairline
-                                },
-                                shape = RoundedCornerShape(12.dp),
-                            )
-                            .clickable {
-                                viewModel.setAppearanceProfile(profileEntry)
-                            }
-                            .padding(InkSpacing.sm),
-                        verticalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Box(Modifier.size(14.dp).background(swatches.activePill, RoundedCornerShape(4.dp)))
-                            Box(Modifier.size(14.dp).background(swatches.panel, RoundedCornerShape(4.dp)))
-                            Box(Modifier.size(14.dp).background(darkSwatches.background, RoundedCornerShape(4.dp)))
-                        }
-                        Text(
-                            profileEntry.label,
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = swatches.primaryText,
-                            maxLines = 1,
+                    ProfileCard(
+                        profile = profileEntry,
+                        mode = state.prefs.themeMode,
+                        selected = profileEntry == state.prefs.appearanceProfile,
+                        onClick = { viewModel.setAppearanceProfile(profileEntry) },
+                    )
+                }
+            }
+
+            val profile = state.prefs.appearanceProfile
+            if (profile != AppearanceProfile.Streaming) {
+                SettingHeading(
+                    "Theme",
+                    if (profile.usesThemeModes) "Light, sepia, dark or true black." else "${profile.label} comes in light and dark.",
+                )
+                InkSegmentedPill(
+                    options = if (profile.usesThemeModes) {
+                        listOf(
+                            SegmentedOption(AppThemeMode.Light.name, "Light"),
+                            SegmentedOption(AppThemeMode.Sepia.name, "Sepia"),
+                            SegmentedOption(AppThemeMode.Dark.name, "Dark"),
+                            SegmentedOption(AppThemeMode.OledBlack.name, "Black"),
                         )
-                        Text(
-                            if (selected) "Active" else profileEntry.blurb,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = swatches.secondaryText,
-                            maxLines = 2,
+                    } else {
+                        listOf(
+                            SegmentedOption(AppThemeMode.Light.name, "Light"),
+                            SegmentedOption(AppThemeMode.Dark.name, "Dark"),
                         )
+                    },
+                    selectedId = if (profile.usesThemeModes) {
+                        state.prefs.themeMode.name
+                    } else {
+                        if (state.prefs.themeMode.isDark) AppThemeMode.Dark.name else AppThemeMode.Light.name
+                    },
+                    onSelect = { viewModel.setTheme(AppThemeMode.valueOf(it)) },
+                    scrollable = true,
+                    modifier = Modifier.padding(vertical = InkSpacing.sm),
+                )
+            }
+
+            SettingHeading("Wallpaper", "Drawn behind every page, Home included.")
+            WallpaperGroup("Weaverse") {
+                WallpaperTile("None", selected = !state.prefs.profileBackgroundEnabled, onClick = { viewModel.setProfileBackgroundEnabled(false) }) {
+                    Box(it.background(inkTokens().background))
+                }
+                WallpaperTile(
+                    "Theme art",
+                    selected = state.prefs.profileBackgroundEnabled && BackdropStyle.fromName(state.prefs.backdropStyle) == BackdropStyle.Profile,
+                    onClick = { viewModel.setBackdropStyle(BackdropStyle.Profile.name) },
+                ) { AppBackdrop(BackdropStyle.Profile, profile, it) }
+            }
+            listOf("Windows", "Apple").forEach { family ->
+                WallpaperGroup(family) {
+                    BackdropStyle.entries.filter { it.family == family }.forEach { style ->
+                        WallpaperTile(
+                            style.label,
+                            selected = state.prefs.profileBackgroundEnabled && state.prefs.backdropStyle == style.name,
+                            onClick = { viewModel.setBackdropStyle(style.name) },
+                        ) { AppBackdrop(style, profile, it) }
                     }
                 }
             }
-            Text(
-                state.prefs.appearanceProfile.blurb,
-                style = MaterialTheme.typography.bodySmall,
-                color = inkTokens().secondaryText,
+
+            SettingHeading("Glass", "How much wallpaper shows through panels and pages.")
+            LabeledSlider(
+                value = state.prefs.glassClarityPercent.toFloat(),
+                onValueChange = { viewModel.setGlassClarity(it.roundToInt()) },
+                valueRange = 0f..80f,
+                start = "Solid",
+                end = "Clear",
             )
 
-            val profile = state.prefs.appearanceProfile
-
-            if (profile != AppearanceProfile.Streaming) {
-            Text(
-
-                if (profile.usesThemeModes) "Theme" else "Theme — ${profile.label} uses light or dark",
-
-                style = MaterialTheme.typography.labelLarge,
-
-                modifier = Modifier.padding(top = InkSpacing.md),
-
-            )
-
+            SettingHeading("Font size", "Every page, menu and dialog — ${state.prefs.uiTextScalePercent}%.")
             InkSegmentedPill(
-
-                options = if (profile.usesThemeModes) {
-
-                    AppThemeMode.entries.map { SegmentedOption(it.name, it.name) }
-
-                } else {
-
-                    listOf(
-
-                        SegmentedOption(AppThemeMode.Light.name, "Light"),
-
-                        SegmentedOption(AppThemeMode.Dark.name, "Dark"),
-
-                    )
-
-                },
-
-                selectedId = if (profile.usesThemeModes) {
-
-                    state.prefs.themeMode.name
-
-                } else {
-
-                    if (state.prefs.themeMode.isDark) AppThemeMode.Dark.name else AppThemeMode.Light.name
-
-                },
-
-                onSelect = { viewModel.setTheme(AppThemeMode.valueOf(it)) },
-
-                modifier = Modifier.padding(vertical = InkSpacing.sm),
-
+                options = listOf(
+                    SegmentedOption("90", "Small"),
+                    SegmentedOption("100", "Default"),
+                    SegmentedOption("115", "Large"),
+                    SegmentedOption("130", "Largest"),
+                ),
+                selectedId = state.prefs.uiTextScalePercent.toString(),
+                onSelect = { viewModel.setUiTextScale(it.toInt()) },
+                scrollable = true,
+                modifier = Modifier.padding(vertical = InkSpacing.xs),
             )
-            }
-
-            Text("Startup · Home", style = MaterialTheme.typography.titleSmall)
-            Text("All six modes and your recently opened content are available on Home.", style = MaterialTheme.typography.bodySmall)
-            Text("Font size: ${state.prefs.fontSizeSp}sp")
-
-            Slider(
-
-                value = state.prefs.fontSizeSp.toFloat(),
-
-                onValueChange = { viewModel.setFontSize(it.toInt()) },
-
-                valueRange = 12f..28f,
-
-                steps = 15,
-
+            LabeledSlider(
+                value = state.prefs.uiTextScalePercent.toFloat(),
+                onValueChange = { viewModel.setUiTextScale((it / 5f).roundToInt() * 5) },
+                valueRange = 80f..140f,
+                steps = 11,
+                start = "A",
+                end = "A",
+                endLarge = true,
             )
 
-            Text("Line height: ${"%.1f".format(state.prefs.lineHeight)}")
-
-            Slider(
-
-                value = state.prefs.lineHeight,
-
-                onValueChange = viewModel::setLineHeight,
-
-                valueRange = 1.2f..2.2f,
-
-                steps = 9,
-
+            SettingHeading("Line height", "Space between lines of text — ${"%.2f".format(state.prefs.uiLineSpacing)}×.")
+            InkSegmentedPill(
+                options = LineSpacingPresets.map { (value, label) -> SegmentedOption(value.toString(), label) },
+                selectedId = LineSpacingPresets.firstOrNull { abs(it.first - state.prefs.uiLineSpacing) < 0.01f }?.first?.toString().orEmpty(),
+                onSelect = { viewModel.setUiLineSpacing(it.toFloat()) },
+                scrollable = true,
+                modifier = Modifier.padding(vertical = InkSpacing.xs),
+            )
+            LabeledSlider(
+                value = state.prefs.uiLineSpacing,
+                onValueChange = { viewModel.setUiLineSpacing((it * 20f).roundToInt() / 20f) },
+                valueRange = 0.85f..1.5f,
+                steps = 12,
+                start = "Tight",
+                end = "Airy",
             )
 
-            Text(
-                "Overall brightness: ${state.prefs.appBrightnessPercent}%",
-                modifier = Modifier.padding(top = InkSpacing.sm),
-            )
-            Text(
-                "Dims the whole app UI (independent of section colors)",
-                style = MaterialTheme.typography.bodySmall,
-                color = inkTokens().secondaryText,
-            )
-            Slider(
+            SettingHeading("Brightness", "Dims the whole app — ${state.prefs.appBrightnessPercent}%.")
+            LabeledSlider(
                 value = state.prefs.appBrightnessPercent.toFloat(),
                 onValueChange = { viewModel.setAppBrightness(it.toInt()) },
                 valueRange = 5f..100f,
+                start = "Dim",
+                end = "Full",
             )
 
-            Text(
-                "Help",
-                style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier.padding(top = InkSpacing.md),
+            SettingHeading(
+                "Reader text",
+                "The book reader keeps its own size: ${state.prefs.fontSizeSp}sp, " +
+                    "line height ${"%.1f".format(state.prefs.lineHeight)}. Also adjustable from the reader.",
             )
+            LabeledSlider(
+                value = state.prefs.fontSizeSp.toFloat(),
+                onValueChange = { viewModel.setFontSize(it.roundToInt()) },
+                valueRange = 12f..28f,
+                steps = 15,
+                start = "A",
+                end = "A",
+                endLarge = true,
+            )
+            LabeledSlider(
+                value = state.prefs.lineHeight,
+                onValueChange = viewModel::setLineHeight,
+                valueRange = 1.2f..2.2f,
+                steps = 9,
+                start = "Tight",
+                end = "Airy",
+            )
+
+            SettingHeading("Your own wallpaper", "An image, or a video that loops muted. Replaces the wallpaper above.")
+            Text(
+                "Current: ${state.backgroundLabel}",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = InkSpacing.xs),
+            )
+            if (state.backgroundNote.isNotBlank()) {
+                Text(
+                    state.backgroundNote,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = inkTokens().secondaryText,
+                    modifier = Modifier.padding(top = InkSpacing.xs),
+                )
+            }
+            Row(modifier = Modifier.padding(top = InkSpacing.sm)) {
+                InkFilledButton(
+                    label = "Add media",
+                    onClick = {
+                        backgroundPicker.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
+                        )
+                    },
+                )
+                InkOutlinedButton(
+                    label = "Clear",
+                    onClick = viewModel::clearBackground,
+                    modifier = Modifier.padding(start = InkSpacing.sm),
+                )
+            }
+        }
+
+        ExpandableSection(
+            title = "Help & friends",
+            subtitle = "Wiki manual, quick guide and daily new people",
+            icon = Icons.AutoMirrored.Filled.HelpOutline,
+            expanded = generalExpanded,
+            onToggle = { generalExpanded = !generalExpanded },
+            modifier = Modifier.padding(top = InkSpacing.md),
+        ) {
             Text(
                 "The wiki manual covers every workspace, and the quick guide " +
-                    "answers the basics.",
+                    "answers the basics. All six modes and your recently opened content are on Home.",
                 style = MaterialTheme.typography.bodySmall,
                 color = inkTokens().secondaryText,
             )
@@ -350,16 +411,10 @@ fun SettingsScreen(
                 )
             }
 
-            Text(
+            SettingHeading(
                 "Friends",
-                style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier.padding(top = InkSpacing.md),
-            )
-            Text(
                 "Write one new person into your friends list each day. Needs an " +
-                    "OpenRouter key; skipped silently when you're offline.",
-                style = MaterialTheme.typography.bodySmall,
-                color = inkTokens().secondaryText,
+                    "OpenRouter key; skipped silently when you are offline.",
             )
             Row(modifier = Modifier.padding(top = InkSpacing.sm)) {
                 if (state.prefs.dailyCharactersEnabled) {
@@ -375,54 +430,11 @@ fun SettingsScreen(
                     )
                 }
             }
-
-            Text(
-                "Background media",
-                style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier.padding(top = InkSpacing.md),
-            )
-            Text(
-                "Shell wallpaper — images, or videos that loop muted behind the app",
-                style = MaterialTheme.typography.bodySmall,
-                color = inkTokens().secondaryText,
-            )
-            Text(
-                "Current: ${state.backgroundLabel}",
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(top = InkSpacing.xs),
-            )
-            if (state.backgroundNote.isNotBlank()) {
-                Text(
-                    state.backgroundNote,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = inkTokens().secondaryText,
-                    modifier = Modifier.padding(top = InkSpacing.xs),
-                )
-            }
-            PromptSurfaceToggle(
-                label = "Theme art behind the app (matches the appearance profile)",
-                checked = state.prefs.profileBackgroundEnabled,
-                onCheckedChange = viewModel::setProfileBackgroundEnabled,
-            )
-            Row(modifier = Modifier.padding(top = InkSpacing.sm)) {
-                InkFilledButton(
-                    label = "Add media",
-                    onClick = {
-                        backgroundPicker.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
-                        )
-                    },
-                )
-                InkOutlinedButton(
-                    label = "Clear",
-                    onClick = viewModel::clearBackground,
-                    modifier = Modifier.padding(start = InkSpacing.sm),
-                )
-            }
         }
 
         ExpandableSection(
             title = "Composer commands",
+            icon = Icons.Default.Terminal,
             subtitle = "Add, remove, and review the ! quick-add commands in every prompt box",
             expanded = commandsExpanded,
             onToggle = { commandsExpanded = !commandsExpanded },
@@ -625,6 +637,7 @@ fun SettingsScreen(
 
         ExpandableSection(
             title = "AI topic media library",
+            icon = Icons.Default.PhotoLibrary,
             subtitle = "Attach local pictures or videos when the AI discusses a matching topic",
             expanded = topicMediaExpanded,
             onToggle = { topicMediaExpanded = !topicMediaExpanded },
@@ -681,6 +694,7 @@ fun SettingsScreen(
 
         ExpandableSection(
             title = "Prompt entry",
+            icon = Icons.Default.EditNote,
             subtitle = "PROMPT box is always on; extra generators stay in this menu",
             expanded = promptEntryExpanded,
             onToggle = { promptEntryExpanded = !promptEntryExpanded },
@@ -723,6 +737,7 @@ fun SettingsScreen(
         ExpandableSection(
 
             title = "AI Connections — OpenRouter",
+            icon = Icons.Default.Cloud,
 
             subtitle = "Key validated via GET /api/v1/key",
 
@@ -829,6 +844,7 @@ fun SettingsScreen(
         ExpandableSection(
 
             title = "Models",
+            icon = Icons.Default.SmartToy,
 
             expanded = modelsExpanded,
 
@@ -956,6 +972,7 @@ fun SettingsScreen(
         ExpandableSection(
 
             title = "Other providers",
+            icon = Icons.Default.Key,
 
             subtitle = "Stored locally, not validated here",
 
@@ -1046,6 +1063,7 @@ fun SettingsScreen(
 
         ExpandableSection(
             title = "Sync through the web version",
+            icon = Icons.Default.Sync,
             expanded = syncExpanded,
             onToggle = { syncExpanded = !syncExpanded },
             modifier = Modifier.padding(top = InkSpacing.md),
@@ -1324,6 +1342,7 @@ fun SettingsScreen(
         ExpandableSection(
 
             title = "Backup & restore",
+            icon = Icons.Default.Backup,
 
             expanded = backupExpanded,
 
@@ -1519,4 +1538,239 @@ private fun PromptSurfaceToggle(
     }
 }
 
+private val LineSpacingPresets = listOf(0.9f to "Compact", 1f to "Default", 1.15f to "Relaxed", 1.3f to "Airy")
 
+private fun wallpaperLabel(prefs: UserPreferences): String = when {
+    !prefs.profileBackgroundEnabled -> "no wallpaper"
+    else -> BackdropStyle.fromName(prefs.backdropStyle).label
+}
+
+@Composable
+private fun SettingHeading(title: String, detail: String) {
+    Text(
+        title,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = inkTokens().primaryText,
+        modifier = Modifier.padding(top = InkSpacing.lg),
+    )
+    Text(detail, style = MaterialTheme.typography.bodySmall, color = inkTokens().secondaryText)
+}
+
+/** A slider with small end captions, like a phone's display settings. */
+@Composable
+private fun LabeledSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    start: String,
+    end: String,
+    steps: Int = 0,
+    endLarge: Boolean = false,
+) {
+    val tokens = inkTokens()
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(start, style = MaterialTheme.typography.labelMedium, color = tokens.secondaryText)
+        Slider(
+            value = value.coerceIn(valueRange.start, valueRange.endInclusive),
+            onValueChange = onValueChange,
+            valueRange = valueRange,
+            steps = steps,
+            colors = SliderDefaults.colors(
+                thumbColor = tokens.activePill,
+                activeTrackColor = tokens.activePill,
+                inactiveTrackColor = tokens.hover,
+                activeTickColor = tokens.activePillLabel.copy(alpha = 0.5f),
+                inactiveTickColor = tokens.secondaryText.copy(alpha = 0.4f),
+            ),
+            modifier = Modifier.weight(1f).padding(horizontal = InkSpacing.sm),
+        )
+        Text(
+            end,
+            style = if (endLarge) MaterialTheme.typography.titleLarge else MaterialTheme.typography.labelMedium,
+            color = tokens.secondaryText,
+        )
+    }
+}
+
+/** A live sample of the current look: wallpaper, glass card and text at the chosen size and spacing. */
+@Composable
+private fun AppearancePreview(prefs: UserPreferences) {
+    val tokens = inkTokens()
+    val shape = RoundedCornerShape(inkRadiusMd() * 2)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .border(1.dp, tokens.hairline, shape)
+            .semantics { contentDescription = "Appearance preview" },
+    ) {
+        if (prefs.profileBackgroundEnabled) {
+            AppBackdrop(BackdropStyle.fromName(prefs.backdropStyle), prefs.appearanceProfile, Modifier.matchParentSize())
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .background(tokens.background.copy(alpha = 1f - prefs.glassClarityPercent / 100f * 0.8f)),
+            )
+        } else {
+            Box(Modifier.matchParentSize().background(tokens.background))
+        }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = InkSpacing.lg, end = InkSpacing.lg, top = 56.dp, bottom = InkSpacing.lg)
+                .glassPanel()
+                .padding(InkSpacing.lg),
+        ) {
+            Text(
+                "CONTINUE READING",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = tokens.activePill,
+            )
+            Text(
+                "The Lantern Canal",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = tokens.primaryText,
+            )
+            Text(
+                "Chapter 3 · The lanterns along the canal flickered as Mara stepped onto the bridge, " +
+                    "the whole city humming somewhere below her feet.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = tokens.secondaryText,
+                modifier = Modifier.padding(top = InkSpacing.xs),
+            )
+        }
+    }
+}
+
+@Composable
+private fun WallpaperGroup(title: String, tiles: @Composable () -> Unit) {
+    Text(
+        title.uppercase(),
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.Bold,
+        color = inkTokens().secondaryText,
+        modifier = Modifier.padding(top = InkSpacing.md, bottom = InkSpacing.xs),
+    )
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
+    ) { tiles() }
+}
+
+@Composable
+private fun WallpaperTile(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    art: @Composable (Modifier) -> Unit,
+) {
+    val tokens = inkTokens()
+    val shape = RoundedCornerShape(12.dp)
+    Column(
+        modifier = Modifier
+            .width(108.dp)
+            .clip(shape)
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = "$label wallpaper" + if (selected) ", selected" else "" },
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(68.dp)
+                .clip(shape)
+                .border(if (selected) 2.dp else 1.dp, if (selected) tokens.activePill else tokens.hairline, shape),
+        ) {
+            art(Modifier.matchParentSize())
+            if (selected) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(6.dp)
+                        .size(20.dp)
+                        .background(tokens.activePill, RoundedCornerShape(999.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Default.Check, contentDescription = null, tint = tokens.activePillLabel, modifier = Modifier.size(14.dp))
+                }
+            }
+        }
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (selected) tokens.primaryText else tokens.secondaryText,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 6.dp, start = 2.dp),
+        )
+    }
+}
+
+/** A miniature of [profile]: its own wallpaper art, glass panel, typeface and corners. */
+@Composable
+private fun ProfileCard(profile: AppearanceProfile, mode: AppThemeMode, selected: Boolean, onClick: () -> Unit) {
+    val swatches = profile.tokens(mode)
+    val type = profile.typography
+    val outer = RoundedCornerShape(maxOf(profile.cornerRadius * 1.5f, 6.dp))
+    val inner = RoundedCornerShape(profile.cornerRadius)
+    Box(
+        modifier = Modifier
+            .width(156.dp)
+            .fillMaxHeight()
+            .clip(outer)
+            .border(if (selected) 2.dp else 1.dp, if (selected) inkTokens().activePill else swatches.hairline, outer)
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = "${profile.label} profile" + if (selected) ", active" else "" },
+    ) {
+        // Classic's art reads the ambient tokens, so hand it this card's palette.
+        CompositionLocalProvider(LocalInkTokens provides swatches, LocalAppearanceProfile provides profile) {
+            ProfileBackgroundArt(profile, Modifier.matchParentSize())
+        }
+        Column(
+            modifier = Modifier
+                .padding(InkSpacing.sm)
+                .fillMaxWidth()
+                .clip(inner)
+                .background(swatches.panel.copy(alpha = 0.78f))
+                .border(1.dp, swatches.hairline.copy(alpha = 0.6f), inner)
+                .padding(InkSpacing.sm),
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Box(Modifier.size(12.dp).background(swatches.activePill, inner))
+                Box(Modifier.size(12.dp).background(swatches.primaryText, inner))
+                Box(Modifier.size(12.dp).background(swatches.secondaryText, inner))
+            }
+            Text(
+                profile.label,
+                style = type.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = swatches.primaryText,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+            Text(
+                profile.blurb,
+                style = type.labelSmall,
+                color = swatches.secondaryText,
+                maxLines = 2,
+                minLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                if (selected) "✓ Active" else "Use",
+                style = type.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = if (selected) swatches.activePillLabel else swatches.activePill,
+                modifier = Modifier
+                    .padding(top = 6.dp)
+                    .clip(inner)
+                    .background(if (selected) swatches.activePill else Color.Transparent)
+                    .padding(horizontal = 8.dp, vertical = 2.dp),
+            )
+        }
+    }
+}

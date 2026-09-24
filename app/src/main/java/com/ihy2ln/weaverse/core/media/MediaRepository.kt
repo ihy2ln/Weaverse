@@ -163,7 +163,13 @@ class MediaRepository @Inject constructor(
      * together at runtime, or an older saved record — resolves to the `.webp` beside
      * it rather than failing, so no lookup depends on remembering the change.
      */
-    private fun resolvedAssetPath(assetPath: String): String {
+    /** Asset lookups are fixed for the life of the APK, so each path is probed once. */
+    private val resolvedAssetPaths = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    private fun resolvedAssetPath(assetPath: String): String =
+        resolvedAssetPaths.getOrPut(assetPath) { probeAssetPath(assetPath) }
+
+    private fun probeAssetPath(assetPath: String): String {
         if (runCatching { context.assets.open(assetPath).use { true } }.getOrDefault(false)) {
             return assetPath
         }

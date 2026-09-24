@@ -35,14 +35,17 @@ import coil3.request.ImageRequest
 import com.ihy2ln.weaverse.core.ui.theme.*
 import com.ihy2ln.weaverse.feature.shell.*
 
-val BrowseBackground = StreamingTokens.background
-val BrowseAccent = StreamingTokens.activePill
-private val BrowseMuted = StreamingTokens.secondaryText
+val BrowseBackground: Color @Composable get() = inkTokens().background
+val BrowseAccent: Color @Composable get() = inkTokens().activePill
+private val BrowseMuted: Color @Composable get() = inkTokens().secondaryText
 
-/** Browsing keeps the shared cinematic identity even when an alternate profile is chosen. */
+/**
+ * Browsing follows the chosen appearance profile like every other page. Kept as a
+ * seam so browsing-only locals have one place to live.
+ */
 @Composable
 fun BookBrowsingTheme(content: @Composable () -> Unit) {
-    WeaverseTheme(profile = AppearanceProfile.Streaming, content = content)
+    content()
 }
 
 /** Route strings are saveable; every route owns independent vertical, horizontal and filter state. */
@@ -57,7 +60,7 @@ fun BookBrowserScreen(
     routes: List<String>, onRoutes: (List<String>) -> Unit,
     modes: List<AppMode>, onMode: (AppMode) -> Unit, onRecent: (HomeItem) -> Unit,
     onRead: (String) -> Unit, onWrite: (String) -> Unit,
-    onCreate: () -> Unit, onImport: () -> Unit, onExport: (String) -> Unit,
+    onCreate: () -> Unit, onCreateFromTemplate: () -> Unit, onImport: () -> Unit, onExport: (String) -> Unit,
     modifier: Modifier = Modifier, viewModel: BookBrowserViewModel = hiltViewModel(),
     homeModel: HomeViewModel = hiltViewModel(),
 ) {
@@ -71,7 +74,8 @@ fun BookBrowserScreen(
     val shelf: (String) -> Unit = { onRoutes(routes + BookRoutes.shelf(it)) }
     BackHandler(routes.size > 1) { onRoutes(routes.dropLast(1)) }
     BookBrowsingTheme {
-        Column(modifier.fillMaxSize().background(BrowseBackground).testTag("book-browser")) {
+        // Transparent: the shell's wallpaper and wash show through, as on every page.
+        Column(modifier.fillMaxSize().testTag("book-browser")) {
             Box(Modifier.weight(1f)) {
                 state.SaveableStateProvider(route) {
                     when {
@@ -83,7 +87,7 @@ fun BookBrowserScreen(
                         }
                         route == "home" -> StreamingHomeContent(books, modes, history, art, onMode, onRecent, open,
                             onRead, { onRoutes(listOf("books")) }, homeModel::remove, homeModel::clear)
-                        route == "books" -> NovelBooksShelf(books, open, onRead, shelf, onCreate, onImport)
+                        route == "books" -> NovelBooksShelf(books, open, onRead, shelf, onCreate, onCreateFromTemplate, onImport)
                         else -> {
                             val filter = when (route) { "list" -> "list"; "search" -> "all"; else -> BookRoutes.value(route) }
                             BookShelfResults(books, filter, open, if (route == "search") "Search your library" else shelfTitle(filter))
@@ -92,12 +96,12 @@ fun BookBrowserScreen(
                 }
             }
             if (status.isNotBlank()) Text(status, Modifier.fillMaxWidth().clickable { viewModel.status.value = "" }.padding(12.dp), color = BrowseAccent)
-            NavigationBar(containerColor = BrowseBackground, tonalElevation = 0.dp, windowInsets = WindowInsets(0, 0, 0, 0), modifier = Modifier.testTag("browse-navigation")) {
+            NavigationBar(containerColor = inkTokens().panel.copy(alpha = com.ihy2ln.weaverse.core.ui.components.glassFillAlpha()), tonalElevation = 0.dp, windowInsets = WindowInsets(0, 0, 0, 0), modifier = Modifier.testTag("browse-navigation")) {
                 // Books has no nav slot of its own: Home already opens the library shelf.
                 listOf("home" to "Home", "search" to "Search", "list" to "My List").forEach { (id, label) ->
                     NavigationBarItem(selected = routes.firstOrNull() == id, onClick = { onRoutes(listOf(id)) },
                         icon = { Icon(when (id) { "home" -> Icons.Default.Home; "search" -> Icons.Default.Search; else -> Icons.Default.BookmarkBorder }, label) },
-                        label = { Text(label, fontSize = 11.sp) }, colors = NavigationBarItemDefaults.colors(indicatorColor = Color(0xFF29223D), selectedIconColor = BrowseAccent, selectedTextColor = Color.White, unselectedIconColor = BrowseMuted, unselectedTextColor = BrowseMuted))
+                        label = { Text(label, fontSize = 11.sp) }, colors = NavigationBarItemDefaults.colors(indicatorColor = BrowseAccent.copy(alpha = .2f), selectedIconColor = BrowseAccent, selectedTextColor = inkTokens().primaryText, unselectedIconColor = BrowseMuted, unselectedTextColor = BrowseMuted))
                 }
             }
         }
@@ -117,7 +121,8 @@ fun FeaturedBook(book: BrowseBook, onRead: () -> Unit, onDetails: (() -> Unit)? 
         Box(Modifier.fillMaxWidth()) {
             val background = book.backdrop ?: book.cover
             if (background != null) BrowseImage(background, Modifier.matchParentSize().then(if (book.backdrop == null) Modifier.blur(28.dp) else Modifier), ContentScale.Crop)
-            Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(BrowseBackground.copy(alpha = .18f), BrowseBackground.copy(alpha = .8f), BrowseBackground))))
+            // Only fade real art into the page; with no art the wallpaper shows through untouched.
+            if (background != null) Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(BrowseBackground.copy(alpha = .18f), BrowseBackground.copy(alpha = .8f), BrowseBackground.copy(alpha = com.ihy2ln.weaverse.core.ui.components.glassFillAlpha())))))
             @Composable fun artwork(modifier: Modifier) {
                 Box(modifier.height(if (wide) 200.dp else if (onDetails == null) 200.dp else 160.dp).padding(top = 12.dp, bottom = 12.dp), contentAlignment = Alignment.Center) {
                     CoverArtwork(book.book.title, book.cover, Modifier.width(if (wide) 144.dp else if (onDetails == null) 120.dp else 96.dp).fillMaxHeight(), rounded = true)
@@ -129,9 +134,9 @@ fun FeaturedBook(book: BrowseBook, onRead: () -> Unit, onDetails: (() -> Unit)? 
                     Text(book.book.title, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, fontSize = 28.sp, lineHeight = 32.sp)
                     val subtitle = listOf(book.book.genre, book.series).filter { it.isNotBlank() }.joinToString("  ·  ")
                     if (subtitle.isNotBlank()) Text(subtitle, color = BrowseMuted, style = MaterialTheme.typography.labelLarge)
-                    if (onDetails != null && book.browsing.synopsis.isNotBlank()) Text(book.browsing.synopsis, color = Color(0xFFD4D2DF), maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+                    if (onDetails != null && book.browsing.synopsis.isNotBlank()) Text(book.browsing.synopsis, color = inkTokens().primaryText.copy(alpha = .85f), maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Button(onClick = onRead, shape = RoundedCornerShape(8.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = BrowseBackground)) {
+                        Button(onClick = onRead, shape = RoundedCornerShape(8.dp), colors = ButtonDefaults.buttonColors(containerColor = inkTokens().primaryText, contentColor = BrowseBackground)) {
                             Icon(Icons.Default.MenuBook, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text(if (book.hasRead) "Continue reading" else "Read", fontWeight = FontWeight.Bold)
                         }
                         if (onDetails != null) FilledTonalButton(onClick = onDetails, shape = RoundedCornerShape(8.dp)) { Icon(Icons.Default.Info, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Details") }

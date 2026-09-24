@@ -194,17 +194,17 @@ fun WorkspaceChrome(
     var arrangeMenu by remember { mutableStateOf<ArrangeMenu?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
     val accent = com.ihy2ln.weaverse.feature.shell.HomeAccent
-    Surface(color = tokens.panel, tonalElevation = 2.dp, modifier = modifier.fillMaxWidth()) {
+    Surface(color = tokens.panel.copy(alpha = glassFillAlpha()), tonalElevation = 0.dp, modifier = modifier.fillMaxWidth()) {
         if (browsing) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
             if (canGoBack) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = tokens.primaryText) }
-            Text(if (androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f) "Weaver\nVerse" else "WeaverVerse", Modifier.weight(1f).padding(start = 8.dp), color = tokens.primaryText, fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-            TextButton(onClick = { menuOpen = true }) { Icon(Icons.Default.Menu, "Open navigation", tint = accent); Spacer(Modifier.width(6.dp)); Text("Modes", color = tokens.primaryText, fontFamily = FontFamily.SansSerif) }
+            Text(if (androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f) "Weaver\nVerse" else "WeaverVerse", Modifier.weight(1f).padding(start = 8.dp), color = tokens.primaryText, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+            TextButton(onClick = { menuOpen = true }) { Icon(Icons.Default.Menu, "Open navigation", tint = accent); Spacer(Modifier.width(6.dp)); Text("Modes", color = tokens.primaryText) }
         } else Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.Menu, "Open navigation", tint = tokens.primaryText) }
             if (canGoBack) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = tokens.primaryText) }
             Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
-                Text(if (isHome) "WEAVERSE" else workspaceOptions.firstOrNull { it.id == workspaceId }?.label.orEmpty(), color = accent, fontWeight = FontWeight.Bold, fontSize = 11.sp, fontFamily = FontFamily.SansSerif)
-                Text(if (isHome) "Home" else bookTitle.ifBlank { modeOptions.firstOrNull { it.id == modeId }?.label.orEmpty() }, color = tokens.primaryText, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, fontFamily = FontFamily.SansSerif)
+                Text(if (isHome) "WEAVERSE" else workspaceOptions.firstOrNull { it.id == workspaceId }?.label.orEmpty(), color = accent, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                Text(if (isHome) "Home" else bookTitle.ifBlank { modeOptions.firstOrNull { it.id == modeId }?.label.orEmpty() }, color = tokens.primaryText, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
             }
             IconButton(onClick = onSearch) { Icon(Icons.Default.Search, "Search", tint = tokens.primaryText) }
             IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, "Settings", tint = tokens.primaryText) }
@@ -228,11 +228,11 @@ fun WorkspaceChrome(
         LaunchedEffect(Unit) { entered = true }
         val entrance by animateFloatAsState(if (entered) 1f else 0f, tween(180), label = "navigationEntrance")
         Box(Modifier.fillMaxSize().drawBehind { drawRect(androidx.compose.ui.graphics.Color.Black.copy(alpha = .4f * entrance)) }.clickable { menuOpen = false }) {
-            Surface(modifier = Modifier.widthIn(max = 360.dp).fillMaxWidth(.9f).fillMaxHeight().graphicsLayer { translationX = -size.width * (1f - entrance) }.pointerInput(Unit) { detectTapGestures {} }, color = tokens.panel, shape = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp)) {
+            Surface(modifier = Modifier.widthIn(max = 360.dp).fillMaxWidth(.9f).fillMaxHeight().graphicsLayer { translationX = -size.width * (1f - entrance) }.pointerInput(Unit) { detectTapGestures {} }, color = tokens.panel.copy(alpha = .97f), border = androidx.compose.foundation.BorderStroke(1.dp, androidx.compose.ui.graphics.Color.White.copy(alpha = .08f)), shape = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp)) {
                 Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("WEAVERSE", color = accent, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.weight(1f), fontFamily = FontFamily.SansSerif)
-                        TextButton(onClick = { menuOpen = false }) { Text("Close", fontFamily = FontFamily.SansSerif) }
+                        Text("WEAVERSE", color = accent, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { menuOpen = false }) { Text("Close") }
                     }
                     Spacer(Modifier.height(20.dp))
                     @Composable fun entry(label: String, selected: Boolean = false, enabled: Boolean = true, action: () -> Unit) {
@@ -248,22 +248,22 @@ fun WorkspaceChrome(
                                     else -> Icons.Default.ChevronRight
                                 }
                                 Icon(icon, null, tint = if (selected) accent else tokens.secondaryText, modifier = Modifier.size(20.dp))
-                                Text(label, color = if (!enabled) tokens.secondaryText else if (selected) accent else tokens.primaryText, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, modifier = Modifier.padding(start = 14.dp), fontFamily = FontFamily.SansSerif)
+                                Text(label, color = if (!enabled) tokens.secondaryText else if (selected) accent else tokens.primaryText, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, modifier = Modifier.padding(start = 14.dp))
                             }
                         }
                     }
                     entry("Home", isHome, action = onHome)
-                    Text("YOUR MODES", color = tokens.secondaryText, fontSize = 10.sp, letterSpacing = 2.sp, modifier = Modifier.padding(16.dp), fontFamily = FontFamily.SansSerif)
+                    Text("YOUR MODES", color = tokens.secondaryText, fontSize = 10.sp, letterSpacing = 2.sp, modifier = Modifier.padding(16.dp))
                     workspaceOptions.forEach { option -> entry(option.label, !isHome && option.id == workspaceId) { onWorkspace(option.id) } }
-                    TextButton(onClick = { menuOpen = false; arrangeMenu = ArrangeMenu.Workspaces }) { Text("Arrange modes", color = accent, fontFamily = FontFamily.SansSerif) }
+                    TextButton(onClick = { menuOpen = false; arrangeMenu = ArrangeMenu.Workspaces }) { Text("Arrange modes", color = accent) }
                     if (!isHome) {
                         HorizontalDivider(color = tokens.hairline)
-                        Text("IN THIS MODE", color = tokens.secondaryText, fontSize = 10.sp, letterSpacing = 2.sp, modifier = Modifier.padding(16.dp), fontFamily = FontFamily.SansSerif)
+                        Text("IN THIS MODE", color = tokens.secondaryText, fontSize = 10.sp, letterSpacing = 2.sp, modifier = Modifier.padding(16.dp))
                         modeOptions.forEach { option -> entry(option.label, option.id == modeId && activeToolId == null) { onMode(option.id) } }
-                        TextButton(onClick = { menuOpen = false; arrangeMenu = ArrangeMenu.Modes }) { Text("Arrange sections", color = accent, fontFamily = FontFamily.SansSerif) }
+                        TextButton(onClick = { menuOpen = false; arrangeMenu = ArrangeMenu.Modes }) { Text("Arrange sections", color = accent) }
                     }
                     HorizontalDivider(color = tokens.hairline)
-                    Text("TOOLS", color = tokens.secondaryText, fontSize = 10.sp, letterSpacing = 2.sp, modifier = Modifier.padding(16.dp), fontFamily = FontFamily.SansSerif)
+                    Text("TOOLS", color = tokens.secondaryText, fontSize = 10.sp, letterSpacing = 2.sp, modifier = Modifier.padding(16.dp))
                     toolOptions.forEach { option -> entry(option.label, option.id == activeToolId) { onTool(if (activeToolId == option.id) null else option.id) } }
                     entry("Library", action = onLibrary)
                     entry("Import", action = onImport)

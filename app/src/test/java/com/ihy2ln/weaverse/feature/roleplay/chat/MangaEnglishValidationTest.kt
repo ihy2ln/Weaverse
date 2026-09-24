@@ -65,6 +65,14 @@ class MangaEnglishValidationTest {
     }
 
     @Test
+    fun punctuationOnlyBalloonsMayKeepTheirSourceText() {
+        val exclaim = region(original = "!?", translation = "!?")
+        val dots = region(original = "…", translation = "…")
+
+        assertTrue(PanelAi.invalidEnglishRegionIndexes(listOf(exclaim, dots)).isEmpty())
+    }
+
+    @Test
     fun cleanEnglishPassesValidation() {
         val good = region(original = "助けて", translation = "Help me!")
 

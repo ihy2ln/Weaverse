@@ -105,6 +105,12 @@ also become Roleplay cards with Messenger, DM, and manga chats.
 - Sources that return a login, CAPTCHA, JavaScript, or anti-bot challenge report
   a blocked state; Weaverse does not bypass access controls.
 
+### Appearance
+- **17 profiles** (palette, lettering and corners) applied to every page, Home included.
+- **Wallpapers** in Windows style (Bloom, Glow, Bliss) and Apple style (Big Sur,
+  Monterey, Ventura, Sonoma, Sequoia), frosted **glass** panels, and app-wide
+  **font size** and **line height**.
+
 ### Prompts & AI
 - **`/`** AI prompt · **`\`** manual entry · OpenRouter provider.
 - Compact **PROMPT** dock; **Models** picks any OpenRouter text model.
@@ -158,7 +164,9 @@ JUnit 5 + Turbine (app), a Go launcher for the Windows `.exe` shim.
 
 - Build notes / working log: [BUILD_NOTES.md](BUILD_NOTES.md)
 - **User helper guide:** [docs/GUIDE.md](docs/GUIDE.md)
-- **Latest hard checkpoint:** [docs/CHECKPOINT-v1.4.9-STORYBOARD-MANGA-HUB.md](docs/CHECKPOINT-v1.4.9-STORYBOARD-MANGA-HUB.md)
+- **Latest hard checkpoint:** [docs/CHECKPOINT-v1.4.47-HARD-CHECKPOINT.md](docs/CHECKPOINT-v1.4.47-HARD-CHECKPOINT.md)
+- **Appearance wiki guide:** [docs/wiki/Appearance.md](docs/wiki/Appearance.md)
+- Earlier manga hub checkpoint: [docs/CHECKPOINT-v1.4.9-STORYBOARD-MANGA-HUB.md](docs/CHECKPOINT-v1.4.9-STORYBOARD-MANGA-HUB.md)
 - **Storyboard Manga Hub wiki guide:** [docs/wiki/Storyboard-Manga-Hub.md](docs/wiki/Storyboard-Manga-Hub.md)
 - **Prompt Templates wiki guide:** [docs/wiki/Prompt-Templates-and-Add-Ons.md](docs/wiki/Prompt-Templates-and-Add-Ons.md)
 - Earlier Codex checkpoint: [docs/CHECKPOINT-v1.3.2-CODEX-NAVIGATION.md](docs/CHECKPOINT-v1.3.2-CODEX-NAVIGATION.md)

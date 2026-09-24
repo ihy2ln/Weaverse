@@ -89,7 +89,7 @@ class BookBrowserDeviceTest {
                             isHome = true, browsing = true, canGoBack = routes.size > 1, onBack = { routes = routes.dropLast(1) },
                             onHome = { routes = listOf("home") }, onLibrary = {}, onSettings = {}, onImport = {}, onExport = {}, onTool = {}, onWorkspace = { opened = it }, onMode = {}, onFocus = {})
                         BookBrowserScreen(routes, { routes = it }, AppMode.entries, { opened = it.name }, {},
-                            { opened = "read:$it" }, { opened = "write:$it" }, {}, {}, {}, Modifier.weight(1f), model, home)
+                            { opened = "read:$it" }, { opened = "write:$it" }, {}, {}, {}, {}, Modifier.weight(1f), model, home)
                     }
                 }
             }

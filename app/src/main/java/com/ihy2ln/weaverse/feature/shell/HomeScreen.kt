@@ -23,10 +23,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
+import com.ihy2ln.weaverse.core.ui.components.glassPanel
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 
+/** Home's accent is the profile's own, so Home and every other page share one theme. */
 val HomeAccent: Color
-    @Composable get() = if (inkTokens().background.luminance() > .5f) Color(0xFF6840B8) else Color(0xFFB39AFF)
+    @Composable get() = inkTokens().activePill
 
 @Composable
 fun HomeScreen(modes: List<AppMode>, onMode: (AppMode) -> Unit, onOpen: (HomeItem) -> Unit,
@@ -42,14 +44,14 @@ fun HomeShelves(modes: List<AppMode>, shelves: Map<String, List<HomeItem>>, art:
     onClear: (String) -> Unit, modifier: Modifier = Modifier) {
     val tokens = inkTokens()
     var clearMode by remember { mutableStateOf<AppMode?>(null) }
-    BoxWithConstraints(modifier.background(tokens.background.copy(alpha = .96f))) {
+    BoxWithConstraints(modifier) {
         val coverWidth = ((maxWidth - 60.dp) / 2.2f).coerceIn(128.dp, 188.dp)
         LazyColumn(modifier = Modifier.testTag("home-feed"), contentPadding = PaddingValues(bottom = 40.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
             item {
                 Column(Modifier.padding(horizontal = 24.dp, vertical = 12.dp)) {
-                    Text("YOUR WORLDS, WITHIN REACH", color = HomeAccent, fontSize = 10.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.SansSerif)
-                    Text("Welcome home", color = tokens.primaryText, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, fontSize = 28.sp, fontFamily = FontFamily.SansSerif)
-                    Text("Pick up a story. Find your next adventure.", color = tokens.secondaryText, style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.SansSerif)
+                    Text("YOUR WORLDS, WITHIN REACH", color = HomeAccent, fontSize = 10.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Bold)
+                    Text("Welcome home", color = tokens.primaryText, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, fontSize = 28.sp)
+                    Text("Pick up a story. Find your next adventure.", color = tokens.secondaryText, style = MaterialTheme.typography.bodyMedium)
                 }
             }
             items(modes, key = { it.name }) { mode ->
@@ -58,20 +60,20 @@ fun HomeShelves(modes: List<AppMode>, shelves: Map<String, List<HomeItem>>, art:
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                         Row(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable { onMode(mode) }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(mode.label, color = tokens.primaryText, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.SansSerif)
+                            Text(mode.label, color = tokens.primaryText, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                             Icon(Icons.Default.ChevronRight, "Open ${mode.label}", tint = HomeAccent, modifier = Modifier.padding(start = 8.dp))
                         }
                         Box {
                             IconButton(onClick = { menu = true }, enabled = entries.isNotEmpty()) { Icon(Icons.Default.MoreHoriz, "${mode.label} history options", tint = tokens.secondaryText) }
-                            DropdownMenu(menu, { menu = false }) { DropdownMenuItem(text = { Text("Clear recent history", fontFamily = FontFamily.SansSerif) }, onClick = { menu = false; clearMode = mode }) }
+                            DropdownMenu(menu, { menu = false }) { DropdownMenuItem(text = { Text("Clear recent history") }, onClick = { menu = false; clearMode = mode }) }
                         }
                     }
                     if (entries.isEmpty()) {
-                        Surface(onClick = { onMode(mode) }, modifier = Modifier.padding(horizontal = 24.dp).fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = tokens.panel, border = BorderStroke(1.dp, HomeAccent.copy(alpha = .15f))) {
+                        Surface(onClick = { onMode(mode) }, modifier = Modifier.padding(horizontal = 24.dp).fillMaxWidth().glassPanel(RoundedCornerShape(20.dp)), shape = RoundedCornerShape(20.dp), color = Color.Transparent) {
                             Column(Modifier.padding(20.dp)) {
-                                Text("Explore ${mode.label}", color = tokens.primaryText, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium, fontFamily = FontFamily.SansSerif)
-                                Text("Your recently opened content will appear here.", color = tokens.secondaryText, modifier = Modifier.padding(top = 6.dp), fontFamily = FontFamily.SansSerif)
-                                Text("Enter mode  →", color = HomeAccent, modifier = Modifier.padding(top = 12.dp), fontWeight = FontWeight.Medium, fontFamily = FontFamily.SansSerif)
+                                Text("Explore ${mode.label}", color = tokens.primaryText, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
+                                Text("Your recently opened content will appear here.", color = tokens.secondaryText, modifier = Modifier.padding(top = 6.dp))
+                                Text("Enter mode  →", color = HomeAccent, modifier = Modifier.padding(top = 12.dp), fontWeight = FontWeight.Medium)
                             }
                         }
                     } else LazyRow(contentPadding = PaddingValues(horizontal = 24.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -81,7 +83,7 @@ fun HomeShelves(modes: List<AppMode>, shelves: Map<String, List<HomeItem>>, art:
             }
         }
     }
-    clearMode?.let { mode -> AlertDialog(onDismissRequest = { clearMode = null }, title = { Text("Clear ${mode.label} history?", fontFamily = FontFamily.SansSerif) }, text = { Text("Your content stays in its library. Opening it again adds it back to Home.", fontFamily = FontFamily.SansSerif) }, confirmButton = { TextButton(onClick = { onClear(mode.name); clearMode = null }) { Text("Clear history", fontFamily = FontFamily.SansSerif) } }, dismissButton = { TextButton(onClick = { clearMode = null }) { Text("Cancel", fontFamily = FontFamily.SansSerif) } }) }
+    clearMode?.let { mode -> AlertDialog(onDismissRequest = { clearMode = null }, title = { Text("Clear ${mode.label} history?") }, text = { Text("Your content stays in its library. Opening it again adds it back to Home.") }, confirmButton = { TextButton(onClick = { onClear(mode.name); clearMode = null }) { Text("Clear history") } }, dismissButton = { TextButton(onClick = { clearMode = null }) { Text("Cancel") } }) }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -94,20 +96,20 @@ private fun HomePoster(item: HomeItem, art: String?, width: androidx.compose.ui.
             .background(Brush.linearGradient(listOf(Color(0xFF38314F), Color(0xFF181722))))
             .border(1.dp, HomeAccent.copy(alpha = .2f), RoundedCornerShape(16.dp))
             .combinedClickable(onClick = onOpen, onLongClick = { menu = true }), contentAlignment = Alignment.Center) {
-            Text(item.title.split(' ').take(2).mapNotNull { it.firstOrNull()?.uppercase() }.joinToString(""), color = HomeAccent.copy(alpha = .6f), fontSize = 44.sp, fontWeight = FontWeight.Light, fontFamily = FontFamily.SansSerif)
+            Text(item.title.split(' ').take(2).mapNotNull { it.firstOrNull()?.uppercase() }.joinToString(""), color = HomeAccent.copy(alpha = .6f), fontSize = 44.sp, fontWeight = FontWeight.Light)
             if (!art.isNullOrBlank()) AsyncImage(model = art, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
             Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(80.dp).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .65f)))))
-            Text(item.badge, color = Color.White, fontSize = 11.sp, modifier = Modifier.align(Alignment.BottomStart).padding(12.dp), fontFamily = FontFamily.SansSerif)
+            Text(item.badge, color = Color.White, fontSize = 11.sp, modifier = Modifier.align(Alignment.BottomStart).padding(12.dp))
             Box(Modifier.align(Alignment.TopEnd).padding(4.dp)) {
                 IconButton(onClick = { menu = true }, colors = IconButtonDefaults.iconButtonColors(containerColor = Color.Black.copy(alpha = .45f), contentColor = Color.White)) {
                     Icon(Icons.Default.MoreHoriz, "Options for ${item.title}")
                 }
-                DropdownMenu(menu, { menu = false }) { DropdownMenuItem(text = { Text("Remove from recents", fontFamily = FontFamily.SansSerif) }, onClick = { menu = false; onRemove() }) }
+                DropdownMenu(menu, { menu = false }) { DropdownMenuItem(text = { Text("Remove from recents") }, onClick = { menu = false; onRemove() }) }
             }
         }
         Text(item.title, color = tokens.primaryText, fontWeight = FontWeight.Medium, fontSize = 13.sp, lineHeight = 18.sp,
             minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(top = 10.dp), fontFamily = FontFamily.SansSerif)
+            modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(top = 10.dp))
     }
 }
 
@@ -144,7 +146,7 @@ fun StreamingHomeContent(books: List<com.ihy2ln.weaverse.feature.library.BrowseB
                         }
                         IconButton(onClick = { onMode(mode) }) { Icon(Icons.Default.ChevronRight, "Open ${mode.label}", tint = com.ihy2ln.weaverse.feature.library.BrowseAccent) }
                     }
-                    if (entries.isEmpty()) Surface(onClick = { onMode(mode) }, color = Color(0xFF17171F), shape = RoundedCornerShape(8.dp), modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
+                    if (entries.isEmpty()) Surface(onClick = { onMode(mode) }, color = Color.Transparent, shape = RoundedCornerShape(8.dp), modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth().glassPanel(RoundedCornerShape(8.dp))) {
                         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text("Explore ${mode.label}", Modifier.weight(1f), fontSize = 14.sp)
                             Text("Enter →", color = com.ihy2ln.weaverse.feature.library.BrowseAccent, fontSize = 13.sp)

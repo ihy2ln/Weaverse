@@ -546,6 +546,16 @@ private fun typographyOf(
         lineHeight = 20.sp,
         letterSpacing = headingSpacing,
     ),
+    // The remaining styles are filled in too, so no screen falls back to Material's
+    // stock Roboto and pages mix typefaces within one profile.
+    displayMedium = TextStyle(fontFamily = display, fontWeight = FontWeight.Bold, fontSize = 28.sp, lineHeight = 36.sp, letterSpacing = headingSpacing),
+    displaySmall = TextStyle(fontFamily = display, fontWeight = FontWeight.Bold, fontSize = 26.sp, lineHeight = 34.sp, letterSpacing = headingSpacing),
+    headlineLarge = TextStyle(fontFamily = display, fontWeight = headingWeight, fontSize = 30.sp, lineHeight = 38.sp, letterSpacing = headingSpacing),
+    headlineMedium = TextStyle(fontFamily = display, fontWeight = headingWeight, fontSize = 27.sp, lineHeight = 35.sp, letterSpacing = headingSpacing),
+    titleSmall = TextStyle(fontFamily = display, fontWeight = FontWeight.Medium, fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = headingSpacing),
+    bodySmall = TextStyle(fontFamily = body, fontWeight = FontWeight.Normal, fontSize = 12.sp, lineHeight = bodyLineHeight * 0.66f, letterSpacing = bodySpacing),
+    labelMedium = TextStyle(fontFamily = body, fontWeight = FontWeight.Medium, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = headingSpacing),
+    labelSmall = TextStyle(fontFamily = body, fontWeight = FontWeight.Medium, fontSize = 11.sp, lineHeight = 16.sp, letterSpacing = headingSpacing),
 )
 
 private val FantasyTypography = typographyOf(

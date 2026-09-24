@@ -170,6 +170,11 @@ fun ImportedMangaEditorScreen(
     val pageIndex = pages.indexOfFirst { it.id == state.activePageId }.coerceAtLeast(0)
     val selected = state.mediaPanels.firstOrNull { "${it.messageId}::${it.blockId}" == state.selectedMediaKey }
         ?: state.mediaPanels.firstOrNull()
+    // Edit always has a target: the tapped picture, or else the page being read.
+    val editTarget = selected ?: pages.getOrNull(pageIndex)?.let { page -> panelsByPage[page.id]?.firstOrNull() }
+    fun openEditor() {
+        editTarget?.let { panel -> viewModel.openImageEditor(panel.messageId, panel.blockId) }
+    }
     val pageScroll = rememberLazyListState()
     var jumpToPage by rememberSaveable(chatId) { mutableStateOf<String?>(initialPageId ?: "") }
     LaunchedEffect(jumpToPage, readerPages.map { it.id }) {
@@ -275,14 +280,15 @@ fun ImportedMangaEditorScreen(
         Surface(Modifier.align(Alignment.TopCenter).fillMaxWidth(), color = banner, contentColor = bannerText) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     MangaTool("Back", { back() })
-                    if (focusMode) {
-                        Spacer(Modifier.weight(1f))
-                    } else {
-                        Text("READ", fontSize = 12.sp, fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold)
-                        Text(state.title.ifBlank { "Manga" }, modifier = Modifier.weight(1f).padding(horizontal = 8.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp, fontFamily = FontFamily.SansSerif)
-                        MangaTool("Edit", { selected?.let { viewModel.openImageEditor(it.messageId, it.blockId) } }, selected != null && !state.mangaEditBusy)
-                        MangaTool("More", { sheet = "More" })
-                    }
+                    Text(state.title.ifBlank { "Manga" }, modifier = Modifier.weight(1f).padding(horizontal = 4.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp, fontFamily = FontFamily.SansSerif)
+                    // Read / Edit stay on screen in every state, so switching never needs a hunt.
+                    ReadEditToggle(
+                        reading = focusMode,
+                        onRead = { focusMode = !focusMode },
+                        onEdit = ::openEditor,
+                        editEnabled = editTarget != null && !state.mangaEditBusy,
+                    )
+                    if (!focusMode) MangaTool("More", { sheet = "More" })
                 }
         }
         if (focusMode) Surface(Modifier.align(Alignment.BottomEnd), color = banner, contentColor = bannerText) {
@@ -298,11 +304,18 @@ fun ImportedMangaEditorScreen(
                 }
             }
         }
-        if (!focusMode && state.mangaEditBusy) {
+        if (state.mangaEditBusy) {
             Surface(Modifier.align(Alignment.TopEnd).padding(top = 52.dp), shape = RoundedCornerShape(8.dp)) {
-                MangaTool(if (state.mangaEditBusy) "${state.mangaEditCurrent}/${state.mangaEditTotal} · Working" else "Edit · needs review", {
-                    if (state.mangaEditBusy) sheet = "Status" else viewModel.openActiveMangaReview()
-                })
+                val total = state.mangaEditTotal.coerceAtLeast(1)
+                val fraction = ((state.mangaEditCurrent + state.mangaEditItemProgress) / total).coerceIn(0f, 1f)
+                val animated by androidx.compose.animation.core.animateFloatAsState(fraction, label = "manga-edit-progress")
+                Column(Modifier.width(androidx.compose.foundation.layout.IntrinsicSize.Max)) {
+                    MangaTool("${state.mangaEditCurrent}/${state.mangaEditTotal} · Working · ${(animated * 100).toInt()}%", { sheet = "Status" })
+                    androidx.compose.material3.LinearProgressIndicator(
+                        progress = { animated },
+                        modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, bottom = 6.dp).height(4.dp),
+                    )
+                }
             }
         }
     }
@@ -322,17 +335,38 @@ fun ImportedMangaEditorScreen(
                     "Versions" -> {
                         Text("Versions are kept separately. Switching does not delete the original.", fontSize = 12.sp)
                         selected?.let { panel ->
-                            if (panel.mangaVersions.isEmpty()) {
-                                MangaTool("Original", { showOriginal = true; sheet = null })
-                                MangaTool("Current edits", { showOriginal = false; sheet = null })
-                                Text("Older pages have no saved translation-only snapshot. New translations keep both versions.", fontSize = 12.sp)
-                            } else panel.mangaVersions.forEach { version ->
-                                MangaTool((if (version.id == panel.activeMangaVersionId && !showOriginal) "✓ " else "") + version.label, {
-                                    viewModel.chooseMangaVersion(panel.messageId, panel.blockId, version.id)
-                                    showOriginal = false; sheet = null
-                                }, !state.mangaEditBusy)
-                                if (version.warning.isNotBlank()) Text(version.warning, fontSize = 12.sp)
+                            // Every version on one row, scrolled sideways, so none falls below the
+                            // short sheet and Original is never a one-way trip.
+                            Row(
+                                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                FilterChip(
+                                    selected = showOriginal,
+                                    onClick = { showOriginal = true },
+                                    label = { Text("Original", fontSize = 13.sp, fontFamily = FontFamily.SansSerif) },
+                                )
+                                if (panel.mangaVersions.isEmpty()) {
+                                    FilterChip(
+                                        selected = !showOriginal,
+                                        onClick = { showOriginal = false },
+                                        label = { Text("Current edits", fontSize = 13.sp, fontFamily = FontFamily.SansSerif) },
+                                    )
+                                } else panel.mangaVersions.forEach { version ->
+                                    FilterChip(
+                                        selected = !showOriginal && version.id == panel.activeMangaVersionId,
+                                        enabled = !state.mangaEditBusy,
+                                        onClick = {
+                                            viewModel.chooseMangaVersion(panel.messageId, panel.blockId, version.id)
+                                            showOriginal = false
+                                        },
+                                        label = { Text(version.label, fontSize = 13.sp, fontFamily = FontFamily.SansSerif) },
+                                    )
+                                }
                             }
+                            panel.mangaVersions.firstOrNull { !showOriginal && it.id == panel.activeMangaVersionId }
+                                ?.warning?.takeIf { it.isNotBlank() }
+                                ?.let { Text(it, fontSize = 12.sp) }
                         }
                     }
                     "Settings" -> {
@@ -370,7 +404,7 @@ fun ImportedMangaEditorScreen(
                           com.ihy2ln.weaverse.core.media.MangaColorPresets.guides.forEach { (name, guide) ->
                               androidx.compose.material3.DropdownMenuItem(text = { Text(name) }, onClick = {
                                   colorGuide = guide
-                                  preserveDrawing = true
+                                  preserveDrawing = name != com.ihy2ln.weaverse.core.media.MangaColorPresets.MANGA_COVER
                                   presetMenuOpen = false
                               })
                           }
@@ -439,6 +473,15 @@ fun ImportedMangaEditorScreen(
                   }
                     }
                     "AI" -> {
+                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("Quality", fontSize = 13.sp, fontFamily = FontFamily.SansSerif)
+                            MangaAiQuality.entries.forEach { quality ->
+                                FilterChip(selected = state.mangaAiQuality == quality, enabled = !state.mangaEditBusy,
+                                    onClick = { viewModel.setMangaAiQuality(quality) },
+                                    label = { Text(quality.label, fontSize = 13.sp, fontFamily = FontFamily.SansSerif) })
+                            }
+                        }
+                        Text(state.mangaAiQuality.detail, fontSize = 12.sp, fontFamily = FontFamily.SansSerif)
                         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             listOf("Translate", "Colorize", "Colorize + Translate").forEach { action ->
                                 FilterChip(selected = aiAction == action, onClick = { aiAction = action },
@@ -490,6 +533,38 @@ fun ImportedMangaEditorScreen(
                     }
                 }
             }
+            }
+        }
+    }
+}
+
+/** The reader's always-visible mode switch: Read hides the chrome, Edit opens the page editor. */
+@Composable
+private fun ReadEditToggle(reading: Boolean, onRead: () -> Unit, onEdit: () -> Unit, editEnabled: Boolean) {
+    Row(
+        Modifier.padding(horizontal = 4.dp)
+            .border(1.dp, Color.White.copy(alpha = .4f), RoundedCornerShape(16.dp)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        listOf("Read" to reading, "Edit" to false).forEach { (label, active) ->
+            val enabled = label == "Read" || editEnabled
+            Box(
+                Modifier.clip(RoundedCornerShape(16.dp))
+                    .background(if (active) Color.White else Color.Transparent)
+                    .clickable(enabled = enabled) { if (label == "Read") onRead() else onEdit() }
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+            ) {
+                Text(
+                    label,
+                    color = when {
+                        active -> Color.Black
+                        enabled -> Color.White
+                        else -> Color.White.copy(alpha = .4f)
+                    },
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = FontFamily.SansSerif,
+                )
             }
         }
     }

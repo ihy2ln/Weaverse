@@ -52,10 +52,10 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
-      # If signing secrets aren't configured, app/build.gradle.kts falls back
-      # to the debug signing config automatically, so a release APK is always
-      # produced — just not one that can be upgraded in-place over a
-      # properly-signed build.
+      # If signing secrets aren't configured, the release is explicitly built
+      # with the runner's debug key (-PallowDebugSignedRelease) and named
+      # "-debug-signed" — it cannot upgrade a properly-signed install in place.
+      # app/build.gradle.kts refuses that fallback unless asked for it.
       - name: Determine signing availability
         id: signing
         run: |
@@ -73,7 +73,7 @@ jobs:
       # KEY_ALIAS / KEY_PASSWORD (carried over as-is from the transplanted source) —
       # these env var names must match that, not the repo secret names above.
       - name: Assemble release APK
-        run: ./gradlew assembleRelease --stacktrace
+        run: ./gradlew assembleRelease --stacktrace ${{ steps.signing.outputs.has_signing != 'true' && '-PallowDebugSignedRelease=true' || '' }}
         env:
           KEYSTORE_PATH: ${{ steps.signing.outputs.has_signing == 'true' && format('{0}/weaverse-release.jks', runner.temp) || '' }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -86,10 +86,8 @@ jobs:
       - name: Rename APK
         run: |
           mkdir -p dist
-          # build.gradle.kts always assigns a signingConfig to the release
-          # build type (real keystore, or a fallback to the debug key), so
-          # the output is always the signed app-release.apk — never the
-          # "-unsigned" variant.
+          # The assemble step always signs (real keystore, or the explicitly
+          # requested debug-key fallback), so the output is app-release.apk.
           if [ "${{ steps.signing.outputs.has_signing }}" = "true" ]; then
             cp app/build/outputs/apk/release/app-release.apk "dist/weaverse-${{ steps.tag.outputs.name }}.apk"
           else

@@ -21,29 +21,7 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): WeaverseDatabase =
         Room.databaseBuilder(context, WeaverseDatabase::class.java, "weaverse.db")
-            .addMigrations(WeaverseDatabase.MIGRATION_5_6,
-                WeaverseDatabase.MIGRATION_6_7,
-                WeaverseDatabase.MIGRATION_7_8,
-                WeaverseDatabase.MIGRATION_8_9,
-                WeaverseDatabase.MIGRATION_9_10,
-                WeaverseDatabase.MIGRATION_10_11,
-                WeaverseDatabase.MIGRATION_11_12,
-                WeaverseDatabase.MIGRATION_12_13,
-                WeaverseDatabase.MIGRATION_13_14,
-                WeaverseDatabase.MIGRATION_14_15,
-                WeaverseDatabase.MIGRATION_15_16,
-                WeaverseDatabase.MIGRATION_16_17,
-                WeaverseDatabase.MIGRATION_17_18,
-                WeaverseDatabase.MIGRATION_18_19,
-                WeaverseDatabase.MIGRATION_19_20,
-                WeaverseDatabase.MIGRATION_20_21,
-                WeaverseDatabase.MIGRATION_21_22,
-                WeaverseDatabase.MIGRATION_22_23,
-                WeaverseDatabase.MIGRATION_23_24, WeaverseDatabase.MIGRATION_24_25, WeaverseDatabase.MIGRATION_25_26,
-                WeaverseDatabase.MIGRATION_26_27,
-                WeaverseDatabase.MIGRATION_27_28,
-                WeaverseDatabase.MIGRATION_28_29,
-            )
+            .addMigrations(*WeaverseDatabase.ALL_MIGRATIONS)
             .addCallback(
                 object : RoomDatabase.Callback() {
                     override fun onOpen(db: SupportSQLiteDatabase) {
@@ -51,6 +29,8 @@ object DatabaseModule {
                     }
                 },
             )
-            .fallbackToDestructiveMigration()
+            // Only schemas older than the migration chain may be rebuilt. A missing step for
+            // any newer version must crash in testing, never silently delete user data.
+            .fallbackToDestructiveMigrationFrom(1, 2, 3, 4)
             .build()
 }

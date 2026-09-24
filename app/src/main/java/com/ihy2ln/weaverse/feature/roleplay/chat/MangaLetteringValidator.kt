@@ -6,6 +6,20 @@ import com.ihy2ln.weaverse.core.media.LetteringRenderer
 
 /** Uses exactly the same layout engine as preview/export; no duplicate character-count fit. */
 object MangaLetteringValidator {
+    /**
+     * Indexes (into [regions]) of lines whose English does not fit its balloon at a readable
+     * size — the ones worth rewording shorter rather than shrinking further.
+     */
+    fun overflowing(regions: List<PanelTextRegion>, width: Int, height: Int): List<Int> =
+        regions.indices.filter { index ->
+            val r = regions[index]
+            if (!r.visible || r.translation.isBlank()) return@filter false
+            var metric: LetteringRenderer.Metrics? = null
+            LetteringRenderer.draw(Canvas(), width.toFloat(), height.toFloat(), r.toTypesetLayer()) { metric = it }
+            val m = metric ?: return@filter false
+            m.overflow || m.fontSize < width * .012f
+        }
+
     fun problems(regions: List<PanelTextRegion>, width: Int, height: Int): List<String> {
         val problems = mutableListOf<String>()
         val measured = regions.filter { it.visible && it.translation.isNotBlank() }.mapIndexedNotNull { index, r ->

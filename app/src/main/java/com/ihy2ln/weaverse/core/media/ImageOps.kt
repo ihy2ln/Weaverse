@@ -233,6 +233,34 @@ object ImageOps {
         inpaintTextGlyphsInRects(target, padded)
     }
 
+    /**
+     * Last-resort cleanup for lettering the container-bounded pass could not reach: glyphs
+     * that sit over artwork or spill past their balloon. Only contrasting glyph pixels inside
+     * the boxes are masked, grown by a pixel for anti-aliased edges, then reconstructed.
+     */
+    fun forceRemoveGlyphs(target: Bitmap, rects: List<RectF>) {
+        if (rects.isEmpty()) return
+        val width = target.width
+        val height = target.height
+        val pixels = IntArray(width * height)
+        target.getPixels(pixels, 0, width, 0, 0, width, height)
+        val glyphs = textGlyphMaskArgb(
+            width, height, pixels,
+            rects.map { NormalizedPanelBox(it.left, it.top, it.right, it.bottom) },
+        )
+        if (glyphs.none { it }) return
+        val grown = glyphs.copyOf()
+        for (y in 0 until height) for (x in 0 until width) {
+            if (!glyphs[y * width + x]) continue
+            for (dy in -1..1) for (dx in -1..1) {
+                val nx = x + dx
+                val ny = y + dy
+                if (nx in 0 until width && ny in 0 until height) grown[ny * width + nx] = true
+            }
+        }
+        inpaintMasked(target, grown)
+    }
+
     fun inpaintMasked(target: Bitmap, mask: BooleanArray) {
         if (mask.size < target.width * target.height) return
         val pixels = IntArray(target.width * target.height)

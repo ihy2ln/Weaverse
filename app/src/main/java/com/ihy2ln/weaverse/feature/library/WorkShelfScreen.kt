@@ -223,6 +223,8 @@ fun WorkShelfScreen(
     kind: WorkShelfKind,
     onCreate: () -> Unit,
     onOpen: (WorkShelfCard) -> Unit,
+    /** Novel and campaign shelves only: the + menu's "From CYOA template". */
+    onCreateFromTemplate: (() -> Unit)? = null,
     onExport: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: WorkShelfViewModel = hiltViewModel(),
@@ -269,15 +271,27 @@ fun WorkShelfScreen(
                     color = tokens.secondaryText,
                 )
             }
-            InkOutlinedButton(
-                label = when (kind) {
-                    WorkShelfKind.Novel -> "+ Novel"
-                    WorkShelfKind.Storyboard -> "+ Storyboard"
-                    WorkShelfKind.Campaign -> "+ Campaign"
-                    WorkShelfKind.TextGame -> "+ Text Game"
-                },
-                onClick = onCreate,
-            )
+            var createMenu by remember { mutableStateOf(false) }
+            Box {
+                InkOutlinedButton(
+                    label = when (kind) {
+                        WorkShelfKind.Novel -> "+ Novel"
+                        WorkShelfKind.Storyboard -> "+ Storyboard"
+                        WorkShelfKind.Campaign -> "+ Campaign"
+                        WorkShelfKind.TextGame -> "+ Text Game"
+                    },
+                    onClick = { if (onCreateFromTemplate == null) onCreate() else createMenu = true },
+                )
+                onCreateFromTemplate?.let { fromTemplate ->
+                    DropdownMenu(createMenu, { createMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text(if (kind == WorkShelfKind.Campaign) "Create campaign" else "Create novel") },
+                            onClick = { createMenu = false; onCreate() },
+                        )
+                        DropdownMenuItem(text = { Text("From CYOA template") }, onClick = { createMenu = false; fromTemplate() })
+                    }
+                }
+            }
         }
         if (selectedIds.isNotEmpty()) {
             Row(
@@ -522,7 +536,7 @@ private fun WorkPosterCard(
 
 @Composable
 internal fun NovelBooksShelf(books: List<BrowseBook>, onOpen: (BrowseBook) -> Unit, onRead: (String) -> Unit,
-    onShelf: (String) -> Unit, onCreate: () -> Unit, onImport: () -> Unit) {
+    onShelf: (String) -> Unit, onCreate: () -> Unit, onCreateFromTemplate: () -> Unit, onImport: () -> Unit) {
     LazyColumn(Modifier.fillMaxSize().testTag("books-feed"), verticalArrangement = Arrangement.spacedBy(24.dp), contentPadding = PaddingValues(bottom = 28.dp)) {
         item {
             Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -533,6 +547,7 @@ internal fun NovelBooksShelf(books: List<BrowseBook>, onOpen: (BrowseBook) -> Un
                     IconButton(onClick = { menu = true }) { Icon(Icons.Default.Add, "Library actions") }
                     DropdownMenu(menu, { menu = false }) {
                         DropdownMenuItem(text = { Text("Create book") }, onClick = { menu = false; onCreate() })
+                        DropdownMenuItem(text = { Text("From CYOA template") }, onClick = { menu = false; onCreateFromTemplate() })
                         DropdownMenuItem(text = { Text("Import") }, onClick = { menu = false; onImport() })
                     }
                 }

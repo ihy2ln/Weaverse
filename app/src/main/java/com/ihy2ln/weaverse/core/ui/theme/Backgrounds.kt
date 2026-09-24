@@ -6,6 +6,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import kotlin.math.min
 
 private data class ProfileArt(
@@ -23,7 +24,16 @@ private data class ProfileArt(
 @Composable
 fun ProfileBackgroundArt(profile: AppearanceProfile, modifier: Modifier = Modifier) {
     val art = when (profile) {
-        AppearanceProfile.Streaming -> ProfileArt(StreamingTokens.background, StreamingTokens.panel, StreamingTokens.background, emptyList())
+        // Cinematic black with faint violet and blue light, so glass panels have something to frost.
+        AppearanceProfile.Streaming -> ProfileArt(
+            top = Color(0xFF0B0B12),
+            middle = Color(0xFF0E0D18),
+            bottom = Color(0xFF07070B),
+            glows = listOf(
+                Triple(Color(0x40714BD6), Offset(0.15f, 0.08f), 0.9f),
+                Triple(Color(0x302F5BD6), Offset(0.95f, 0.75f), 0.85f),
+            ),
+        )
         AppearanceProfile.Fantasy -> ProfileArt(
             top = Color(0xFF1B1533),
             middle = Color(0xFF241C46),
@@ -67,7 +77,15 @@ fun ProfileBackgroundArt(profile: AppearanceProfile, modifier: Modifier = Modifi
                 Triple(Color(0x337A5C3A), Offset(0.5f, 1.1f), 1.0f),
             ),
         )
-        AppearanceProfile.Classic -> ProfileArt(
+        // Classic honours all four theme modes, so its art follows the active palette when dark.
+        AppearanceProfile.Classic -> if (inkTokens().background.luminance() < 0.5f) ProfileArt(
+            top = inkTokens().panel,
+            middle = inkTokens().background,
+            bottom = inkTokens().page,
+            glows = listOf(
+                Triple(inkTokens().activePill.copy(alpha = 0.18f), Offset(0.8f, 0.1f), 0.8f),
+            ),
+        ) else ProfileArt(
             top = Color(0xFFEDEBE7),
             middle = Color(0xFFE4E1DB),
             bottom = Color(0xFFDDD9D2),

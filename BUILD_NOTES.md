@@ -3,6 +3,32 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.47 - One theme on every page: glass, wallpapers, real font size
+
+- APK: `Beta.Test.Build/weaverse-v1.4.47.apk`, SHA-256
+  `9a78d650f663fe1bd0f3cffae80c80f46e66cbac5d814080b581639e082c6ae4`, signed with the
+  same debug key as 1.4.46 (`-PallowDebugSignedRelease=true`) so it updates in place.
+- **Every page follows the profile.** Home, Books, the manga hub, Mihon browse and the
+  panel editor were pinned to WeaverVerse colours; they now read the active tokens.
+  Non-WeaverVerse profiles get a full Material colour scheme (`colorSchemeFrom`), so
+  menus, dialogs, sheets and sliders stop falling back to stock purple. Profile
+  typographies now define all 15 styles, and Home/drawer no longer force sans-serif.
+- **Font size and line height work app-wide.** New prefs `ui_text_scale_percent`
+  (80-140) and `ui_line_spacing` (0.85-1.5). Text scale multiplies `LocalDensity`
+  font scale, so hand-set `sp` sizes follow too; line spacing rewrites each style's
+  leading in `em`. The old `font_size_sp` / `line_height` stay reader-only
+  ("Reader text").
+- **Wallpapers.** `BackdropStyle`: theme art, Windows-style Bloom, Bloom Dark, Glow,
+  Bliss, Apple-style Big Sur, Monterey, Ventura, Sonoma, Sequoia - all drawn with
+  brushes, no bundled images. Shown behind every page, Home included.
+- **Glass.** `glass_clarity_percent` (0-80) drives the shell wash and
+  `Modifier.glassPanel()`, used by `InkCard`, `ExpandableSection`, Home empty cards,
+  top chrome and browse nav bar.
+- **Settings** redesigned: glass section cards with icons, live appearance preview,
+  profile cards as miniatures of each profile, Help & friends split out.
+- Classic's theme art follows dark modes; Home's featured-book fade only draws over
+  real art.
+
 ## v1.4.40 - Leave the four-step start and come back to it
 
 - **Novel.** The start now keeps its progress as you go - the step you were on, the

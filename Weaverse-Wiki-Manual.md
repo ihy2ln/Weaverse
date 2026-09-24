@@ -137,45 +137,49 @@ hit by accident. Everything saves as you go.
 
 ### Starting a book
 
-Naming a book opens the same four-step start a campaign uses:
-**Book Setup → Create Your Own Story → Chapter One plan and Verify
-Your Story → the opening set-up**.
+Naming a book opens the same four-step start a campaign
+uses: **Book Setup → Create Your Own Story → Chapter One
+plan and Verify Your Story → the opening set-up**.
 
-The last step writes **one paragraph at most** — the place, who is
-present, and the first problem — and then stops. It sets the scene
-up; writing the scene is yours.
+The last step writes **one paragraph at most** — the place,
+who is present, and the first problem — and then stops. It
+sets the scene up; writing the scene is yours.
 
-Your progress is kept as you go. Close the start part-way and
-reopening it asks whether to **Continue** — with a line saying how far
-you got — or **Start over**. Finishing clears it, so a finished book
-never asks. The RPG campaign start works the same way, with its own
-**Start over** on the questions and verification steps.
+Your progress is kept as you go. Close the start part-way
+and reopening it asks whether to **Continue** — with a line
+saying how far you got — or **Start over**. Finishing the
+start clears it, so a finished book never asks. The RPG
+campaign start works the same way and has its own **Start
+over** on the questions and verification steps.
 
-Step one carries the campaign templates across: the **Setting
-Template** and **Setting Details** browsers, with favourites, custom
-presets and Add / Remove, plus the main-character picker, the
-perspective dropdown, tense and the style guide. **Genre** is a typed box with a
-scrolling row of genre templates under it, and the **style guide**
-has its own templates in a dropdown — both fill the box and leave it
-editable. The character list shows two rows at a time and scrolls for
-a longer cast. Template guidance
-written for a table is reworded on the way into a book — the cast
-replaces the party, the narrator replaces the Dungeon Master — so the
+Step one carries the campaign templates across: the
+**Setting Template** and **Setting Details** browsers, with
+favourites, custom presets and Add / Remove, plus the
+main-character picker, the perspective dropdown, tense and
+the style guide. **Genre** is a typed box with a scrolling
+row of genre templates under it, and the **style guide** has
+its own templates in a dropdown — both fill the box and
+leave it editable. The character list shows two rows at a
+time and scrolls for a longer cast. Template guidance written for a table is
+reworded on the way into a book — the cast replaces the
+party, the narrator replaces the Dungeon Master — so the
 catalogue is shared without the table coming with it.
 
-The AI takes part in three of the four — it suggests
-answers, drafts the plan, then writes the opening scene — and each of
-those can be retried, stopped, or replaced with a written fallback.
-Every box stays editable.
+The AI takes part in three of the four — it suggests answers, drafts the plan, then writes the
+opening scene — and each of those can be retried, stopped,
+or replaced with a written fallback. Every box stays
+editable.
 
-The **company clicker** (Solo, Duo, Party, Team) is a hard rule, not a
-hint: on Solo nobody joins the protagonist, now or later, though other
-people still appear, are met, and are left behind. Finishing saves
-Chapter One into the book's first scene.
+The **company clicker** (Solo, Duo, Party, Team) is a hard
+rule, not a hint: on Solo nobody joins the protagonist, now
+or later, though other people still appear, are met, and are
+left behind. Finishing saves Chapter One into the book's
+first scene.
 
-The table-only parts of the campaign start are left out — no play-as
-role, game mode, rule system or house rules — and the opening scene
-offers no reader choices, because a book has none.
+The table-only parts of the campaign start are left out —
+no play-as role, game mode, rule system or house rules — and
+the opening scene offers no reader choices, because a book
+has none.
 
 ### Plan
 
@@ -827,8 +831,8 @@ reserve and any attached image.
 ### Profiles
 
 A profile is a whole look — palette, lettering and corners
-together: **Classic**, **Fantasy**, **Arcade**, **Synthwave**,
-**Chill**, **Tabletop**.
+together — applied to every page, Home included. Each card
+in Settings → Appearance is a live miniature of its profile.
 
 ### Themes
 
@@ -840,6 +844,24 @@ styled profiles carry their own mood and offer light or dark.
 Per-section tints layered on top of any profile. **Reset
 section colors** undoes them. Set them in Settings →
 Appearance.
+
+### Wallpaper and glass
+
+The wallpaper sits behind every page, Home included: the
+profile's own theme art, Windows-style **Bloom**, **Bloom
+Dark**, **Glow** and **Bliss**, or Apple-style **Big Sur**,
+**Monterey**, **Ventura**, **Sonoma** and **Sequoia**. An
+image or looping video of your own replaces it. **Glass**
+runs from Solid to Clear and sets how much of it shows
+through panels and pages.
+
+### Font size and line height
+
+**Font size** scales every page, menu and dialog (Small,
+Default, Large, Largest, or anything from 80% to 140%).
+**Line height** sets the space between lines, from Compact
+to Airy. The book reader keeps its own size under
+**Reader text**, also adjustable from inside the reader.
 
 ---
 

@@ -373,6 +373,34 @@ private fun GenerationPanel(
     }
 }
 
+/**
+ * The campaign start's save slots: the "CYOA set up" checkpoint, and the starting
+ * template that skips straight to verification.
+ */
+@Composable
+private fun RpgSaveSlotBar(
+    state: RoleplayChatUiState,
+    viewModel: RoleplayChatViewModel,
+    offerTemplate: Boolean,
+    offerSave: Boolean,
+) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+        if (offerTemplate) InkTextButton("Start from template", viewModel::startRpgFromTemplate)
+        if (state.rpgHasCyoaCheckpoint) InkTextButton("Back to CYOA set up", viewModel::restoreRpgCyoaCheckpoint)
+        if (offerSave) InkTextButton("Save as template", viewModel::saveRpgStartAsTemplate)
+    }
+    if (state.rpgSlotMessage.isNotBlank()) {
+        Text(state.rpgSlotMessage, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+    } else if (offerTemplate) {
+        Text(
+            if (state.rpgHasSavedTemplate) "Start from template loads your saved template and skips to verification."
+            else "Start from template fills every answer and the chapter plan, and skips to verification.",
+            style = MaterialTheme.typography.labelSmall,
+            color = inkTokens().secondaryText,
+        )
+    }
+}
+
 @Composable
 private fun RpgStartupWizard(
     state: RoleplayChatUiState,
@@ -451,6 +479,7 @@ private fun RpgStartupWizard(
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
                             InkOutlinedButton("Create chapter plan", viewModel::generateChapterPlan, Modifier.weight(1f))
                         }
+                        RpgSaveSlotBar(state, viewModel, offerTemplate = true, offerSave = true)
                     }
                 },
             )
@@ -499,6 +528,7 @@ private fun RpgStartupWizard(
                         }
                         InkTextButton("Save Changes", viewModel::saveAdventurePlan)
                         InkOutlinedButton("Continue to verification", viewModel::openAdventureVerification, Modifier.fillMaxWidth())
+                        RpgSaveSlotBar(state, viewModel, offerTemplate = false, offerSave = true)
                     }
                 },
             )
@@ -549,6 +579,7 @@ private fun RpgStartupWizard(
                             InkTextButton("Start over", viewModel::restartCampaignStart)
                         }
                         InkOutlinedButton("Verify and Generate Scene One", viewModel::verifyAndGenerateOpeningScene, Modifier.fillMaxWidth())
+                        RpgSaveSlotBar(state, viewModel, offerTemplate = false, offerSave = true)
                     }
                 },
             )

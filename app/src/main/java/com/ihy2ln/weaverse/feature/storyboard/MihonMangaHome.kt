@@ -144,13 +144,13 @@ import androidx.preference.EditTextPreference
 import androidx.preference.MultiSelectListPreference
 import androidx.compose.material3.Switch
 
-private val MihonBackground = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.background
-private val MihonSurface = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.panel
-private val MihonSurfaceHigh = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.hover
-private val MihonPrimary = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.activePill
-private val MihonOnPrimary = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.activePillLabel
-private val MihonText = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.primaryText
-private val MihonMuted = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.secondaryText
+private val MihonBackground: Color @androidx.compose.runtime.Composable get() = com.ihy2ln.weaverse.core.ui.theme.inkTokens().background
+private val MihonSurface: Color @androidx.compose.runtime.Composable get() = com.ihy2ln.weaverse.core.ui.theme.inkTokens().panel
+private val MihonSurfaceHigh: Color @androidx.compose.runtime.Composable get() = com.ihy2ln.weaverse.core.ui.theme.inkTokens().hover
+private val MihonPrimary: Color @androidx.compose.runtime.Composable get() = com.ihy2ln.weaverse.core.ui.theme.inkTokens().activePill
+private val MihonOnPrimary: Color @androidx.compose.runtime.Composable get() = com.ihy2ln.weaverse.core.ui.theme.inkTokens().activePillLabel
+private val MihonText: Color @androidx.compose.runtime.Composable get() = com.ihy2ln.weaverse.core.ui.theme.inkTokens().primaryText
+private val MihonMuted: Color @androidx.compose.runtime.Composable get() = com.ihy2ln.weaverse.core.ui.theme.inkTokens().secondaryText
 private val MihonError = Color(0xFFFFB4AB)
 
 private val MihonColors = com.ihy2ln.weaverse.core.ui.theme.StreamingColors
@@ -429,7 +429,7 @@ private fun MihonLibraryScreen(
                         }, leadingIcon = { Icon(Icons.Outlined.Refresh, null) })
                         DropdownMenuItem(text = { Text("Open random manga") }, onClick = {
                             overflow = false
-                            entries.randomOrNull()?.let { entry -> if (entry.chapters.isNotEmpty()) openedSeriesKey = entry.key else entry.favorite?.let(onOpenFavorite) }
+                            entries.randomOrNull()?.let { entry -> entry.favorite?.let(onOpenFavorite) ?: run { if (entry.chapters.isNotEmpty()) openedSeriesKey = entry.key } }
                         })
                     }
                 }
@@ -465,7 +465,7 @@ private fun MihonLibraryScreen(
                     MihonLibraryGridItem(
                         entry = entry,
                         onClick = {
-                            if (entry.chapters.isNotEmpty()) openedSeriesKey = entry.key else entry.favorite?.let(onOpenFavorite)
+                            entry.favorite?.let(onOpenFavorite) ?: run { if (entry.chapters.isNotEmpty()) openedSeriesKey = entry.key }
                         },
                         onLongClick = { actionEntryKey = entry.key },
                     )
@@ -477,7 +477,7 @@ private fun MihonLibraryScreen(
                     MihonLibraryListItem(
                         entry = entry,
                         onClick = {
-                            if (entry.chapters.isNotEmpty()) openedSeriesKey = entry.key else entry.favorite?.let(onOpenFavorite)
+                            entry.favorite?.let(onOpenFavorite) ?: run { if (entry.chapters.isNotEmpty()) openedSeriesKey = entry.key }
                         },
                         onLongClick = { actionEntryKey = entry.key },
                     )
@@ -1508,6 +1508,13 @@ private fun MihonMangaDetail(state: MangaSourceUiState, viewModel: MangaSourceVi
     val filtersActive = scanlatorFilter.isNotBlank() || languageFilter.isNotBlank() ||
         chapterFrom.isNotBlank() || chapterTo.isNotBlank()
 
+    // Pull down from the top to reload the title's info and chapters, as in Mihon.
+    @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+    androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+        isRefreshing = state.refreshingDetails,
+        onRefresh = viewModel::refreshSelected,
+        modifier = Modifier.fillMaxSize(),
+    ) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
             Row(Modifier.fillMaxWidth().padding(16.dp)) {
@@ -1539,7 +1546,17 @@ private fun MihonMangaDetail(state: MangaSourceUiState, viewModel: MangaSourceVi
             Text(manga.tags.joinToString(" · "), modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), color = MihonPrimary)
         }
         if (manga.description.isNotBlank()) item {
-            Text(manga.description, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), color = MihonMuted, maxLines = 6, overflow = TextOverflow.Ellipsis)
+            // As in Mihon: the summary is clipped until tapped, then shown in full.
+            var expanded by rememberSaveable(manga.remoteId) { mutableStateOf(false) }
+            Column(Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                Text(
+                    manga.description,
+                    color = MihonMuted,
+                    maxLines = if (expanded) Int.MAX_VALUE else 4,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(if (expanded) "Show less" else "Show more", color = MihonPrimary, style = MaterialTheme.typography.labelMedium)
+            }
         }
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1599,6 +1616,7 @@ private fun MihonMangaDetail(state: MangaSourceUiState, viewModel: MangaSourceVi
                 }
             }
         }
+    }
     }
     if (showFilterDialog) {
         AlertDialog(

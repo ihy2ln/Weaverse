@@ -25,8 +25,16 @@ import com.ihy2ln.weaverse.feature.roleplay.campaign.completeChapterPlan
 import com.ihy2ln.weaverse.feature.roleplay.campaign.completeSceneDraft
 import com.ihy2ln.weaverse.feature.roleplay.campaign.parseChapterPlan
 import com.ihy2ln.weaverse.feature.roleplay.campaign.parseSceneDraft
+import com.ihy2ln.weaverse.core.story.StartSlotStore
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -68,6 +76,12 @@ data class NovelStartUiState(
     val saved: Boolean = false,
     /** A half-finished start found on open; non-null until Continue or Start over. */
     val resumable: NovelStartProgress? = null,
+    /** A "CYOA set up" checkpoint exists for this book and can be returned to. */
+    val hasCyoaCheckpoint: Boolean = false,
+    /** A starting template has been saved; otherwise the built-in one is used. */
+    val hasSavedTemplate: Boolean = false,
+    /** A short confirmation after a checkpoint or template action. */
+    val slotMessage: String = "",
 )
 
 /**
@@ -82,17 +96,22 @@ class NovelStartViewModel @Inject constructor(
     private val manuscriptRepository: ManuscriptRepository,
     private val aiGeneration: AiGenerationService,
     private val db: WeaverseDatabase,
+    private val slots: StartSlotStore,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NovelStartUiState())
     val uiState: StateFlow<NovelStartUiState> = _uiState.asStateFlow()
     private var job: Job? = null
     private var progressJob: Job? = null
+    /** The progress the debounced save is waiting to write, flushed if the wizard closes first. */
+    private var pendingProgress: NovelStartProgress? = null
+    private var loadingBookId: String? = null
 
     fun load(bookId: String) {
-        if (_uiState.value.bookId == bookId) return
+        if (_uiState.value.bookId == bookId || loadingBookId == bookId) return
+        loadingBookId = bookId
         viewModelScope.launch {
-            val book = bookRepository.getBook(bookId) ?: return@launch
+            val book = bookRepository.getBook(bookId) ?: run { loadingBookId = null; return@launch }
             val saved = db.novelWritingDao().settings(bookId)
             val fresh = NovelStartUiState(
                 bookId = bookId,
@@ -108,16 +127,29 @@ class NovelStartViewModel @Inject constructor(
             // A half-finished start asks before doing anything, so reopening never
             // throws away work and never silently resumes something forgotten.
             val progress = decodeNovelStartProgress(saved?.startProgress.orEmpty())
-            _uiState.value = if (progress == null) fresh else fresh.copy(resumable = progress)
+            val withSlots = fresh.copy(
+                hasCyoaCheckpoint = slots.read(StartSlotStore.novelCyoaCheckpoint(bookId)) != null,
+                hasSavedTemplate = slots.read(StartSlotStore.NOVEL_TEMPLATE) != null,
+            )
+            _uiState.value = if (progress == null) withSlots else withSlots.copy(resumable = progress)
+            // Made from the + menu's template entry: skip straight to verification.
+            if (slots.consumePendingTemplate(bookId)) startFromTemplate()
         }
     }
 
     /** Picks up the saved start exactly where it stopped. */
     fun resume() {
         val progress = _uiState.value.resumable ?: return
+        applyProgress(progress)
+    }
+
+    private fun applyProgress(progress: NovelStartProgress, message: String = "") {
         _uiState.update { state ->
             state.copy(
                 resumable = null,
+                slotMessage = message,
+                generationStatus = RpgGenerationStatus.Idle,
+                generationError = "",
                 step = runCatching { NovelStartStep.valueOf(progress.stepId) }.getOrDefault(NovelStartStep.Setup)
                     // A step that was mid-generation resumes at the screen before it,
                     // because the generation itself did not survive the close.
@@ -139,10 +171,72 @@ class NovelStartViewModel @Inject constructor(
         }
     }
 
+    // ---- Save slots ----------------------------------------------------------------
+
+    /** Returns to the "CYOA set up" checkpoint: setup and every answer, before the plan. */
+    fun restoreCyoaCheckpoint() {
+        val bookId = _uiState.value.bookId.ifBlank { return }
+        viewModelScope.launch {
+            val progress = slots.read(StartSlotStore.novelCyoaCheckpoint(bookId))?.let(::decodeNovelStartProgress)
+            if (progress == null) {
+                _uiState.update { it.copy(hasCyoaCheckpoint = false, slotMessage = "No CYOA set up checkpoint saved yet.") }
+                return@launch
+            }
+            applyProgress(progress.copy(stepId = NovelStartStep.Cyoa.name), "Back at the CYOA set up checkpoint.")
+            saveProgressSoon()
+        }
+    }
+
+    /** Saves the start as it stands as the starting template for new books. */
+    fun saveAsTemplate() {
+        val progress = currentProgress(_uiState.value)
+        viewModelScope.launch {
+            slots.write(StartSlotStore.NOVEL_TEMPLATE, encodeNovelStartProgress(progress))
+            _uiState.update { it.copy(hasSavedTemplate = true, slotMessage = "Saved as the starting template.") }
+        }
+    }
+
+    /**
+     * Loads the starting template — the saved one, or the built-in one when none has
+     * been saved — and lands on verification, skipping the questions and the plan.
+     * The book keeps its own title.
+     */
+    fun startFromTemplate() {
+        val state = _uiState.value
+        if (state.bookId.isBlank()) return
+        viewModelScope.launch {
+            val saved = slots.read(StartSlotStore.NOVEL_TEMPLATE)?.let(::decodeNovelStartProgress)
+            val template = saved ?: builtInNovelTemplate(state.setup)
+            val step = when {
+                template.outline != null -> NovelStartStep.Verification
+                else -> NovelStartStep.Cyoa
+            }
+            applyProgress(
+                template.copy(stepId = step.name, setup = template.setup.copy(title = state.setup.title), openingProse = ""),
+                if (saved != null) "Started from your template." else "Started from the built-in template.",
+            )
+            saveProgressSoon()
+        }
+    }
+
+    fun clearSlotMessage() = _uiState.update { it.copy(slotMessage = "") }
+
+    private suspend fun captureCyoaCheckpoint(state: NovelStartUiState) {
+        if (state.bookId.isBlank()) return
+        val progress = currentProgress(state).copy(stepId = NovelStartStep.Cyoa.name, outline = null, openingProse = "")
+        slots.write(StartSlotStore.novelCyoaCheckpoint(state.bookId), encodeNovelStartProgress(progress))
+        _uiState.update { it.copy(hasCyoaCheckpoint = true) }
+    }
+
     /** Throws the saved start away and begins again at step one. */
     fun startOver() {
         val state = _uiState.value
-        _uiState.value = NovelStartUiState(bookId = state.bookId, setup = state.setup.copy())
+        _uiState.value = NovelStartUiState(
+            bookId = state.bookId,
+            setup = state.setup.copy(),
+            hasCyoaCheckpoint = state.hasCyoaCheckpoint,
+            hasSavedTemplate = state.hasSavedTemplate,
+        )
         viewModelScope.launch { clearSavedProgress() }
     }
 
@@ -182,6 +276,7 @@ class NovelStartViewModel @Inject constructor(
     fun setCompanions(mode: StoryCompanionMode) {
         _uiState.update { it.copy(setup = it.setup.copy(companions = mode.id)) }
         viewModelScope.launch { persistCompanions(mode) }
+        saveProgressSoon()
     }
 
     fun saveAnswer(questionId: String, value: String) {
@@ -198,7 +293,12 @@ class NovelStartViewModel @Inject constructor(
         saveProgressSoon()
     }
 
-    fun randomizeUnanswered() = _uiState.update { state ->
+    fun randomizeUnanswered() {
+        randomizeUnansweredInState()
+        saveProgressSoon()
+    }
+
+    private fun randomizeUnansweredInState() = _uiState.update { state ->
         val random = Random(state.bookId.hashCode())
         var plan = state.plan
         novelStartQuestions().forEach { question ->
@@ -256,6 +356,7 @@ class NovelStartViewModel @Inject constructor(
         val state = _uiState.value
         job?.cancel()
         job = viewModelScope.launch {
+            captureCyoaCheckpoint(state)
             _uiState.update {
                 it.copy(
                     step = NovelStartStep.GeneratingChapterPlan,
@@ -284,6 +385,7 @@ class NovelStartViewModel @Inject constructor(
     /** The offline escape hatch, so a failed generation never blocks the book. */
     fun useAuthoredChapterPlan() {
         val state = _uiState.value
+        viewModelScope.launch { captureCyoaCheckpoint(state) }
         applyChapterPlan(fallbackNovelChapterPlan(state.setup, state.plan))
     }
 
@@ -426,6 +528,18 @@ class NovelStartViewModel @Inject constructor(
      * reads, and Scene One's prose into the book's first scene.
      */
     private suspend fun save(prose: String) {
+        try {
+            saveStart(prose)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            _uiState.update {
+                it.copy(generationError = "Could not save the start: ${e.message ?: e::class.simpleName}. Try again.")
+            }
+        }
+    }
+
+    private suspend fun saveStart(prose: String) {
         val state = _uiState.value
         bookRepository.getBook(state.bookId)?.let { book ->
             db.bookDao().upsert(
@@ -465,13 +579,8 @@ class NovelStartViewModel @Inject constructor(
                 state.chapterOutline.beats.forEach { beat -> appendLine("- ${beat.title}: ${beat.summary}") }
             }
         }
-        val existing = db.novelWritingDao().settings(state.bookId)
-        db.novelWritingDao().saveSettings(
-            (existing ?: NovelWritingSettings(bookId = state.bookId)).copy(
-                companions = state.setup.companions,
-                memory = memory,
-            ),
-        )
+        db.novelWritingDao().ensureSettings(NovelWritingSettings(bookId = state.bookId))
+        db.novelWritingDao().setCompanionsAndMemory(state.bookId, state.setup.companions, memory)
         val text = prose.trim()
         if (text.isNotBlank()) {
             bookRepository.firstSceneId(state.bookId)?.let { sceneId ->
@@ -482,7 +591,7 @@ class NovelStartViewModel @Inject constructor(
                             title = state.openingScene.title.ifBlank { scene.title },
                             docJson = document.toJson(),
                             plainText = document.plainText(),
-                            wordCount = text.split(Regex("\\s+")).count { it.isNotBlank() },
+                            wordCount = withContext(Dispatchers.Default) { WHITESPACE.split(text).count { it.isNotBlank() } },
                             updatedAt = System.currentTimeMillis(),
                         ),
                     )
@@ -502,46 +611,59 @@ class NovelStartViewModel @Inject constructor(
     private fun saveProgressSoon() {
         val state = _uiState.value
         if (state.bookId.isBlank() || state.resumable != null) return
+        val progress = currentProgress(state)
+        pendingProgress = progress
         progressJob?.cancel()
         progressJob = viewModelScope.launch {
             delay(400)
-            writeProgress(
-                NovelStartProgress(
-                    stepId = state.step.name,
-                    setup = state.setup,
-                    answers = state.plan.answers.map {
-                        NovelSavedAnswer(it.questionId, it.value, it.skipped)
-                    },
-                    outline = state.chapterOutline.toSaved(state.openingScene),
-                    openingProse = state.sceneDraft?.prose.orEmpty(),
-                    updatedAt = System.currentTimeMillis(),
-                ),
-            )
+            // Once writing starts it finishes, so a clear can join it rather than race it.
+            withContext(NonCancellable) {
+                writeProgress(state.bookId, progress)
+                if (pendingProgress === progress) pendingProgress = null
+            }
         }
     }
 
-    private suspend fun writeProgress(progress: NovelStartProgress) {
-        val bookId = _uiState.value.bookId.ifBlank { return }
-        val existing = db.novelWritingDao().settings(bookId)
-        db.novelWritingDao().saveSettings(
-            (existing ?: NovelWritingSettings(bookId = bookId))
-                .copy(startProgress = encodeNovelStartProgress(progress)),
-        )
+    private fun currentProgress(state: NovelStartUiState) = NovelStartProgress(
+        stepId = state.step.name,
+        setup = state.setup,
+        answers = state.plan.answers.map {
+            NovelSavedAnswer(it.questionId, it.value, it.skipped)
+        },
+        outline = state.chapterOutline.toSaved(state.openingScene),
+        openingProse = state.sceneDraft?.prose.orEmpty(),
+        updatedAt = System.currentTimeMillis(),
+    )
+
+    private suspend fun writeProgress(bookId: String, progress: NovelStartProgress) {
+        db.novelWritingDao().ensureSettings(NovelWritingSettings(bookId = bookId))
+        db.novelWritingDao().setStartProgress(bookId, encodeNovelStartProgress(progress))
     }
 
     private suspend fun clearSavedProgress() {
         val bookId = _uiState.value.bookId.ifBlank { return }
-        progressJob?.cancel()
-        val existing = db.novelWritingDao().settings(bookId) ?: return
-        db.novelWritingDao().saveSettings(existing.copy(startProgress = ""))
+        pendingProgress = null
+        progressJob?.cancelAndJoin()
+        db.novelWritingDao().setStartProgress(bookId, "")
     }
 
     private suspend fun persistCompanions(mode: StoryCompanionMode) {
         val bookId = _uiState.value.bookId.ifBlank { return }
-        val existing = db.novelWritingDao().settings(bookId)
-        db.novelWritingDao().saveSettings(
-            (existing ?: NovelWritingSettings(bookId = bookId)).copy(companions = mode.id),
-        )
+        db.novelWritingDao().ensureSettings(NovelWritingSettings(bookId = bookId))
+        db.novelWritingDao().setCompanions(bookId, mode.id)
+    }
+
+    override fun onCleared() {
+        // The debounced save would die with viewModelScope; closing the wizard inside
+        // that window must not lose the last edit.
+        val progress = pendingProgress ?: return
+        val bookId = _uiState.value.bookId.ifBlank { return }
+        flushScope.launch { writeProgress(bookId, progress) }
+    }
+
+    private companion object {
+        val WHITESPACE = Regex("\\s+")
+        val flushScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     }
 
     private suspend fun generate(
@@ -633,3 +755,20 @@ internal fun NovelSavedOutline.toSceneGuideline(): RpgOpeningSceneGuideline = Rp
     firstDecisionHook = sceneHook,
     sceneArtTags = sceneArtTags,
 )
+
+/**
+ * The starting template used before one has been saved: every story question takes
+ * its first preset and the chapter plan is the authored one, so a new book reaches
+ * verification in one tap without the AI.
+ */
+internal fun builtInNovelTemplate(setup: NovelSetupSnapshot): NovelStartProgress {
+    val answers = novelStartQuestions().map { RpgPlanAnswer(it.id, it.presets.firstOrNull().orEmpty()) }
+    val payload = fallbackNovelChapterPlan(setup, RpgAdventurePlan(answers))
+    return NovelStartProgress(
+        stepId = NovelStartStep.Verification.name,
+        setup = setup,
+        answers = answers.map { NovelSavedAnswer(it.questionId, it.value) },
+        outline = payload.outline.toSaved(payload.openingScene),
+        updatedAt = System.currentTimeMillis(),
+    )
+}

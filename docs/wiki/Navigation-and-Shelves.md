@@ -9,7 +9,7 @@ The **Modes** button opens one drawer containing Home, modes, the current mode's
 sections, and shared tools. Use **Arrange modes** or **Arrange sections** to change
 their order. The mode order controls Home shelves after Books, which stays first.
 
-Browsing uses its own dark appearance and a **Home · Search · My List**
+Browsing follows the appearance profile like every other page, and has a **Home · Search · My List**
 bottom bar — Books no longer has its own tab there, since Home's Books shelf
 and its **See all** already open the same grid. It does not change editor or
 reader themes. Writing retains its own toolbar without the browsing header or

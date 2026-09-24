@@ -164,6 +164,7 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import com.ihy2ln.weaverse.core.story.StartSlotStore
 import java.util.UUID
 import javax.inject.Inject
 
@@ -218,6 +219,7 @@ class RoleplayChatViewModel @Inject constructor(
     private val adventureCapture: AdventureCapture,
     private val promptRepository: com.ihy2ln.weaverse.data.repo.PromptRepository,
     private val codexQuickAdd: com.ihy2ln.weaverse.feature.novel.codex.CodexQuickAdd,
+    private val startSlots: com.ihy2ln.weaverse.core.story.StartSlotStore,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(RoleplayChatUiState())
     val uiState: StateFlow<RoleplayChatUiState> = _uiState.asStateFlow()
@@ -3413,6 +3415,97 @@ class RoleplayChatViewModel @Inject constructor(
         )
         loadedRpgCampaignId = chat.id
         persistRpgCampaign(restored)
+        _uiState.update {
+            it.copy(
+                rpgHasCyoaCheckpoint = startSlots.read(StartSlotStore.rpgCyoaCheckpoint(chat.id)) != null,
+                rpgHasSavedTemplate = startSlots.read(StartSlotStore.RPG_TEMPLATE) != null,
+                rpgSlotMessage = "",
+            )
+        }
+        // Made from the + menu's template entry: skip straight to verification.
+        if (startSlots.consumePendingTemplate(chat.id)) startRpgFromTemplate()
+    }
+
+    // ------------------------------------------------- start save slots
+
+    private val rpgSlotJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+
+    /** The start as a slot holds it: content only, no generation in flight. */
+    private fun RpgStartupState.forSlot(step: RpgStartupStep): RpgStartupState = copy(
+        step = step,
+        generationStatus = RpgGenerationStatus.Idle,
+        generationProgress = 0,
+        generationError = "",
+        generationRequestId = "",
+        cyoaSuggestionStatus = RpgGenerationStatus.Idle,
+        cyoaSuggestionProgress = 0,
+        cyoaSuggestionError = "",
+    )
+
+    private suspend fun captureRpgCyoaCheckpoint() {
+        val campaign = rpgCampaignState ?: return
+        if (campaign.startup.step != RpgStartupStep.Cyoa) return
+        val checkpoint = campaign.startup.forSlot(RpgStartupStep.Cyoa).copy(
+            chapterOutline = RpgChapterOutline(),
+            openingScene = RpgOpeningSceneGuideline(),
+            sceneDraft = null,
+        )
+        startSlots.write(
+            StartSlotStore.rpgCyoaCheckpoint(campaign.campaignId),
+            rpgSlotJson.encodeToString(RpgStartupState.serializer(), checkpoint),
+        )
+        _uiState.update { it.copy(rpgHasCyoaCheckpoint = true) }
+    }
+
+    /** Returns the start to the "CYOA set up" checkpoint: every answer, before the plan. */
+    fun restoreRpgCyoaCheckpoint() {
+        val campaign = rpgCampaignState ?: return
+        if (_uiState.value.isStreaming) return
+        viewModelScope.launch {
+            val saved = startSlots.read(StartSlotStore.rpgCyoaCheckpoint(campaign.campaignId))?.let { raw ->
+                runCatching { rpgSlotJson.decodeFromString(RpgStartupState.serializer(), raw) }.getOrNull()
+            }
+            if (saved == null) {
+                _uiState.update { it.copy(rpgHasCyoaCheckpoint = false, rpgSlotMessage = "No CYOA set up checkpoint saved yet.") }
+                return@launch
+            }
+            // The campaign's own setup comes from the create dialog, so it is kept.
+            updateRpgStartup { current -> saved.forSlot(RpgStartupStep.Cyoa).copy(setup = current.setup) }
+            _uiState.update { it.copy(rpgSlotMessage = "Back at the CYOA set up checkpoint.") }
+        }
+    }
+
+    /** Saves this campaign's start as the starting template for new campaigns. */
+    fun saveRpgStartAsTemplate() {
+        val startup = rpgCampaignState?.startup ?: return
+        viewModelScope.launch {
+            val template = startup.forSlot(startup.step).copy(sceneDraft = null)
+            startSlots.write(StartSlotStore.RPG_TEMPLATE, rpgSlotJson.encodeToString(RpgStartupState.serializer(), template))
+            _uiState.update { it.copy(rpgHasSavedTemplate = true, rpgSlotMessage = "Saved as the starting template.") }
+        }
+    }
+
+    /**
+     * Loads the starting template — the saved one, or the built-in one when none has
+     * been saved — and lands on verification, skipping the questions and the plan.
+     * The campaign keeps its own setup.
+     */
+    fun startRpgFromTemplate() {
+        if (rpgCampaignState == null || _uiState.value.isStreaming) return
+        viewModelScope.launch {
+            val saved = startSlots.read(StartSlotStore.RPG_TEMPLATE)?.let { raw ->
+                runCatching { rpgSlotJson.decodeFromString(RpgStartupState.serializer(), raw) }.getOrNull()
+            }
+            updateRpgStartup { current ->
+                val template = saved ?: builtInRpgTemplate(current.setup)
+                val hasPlan = template.chapterOutline.premise.isNotBlank() || template.chapterOutline.beats.isNotEmpty()
+                template.forSlot(if (hasPlan) RpgStartupStep.Verification else RpgStartupStep.Cyoa)
+                    .copy(setup = current.setup, sceneDraft = null)
+            }
+            _uiState.update {
+                it.copy(rpgSlotMessage = if (saved != null) "Started from your template." else "Started from the built-in template.")
+            }
+        }
     }
 
     private fun authoritativeRpgMode(): RpgCombatRuleset {
@@ -3919,6 +4012,7 @@ class RoleplayChatViewModel @Inject constructor(
             campaign.startup.step == RpgStartupStep.GeneratingChapterPlan && it.isNotBlank()
         } ?: UUID.randomUUID().toString()
         generateJob = viewModelScope.launch {
+            captureRpgCyoaCheckpoint()
             updateRpgStartup {
                 it.copy(
                     step = RpgStartupStep.GeneratingChapterPlan,
@@ -3980,6 +4074,7 @@ class RoleplayChatViewModel @Inject constructor(
 
     fun useAuthoredChapterPlan() {
         viewModelScope.launch {
+            captureRpgCyoaCheckpoint()
             updateRpgStartup { startup ->
                 val payload = fallbackChapterPlan(startup.setup, startup.plan)
                 startup.copy(
@@ -4519,16 +4614,43 @@ class RoleplayChatViewModel @Inject constructor(
         viewModelScope.launch { settings.setMangaColorStyle(guide, preserve) }
     }
 
+    fun setMangaAiQuality(quality: MangaAiQuality) = _uiState.update { it.copy(mangaAiQuality = quality) }
+
     private suspend fun colorizeMangaImage(path: String, modelRef: String): Pair<ByteArray, String> {
         val prefs = settings.preferences.first()
+        val quality = _uiState.value.mangaAiQuality
         if (prefs.mangaPreserveLineArt) com.ihy2ln.weaverse.core.media.MangaColorTransfer.validateSource(path)
-        val attachment = PanelAi.imageAttachmentFor(path, maxDim = 1536)
+        val attachment = PanelAi.imageAttachmentFor(path, maxDim = quality.colorMaxDim)
             ?: error("Could not read the source image.")
-        val generated = aiGeneration.generateImage(
-            prompt = com.ihy2ln.weaverse.core.media.MangaColorPolicy.prompt(prefs.mangaColorStyleGuide),
+        val prompt = com.ihy2ln.weaverse.core.media.MangaColorPolicy.prompt(prefs.mangaColorStyleGuide)
+        var generated = aiGeneration.generateImage(
+            prompt = prompt,
             modelRef = modelRef,
             imageAttachments = listOf(attachment),
         )
+        // Slow: a Vision review of the result, and one redo that names what to fix.
+        if (quality == MangaAiQuality.Slow) {
+            val reviewer = visionModelRef()
+            val problems = reviewer?.let {
+                try {
+                    PanelAi.reviewColorization(aiGeneration, it, generated.first, prefs.mangaColorStyleGuide)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    null
+                }
+            }
+            if (!problems.isNullOrEmpty()) {
+                generated = runCatching {
+                    aiGeneration.generateImage(
+                        prompt = prompt + "\nA previous attempt had these problems; fix every one:\n" +
+                            problems.take(12).joinToString("\n") { "- $it" },
+                        modelRef = modelRef,
+                        imageAttachments = listOf(attachment),
+                    )
+                }.getOrDefault(generated)
+            }
+        }
         return if (prefs.mangaPreserveLineArt) {
             com.ihy2ln.weaverse.core.media.MangaColorTransfer.preserveDrawing(path, generated.first) to "image/png"
         } else generated
@@ -4675,92 +4797,236 @@ class RoleplayChatViewModel @Inject constructor(
     }
 
     /**
-     * Cleans, letters and verifies one page, retrying at most once with the boxes Vision still
-     * found source lettering in. Every attempt reloads the original file, so a retry cleans
-     * fresh pixels instead of compounding damage from the attempt before it.
+     * Cleans, letters and verifies one page with up to three passes. Each pass reloads the
+     * original file, so a retry cleans fresh pixels instead of compounding the pass before.
+     *
+     * Pass two widens the cleanup to what the verifier still saw, and gives any lettering the
+     * first read missed entirely its own English line, so nothing is erased and left blank.
+     * Pass three also force-removes glyphs over artwork or outside their balloon. Lines too
+     * long for their balloon are reworded shorter once, before a reader has to fix them.
+     * Only a picture that cannot be opened is rejected; anything else keeps the best version.
      */
     private suspend fun renderTranslatedPage(
         path: String,
         visionModelRef: String,
+        textModelRef: String,
         planned: List<PanelTextRegion>,
+        skippedLines: Int,
+        quality: MangaAiQuality,
         onStage: (String) -> Unit,
     ): MangaPageRender {
+        val lastPass = quality.renderPasses - 1
+        val fast = quality == MangaAiQuality.Fast
+        var lettered = planned
         var cleanupBounds = MangaTranslationPlan.cleanupBounds(planned)
-        var residual: List<PanelTextRegion> = emptyList()
+        var forceBounds: List<MangaCleanupBounds> = emptyList()
+        var shortened = false
         var reason = ""
-        for (attempt in 0..1) {
+        val skippedNote = if (skippedLines > 0) {
+            "$skippedLines line(s) could not be translated and were left as printed."
+        } else ""
+        fun note(vararg parts: String) = parts.filter { it.isNotBlank() }.joinToString("\n")
+        for (attempt in 0..lastPass) {
             val cleaned = ImageOps.loadBitmap(path, maxDim = 3200)
                 ?: return MangaPageRender(
                     MangaPageOutcome.Rejected,
-                    planned,
+                    lettered,
                     null,
                     "the original picture could not be opened",
                 )
             var retained = false
             try {
-            kotlinx.coroutines.currentCoroutineContext().ensureActive()
-            onStage(if (attempt == 0) "Cleaning" else "Retrying")
-            ImageOps.replaceTextRegions(cleaned, cleanupBounds.map { it.toRectF() })
-            onStage("Typesetting")
-            val safePlacement = MangaLetteringPlacement.constrain(placedEnglishRegions(cleaned, planned), cleaned.width.toFloat() / cleaned.height)
-            val placed = try {
-                PanelAi.refineLettering(aiGeneration, visionModelRef, cleaned, safePlacement)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                safePlacement
-            }
-            val placementProblems = MangaLetteringValidator.problems(placed, cleaned.width, cleaned.height)
-            if (placementProblems.isNotEmpty()) {
-                retained = true
-                return MangaPageRender(MangaPageOutcome.Translated,
-                    placed, cleaned, placementProblems.joinToString("\n"))
-            }
-            onStage("Verifying")
-            val composite = compositeWithEnglish(cleaned, placed)
-            val verification = try {
-                PanelAi.verifyNoForeignText(aiGeneration, visionModelRef, composite)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                retained = true
-                return MangaPageRender(MangaPageOutcome.Translated, placed, cleaned,
-                    "Automatic verification was unavailable. The generated version was kept.")
-            } finally {
-                composite.recycle()
-            }
-            if (verification.passed) {
-                retained = true
-                return MangaPageRender(
-                    if (attempt == 0) MangaPageOutcome.Translated else MangaPageOutcome.Retried,
-                    placed,
-                    cleaned,
-                    "",
-                )
-            }
-            residual = verification.residualRegions
-            reason = verification.error
-                ?: "source lettering was still visible in ${residual.size} region(s)"
-            // A verifier that could not run gives no boxes to widen, so a second pass would do
-            // exactly what the first did. Keep the candidate as a selectable version with a warning.
-            if (attempt == 1 || residual.isEmpty()) {
-                retained = true
-                return MangaPageRender(MangaPageOutcome.Translated, placed, cleaned, reason)
-            }
-            cleanupBounds = MangaTranslationPlan.mergeCleanupBounds(
-                cleanupBounds,
-                MangaTranslationPlan.cleanupBounds(residual),
-            )
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                onStage(if (attempt == 0) "Cleaning" else "Retrying")
+                ImageOps.replaceTextRegions(cleaned, cleanupBounds.map { it.toRectF() })
+                if (forceBounds.isNotEmpty()) ImageOps.forceRemoveGlyphs(cleaned, forceBounds.map { it.toRectF() })
+                onStage("Typesetting")
+                val aspect = cleaned.width.toFloat() / cleaned.height
+                var placed = placeLettering(cleaned, visionModelRef, lettered, aspect, refine = !fast)
+                if (!shortened && !fast) {
+                    val tooLong = MangaLetteringValidator.overflowing(placed, cleaned.width, cleaned.height)
+                    if (tooLong.isNotEmpty()) {
+                        shortened = true
+                        onStage("Fitting")
+                        val limits = tooLong.map { i -> (placed[i].translation.length * 0.7f).toInt().coerceAtLeast(4) }
+                        val shorter = try {
+                            PanelAi.shortenTexts(aiGeneration, textModelRef, tooLong.map { placed[it].translation }, limits)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            null
+                        }
+                        if (shorter != null) {
+                            val byIndex = tooLong.zip(shorter).toMap()
+                            lettered = lettered.mapIndexed { i, region ->
+                                byIndex[i]?.takeIf { it.isNotBlank() && !PanelAi.containsForeignScript(it) }
+                                    ?.let { region.copy(translation = it) } ?: region
+                            }
+                            placed = placeLettering(cleaned, visionModelRef, lettered, aspect, refine = true)
+                        }
+                    }
+                }
+                val placementNote = MangaLetteringValidator.problems(placed, cleaned.width, cleaned.height)
+                    .joinToString("\n")
+                // Fast skips the Vision check of the finished page.
+                if (fast) {
+                    retained = true
+                    return MangaPageRender(MangaPageOutcome.Translated, placed, cleaned, note(placementNote, skippedNote))
+                }
+                onStage("Verifying")
+                val composite = compositeWithEnglish(cleaned, placed)
+                val verification = try {
+                    PanelAi.verifyNoForeignText(aiGeneration, visionModelRef, composite)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    retained = true
+                    return MangaPageRender(MangaPageOutcome.Translated, placed, cleaned,
+                        note("Automatic verification was unavailable. The generated version was kept.", placementNote, skippedNote))
+                } finally {
+                    composite.recycle()
+                }
+                if (verification.passed) {
+                    retained = true
+                    return MangaPageRender(
+                        if (attempt == 0) MangaPageOutcome.Translated else MangaPageOutcome.Retried,
+                        placed,
+                        cleaned,
+                        note(placementNote, skippedNote),
+                    )
+                }
+                val residual = verification.residualRegions
+                reason = verification.error
+                    ?: "source lettering was still visible in ${residual.size} region(s)"
+                // A verifier that could not run gives no boxes to widen, so another pass would
+                // do exactly what this one did. Keep the candidate with a warning.
+                if (attempt == lastPass || residual.isEmpty()) {
+                    retained = true
+                    return MangaPageRender(
+                        if (attempt == 0) MangaPageOutcome.Translated else MangaPageOutcome.Retried,
+                        placed, cleaned, note(reason, placementNote, skippedNote),
+                    )
+                }
+                lettered = lettered + missedLines(residual, lettered, textModelRef)
+                // Only residue that belongs to a lettered line is cleaned again. Source text with
+                // no English to replace it stays as printed rather than becoming a blank balloon.
+                val letteredBounds = MangaTranslationPlan.cleanupBounds(lettered)
+                val residualBounds = MangaTranslationPlan.cleanupBounds(residual).filter { box ->
+                    letteredBounds.any { MangaTranslationPlan.overlaps(it, box) }
+                }
+                if (residualBounds.isEmpty()) {
+                    retained = true
+                    return MangaPageRender(
+                        if (attempt == 0) MangaPageOutcome.Translated else MangaPageOutcome.Retried,
+                        placed, cleaned, note(reason, placementNote, skippedNote),
+                    )
+                }
+                cleanupBounds = MangaTranslationPlan.mergeCleanupBounds(cleanupBounds, residualBounds)
+                if (attempt + 1 == 2) forceBounds = residualBounds
             } finally {
                 if (!retained && !cleaned.isRecycled) cleaned.recycle()
             }
         }
         return MangaPageRender(
             MangaPageOutcome.Rejected,
-            MangaTranslationPlan.reviewRegions(planned, residual),
+            MangaTranslationPlan.reviewRegions(planned, emptyList()),
             null,
             reason.ifBlank { "the page could not be verified" },
         )
+    }
+
+    /** Container placement, geometric limits, then Vision's tightening, which never widens. */
+    private suspend fun placeLettering(
+        cleaned: android.graphics.Bitmap,
+        visionModelRef: String,
+        regions: List<PanelTextRegion>,
+        aspect: Float,
+        refine: Boolean,
+    ): List<PanelTextRegion> {
+        val safePlacement = MangaLetteringPlacement.constrain(placedEnglishRegions(cleaned, regions), aspect)
+        if (!refine) return safePlacement
+        return try {
+            PanelAi.refineLettering(aiGeneration, visionModelRef, cleaned, safePlacement)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            safePlacement
+        }
+    }
+
+    /**
+     * Lettering the verifier found that the first read missed altogether. The retry cleans
+     * those boxes, so each gets its own English line here rather than becoming a blank balloon.
+     */
+    private suspend fun missedLines(
+        residual: List<PanelTextRegion>,
+        lettered: List<PanelTextRegion>,
+        textModelRef: String,
+    ): List<PanelTextRegion> {
+        val letteredBounds = MangaTranslationPlan.cleanupBounds(lettered)
+        val missed = residual.filter { region ->
+            region.original.isNotBlank() && PanelAi.needsEnglishTranslation(region) &&
+                MangaTranslationPlan.cleanupBounds(listOf(region)).firstOrNull()?.let { box ->
+                    letteredBounds.none { MangaTranslationPlan.overlaps(it, box) }
+                } == true
+        }
+        if (missed.isEmpty()) return emptyList()
+        val english = try {
+            PanelAi.translateTexts(aiGeneration, textModelRef, missed.map { it.original }, "English", strict = true)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        } ?: return emptyList()
+        return missed.zip(english).mapIndexedNotNull { i, (region, text) ->
+            val line = PanelAi.normalizeEnglishText(text)
+            if (line.isBlank() || PanelAi.containsForeignScript(line)) return@mapIndexedNotNull null
+            region.copy(id = "missed-$i-${region.id}", translation = line, reviewRequired = false)
+        }
+    }
+
+    /**
+     * Repairs lines the translation left blank, copied, or in the source script: first a
+     * strict retranslation of just those lines, then the Vision reader's own draft. Lines
+     * that still fail are dropped from the plan, so they stay exactly as printed and are
+     * never erased, and are counted, so one stubborn line no longer rejects a whole page.
+     */
+    private suspend fun repairEnglishRegions(
+        regions: List<PanelTextRegion>,
+        visionDrafts: List<String>,
+        textModelRef: String,
+        retry: Boolean,
+    ): Pair<List<PanelTextRegion>, Int> {
+        var current = regions.map { it.copy(translation = PanelAi.normalizeEnglishText(it.translation)) }
+        var bad = PanelAi.invalidEnglishRegionIndexes(current)
+        if (bad.isEmpty()) return current to 0
+        val retried = if (!retry) null else try {
+            PanelAi.translateTexts(
+                aiGeneration,
+                textModelRef,
+                bad.map { current[it].original.ifBlank { current[it].translation } },
+                "English",
+                drafts = bad.map { visionDrafts.getOrElse(it) { "" } },
+                strict = true,
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+        if (retried != null) {
+            val byIndex = bad.zip(retried).toMap()
+            current = current.mapIndexed { i, region -> byIndex[i]?.let { region.copy(translation = it) } ?: region }
+        }
+        bad = PanelAi.invalidEnglishRegionIndexes(current)
+        if (bad.isNotEmpty()) {
+            current = current.mapIndexed { i, region ->
+                if (i !in bad) region
+                else region.copy(translation = PanelAi.normalizeEnglishText(visionDrafts.getOrElse(i) { "" }))
+            }
+            bad = PanelAi.invalidEnglishRegionIndexes(current)
+        }
+        return current.filterIndexed { i, _ -> i !in bad } to bad.size
     }
 
     fun colorizeAndTranslateActivePage() {
@@ -4828,11 +5094,27 @@ class RoleplayChatViewModel @Inject constructor(
                 targets.forEachIndexed { index, sourceTarget ->
                     var target = sourceTarget
                     fun stage(step: String) {
+                        // Rough share of one page's work done when each stage starts.
+                        val within = when (step) {
+                            "Colorizing before translation" -> 0.02f
+                            "Reading" -> 0.1f
+                            "Translating" -> 0.3f
+                            "Checking" -> 0.42f
+                            "Cleaning" -> 0.5f
+                            "Typesetting" -> 0.6f
+                            "Fitting" -> 0.66f
+                            "Verifying" -> 0.75f
+                            "Retrying" -> 0.8f
+                            else -> null
+                        }
                         _uiState.update {
                             it.copy(
                                 storyboardStatus = "$step ${index + 1}/${targets.size} · " +
                                     "Vision: $modelLabel · Text: $textModelLabel…",
                                 mangaEditCurrent = index,
+                                mangaEditItemProgress = within?.let { w ->
+                                    maxOf(w, if (it.mangaEditCurrent == index) it.mangaEditItemProgress else 0f)
+                                } ?: it.mangaEditItemProgress,
                             )
                         }
                     }
@@ -4853,7 +5135,8 @@ class RoleplayChatViewModel @Inject constructor(
                         target = target.copy(block = colored, path = mediaRepository.resolveFile(media).absolutePath)
                     }
                     stage("Reading")
-                    val detected = PanelAi.readText(aiGeneration, modelRef, target.path, "English")
+                    val quality = _uiState.value.mangaAiQuality
+                    val detected = PanelAi.readText(aiGeneration, modelRef, target.path, "English", maxDim = quality.readMaxDim)
                         .orEmpty()
                         .filter { it.translation.isNotBlank() || it.original.isNotBlank() }
                     // Lettering already printed in English is left exactly as the artist drew it.
@@ -4862,20 +5145,24 @@ class RoleplayChatViewModel @Inject constructor(
                         // A page with no text at all is not a page that was already English.
                         if (MangaTranslationPlan.preservedEnglish(detected).isNotEmpty()) alreadyEnglish++
                         completed = index + 1
-                        _uiState.update { it.copy(mangaEditCurrent = completed) }
+                        _uiState.update { it.copy(mangaEditCurrent = completed, mangaEditItemProgress = 0f) }
                         return@forEachIndexed
                     }
                     stage("Translating")
+                    // The Vision pass already translated each line while looking at the art;
+                    // the text model refines that draft instead of starting blind.
+                    val visionDrafts = planned.map { it.translation }
                     val translatedText = PanelAi.translateTexts(
                         aiGeneration,
                         textModelRef,
                         planned.map { region -> region.original.ifBlank { region.translation } },
                         "English",
+                        drafts = visionDrafts,
                     )
                     var finalRegions = if (translatedText != null && translatedText.size == planned.size) {
                         planned.zip(translatedText) { region, translation -> region.copy(translation = translation) }
                     } else planned
-                    PanelAi.proofreadTexts(
+                    if (quality != MangaAiQuality.Fast) PanelAi.proofreadTexts(
                         aiGeneration,
                         textModelRef,
                         finalRegions.map { region -> region.translation.ifBlank { region.original } },
@@ -4883,9 +5170,15 @@ class RoleplayChatViewModel @Inject constructor(
                     )?.takeIf { it.size == finalRegions.size }?.let { polished ->
                         finalRegions = finalRegions.zip(polished) { region, text -> region.copy(translation = text) }
                     }
-                    // Script validation happens before any pixel is touched: a page that failed
-                    // to translate is safer unchanged than cleaned and left blank.
-                    val safeRegions = validatedEnglishRegions(finalRegions)
+                    // Lines that came back blank, copied or in the source script are repaired one
+                    // by one, so a single stubborn line no longer sends the whole page to review.
+                    stage("Checking")
+                    val repair = repairEnglishRegions(finalRegions, visionDrafts, textModelRef, retry = quality != MangaAiQuality.Fast)
+                    finalRegions = repair.first
+                    val skippedLines = repair.second
+                    // Script validation happens before any pixel is touched: a line that failed
+                    // to translate is safer left as it was printed than cleaned and left blank.
+                    val safeRegions = validatedEnglishRegions(finalRegions)?.takeIf { it.isNotEmpty() }
                     completed = index + 1
                     if (safeRegions == null) {
                         rejectedPages++
@@ -4894,14 +5187,14 @@ class RoleplayChatViewModel @Inject constructor(
                             regions = finalRegions,
                             reason = "the translation was incomplete or was not English",
                         )
-                        _uiState.update { it.copy(mangaEditCurrent = completed) }
+                        _uiState.update { it.copy(mangaEditCurrent = completed, mangaEditItemProgress = 0f) }
                         return@forEachIndexed
                     }
-                    val render = renderTranslatedPage(target.path, modelRef, safeRegions) { step -> stage(step) }
+                    val render = renderTranslatedPage(target.path, modelRef, textModelRef, safeRegions, skippedLines, quality) { step -> stage(step) }
                     if (render.cleaned == null) {
                         rejectedPages++
                         markPageNeedsReview(target, render.regions, render.reason)
-                        _uiState.update { it.copy(mangaEditCurrent = completed) }
+                        _uiState.update { it.copy(mangaEditCurrent = completed, mangaEditItemProgress = 0f) }
                         return@forEachIndexed
                     }
                     val blocks = workingBlocks[target.message.id]
@@ -4909,7 +5202,7 @@ class RoleplayChatViewModel @Inject constructor(
                     val base = blocks?.getOrNull(blockIndex) as? MediaBlock
                     if (base == null) {
                         render.cleaned.recycle()
-                        _uiState.update { it.copy(mangaEditCurrent = completed) }
+                        _uiState.update { it.copy(mangaEditCurrent = completed, mangaEditItemProgress = 0f) }
                         return@forEachIndexed
                     }
                     val entity = try {
@@ -4960,7 +5253,7 @@ class RoleplayChatViewModel @Inject constructor(
                     translatedPanels++
                     if (render.outcome == MangaPageOutcome.Retried) retriedPanels++
                     translatedRegions += render.regions.count { it.translation.isNotBlank() }
-                    _uiState.update { it.copy(mangaEditCurrent = completed) }
+                    _uiState.update { it.copy(mangaEditCurrent = completed, mangaEditItemProgress = 0f) }
                 }
                 _uiState.update {
                     it.copy(
@@ -4991,7 +5284,7 @@ class RoleplayChatViewModel @Inject constructor(
                 }
             } finally {
                 _uiState.update {
-                    it.copy(mangaEditBusy = false, mangaEditAction = "", mangaEditCurrent = 0, mangaEditTotal = 0)
+                    it.copy(mangaEditBusy = false, mangaEditAction = "", mangaEditCurrent = 0, mangaEditTotal = 0, mangaEditItemProgress = 0f)
                 }
             }
         }
@@ -5136,7 +5429,7 @@ class RoleplayChatViewModel @Inject constructor(
                         }
                     }
                     completed = index + 1
-                    _uiState.update { it.copy(mangaEditCurrent = completed) }
+                    _uiState.update { it.copy(mangaEditCurrent = completed, mangaEditItemProgress = 0f) }
                 }
                 _uiState.update {
                     it.copy(
@@ -6394,4 +6687,22 @@ class RoleplayChatViewModel @Inject constructor(
     ) {
         replaceStoredMessage(current, current.copy(contentJson = Document(blocks = blocks).toJson()))
     }
+}
+
+/**
+ * The campaign starting template used before one has been saved: every CYOA question
+ * takes its first preset and the chapter plan is the authored one, so a new campaign
+ * reaches verification in one tap without the AI.
+ */
+internal fun builtInRpgTemplate(setup: com.ihy2ln.weaverse.feature.roleplay.campaign.RpgCampaignSetupSnapshot): RpgStartupState {
+    val answers = adventurePlanQuestions().map { RpgPlanAnswer(it.id, it.presets.firstOrNull().orEmpty(), presetId = "template") }
+    val plan = RpgAdventurePlan(answers)
+    val payload = fallbackChapterPlan(setup, plan)
+    return RpgStartupState(
+        step = RpgStartupStep.Verification,
+        setup = setup,
+        plan = plan,
+        chapterOutline = payload.outline,
+        openingScene = payload.openingScene,
+    )
 }

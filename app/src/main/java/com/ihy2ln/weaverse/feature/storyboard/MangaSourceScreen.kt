@@ -120,6 +120,8 @@ data class MangaSourceUiState(
     val readerPageIndex: Int = 0,
     val readerOnline: Boolean = false,
     val busy: Boolean = false,
+    /** Pull-to-refresh on the title's info page is reloading details and chapters. */
+    val refreshingDetails: Boolean = false,
     val status: String = "",
     /** Browse mode the visible results came from, or null when they came from a search. */
     val catalogMode: MangaBrowseMode? = null,
@@ -660,6 +662,28 @@ class MangaSourceViewModel @Inject constructor(
                     )
                 }
                 .onFailure { local.value = local.value.copy(busy = false, status = it.message ?: "Chapter lookup failed.") }
+        }
+    }
+
+    /** Pull-to-refresh: reloads the open title's details and chapter list, keeping what is shown until it arrives. */
+    fun refreshSelected() {
+        val manga = local.value.selected ?: return
+        if (local.value.refreshingDetails) return
+        viewModelScope.launch {
+            local.value = local.value.copy(refreshingDetails = true, status = "Refreshing…")
+            runCatching {
+                val details = repository.loadDetails(manga)
+                details to repository.loadChapters(details)
+            }.onSuccess { (details, chapters) ->
+                // Ignore a refresh that finishes after the reader has opened another title.
+                if (local.value.selected?.remoteId != manga.remoteId) return@onSuccess
+                local.value = local.value.copy(
+                    selected = details,
+                    chapters = chapters.ifEmpty { local.value.chapters },
+                    status = "Refreshed · ${chapters.size} chapters.",
+                )
+            }.onFailure { local.value = local.value.copy(status = it.message ?: "Refresh failed.") }
+            local.value = local.value.copy(refreshingDetails = false)
         }
     }
 

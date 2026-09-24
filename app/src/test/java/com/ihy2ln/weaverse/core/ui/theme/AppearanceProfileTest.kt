@@ -31,7 +31,8 @@ class AppearanceProfileTest {
                 profile.tokens(AppThemeMode.OledBlack),
                 "${profile.name} should treat OledBlack as its dark palette",
             )
-            assertNotEquals(
+            // Streaming (WeaverVerse) is a single cinematic-black palette by design.
+            if (profile != AppearanceProfile.Streaming) assertNotEquals(
                 profile.tokens(AppThemeMode.Light),
                 profile.tokens(AppThemeMode.Dark),
                 "${profile.name} light and dark should differ",

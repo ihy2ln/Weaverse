@@ -851,8 +851,8 @@ object WikiContent {
                 ## Profiles
 
                 A profile is a whole look — palette, lettering and corners
-                together: **Classic**, **Fantasy**, **Arcade**, **Synthwave**,
-                **Chill**, **Tabletop**.
+                together — applied to every page, Home included. Each card
+                in Settings → Appearance is a live miniature of its profile.
 
                 ## Themes
 
@@ -864,6 +864,24 @@ object WikiContent {
                 Per-section tints layered on top of any profile. **Reset
                 section colors** undoes them. Set them in Settings →
                 Appearance.
+
+                ## Wallpaper and glass
+
+                The wallpaper sits behind every page, Home included: the
+                profile's own theme art, Windows-style **Bloom**, **Bloom
+                Dark**, **Glow** and **Bliss**, or Apple-style **Big Sur**,
+                **Monterey**, **Ventura**, **Sonoma** and **Sequoia**. An
+                image or looping video of your own replaces it. **Glass**
+                runs from Solid to Clear and sets how much of it shows
+                through panels and pages.
+
+                ## Font size and line height
+
+                **Font size** scales every page, menu and dialog (Small,
+                Default, Large, Largest, or anything from 80% to 140%).
+                **Line height** sets the space between lines, from Compact
+                to Airy. The book reader keeps its own size under
+                **Reader text**, also adjustable from inside the reader.
             """.trimIndent(),
         ),
         Page(

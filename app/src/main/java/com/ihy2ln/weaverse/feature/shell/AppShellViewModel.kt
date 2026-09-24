@@ -60,6 +60,7 @@ class AppShellViewModel @Inject constructor(
     private val chatRoomSeeder: com.ihy2ln.weaverse.feature.chatting.ChatRoomSeeder,
     private val mangaImporter: com.ihy2ln.weaverse.core.media.MangaFileImporter,
     private val mangaDownloadRepository: MangaDownloadRepository,
+    private val startSlots: com.ihy2ln.weaverse.core.story.StartSlotStore,
 ) : ViewModel() {
     val preferences = settings.preferences
     @Inject lateinit var homeHistory: HomeHistory
@@ -217,6 +218,26 @@ class AppShellViewModel @Inject constructor(
                 if (accessMode == AppMode.Roleplay) chatId.orEmpty() else "",
             )
             onCreated(book.id, chatId)
+        }
+    }
+
+    /**
+     * The + menu's "From CYOA template": makes a book or campaign with no dialog and
+     * marks it so its start loads the starting template and lands on verification.
+     */
+    fun createFromTemplate(
+        vocabulary: CreateWorkVocabulary,
+        onCreated: (bookId: String, chatId: String?) -> Unit,
+    ) {
+        createWork(
+            vocabulary,
+            NewWorkDetails(title = com.ihy2ln.weaverse.core.story.StartSlotStore.templateWorkTitle(null)),
+        ) { bookId, chatId ->
+            viewModelScope.launch {
+                // A campaign's start is keyed by its session, a novel's by the book.
+                startSlots.markPendingTemplate(if (vocabulary == CreateWorkVocabulary.Campaign) chatId ?: bookId else bookId)
+                onCreated(bookId, chatId)
+            }
         }
     }
 

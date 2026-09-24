@@ -416,6 +416,25 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { settings.setLineHeight(value) }
     }
 
+    fun setUiTextScale(percent: Int) {
+        viewModelScope.launch { settings.setUiTextScale(percent) }
+    }
+
+    fun setUiLineSpacing(value: Float) {
+        viewModelScope.launch { settings.setUiLineSpacing(value) }
+    }
+
+    fun setBackdropStyle(style: String) {
+        viewModelScope.launch {
+            settings.setBackdropStyle(style)
+            settings.setProfileBackgroundEnabled(true)
+        }
+    }
+
+    fun setGlassClarity(percent: Int) {
+        viewModelScope.launch { settings.setGlassClarity(percent) }
+    }
+
     fun setSectionAppearance(sectionKey: String, colorHex: String, opacityPercent: Int) {
         viewModelScope.launch { settings.setSectionAppearance(sectionKey, colorHex, opacityPercent) }
     }

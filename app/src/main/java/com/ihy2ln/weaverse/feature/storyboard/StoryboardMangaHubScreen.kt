@@ -65,11 +65,11 @@ private enum class MangaHubTab(val label: String) {
     Library("Library"), Browse("Browse"), Downloads("Downloads"), Extensions("Extensions"), Projects("Projects")
 }
 
-private val HubBlack = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.background
-private val HubPanel = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.panel
-private val HubText = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.primaryText
-private val HubMuted = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.secondaryText
-private val HubAccent = com.ihy2ln.weaverse.core.ui.theme.StreamingTokens.activePill
+private val HubBlack: Color @androidx.compose.runtime.Composable get() = com.ihy2ln.weaverse.core.ui.theme.inkTokens().background
+private val HubPanel: Color @androidx.compose.runtime.Composable get() = com.ihy2ln.weaverse.core.ui.theme.inkTokens().panel
+private val HubText: Color @androidx.compose.runtime.Composable get() = com.ihy2ln.weaverse.core.ui.theme.inkTokens().primaryText
+private val HubMuted: Color @androidx.compose.runtime.Composable get() = com.ihy2ln.weaverse.core.ui.theme.inkTokens().secondaryText
+private val HubAccent: Color @androidx.compose.runtime.Composable get() = com.ihy2ln.weaverse.core.ui.theme.inkTokens().activePill
 private val HubColors = com.ihy2ln.weaverse.core.ui.theme.StreamingColors
 
 data class MangaEditRequest(

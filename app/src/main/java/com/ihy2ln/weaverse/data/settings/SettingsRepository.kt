@@ -87,8 +87,17 @@ data class UserPreferences(
     val themeMode: AppThemeMode = AppThemeMode.Dark,
     /** Whole visual identity (palette + typography + shape); Classic = the original look. */
     val appearanceProfile: AppearanceProfile = AppearanceProfile.Streaming,
+    /** Reader text size and leading; the reader has its own A−/A+ controls. */
     val fontSizeSp: Int = 16,
     val lineHeight: Float = 1.6f,
+    /** App-wide text size, percent of the system size (Appearance → Font size). */
+    val uiTextScalePercent: Int = 100,
+    /** App-wide line height multiplier on each text style (Appearance → Line height). */
+    val uiLineSpacing: Float = 1f,
+    /** [com.ihy2ln.weaverse.core.ui.theme.BackdropStyle] name drawn behind the app. */
+    val backdropStyle: String = "Profile",
+    /** Glass panels and wallpaper wash, 0 = solid, 80 = clearest. */
+    val glassClarityPercent: Int = 30,
     /** Paper | Sepia | Night — dedicated reader palette, independent of app chrome. */
     val readerTheme: String = "App",
     val defaultModelRef: String = WritingModelSeeds.DEFAULT_MODEL_REF,
@@ -187,6 +196,10 @@ class SettingsRepository @Inject constructor(
                 ?: AppearanceProfile.Streaming,
             fontSizeSp = prefs[KEY_FONT_SIZE] ?: 16,
             lineHeight = prefs[KEY_LINE_HEIGHT] ?: 1.6f,
+            uiTextScalePercent = prefs[KEY_UI_TEXT_SCALE] ?: 100,
+            uiLineSpacing = prefs[KEY_UI_LINE_SPACING] ?: 1f,
+            backdropStyle = prefs[KEY_BACKDROP_STYLE] ?: "Profile",
+            glassClarityPercent = prefs[KEY_GLASS_CLARITY] ?: 30,
             readerTheme = prefs[KEY_READER_THEME] ?: "App",
             defaultModelRef = prefs[KEY_DEFAULT_MODEL] ?: WritingModelSeeds.DEFAULT_MODEL_REF,
             mangaVisionModelRef = prefs[KEY_MANGA_VISION_MODEL] ?: "",
@@ -336,6 +349,22 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setLineHeight(value: Float) {
         context.dataStore.edit { it[KEY_LINE_HEIGHT] = value.coerceIn(1.2f, 2.2f) }
+    }
+
+    suspend fun setUiTextScale(percent: Int) {
+        context.dataStore.edit { it[KEY_UI_TEXT_SCALE] = percent.coerceIn(80, 140) }
+    }
+
+    suspend fun setUiLineSpacing(value: Float) {
+        context.dataStore.edit { it[KEY_UI_LINE_SPACING] = value.coerceIn(0.85f, 1.5f) }
+    }
+
+    suspend fun setBackdropStyle(style: String) {
+        context.dataStore.edit { it[KEY_BACKDROP_STYLE] = style }
+    }
+
+    suspend fun setGlassClarity(percent: Int) {
+        context.dataStore.edit { it[KEY_GLASS_CLARITY] = percent.coerceIn(0, 80) }
     }
 
     suspend fun setReaderTheme(theme: String) {
@@ -768,6 +797,10 @@ class SettingsRepository @Inject constructor(
         private val KEY_APPEARANCE_PROFILE = stringPreferencesKey("appearance_profile")
         private val KEY_FONT_SIZE = intPreferencesKey("font_size_sp")
         private val KEY_LINE_HEIGHT = floatPreferencesKey("line_height")
+        private val KEY_UI_TEXT_SCALE = intPreferencesKey("ui_text_scale_percent")
+        private val KEY_UI_LINE_SPACING = floatPreferencesKey("ui_line_spacing")
+        private val KEY_BACKDROP_STYLE = stringPreferencesKey("backdrop_style")
+        private val KEY_GLASS_CLARITY = intPreferencesKey("glass_clarity_percent")
         private val KEY_READER_THEME = stringPreferencesKey("reader_theme")
         private val KEY_DEFAULT_MODEL = stringPreferencesKey("default_model")
         private val KEY_MANGA_VISION_MODEL = stringPreferencesKey("manga_editor_vision_model")

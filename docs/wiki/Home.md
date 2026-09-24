@@ -7,6 +7,7 @@ campaigns, character chats, manga/comic storyboards, and shared notes.
 
 - [Getting Started](Getting-Started.md)
 - [Navigation and Shelves](Navigation-and-Shelves.md)
+- [Appearance](Appearance.md)
 - [Codex and Notes](Codex-and-Notes.md)
 - [Novel and Reader](Novel-and-Reader.md)
 - [RPG, Chatting, and Storyboard](RPG-Chatting-and-Storyboard.md)

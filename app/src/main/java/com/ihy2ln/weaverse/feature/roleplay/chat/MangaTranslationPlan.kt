@@ -22,6 +22,29 @@ data class MangaCleanupBounds(
     }
 }
 
+/**
+ * Speed against accuracy for the manga translator and colorizer.
+ *
+ * Fast makes one pass with no proofreading or checking, so it is quick and cheap but can leave
+ * mistakes. Medium proofreads, repairs bad lines and checks the finished page once. Slow reads at
+ * higher resolution, re-checks up to twice, and has colorized pages reviewed and redone once.
+ */
+enum class MangaAiQuality(val label: String, val detail: String) {
+    Fast("Fast", "One quick pass. No proofreading or checking; may leave mistakes."),
+    Medium("Medium", "Proofreads, repairs bad lines and checks the page once."),
+    Slow("Slow", "Highest resolution, repeated checks and a colour review. Slowest and most expensive."),
+    ;
+
+    /** Cleanup/letter/verify passes the translator may make on one page. */
+    val renderPasses: Int get() = when (this) { Fast -> 1; Medium -> 2; Slow -> 3 }
+
+    /** Long edge sent to the Vision reader. */
+    val readMaxDim: Int get() = when (this) { Fast -> 1400; Medium -> 1800; Slow -> 2400 }
+
+    /** Long edge sent to the image model for colorizing. */
+    val colorMaxDim: Int get() = when (this) { Fast -> 1024; Medium -> 1536; Slow -> 2048 }
+}
+
 /** How one page ended up after rendering and Vision verification. */
 enum class MangaPageOutcome { Translated, Retried, Rejected }
 
