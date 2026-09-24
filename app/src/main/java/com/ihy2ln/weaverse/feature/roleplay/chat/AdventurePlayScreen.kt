@@ -1,0 +1,1836 @@
+package com.ihy2ln.weaverse.feature.roleplay.chat
+
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalTextToolbar
+import androidx.compose.ui.platform.TextToolbar
+import androidx.compose.ui.platform.TextToolbarStatus
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import coil3.compose.AsyncImage
+import com.ihy2ln.weaverse.core.text.CodexMentionTag
+import com.ihy2ln.weaverse.core.text.CodexMentionTarget
+import com.ihy2ln.weaverse.core.text.findCodexMentions
+import com.ihy2ln.weaverse.core.ui.components.InkOutlinedButton
+import com.ihy2ln.weaverse.core.ui.components.InkTextButton
+import com.ihy2ln.weaverse.core.ui.components.mergeSpokenText
+import com.ihy2ln.weaverse.core.ui.components.rememberSpeechToText
+import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
+import com.ihy2ln.weaverse.feature.novel.codex.AddTextDialog
+import com.ihy2ln.weaverse.core.ui.theme.inkTokens
+import com.ihy2ln.weaverse.feature.prompt.PromptModelPickerDialog
+import com.ihy2ln.weaverse.feature.prompt.PromptModelSelection
+import com.ihy2ln.weaverse.feature.prompt.PromptWordLimit
+import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgChapterBeat
+import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgAdventureMapScreen
+import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgGenerationStatus
+import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgStartupState
+import com.ihy2ln.weaverse.feature.roleplay.campaign.RpgStartupStep
+import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatRuleset
+import com.ihy2ln.weaverse.feature.roleplay.combat.RpgCombatScreen
+import com.ihy2ln.weaverse.feature.roleplay.characters.formatModifier
+import com.ihy2ln.weaverse.feature.roleplay.party.PartyMemberUi
+import com.ihy2ln.weaverse.feature.roleplay.party.PartyViewModel
+import java.io.File
+import kotlinx.coroutines.launch
+
+/** Preset ids the dock routes to a screen action instead of into the composer. */
+const val RpgPresetParty = "rpg-preset-party"
+const val RpgPresetCombat = "rpg-preset-combat"
+
+/**
+ * Actions / Thoughts / Roleplay — the turn presets the prompt dock offers where the
+ * Novel dock offers prompt templates.
+ */
+fun rpgPresetGroups(mode: RpgCombatRuleset): List<RpgPresetGroup> {
+    val partyOption = when (mode) {
+        RpgCombatRuleset.CardBattle -> "View tactical roster cards"
+        RpgCombatRuleset.DndD20 -> "View party character sheets"
+        RpgCombatRuleset.TextReactions -> "View party roster"
+    }
+    fun texts(vararg options: String) = options.map { RpgPreset(it, it) }
+    return listOf(
+        RpgPresetGroup(
+            "Actions",
+            texts(
+                "Look around carefully", "Move closer cautiously", "Interact with the environment",
+                "Use a carried item", "Help a party member", "Wait and observe",
+                "Search the area thoroughly", "Take cover", "Sneak past unnoticed",
+            ),
+        ),
+        RpgPresetGroup(
+            "Thoughts",
+            texts(
+                "Think through the situation", "Recall relevant knowledge", "Study their intentions",
+                "Consider the risks", "Focus on a suspicious detail", "Reflect on the party's goal",
+                "Weigh the options", "Guess what happens next",
+            ),
+        ),
+        RpgPresetGroup(
+            "Dialogue",
+            texts(
+                "Speak to a nearby character", "Ask a direct question", "Attempt to persuade them",
+                "Try to intimidate them", "Offer a deal or bargain", "Lie convincingly",
+                "Comfort or reassure them", "Introduce yourself",
+            ),
+        ),
+        RpgPresetGroup(
+            "Combat",
+            listOf(RpgPreset(RpgPresetCombat, "Enter " + mode.label + " combat")) + texts(
+                "Attack the nearest threat", "Defend and hold position", "Use a combat ability",
+                "Retreat to safety", "Check the party's condition", "Call for a tactical regroup",
+            ),
+        ),
+        RpgPresetGroup(
+            "Roleplay",
+            listOf(RpgPreset(RpgPresetParty, partyOption)) + texts(
+                "Describe how you're feeling", "Recall a memory from your backstory",
+                "Bond with a party member", "Stay in character and react",
+                "Search for clues", "Break the tension with humor",
+            ),
+        ),
+    )
+}
+
+/**
+ * The scene-art tag line and the usage line, together: one collapsible strip instead of
+ * two rows stacked above the prompt dock. Collapsed by a single tap on its header; each
+ * line scrolls horizontally rather than wrapping, so neither can grow taller than one row
+ * no matter how long the AI's own tag text or the usage summary runs.
+ */
+@Composable
+private fun RpgSceneInfoStrip(
+    sceneArtLabel: String?,
+    usageText: String,
+    modifier: Modifier = Modifier,
+) {
+    if (sceneArtLabel.isNullOrBlank() && usageText.isBlank()) return
+    val tokens = inkTokens()
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Column(modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Scene info",
+                style = MaterialTheme.typography.labelSmall,
+                color = tokens.secondaryText,
+                modifier = Modifier.weight(1f),
+            )
+            Text(if (expanded) "▴" else "▾", style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
+        }
+        if (expanded) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                sceneArtLabel?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tokens.secondaryText,
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    )
+                }
+                if (usageText.isNotBlank()) {
+                    Text(
+                        usageText,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tokens.secondaryText,
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AddTextSelectionContainer(
+    onSelectionReady: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val latestOnSelectionReady by rememberUpdatedState(onSelectionReady)
+    val toolbar = remember {
+        object : TextToolbar {
+            override var status: TextToolbarStatus = TextToolbarStatus.Hidden
+                private set
+
+            override fun showMenu(
+                rect: Rect,
+                onCopyRequested: (() -> Unit)?,
+                onPasteRequested: (() -> Unit)?,
+                onCutRequested: (() -> Unit)?,
+                onSelectAllRequested: (() -> Unit)?,
+            ) {
+                onCopyRequested?.invoke()
+                status = TextToolbarStatus.Shown
+                latestOnSelectionReady()
+            }
+
+            override fun hide() {
+                status = TextToolbarStatus.Hidden
+            }
+        }
+    }
+    CompositionLocalProvider(LocalTextToolbar provides toolbar) {
+        SelectionContainer(content = content)
+    }
+}
+
+@Composable
+private fun AdventurePlanQuestionEditor(
+    number: Int,
+    question: AdventurePlanQuestion,
+    value: String,
+    onValueChange: (String) -> Unit,
+    onPreset: (String) -> Unit,
+    onSkip: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("$number. ${question.prompt}") },
+            singleLine = false,
+        )
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+        ) {
+            items(question.presets) { preset ->
+                InkTextButton(label = preset, onClick = { onPreset(preset) }, compact = true)
+            }
+            item { InkTextButton(label = "Skip", onClick = onSkip, compact = true) }
+        }
+    }
+}
+
+@Composable
+private fun StartupPane(modifier: Modifier, content: @Composable () -> Unit) {
+    Box(
+        modifier = modifier
+            .padding(InkSpacing.xs)
+            .clip(RoundedCornerShape(inkRadiusMd()))
+            .background(inkTokens().panel)
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f), RoundedCornerShape(inkRadiusMd()))
+            .padding(InkSpacing.sm),
+    ) { content() }
+}
+
+@Composable
+private fun StartupSplit(
+    summary: @Composable () -> Unit,
+    controls: @Composable () -> Unit,
+) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        if (maxWidth > maxHeight) {
+            Row(Modifier.fillMaxSize()) {
+                StartupPane(Modifier.weight(1f).fillMaxSize(), summary)
+                StartupPane(Modifier.weight(1f).fillMaxSize(), controls)
+            }
+        } else {
+            Column(Modifier.fillMaxSize()) {
+                StartupPane(Modifier.weight(1f).fillMaxSize(), summary)
+                StartupPane(Modifier.weight(1f).fillMaxSize(), controls)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SetupSummary(
+    startup: RpgStartupState,
+    heading: String,
+    detail: String,
+    modelLabel: String,
+    onChooseModel: () -> Unit,
+    modelEnabled: Boolean,
+) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+        Text(heading, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text(detail, style = MaterialTheme.typography.bodyMedium, color = inkTokens().secondaryText)
+        Text("Campaign", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+        Text(startup.setup.title, style = MaterialTheme.typography.bodyLarge)
+        Text(startup.setup.setting, style = MaterialTheme.typography.bodyMedium)
+        Text("${startup.setup.modeId} · ${startup.setup.ruleSystem}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        if (startup.setup.characters.isNotBlank()) Text("Party: ${startup.setup.characters}", style = MaterialTheme.typography.bodySmall)
+        Text("AI model", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+        InkOutlinedButton(
+            label = modelLabel,
+            onClick = onChooseModel,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = modelEnabled,
+        )
+        if (!modelEnabled) Text("The model is locked only while this generation is running.", style = MaterialTheme.typography.bodySmall, color = inkTokens().secondaryText)
+        Text("Step ${when (startup.step) { RpgStartupStep.Cyoa -> 1; RpgStartupStep.GeneratingChapterPlan, RpgStartupStep.ChapterPlan -> 2; RpgStartupStep.Verification, RpgStartupStep.GeneratingScene -> 3; RpgStartupStep.Started -> 4 }} of 4", style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+@Composable
+private fun GenerationPanel(
+    startup: RpgStartupState,
+    label: String,
+    onRetry: () -> Unit,
+    onFallback: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
+        Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        LinearProgressIndicator(
+            progress = { startup.generationProgress.coerceIn(0, 100) / 100f },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text("${startup.generationProgress.coerceIn(0, 100)}%", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+        if (startup.generationStatus == RpgGenerationStatus.Failed) {
+            Text(startup.generationError.ifBlank { "Generation failed." }, color = MaterialTheme.colorScheme.error)
+            InkOutlinedButton("Retry", onRetry, Modifier.fillMaxWidth())
+            InkTextButton("Continue with offline fallback", onFallback)
+        } else {
+            Text("The AI Dungeon Master is working. This screen advances only after the result is validated and saved.", style = MaterialTheme.typography.bodyMedium)
+            InkOutlinedButton("Stop AI generation", onCancel, Modifier.fillMaxWidth())
+        }
+    }
+}
+
+/**
+ * The campaign start's save slots: the "CYOA set up" checkpoint, and the starting
+ * template that skips straight to verification.
+ */
+@Composable
+private fun RpgSaveSlotBar(
+    state: RoleplayChatUiState,
+    viewModel: RoleplayChatViewModel,
+    offerTemplate: Boolean,
+    offerSave: Boolean,
+) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+        if (offerTemplate) InkTextButton("Start from template", viewModel::startRpgFromTemplate)
+        if (state.rpgHasCyoaCheckpoint) InkTextButton("Back to CYOA set up", viewModel::restoreRpgCyoaCheckpoint)
+        if (offerSave) InkTextButton("Save as template", viewModel::saveRpgStartAsTemplate)
+    }
+    if (state.rpgSlotMessage.isNotBlank()) {
+        Text(state.rpgSlotMessage, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+    } else if (offerTemplate) {
+        Text(
+            if (state.rpgHasSavedTemplate) "Start from template loads your saved template and skips to verification."
+            else "Start from template fills every answer and the chapter plan, and skips to verification.",
+            style = MaterialTheme.typography.labelSmall,
+            color = inkTokens().secondaryText,
+        )
+    }
+}
+
+@Composable
+private fun RpgStartupWizard(
+    state: RoleplayChatUiState,
+    viewModel: RoleplayChatViewModel,
+    onChooseModel: () -> Unit,
+) {
+    val startup = state.rpgStartup ?: return
+    val tokens = inkTokens()
+    val modelLabel = "Model · " + PromptModelSelection.shortLabel(
+        PromptModelSelection.effectiveModelRef(state.selectedModelRef, state.defaultModelRef),
+        state.writingModels,
+    )
+    val modelEnabled = !state.isStreaming
+    LaunchedEffect(startup.step, startup.cyoaSuggestionStatus, startup.setup) {
+        if (
+            startup.step == RpgStartupStep.Cyoa &&
+            startup.cyoaSuggestionStatus == RpgGenerationStatus.Idle &&
+            startup.cyoaSuggestions.isEmpty()
+        ) {
+            viewModel.generateCyoaSuggestions()
+        }
+    }
+    Box(Modifier.fillMaxSize().background(tokens.background).padding(InkSpacing.xs)) {
+        when (startup.step) {
+            RpgStartupStep.Cyoa -> StartupSplit(
+                summary = { SetupSummary(startup, "Create Your Own Adventure", "Answer in the boxes. Presets fill a box and remain editable; Skip leaves it blank.", modelLabel, onChooseModel, modelEnabled) },
+                controls = {
+                    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
+                        when (startup.cyoaSuggestionStatus) {
+                            RpgGenerationStatus.Generating -> {
+                                Text("Creating suggestions for this campaign…", style = MaterialTheme.typography.labelLarge)
+                                LinearProgressIndicator(
+                                    progress = { startup.cyoaSuggestionProgress.coerceIn(0, 100) / 100f },
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                InkOutlinedButton("Stop AI suggestions", viewModel::cancelRpgSetupGeneration, Modifier.fillMaxWidth())
+                            }
+                            RpgGenerationStatus.Complete -> Text("AI campaign suggestions are mixed with the built-in choices below.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                            RpgGenerationStatus.Failed -> {
+                                Text(startup.cyoaSuggestionError, style = MaterialTheme.typography.bodySmall, color = tokens.secondaryText)
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                                    InkOutlinedButton("Retry AI suggestions", viewModel::generateCyoaSuggestions, Modifier.weight(1f))
+                                    InkTextButton("Use local suggestions", viewModel::useLocalCyoaSuggestions)
+                                }
+                            }
+                            RpgGenerationStatus.Idle -> Unit
+                        }
+                        CompanionModePicker(
+                            selected = com.ihy2ln.weaverse.core.story.StoryCompanionMode.fromId(startup.setup.companions),
+                            onSelect = viewModel::setCampaignCompanions,
+                        )
+                        adventurePlanQuestions().forEachIndexed { index, question ->
+                            val answer = startup.plan.answers.firstOrNull { it.questionId == question.id }
+                            val choices = (startup.cyoaSuggestions[question.id].orEmpty() + question.presets).distinct()
+                            AdventurePlanQuestionEditor(
+                                index + 1,
+                                question.copy(presets = choices),
+                                answer?.value.orEmpty(),
+                                { viewModel.saveCyoaAnswer(question.id, it) },
+                                { viewModel.selectCyoaPreset(question.id, it) },
+                                { viewModel.skipCyoaQuestion(question.id) },
+                            )
+                        }
+                        InkOutlinedButton("Randomize unanswered", viewModel::randomizeUnansweredCyoa, Modifier.fillMaxWidth())
+                        InkTextButton("Refresh AI suggestions", viewModel::generateCyoaSuggestions)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                            InkTextButton("Back to Campaign Setup", viewModel::beginCampaignSetup)
+                            InkTextButton("Save Draft", viewModel::saveAdventurePlan)
+                            InkTextButton("Start over", viewModel::restartCampaignStart)
+                        }
+                        Text(
+                            "Your answers are kept as you go — leaving and coming back returns you here.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = tokens.secondaryText,
+                        )
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                            InkOutlinedButton("Create chapter plan", viewModel::generateChapterPlan, Modifier.weight(1f))
+                        }
+                        RpgSaveSlotBar(state, viewModel, offerTemplate = true, offerSave = true)
+                    }
+                },
+            )
+            RpgStartupStep.GeneratingChapterPlan -> StartupSplit(
+                summary = { SetupSummary(startup, "Chapter One Plan", "Your answers are being turned into a flexible chapter outline and opening-scene guideline.", modelLabel, onChooseModel, modelEnabled) },
+                controls = { GenerationPanel(startup, "Creating Chapter One", viewModel::retryStartupGeneration, viewModel::useAuthoredChapterPlan, viewModel::cancelRpgSetupGeneration) },
+            )
+            RpgStartupStep.ChapterPlan -> StartupSplit(
+                summary = { SetupSummary(startup, "Chapter One Plan", "Edit the AI's rough outline. These beats guide the story but never override player choices.", modelLabel, onChooseModel, modelEnabled) },
+                controls = {
+                    val outline = startup.chapterOutline
+                    val scene = startup.openingScene
+                    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                        if (startup.generationError.isNotBlank()) {
+                            Text(startup.generationError, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                        }
+                        Text("Chapter outline", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        fun update(next: com.ihy2ln.weaverse.feature.roleplay.campaign.RpgChapterOutline) = viewModel.updateChapterOutline(next)
+                        OutlinedTextField(outline.workingTitle, { update(outline.copy(workingTitle = it)) }, Modifier.fillMaxWidth(), label = { Text("Working title") })
+                        OutlinedTextField(outline.premise, { update(outline.copy(premise = it)) }, Modifier.fillMaxWidth(), label = { Text("Premise") }, minLines = 2)
+                        OutlinedTextField(outline.primaryObjective, { update(outline.copy(primaryObjective = it)) }, Modifier.fillMaxWidth(), label = { Text("Primary objective") })
+                        OutlinedTextField(outline.antagonist, { update(outline.copy(antagonist = it)) }, Modifier.fillMaxWidth(), label = { Text("Antagonist or threat") })
+                        OutlinedTextField(outline.importantLocations, { update(outline.copy(importantLocations = it)) }, Modifier.fillMaxWidth(), label = { Text("Important locations") })
+                        OutlinedTextField(outline.beats.joinToString("\n") { "${it.title}: ${it.summary}" }, { value ->
+                            update(outline.copy(beats = value.lines().filter { it.isNotBlank() }.take(5).mapIndexed { i, line ->
+                                RpgChapterBeat("beat-${i + 1}", line.substringBefore(':').trim(), line.substringAfter(':', "").trim(), outline.beats.getOrNull(i)?.completed == true)
+                            }))
+                        }, Modifier.fillMaxWidth(), label = { Text("Three to five story beats") }, minLines = 4)
+                        OutlinedTextField(outline.optionalBeat, { update(outline.copy(optionalBeat = it)) }, Modifier.fillMaxWidth(), label = { Text("Optional companion/exploration beat") })
+                        OutlinedTextField(outline.majorChallenge, { update(outline.copy(majorChallenge = it)) }, Modifier.fillMaxWidth(), label = { Text("Major challenge") })
+                        OutlinedTextField(outline.climax, { update(outline.copy(climax = it)) }, Modifier.fillMaxWidth(), label = { Text("Climax") })
+                        OutlinedTextField(outline.possibleOutcomes, { update(outline.copy(possibleOutcomes = it)) }, Modifier.fillMaxWidth(), label = { Text("Possible outcomes") }, minLines = 2)
+                        Text("Opening-scene guideline", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        fun updateScene(next: com.ihy2ln.weaverse.feature.roleplay.campaign.RpgOpeningSceneGuideline) = viewModel.updateOpeningSceneGuideline(next)
+                        OutlinedTextField(scene.title, { updateScene(scene.copy(title = it)) }, Modifier.fillMaxWidth(), label = { Text("Scene title") })
+                        OutlinedTextField(scene.locationAndAtmosphere, { updateScene(scene.copy(locationAndAtmosphere = it)) }, Modifier.fillMaxWidth(), label = { Text("Location, time, atmosphere") }, minLines = 2)
+                        OutlinedTextField(scene.startingCast, { updateScene(scene.copy(startingCast = it)) }, Modifier.fillMaxWidth(), label = { Text("Starting cast") })
+                        OutlinedTextField(scene.immediateObjective, { updateScene(scene.copy(immediateObjective = it)) }, Modifier.fillMaxWidth(), label = { Text("Immediate objective") })
+                        OutlinedTextField(scene.conflictAndStakes, { updateScene(scene.copy(conflictAndStakes = it)) }, Modifier.fillMaxWidth(), label = { Text("Conflict and stakes") }, minLines = 2)
+                        OutlinedTextField(scene.complication, { updateScene(scene.copy(complication = it)) }, Modifier.fillMaxWidth(), label = { Text("Initial complication") })
+                        OutlinedTextField(scene.firstDecisionHook, { updateScene(scene.copy(firstDecisionHook = it)) }, Modifier.fillMaxWidth(), label = { Text("First decision hook") })
+                        OutlinedTextField(scene.sceneArtTags, { updateScene(scene.copy(sceneArtTags = it)) }, Modifier.fillMaxWidth(), label = { Text("Scene-art tags") })
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                            InkTextButton("Back to CYOA", viewModel::editCyoaPlan)
+                            InkOutlinedButton("Regenerate", viewModel::generateChapterPlan, Modifier.weight(1f))
+                        }
+                        InkTextButton("Save Changes", viewModel::saveAdventurePlan)
+                        InkOutlinedButton("Continue to verification", viewModel::openAdventureVerification, Modifier.fillMaxWidth())
+                        RpgSaveSlotBar(state, viewModel, offerTemplate = false, offerSave = true)
+                    }
+                },
+            )
+            RpgStartupStep.Verification -> StartupSplit(
+                summary = { SetupSummary(startup, "Verify Your Adventure", "Review Campaign Setup, CYOA answers, the chapter outline, and the opening scene before generation.", modelLabel, onChooseModel, modelEnabled) },
+                controls = {
+                    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
+                        Text("Campaign Setup", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(buildString {
+                            appendLine("Title: ${startup.setup.title}")
+                            appendLine("Setting: ${startup.setup.setting}")
+                            appendLine("Mode: ${startup.setup.modeId}")
+                            appendLine("Rules: ${startup.setup.ruleSystem}")
+                            appendLine("Party: ${startup.setup.characters.ifBlank { "Not selected" }}")
+                            appendLine("POV: ${startup.setup.pointOfView}; ${startup.setup.tense}")
+                            append("House rules: ${startup.setup.houseRules.ifBlank { "None" }}")
+                        })
+                        InkTextButton("Edit Campaign", viewModel::beginCampaignSetup)
+                        Text("CYOA answers", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        startup.plan.answers.forEach { Text("${it.questionId.replaceFirstChar(Char::uppercase)}: ${if (it.skipped) "Skipped" else it.value}") }
+                        InkTextButton("Edit CYOA", viewModel::editCyoaPlan)
+                        Text("Chapter One Outline", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(buildString {
+                            appendLine(startup.chapterOutline.workingTitle)
+                            appendLine(startup.chapterOutline.premise)
+                            appendLine("Goal: ${startup.chapterOutline.primaryObjective}")
+                            appendLine("Threat: ${startup.chapterOutline.antagonist}")
+                            appendLine("Locations: ${startup.chapterOutline.importantLocations}")
+                            startup.chapterOutline.beats.forEachIndexed { index, beat -> appendLine("${index + 1}. ${beat.title}: ${beat.summary}") }
+                            appendLine("Optional beat: ${startup.chapterOutline.optionalBeat}")
+                            appendLine("Challenge: ${startup.chapterOutline.majorChallenge}")
+                            appendLine("Climax: ${startup.chapterOutline.climax}")
+                            append("Outcomes: ${startup.chapterOutline.possibleOutcomes}")
+                        })
+                        Text("Opening-Scene Guideline", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(buildString {
+                            appendLine(startup.openingScene.title)
+                            appendLine("Location: ${startup.openingScene.locationAndAtmosphere}")
+                            appendLine("Cast: ${startup.openingScene.startingCast}")
+                            appendLine("Objective: ${startup.openingScene.immediateObjective}")
+                            appendLine("Conflict: ${startup.openingScene.conflictAndStakes}")
+                            appendLine("Complication: ${startup.openingScene.complication}")
+                            appendLine("Decision: ${startup.openingScene.firstDecisionHook}")
+                            append("Art tags: ${startup.openingScene.sceneArtTags}")
+                        })
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                            InkTextButton("Edit Chapter Plan", viewModel::editChapterPlan)
+                            InkTextButton("Start over", viewModel::restartCampaignStart)
+                        }
+                        InkOutlinedButton("Verify and Generate Scene One", viewModel::verifyAndGenerateOpeningScene, Modifier.fillMaxWidth())
+                        RpgSaveSlotBar(state, viewModel, offerTemplate = false, offerSave = true)
+                    }
+                },
+            )
+            RpgStartupStep.GeneratingScene -> StartupSplit(
+                summary = { SetupSummary(startup, "Scene One", "The verified chapter plan is being turned into the playable opening scene.", modelLabel, onChooseModel, modelEnabled) },
+                controls = { GenerationPanel(startup, "Generating Scene One", viewModel::retryStartupGeneration, viewModel::useAuthoredOpeningScene, viewModel::cancelRpgSetupGeneration) },
+            )
+            RpgStartupStep.Started -> Unit
+        }
+    }
+}
+
+/**
+ * The RPG session reads as an illustrated adventure page rather than a chat.
+ * Messages remain the persistence/generation engine, but are rendered as story
+ * paragraphs and clearly separated player actions.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun AdventurePlayScreen(
+    chatId: String,
+    onChromeChange: (RoleplayChatChrome?) -> Unit = {},
+    onOpenCodexEntry: (String) -> Unit = {},
+    onOpenCharacter: (String) -> Unit = {},
+    onOpenPersona: (String) -> Unit = {},
+    viewModel: RoleplayChatViewModel = hiltViewModel(),
+    partyViewModel: PartyViewModel = hiltViewModel(),
+) {
+    LaunchedEffect(chatId) {
+        viewModel.bindChat(chatId)
+        viewModel.setDisplayMode("dungeonMaster")
+    }
+    val state by viewModel.uiState.collectAsState()
+    val partyState by partyViewModel.uiState.collectAsState()
+    val tokens = inkTokens()
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    var captureMenuFor by remember { mutableStateOf<RpMessageUi?>(null) }
+    val storyState = rememberLazyListState()
+    val planScrollState = rememberScrollState()
+    val planScope = rememberCoroutineScope()
+    var modelsOpen by remember { mutableStateOf(false) }
+    // Height the player dragged the prompt dock to; 0 means size it to its content.
+    var promptDockHeight by rememberSaveable { mutableStateOf(0f) }
+    var showAddText by remember { mutableStateOf(false) }
+    var selectionAddTextVisible by remember { mutableStateOf(false) }
+    var sceneArtMenuOpen by remember { mutableStateOf(false) }
+    var showAppPictures by remember { mutableStateOf(false) }
+    var showCharacterCards by rememberSaveable { mutableStateOf(false) }
+    var showAdventureMap by rememberSaveable { mutableStateOf(false) }
+    // 0 normal, 1 collapsed (thin strip), 2 enlarged.
+    var sceneArtSize by rememberSaveable { mutableStateOf(0) }
+    var modelSearch by rememberSaveable { mutableStateOf("") }
+    var setupSpotlight by rememberSaveable { mutableStateOf("") }
+    var setupSituation by rememberSaveable { mutableStateOf("") }
+    var setupPlot by rememberSaveable { mutableStateOf("") }
+    var setupFirstGoal by rememberSaveable { mutableStateOf("") }
+    var setupFirstScene by rememberSaveable { mutableStateOf("") }
+    var setupParty by rememberSaveable { mutableStateOf("") }
+    var setupGoal by rememberSaveable { mutableStateOf("") }
+    var setupTone by rememberSaveable { mutableStateOf("") }
+    var setupComplication by rememberSaveable { mutableStateOf("") }
+    // The dock keeps its own digit buffers; only the resulting range matters here.
+    val wordRangeValid = state.minimumOutputWords in PromptWordLimit.Minimum..PromptWordLimit.Maximum &&
+        state.outputWords in PromptWordLimit.Minimum..PromptWordLimit.Maximum &&
+        state.minimumOutputWords <= state.outputWords
+
+    LaunchedEffect(state.title) {
+        onChromeChange(
+            RoleplayChatChrome(
+                title = state.title.ifBlank { "Adventure" },
+                displayMode = "dungeonMaster",
+                onDisplayMode = {},
+                showSwitcher = false,
+            ),
+        )
+    }
+    DisposableEffect(Unit) { onDispose { onChromeChange(null) } }
+
+    val mediaPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia(),
+    ) { uris ->
+        if (uris.isNotEmpty()) viewModel.attachMedia(uris) else viewModel.clearMediaPickRequest()
+    }
+    val startDictate = rememberSpeechToText { spoken ->
+        viewModel.onInputChange(mergeSpokenText(state.input, spoken))
+    }
+    LaunchedEffect(state.mediaPickRequestId) {
+        if (state.mediaPickRequestId > 0L) {
+            mediaPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            // Consume the request so returning to this screen never re-launches
+            // the picker on its own.
+            viewModel.clearMediaPickRequest()
+        }
+    }
+    LaunchedEffect(state.messages.size, state.streamingText) {
+        val target = state.messages.size + if (state.streamingText.isNotBlank()) 1 else 0
+        if (target > 0) runCatching { storyState.animateScrollToItem(target - 1) }
+    }
+
+    val sceneArt = state.mediaPanels.lastOrNull { it.path.isNotBlank() && !it.isAudio }
+    val promptDockMaxHeight = run {
+        val keyboard = with(LocalDensity.current) { WindowInsets.ime.getBottom(this).toDp() }
+        (LocalConfiguration.current.screenHeightDp.dp - keyboard - 96.dp).coerceAtLeast(80.dp)
+    }
+    val startupPending = state.rpgStartup == null && state.adventureStartupPhase in setOf(
+        AdventureStartupPhase.Character,
+        AdventureStartupPhase.Choose,
+        AdventureStartupPhase.Questions,
+        AdventureStartupPhase.CuratedQuestions,
+        AdventureStartupPhase.Review,
+    )
+
+    if (state.rpgStartup?.step != null && state.rpgStartup?.step != RpgStartupStep.Started) {
+        RpgStartupWizard(state, viewModel, onChooseModel = { modelsOpen = true })
+        state.campaignSetupInitial?.let { initial ->
+            CampaignOptionsDialog(
+                initial = initial,
+                characterOptions = state.campaignCharacterOptions,
+                onDismiss = viewModel::dismissCampaignOptions,
+                onApply = viewModel::applyCampaignSetup,
+                onRestart = viewModel::restartAdventure,
+                customSettings = state.customSettingTemplates,
+                customSettingDetails = state.customSettingDetailTemplates,
+                favoriteSettingIds = state.favoriteSettingTemplateIds,
+                favoriteSettingDetailIds = state.favoriteSettingDetailIds,
+                onToggleSettingFavorite = viewModel::toggleFavoriteSettingTemplate,
+                onToggleSettingDetailFavorite = viewModel::toggleFavoriteSettingDetail,
+                onAddSetting = viewModel::addSettingTemplate,
+                onRemoveSetting = viewModel::removeSettingTemplate,
+                onAddSettingDetail = viewModel::addSettingDetailTemplate,
+                onRemoveSettingDetail = viewModel::removeSettingDetailTemplate,
+            )
+        }
+        if (modelsOpen) {
+            PromptModelPickerDialog(
+                models = state.writingModels,
+                search = modelSearch,
+                onSearchChange = { modelSearch = it },
+                selectedRef = state.selectedModelRef,
+                defaultRef = state.defaultModelRef,
+                onSelect = { id ->
+                    viewModel.selectModel(id)
+                    modelsOpen = false
+                },
+                onUseDefault = {
+                    viewModel.useDefaultModel()
+                    modelsOpen = false
+                },
+                onDismiss = { modelsOpen = false },
+            )
+        }
+        return
+    }
+
+    if (showAdventureMap && state.rpgCampaign != null) {
+        Column(Modifier.fillMaxSize().background(tokens.background)) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = InkSpacing.md, vertical = InkSpacing.xs),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                InkTextButton("Back to adventure", { showAdventureMap = false })
+            }
+            RpgAdventureMapScreen(
+                state = state.rpgCampaign!!,
+                onSelectNode = { node ->
+                    viewModel.enterAdventureMapNode(node.id)
+                    showAdventureMap = false
+                },
+                onExploreFreely = viewModel::exploreRpgFreely,
+                onReturnToChapter = viewModel::returnToRpgChapter,
+            )
+        }
+        return
+    }
+
+    state.activeRpgCombat?.let { combat ->
+        val unitArtPaths = buildMap {
+            (partyState.players + partyState.cast).forEach { member ->
+                if (member.portraitPath.isNotBlank()) {
+                    put(member.id, member.portraitPath)
+                    member.sheetCharacterId?.let { put(it, member.portraitPath) }
+                }
+            }
+        }
+        RpgCombatScreen(
+            state = combat,
+            campaignRuleset = state.rpgCombatMode,
+            selectedCardId = state.selectedCombatCardId,
+            selectedTargetId = state.selectedCombatTargetId,
+            preview = state.combatActionPreview,
+            textAction = state.combatTextAction,
+            unitArtPaths = unitArtPaths,
+            onRulesetSelected = viewModel::selectEncounterRuleset,
+            onCardSelected = viewModel::selectCombatCard,
+            onTargetSelected = viewModel::selectCombatTarget,
+            onTextActionChange = viewModel::onCombatTextAction,
+            onConfirmAction = viewModel::confirmCombatAction,
+            onRetreat = viewModel::retreatRpgCombat,
+            onFinish = viewModel::finishRpgCombat,
+            modifier = Modifier.fillMaxSize(),
+        )
+        return
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(tokens.background),
+    ) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    when (sceneArtSize) {
+                        1 -> Modifier.height(48.dp)
+                        else -> Modifier.weight(0.5f)
+                    },
+                )
+                .then(
+                    if (sceneArtSize == 1) {
+                        Modifier
+                    } else {
+                        Modifier
+                    },
+                )
+                .padding(horizontal = InkSpacing.md, vertical = if (sceneArtSize == 1) 2.dp else InkSpacing.sm)
+                .clip(RoundedCornerShape(inkRadiusMd()))
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.24f),
+                            tokens.panel,
+                        ),
+                    ),
+                ),
+            // The whole panel is intentionally NOT clickable: an accidental tap
+            // (e.g. back-navigation focus) used to auto-open the gallery. The
+            // collapsed "Scene art" chip below is the only trigger.
+            contentAlignment = Alignment.Center,
+        ) {
+            if (sceneArtSize != 1) {
+            if (sceneArt != null) {
+                AsyncImage(
+                    model = File(sceneArt.path),
+                    contentDescription = "Current adventure scene",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                        .background(
+                            Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.72f))),
+                        )
+                        .padding(InkSpacing.md),
+                ) {
+                    Text(
+                        "Current scene",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White,
+                    )
+                }
+            } else {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("◈", style = MaterialTheme.typography.displaySmall, color = tokens.activePill)
+                    Text(
+                        "No scene art yet",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        "Use the Scene art chip to add one.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = tokens.secondaryText,
+                    )
+                }
+            }
+            }
+            // Collapsed trigger — the only way to open a picture source. The menu
+            // offers the app Pictures library, the device, and panel sizing.
+            Box(modifier = Modifier.align(Alignment.TopEnd)) {
+                Text(
+                    if (sceneArtSize == 1) "▤ Scene art ▸" else "▤ Scene art ▾",
+                    modifier = Modifier
+                        .padding(6.dp)
+                        .clip(RoundedCornerShape(inkRadiusSm()))
+                        .background(Color.Black.copy(alpha = 0.55f))
+                        .clickable(onClickLabel = "Choose scene art") { sceneArtMenuOpen = true }
+                        .padding(horizontal = InkSpacing.sm, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color.White,
+                )
+                DropdownMenu(
+                    expanded = sceneArtMenuOpen,
+                    onDismissRequest = { sceneArtMenuOpen = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("App Pictures…") },
+                        onClick = {
+                            sceneArtMenuOpen = false
+                            showAppPictures = true
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Device gallery…") },
+                        onClick = {
+                            sceneArtMenuOpen = false
+                            viewModel.requestMediaPick()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(if (sceneArtSize == 1) "Expand" else "Collapse") },
+                        onClick = {
+                            sceneArtSize = if (sceneArtSize == 1) 0 else 1
+                            sceneArtMenuOpen = false
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(if (sceneArtSize == 2) "Shrink" else "Enlarge") },
+                        onClick = {
+                            sceneArtSize = if (sceneArtSize == 2) 0 else 2
+                            sceneArtMenuOpen = false
+                        },
+                    )
+                }
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .weight(
+                    when (sceneArtSize) {
+                        1 -> 1f
+                        else -> 0.5f
+                    },
+                )
+                .fillMaxWidth()
+                .padding(horizontal = InkSpacing.lg),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column {
+                    Text(
+                        if (startupPending) "Adventure setup" else "Scene ${state.sceneNumber}",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                Text(
+                    if (state.userIsDungeonMaster) "DM mode · You run the world" else "Adventure story",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.secondaryText,
+                )
+                Text(
+                    "RPG mode · ${state.rpgCombatMode.label}",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (!startupPending) {
+                        InkTextButton(
+                            label = "Map",
+                            onClick = { showAdventureMap = true },
+                            compact = true,
+                        )
+                        InkTextButton(
+                            label = "Character cards",
+                            onClick = { showCharacterCards = true },
+                            compact = true,
+                        )
+                    }
+                    InkTextButton(
+                        label = "Setup",
+                        onClick = viewModel::beginCampaignSetup,
+                        compact = true,
+                    )
+                    if (!startupPending) {
+                        if (state.canGoToPreviousScene) {
+                            InkTextButton(
+                                label = "‹ Previous",
+                                onClick = viewModel::previousScene,
+                                compact = true,
+                            )
+                        }
+                        if (state.canUndoSceneAdvance) {
+                            InkTextButton(
+                                label = "Stay here",
+                                onClick = viewModel::undoLastSceneAdvance,
+                                compact = true,
+                            )
+                        }
+                        InkTextButton(
+                            label = if (state.viewingCurrentScene) "Next scene ›" else "Next ›",
+                            onClick = viewModel::advanceScene,
+                            compact = true,
+                        )
+                    }
+                }
+            }
+            LazyColumn(
+                state = storyState,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(InkSpacing.sm),
+            ) {
+                if (state.messages.isEmpty() && state.streamingText.isBlank()) {
+                    item("empty") {
+                        Text(
+                            "The scene is waiting for its first action.",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = tokens.secondaryText,
+                        )
+                    }
+                }
+                items(state.messages, key = { it.id }) { message ->
+                    val menuExpanded = captureMenuFor?.id == message.id
+                    if (message.role == "user") {
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                if (message.isAdventureSetup) {
+                                    "Setup answer — ${message.text}"
+                                } else if (state.userIsDungeonMaster) {
+                                    "Your DM prompt — ${message.text}"
+                                } else {
+                                    "Your action — ${message.text}"
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontStyle = FontStyle.Italic,
+                                color = tokens.secondaryText,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .combinedClickable(
+                                        onClick = {},
+                                        onLongClick = { captureMenuFor = message },
+                                    )
+                                    .background(tokens.hover, RoundedCornerShape(inkRadiusMd()))
+                                    .padding(InkSpacing.sm),
+                            )
+                            CaptureMenu(
+                                expanded = menuExpanded,
+                                onClose = { captureMenuFor = null },
+                                onAiSort = {
+                                    captureMenuFor = null
+                                    viewModel.captureFromText(message.text, "ai")
+                                },
+                                onRoster = {
+                                    captureMenuFor = null
+                                    viewModel.captureFromText(message.text, "roster")
+                                },
+                                onInventory = {
+                                    captureMenuFor = null
+                                    viewModel.captureFromText(message.text, "inventory")
+                                },
+                                onCopy = {
+                                    clipboard.setText(AnnotatedString(message.text))
+                                    captureMenuFor = null
+                                },
+                            )
+                        }
+                    } else {
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                if (message.isAdventureSetup) {
+                                    Text(
+                                        "ADVENTURE SETUP · AI DM",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = tokens.activePill,
+                                        modifier = Modifier.padding(bottom = InkSpacing.xs),
+                                    )
+                                }
+                                message.rollResult?.let { roll ->
+                                    AdventureRollCard(
+                                        roll = roll,
+                                        modifier = Modifier.padding(bottom = InkSpacing.xs),
+                                    )
+                                }
+                                if (message.actionResult.isNotBlank()) {
+                                    Text(
+                                        "ACTION RESULT · ${message.actionResult.uppercase()}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = tokens.activePill,
+                                        modifier = Modifier
+                                            .background(tokens.hover, RoundedCornerShape(inkRadiusMd()))
+                                            .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
+                                    )
+                                }
+                                // SelectionContainer enables native copy of any
+                                // span the user selects, not just whole messages.
+                                AddTextSelectionContainer(onSelectionReady = { selectionAddTextVisible = true }) {
+                                    CodexMentionText(
+                                        text = message.text,
+                                        targets = state.codexTargets,
+                                        baseColor = tokens.primaryText,
+                                        linkColor = MaterialTheme.colorScheme.primary,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        onTap = onOpenCodexEntry,
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                }
+                            }
+                            CaptureMenu(
+                                expanded = menuExpanded,
+                                onClose = { captureMenuFor = null },
+                                onAiSort = {
+                                    captureMenuFor = null
+                                    viewModel.captureFromText(message.text, "ai")
+                                },
+                                onRoster = {
+                                    captureMenuFor = null
+                                    viewModel.captureFromText(message.text, "roster")
+                                },
+                                onInventory = {
+                                    captureMenuFor = null
+                                    viewModel.captureFromText(message.text, "inventory")
+                                },
+                                onCopy = {
+                                    clipboard.setText(AnnotatedString(message.text))
+                                    captureMenuFor = null
+                                },
+                            )
+                        }
+                    }
+                }
+            if (state.streamingText.isNotBlank()) {
+                item("streaming") {
+                    AddTextSelectionContainer(onSelectionReady = { selectionAddTextVisible = true }) {
+                        Text(
+                            state.streamingText,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = tokens.primaryText,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (state.adventureStartupPhase == AdventureStartupPhase.Choose) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = InkSpacing.lg),
+                verticalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+            ) {
+                Text(
+                    "Curated starts",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = tokens.activePill,
+                )
+                Text(
+                    "One tap uses this campaign’s setting details, ${state.rpgCombatMode.label} mode, rules, and house rules.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.secondaryText,
+                )
+                adventureStartupPresets().forEach { preset ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(inkRadiusSm()))
+                            .background(tokens.panel)
+                            .border(
+                                1.dp,
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                                RoundedCornerShape(inkRadiusSm()),
+                            )
+                            .clickable(
+                                enabled = !state.isStreaming,
+                                onClickLabel = "Play ${preset.title}",
+                            ) { viewModel.startAdventurePreset(preset.id) }
+                            .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
+                    ) {
+                        Column {
+                            Text(
+                                preset.title,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                preset.description,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = tokens.secondaryText,
+                                maxLines = 2,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (state.adventureStartupPhase == AdventureStartupPhase.Questions ||
+            state.adventureStartupPhase == AdventureStartupPhase.CuratedQuestions) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = InkSpacing.lg)
+                    .verticalScroll(planScrollState),
+                verticalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+            ) {
+                Text("Create Your Own Adventure", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                Text("Answer each open-ended question, tap a preset, or skip it. The prompt writer below remains available for your own wording.", style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
+                if (state.isStreaming) {
+                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                        LinearProgressIndicator(
+                            progress = { state.adventurePlanProgress.coerceIn(1, 100) / 100f },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Text(
+                            "${state.adventurePlanProgress.coerceIn(1, 100)}% · AI Dungeon Master is creating your first scene…",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+                AdventurePlanQuestionEditor(1, adventurePlanQuestions()[0], setupPlot, { setupPlot = it }, { setupPlot = it }, { setupPlot = "" })
+                AdventurePlanQuestionEditor(2, adventurePlanQuestions()[1], setupFirstGoal, { setupFirstGoal = it }, { setupFirstGoal = it }, { setupFirstGoal = "" })
+                AdventurePlanQuestionEditor(3, adventurePlanQuestions()[2], setupFirstScene, { setupFirstScene = it }, { setupFirstScene = it }, { setupFirstScene = "" })
+                AdventurePlanQuestionEditor(4, adventurePlanQuestions()[3], setupParty, { setupParty = it }, { setupParty = it }, { setupParty = "" })
+                AdventurePlanQuestionEditor(5, adventurePlanQuestions()[4], setupTone, { setupTone = it }, { setupTone = it }, { setupTone = "" })
+                AdventurePlanQuestionEditor(6, adventurePlanQuestions()[5], setupComplication, { setupComplication = it }, { setupComplication = it }, { setupComplication = "" })
+                Text("Random plan options", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                adventureSetupQuickResponses().filter { it.isRandom }.forEach { response ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                        InkOutlinedButton(label = response.title, onClick = {
+                            setupPlot = "Randomize"
+                            setupFirstGoal = "Randomize"
+                            setupFirstScene = "Randomize"
+                            setupParty = "Randomize"
+                            setupTone = "Randomize"
+                            setupComplication = "Randomize"
+                        }, modifier = Modifier.fillMaxWidth(), enabled = !state.isStreaming)
+                    }
+                }
+                InkOutlinedButton(
+                    label = "Create my first scene",
+                    onClick = {
+                        val answer = listOf(
+                            "1. Plot: ${setupPlot.trim().ifBlank { "[SKIPPED]" }}",
+                            "2. First goal: ${setupFirstGoal.trim().ifBlank { "[SKIPPED]" }}",
+                            "3. First scene: ${setupFirstScene.trim().ifBlank { "[SKIPPED]" }}",
+                            "4. Party: ${setupParty.trim().ifBlank { "[SKIPPED]" }}",
+                            "5. Tone: ${setupTone.trim().ifBlank { "[SKIPPED]" }}",
+                            "6. Complication: ${setupComplication.trim().ifBlank { "[SKIPPED]" }}",
+                        ).joinToString("\n")
+                        viewModel.submitAdventurePlan(answer)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !state.isStreaming,
+                )
+            }
+        }
+
+        if (state.adventureStartupPhase == AdventureStartupPhase.Review) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = InkSpacing.lg),
+                verticalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+            ) {
+                Text("Campaign outline review", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                Text("The AI has drafted a rough plot outline from your New Campaign setup and Adventure Plan. Review it above, then start the first scene or edit the plan.", style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                    InkOutlinedButton(label = "Continue to first scene", onClick = { viewModel.submitAdventurePlan("Accept outline and start adventure") }, modifier = Modifier.weight(1f), enabled = !state.isStreaming)
+                    InkTextButton(label = "Edit plan", onClick = { planScope.launch { planScrollState.animateScrollTo(0) } }, compact = true)
+                }
+            }
+        }
+
+        if (state.errorMessage.isNotBlank()) {
+            Text(
+                state.errorMessage,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = InkSpacing.lg),
+            )
+        }
+        if (state.composerStatus.isNotBlank()) {
+            Text(
+                state.composerStatus,
+                style = MaterialTheme.typography.labelMedium,
+                color = tokens.secondaryText,
+                modifier = Modifier.padding(horizontal = InkSpacing.lg),
+            )
+        }
+        RpgSceneInfoStrip(
+            sceneArtLabel = state.rpgSceneArt?.let { art ->
+                "AI scene art · ${art.category}${art.mood.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()} · ${art.assetId}"
+            },
+            usageText = state.lastUsage,
+            modifier = Modifier.padding(horizontal = InkSpacing.lg),
+        )
+        if (selectionAddTextVisible) Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = InkSpacing.lg),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            InkTextButton(
+                label = "＋ Add text to…",
+                onClick = {
+                    selectionAddTextVisible = false
+                    showAddText = true
+                },
+            )
+        }
+        RpgPromptDock(
+            input = state.input,
+            onInputChange = viewModel::onInputChange,
+            placeholder = if (state.rpgActionChoices.isNotEmpty()) {
+                "Your own action…"
+            } else if (state.adventureStartupPhase == AdventureStartupPhase.Character) {
+                "Describe your character or say surprise me…"
+            } else if (state.adventureStartupPhase == AdventureStartupPhase.Choose) {
+                "Choose 1, 2, 3, or a curated start…"
+            } else if (state.adventureStartupPhase == AdventureStartupPhase.Questions) {
+                "Answer the AI DM's setup questions…"
+            } else if (state.adventureStartupPhase == AdventureStartupPhase.CuratedQuestions) {
+                "Add details or say randomize…"
+            } else if (state.adventureStartupPhase == AdventureStartupPhase.Review) {
+                "Accept the outline or describe an edit…"
+            } else if (state.userIsDungeonMaster) {
+                "What happens next? · Describe the scene, NPC response, or ruling…"
+            } else {
+                "What do you do? · Describe your action…"
+            },
+            streaming = state.isStreaming,
+            aiMode = startupPending || state.entryMode != "nai",
+            onToggleMode = {
+                if (!startupPending) {
+                    viewModel.setEntryMode(if (state.entryMode == "nai") "ai" else "nai")
+                }
+            },
+            contextLabel = state.contextMeter?.label.orEmpty(),
+            minimumWords = state.minimumOutputWords,
+            maximumWords = state.outputWords,
+            onMinimumWords = viewModel::updateMinimumOutputWords,
+            onMaximumWords = viewModel::updateOutputWords,
+            wordRangeValid = wordRangeValid,
+            modelLabel = PromptModelSelection.shortLabel(
+                PromptModelSelection.effectiveModelRef(state.selectedModelRef, state.defaultModelRef),
+                state.writingModels,
+            ),
+            models = state.writingModels,
+            onPickModel = viewModel::selectModel,
+            onUseDefaultModel = viewModel::useDefaultModel,
+            choices = if (startupPending) emptyList() else state.rpgActionChoices,
+            presetGroups = if (startupPending) emptyList() else rpgPresetGroups(state.rpgCombatMode),
+            onPreset = { preset ->
+                when (preset.id) {
+                    RpgPresetParty -> showCharacterCards = true
+                    RpgPresetCombat -> viewModel.beginRpgCombat()
+                    else -> viewModel.onInputChange(preset.label)
+                }
+            },
+            canSubmit = state.input.isNotBlank(),
+            onSubmit = viewModel::send,
+            onCancel = viewModel::cancelGeneration,
+            onClear = viewModel::clearInput,
+            onUndoClear = viewModel::undoClearInput,
+            onRetry = viewModel::regenerateLatestReply,
+            onContinue = viewModel::continueAdventure,
+            onMicTap = { if (!state.isStreaming) startDictate() },
+            onRoll = viewModel::rollAction,
+            onAdd = viewModel::requestMediaPick,
+            onAddCharacter = viewModel::addRosterCharacter,
+            onAddItem = viewModel::addInventoryItem,
+            pinnedHeightDp = promptDockHeight,
+            onPinnedHeightChange = { promptDockHeight = it },
+            availableHeight = promptDockMaxHeight,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
+        )
+    }
+    PixelDiceRollOverlay(
+        roll = state.activeRoll,
+        sequence = state.rollAnimationId,
+        modifier = Modifier.align(Alignment.Center),
+    )
+    if (modelsOpen) {
+        PromptModelPickerDialog(
+            models = state.writingModels,
+            search = modelSearch,
+            onSearchChange = { modelSearch = it },
+            selectedRef = state.selectedModelRef,
+            defaultRef = state.defaultModelRef,
+            onSelect = { id ->
+                viewModel.selectModel(id)
+                modelsOpen = false
+            },
+            onUseDefault = {
+                viewModel.useDefaultModel()
+                modelsOpen = false
+            },
+            onDismiss = { modelsOpen = false },
+        )
+    }
+    if (showAppPictures) {
+        com.ihy2ln.weaverse.feature.media.MediaLibraryPickerDialog(
+            title = "Choose scene art",
+            onSelect = { image ->
+                showAppPictures = false
+                viewModel.attachExistingMedia(image.id)
+            },
+            onDismiss = { showAppPictures = false },
+        )
+    }
+    if (showCharacterCards) {
+        CampaignCharacterCardsDialog(
+            members = partyState.players.filter { it.id == state.activeCampaignPersonaId } + partyState.cast,
+            mode = state.rpgCombatMode,
+            onDismiss = { showCharacterCards = false },
+            onOpen = { member ->
+                showCharacterCards = false
+                if (member.isPlayer && member.sheetCharacterId == null) {
+                    onOpenPersona(member.id)
+                } else {
+                    onOpenCharacter(member.sheetCharacterId ?: member.id)
+                }
+            },
+        )
+    }
+    if (showAddText) {
+        AddTextDialog(
+            initialText = clipboard.getText()?.text.orEmpty(),
+            onDismiss = { showAddText = false },
+            onStatus = { message ->
+                android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
+            },
+        )
+    }
+    state.captureDialog?.let { dialog ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissCapture,
+            title = {
+                Text(
+                    when (dialog.kind) {
+                        "roster" -> "Add to roster"
+                        "ai" -> "AI sorted into sections"
+                        else -> "Add to inventory"
+                    },
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        if (dialog.kind == "ai") {
+                            "The AI split the text into sections — uncheck anything to skip, then place."
+                        } else {
+                            "Found in the scene — uncheck anything to skip:"
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = tokens.secondaryText,
+                        modifier = Modifier.padding(bottom = InkSpacing.xs),
+                    )
+                    dialog.candidates.forEach { candidate ->
+                        if (dialog.kind == "ai") {
+                            val section = when {
+                                candidate.name.startsWith("[C]") -> "Character sheet"
+                                candidate.name.startsWith("[I]") -> "Inventory"
+                                else -> "Codex"
+                            }
+                            Text(
+                                section,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = tokens.secondaryText,
+                                modifier = Modifier.padding(top = InkSpacing.xs),
+                            )
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { viewModel.toggleCaptureCandidate(candidate.name) },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(
+                                checked = candidate.selected,
+                                onCheckedChange = { viewModel.toggleCaptureCandidate(candidate.name) },
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    candidate.name.removePrefix("[C] ").removePrefix("[I] ").removePrefix("[L] "),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                if (candidate.summary.isNotBlank()) {
+                                    Text(
+                                        candidate.summary,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = tokens.secondaryText,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                InkTextButton(label = "Place selected", onClick = viewModel::confirmCapture)
+            },
+            dismissButton = {
+                InkTextButton(label = "Cancel", onClick = viewModel::dismissCapture)
+            },
+        )
+    }
+    state.campaignSetupInitial?.let { initial ->
+        CampaignOptionsDialog(
+            initial = initial,
+            characterOptions = state.campaignCharacterOptions,
+            onDismiss = viewModel::dismissCampaignOptions,
+            onApply = viewModel::applyCampaignSetup,
+            onRestart = viewModel::restartAdventure,
+            customSettings = state.customSettingTemplates,
+            customSettingDetails = state.customSettingDetailTemplates,
+            favoriteSettingIds = state.favoriteSettingTemplateIds,
+            favoriteSettingDetailIds = state.favoriteSettingDetailIds,
+            onToggleSettingFavorite = viewModel::toggleFavoriteSettingTemplate,
+            onToggleSettingDetailFavorite = viewModel::toggleFavoriteSettingDetail,
+            onAddSetting = viewModel::addSettingTemplate,
+            onRemoveSetting = viewModel::removeSettingTemplate,
+            onAddSettingDetail = viewModel::addSettingDetailTemplate,
+            onRemoveSettingDetail = viewModel::removeSettingDetailTemplate,
+        )
+    }
+    }
+}
+
+@Composable
+private fun CampaignCharacterCardsDialog(
+    members: List<PartyMemberUi>,
+    mode: RpgCombatRuleset,
+    onDismiss: () -> Unit,
+    onOpen: (PartyMemberUi) -> Unit,
+) {
+    val tokens = inkTokens()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                when (mode) {
+                    RpgCombatRuleset.CardBattle -> "Tactical roster cards"
+                    RpgCombatRuleset.DndD20 -> "Party character sheets"
+                    RpgCombatRuleset.TextReactions -> "Party roster"
+                },
+            )
+        },
+        text = {
+            if (members.isEmpty()) {
+                Text("No character cards are attached to this party yet.", color = tokens.secondaryText)
+            } else {
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
+                ) {
+                    items(members, key = { "campaign-card-${it.isPlayer}-${it.id}" }) { member ->
+                        Column(
+                            modifier = Modifier
+                                .width(260.dp)
+                                .heightIn(min = 390.dp, max = 540.dp)
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(tokens.panel)
+                                .border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(18.dp))
+                                .padding(6.dp)
+                                .border(1.dp, tokens.hairline, RoundedCornerShape(13.dp))
+                                .padding(InkSpacing.sm),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(
+                                if (member.isPlayer) "PLAYER CHARACTER" else "PARTY CHARACTER",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(if (mode == RpgCombatRuleset.TextReactions) 220.dp else 160.dp)
+                                    .padding(vertical = InkSpacing.xs)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(tokens.hover)
+                                    .border(1.dp, tokens.hairline, RoundedCornerShape(10.dp)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (member.portraitPath.isNotBlank()) {
+                                    AsyncImage(
+                                        model = File(member.portraitPath),
+                                        contentDescription = "${member.name} character-card art",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                } else {
+                                    com.ihy2ln.weaverse.feature.roleplay.friends.CharacterAvatar(
+                                        name = member.name,
+                                        colorHex = member.avatarColorHex,
+                                        size = 128.dp,
+                                        present = member.isPlayer,
+                                    )
+                                }
+                            }
+                            Text(
+                                member.name,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            if (member.sheetLabel.isNotBlank()) {
+                                Text(
+                                    "${member.sheetLabel} · HP ${member.hpLabel} · AC ${member.armorClassLabel}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = tokens.secondaryText,
+                                )
+                            }
+                            member.sheet?.let { sheet ->
+                                when (mode) {
+                                    RpgCombatRuleset.CardBattle -> {
+                                        Text(
+                                            sheet.tacticalRole.uppercase(),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.padding(top = InkSpacing.xs),
+                                        )
+                                        Row(
+                                            Modifier.fillMaxWidth().padding(top = 4.dp),
+                                            horizontalArrangement = Arrangement.SpaceEvenly,
+                                        ) {
+                                            CompactCardStat("ATK", sheet.tacticalAttack)
+                                            CompactCardStat("DEF", sheet.tacticalDefense)
+                                            CompactCardStat("SUP", sheet.tacticalSupport)
+                                            CompactCardStat("SPD", sheet.tacticalSpeed)
+                                        }
+                                        Row(
+                                            Modifier.fillMaxWidth().padding(top = 4.dp),
+                                            horizontalArrangement = Arrangement.SpaceEvenly,
+                                        ) {
+                                            CompactCardStat("AP", sheet.tacticalActionPoints)
+                                            CompactCardStat("EP", sheet.tacticalEnergyPoints)
+                                        }
+                                        Text(
+                                            "${sheet.tacticalSignature} — ${sheet.tacticalSignatureEffect}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.padding(top = InkSpacing.xs),
+                                        )
+                                    }
+                                    RpgCombatRuleset.DndD20 -> {
+                                        listOf(
+                                            listOf("STR" to sheet.strength, "DEX" to sheet.dexterity, "CON" to sheet.constitution),
+                                            listOf("INT" to sheet.intelligence, "WIS" to sheet.wisdom, "CHA" to sheet.charisma),
+                                        ).forEach { abilities ->
+                                            Row(
+                                                Modifier.fillMaxWidth().padding(top = 4.dp),
+                                                horizontalArrangement = Arrangement.SpaceEvenly,
+                                            ) {
+                                                abilities.forEach { (label, score) ->
+                                                    CompactCardStat(label, score, formatModifier(score))
+                                                }
+                                            }
+                                        }
+                                    }
+                                    RpgCombatRuleset.TextReactions -> Unit
+                                }
+                            }
+                            if (member.summary.isNotBlank()) {
+                                Text(
+                                    member.summary,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = tokens.secondaryText,
+                                    maxLines = 2,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(top = InkSpacing.xs),
+                                )
+                            }
+                            InkOutlinedButton(
+                                label = "Open full character sheet",
+                                onClick = { onOpen(member) },
+                                modifier = Modifier.fillMaxWidth().padding(top = InkSpacing.sm),
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { InkTextButton(label = "Close", onClick = onDismiss) },
+    )
+}
+
+@Composable
+private fun CompactCardStat(label: String, value: Int, secondary: String = "") {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = inkTokens().secondaryText)
+        Text(value.toString(), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+        if (secondary.isNotBlank()) Text(secondary, style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+@Composable
+private fun CaptureMenu(
+    expanded: Boolean,
+    onClose: () -> Unit,
+    onRoster: () -> Unit,
+    onInventory: () -> Unit,
+    onAiSort: () -> Unit,
+    onCopy: () -> Unit,
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onClose) {
+        DropdownMenuItem(
+            text = { Text("AI sort into Codex / Roster / Inventory…") },
+            onClick = onAiSort,
+        )
+        DropdownMenuItem(text = { Text("Add to roster") }, onClick = onRoster)
+        DropdownMenuItem(text = { Text("Add to inventory") }, onClick = onInventory)
+        DropdownMenuItem(text = { Text("Copy") }, onClick = onCopy)
+    }
+}
+
+@Composable
+private fun AdventureRollCard(roll: AdventureRoll, modifier: Modifier = Modifier) {
+    val tokens = inkTokens()
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(inkRadiusMd()))
+            .background(Color(0x147341A8))
+            .border(1.dp, Color(0xFF7341A8), RoundedCornerShape(inkRadiusMd()))
+            .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(
+                "${roll.checkLabel.uppercase()} · ${roll.system}",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF7341A8),
+            )
+            Text(
+                roll.outcome.uppercase(),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = tokens.activePill,
+            )
+        }
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
+            Text(
+                "FOR · ${roll.forCalculation()}",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                "AGAINST · ${roll.againstCalculation()}",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Text(
+            "Natural ${roll.rawTotal} · modifier ${if (roll.modifier >= 0) "+${roll.modifier}" else roll.modifier} · ${roll.marginLabel()}",
+            style = MaterialTheme.typography.labelSmall,
+            color = tokens.secondaryText,
+        )
+    }
+}
+
+/** Story prose with codex entry names/aliases as tappable links. */
+@Composable
+private fun CodexMentionText(
+    text: String,
+    targets: List<CodexMentionTarget>,
+    baseColor: Color,
+    linkColor: Color,
+    style: androidx.compose.ui.text.TextStyle,
+    onTap: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (targets.isEmpty()) {
+        Text(text, style = style, color = baseColor, modifier = modifier)
+        return
+    }
+    val mentions = remember(text, targets) { findCodexMentions(text, targets) }
+    val annotated = remember(text, mentions, linkColor) {
+        buildAnnotatedString {
+            append(text)
+            mentions.forEach { mention ->
+                addStyle(
+                    SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline),
+                    mention.start,
+                    mention.end,
+                )
+                addStringAnnotation(CodexMentionTag, mention.entryId, mention.start, mention.end)
+            }
+        }
+    }
+    var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+    Text(
+        annotated,
+        style = style,
+        color = baseColor,
+        onTextLayout = { layoutResult = it },
+        modifier = modifier.pointerInput(annotated) {
+            awaitEachGesture {
+                val down = awaitFirstDown(pass = PointerEventPass.Initial)
+                val layout = layoutResult ?: return@awaitEachGesture
+                val offset = layout.getOffsetForPosition(down.position)
+                val annotation = annotated.getStringAnnotations(CodexMentionTag, offset, offset)
+                    .firstOrNull()
+                if (annotation != null) {
+                    down.consume()
+                    onTap(annotation.item)
+                }
+            }
+        },
+    )
+}
+
+/**
+ * Solo / Duo / Party / Team. A clicker rather than a typed answer, because the model
+ * reliably ignored "solo" written into a free-text box and introduced a companion
+ * anyway; this feeds a hard rule into every planning and play prompt.
+ */
+@Composable
+private fun CompanionModePicker(
+    selected: com.ihy2ln.weaverse.core.story.StoryCompanionMode,
+    onSelect: (com.ihy2ln.weaverse.core.story.StoryCompanionMode) -> Unit,
+) {
+    val tokens = inkTokens()
+    Column(
+        Modifier.fillMaxWidth().padding(vertical = InkSpacing.xs),
+        verticalArrangement = Arrangement.spacedBy(InkSpacing.xxs),
+    ) {
+        Text("Who travels with you?", style = MaterialTheme.typography.labelLarge)
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+        ) {
+            com.ihy2ln.weaverse.core.story.StoryCompanionMode.entries.forEach { mode ->
+                androidx.compose.material3.FilterChip(
+                    selected = mode == selected,
+                    onClick = { onSelect(mode) },
+                    label = { Text(mode.label) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+        Text(
+            selected.blurb,
+            style = MaterialTheme.typography.bodySmall,
+            color = tokens.secondaryText,
+        )
+    }
+}

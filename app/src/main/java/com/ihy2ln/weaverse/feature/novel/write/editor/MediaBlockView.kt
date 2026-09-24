@@ -42,7 +42,8 @@ import com.ihy2ln.weaverse.core.ui.components.MediaEditAction
 import com.ihy2ln.weaverse.core.ui.components.MediaEditPopup
 import com.ihy2ln.weaverse.core.ui.components.MediaEditPopupConfig
 import com.ihy2ln.weaverse.core.ui.components.ZoomableMedia
-import com.ihy2ln.weaverse.core.ui.theme.InkHairline
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import java.io.File
@@ -78,7 +79,7 @@ fun MediaBlockView(
     val borderColor = if (selected) {
         MaterialTheme.colorScheme.primary
     } else {
-        InkHairline
+        inkTokens().hairline
     }
 
     fun openMenu(at: Offset) {
@@ -98,7 +99,7 @@ fun MediaBlockView(
         modifier = modifier
             .fillMaxWidth(fraction)
             .padding(vertical = InkSpacing.sm)
-            .border(if (selected) 2.dp else 1.dp, borderColor, RoundedCornerShape(InkSpacing.radiusSm))
+            .border(if (selected) 2.dp else 1.dp, borderColor, RoundedCornerShape(inkRadiusSm()))
             .background(
                 if (selected) {
                     MaterialTheme.colorScheme.primary.copy(alpha = 0.06f)

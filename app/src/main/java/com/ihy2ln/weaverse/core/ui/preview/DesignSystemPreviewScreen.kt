@@ -1,5 +1,6 @@
 package com.ihy2ln.weaverse.core.ui.preview
 
+import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,7 +25,6 @@ import com.ihy2ln.weaverse.core.ui.components.InkToolbar
 import com.ihy2ln.weaverse.core.ui.components.SegmentedOption
 import com.ihy2ln.weaverse.core.ui.theme.CodexCharacters
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
-import com.ihy2ln.weaverse.core.ui.theme.InkSecondaryText
 
 @Composable
 fun DesignSystemPreviewScreen(modifier: Modifier = Modifier) {
@@ -47,7 +47,7 @@ fun DesignSystemPreviewScreen(modifier: Modifier = Modifier) {
             modifier = Modifier.padding(InkSpacing.lg),
         )
         InkCard(modifier = Modifier.padding(InkSpacing.lg)) {
-            Text("Components", color = Color.Black)
+            Text("Components", color = inkTokens().primaryText)
             Column(verticalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
                 InkChip(label = "John Z", color = CodexCharacters, selected = true)
                 InkGhostChip(label = "+ Codex", onClick = {})
@@ -62,7 +62,7 @@ fun DesignSystemPreviewScreen(modifier: Modifier = Modifier) {
         Text(
             text = "Active tab: $tab",
             modifier = Modifier.padding(InkSpacing.lg),
-            color = InkSecondaryText,
+            color = inkTokens().secondaryText,
         )
     }
 }

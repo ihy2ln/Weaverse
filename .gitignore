@@ -1,6 +1,8 @@
 # Gradle / Android
 .gradle/
 build/
+build-v*/
+.gradle-user/
 local.properties
 *.iml
 .idea/
@@ -32,3 +34,7 @@ Weaverse/data/**
 desktop/build/
 sync-core/build/
 /releases/
+
+# Media packs (built by tools/build_media_packs.py; published as release assets)
+/build/media-packs/
+tools/.media-packs-cache.json

@@ -26,7 +26,7 @@ data class PromptRenderContext(
     val textAfter: String = "",
     val storySoFar: String = "",
     val message: String = "",
-    val outputWords: Int = 200,
+    val outputWords: Int = 100,
     /** Pre-resolved `{include("Weaverse/X")}` bodies, keyed by component name (e.g. "Codex", "Chat/DefaultContext"). */
     val componentBlocks: Map<String, String> = emptyMap(),
 ) {

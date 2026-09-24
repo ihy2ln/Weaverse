@@ -1,8 +1,13 @@
 package com.ihy2ln.weaverse.data.db.entities
 
 import androidx.room.Entity
+import androidx.room.ColumnInfo
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 @Entity(tableName = "series")
 data class SeriesEntity(
@@ -13,6 +18,7 @@ data class SeriesEntity(
     val rollingSummary: String = "",
     val summaryUpdatedAt: Long? = null,
     val createdAt: Long,
+    val updatedAt: Long = 0L,
 )
 
 @Entity(tableName = "books", indices = [Index("seriesId")])
@@ -28,6 +34,8 @@ data class BookEntity(
     val coverMediaId: String? = null,
     val createdAt: Long,
     val updatedAt: Long,
+    /** novel | campaign | storyboard — keeps each workspace's library distinct. */
+    val workType: String = "novel",
 )
 
 @Entity(tableName = "acts", indices = [Index("bookId")])
@@ -36,6 +44,7 @@ data class ActEntity(
     val bookId: String,
     val title: String,
     val sortOrder: Int,
+    val updatedAt: Long = 0L,
 )
 
 @Entity(tableName = "chapters", indices = [Index("actId")])
@@ -45,6 +54,7 @@ data class ChapterEntity(
     val title: String,
     val sortOrder: Int,
     val summary: String = "",
+    val updatedAt: Long = 0L,
 )
 
 @Entity(tableName = "scenes", indices = [Index("chapterId")])
@@ -76,6 +86,18 @@ data class SceneCodexLinkEntity(
     val sceneId: String,
     val entryId: String,
     val source: String = "manual",
+    val updatedAt: Long = 0L,
+)
+
+@Entity(tableName = "scene_revisions", indices = [Index("sceneId")])
+data class SceneRevisionEntity(
+    @PrimaryKey val id: String,
+    val sceneId: String,
+    val createdAt: Long,
+    val docJson: String,
+    val plainText: String,
+    val wordCount: Int = 0,
+    val kind: String = "hourly",
 )
 
 @Entity(tableName = "codex_categories")
@@ -90,6 +112,7 @@ data class CodexCategoryEntity(
     val sortOrder: Int = 0,
     val isSystem: Boolean = false,
     val isBuiltIn: Boolean = false,
+    val updatedAt: Long = 0L,
 )
 
 @Entity(tableName = "codex_entries", indices = [Index("categoryId"), Index("scopeId")])
@@ -109,10 +132,14 @@ data class CodexEntryEntity(
     val isAiGenerated: Boolean = false,
     /** Whether name/alias mentions of this entry are auto-highlighted as links and auto-detected for AI context. */
     val trackMentions: Boolean = true,
-    /** When true, mention matching requires exact case instead of case-insensitive. */
+    /** Whether name/alias mentions of this entry are auto-highlighted as links and auto-detected for AI context. */
     val caseSensitiveMatching: Boolean = false,
     val createdAt: Long,
     val updatedAt: Long,
+    /** RPG roster sheet (RpgCharacterSheet JSON) for Characters-style entries. */
+    val sheetJson: String = "{}",
+    /** RPG inventory (JSON-encoded List<RpItem>) so any codex entry can carry gear. */
+    val inventoryJson: String = "[]",
 )
 
 @Entity(tableName = "codex_entries_lore")
@@ -132,6 +159,7 @@ data class CodexEntryLoreEntity(
     val tokenBudgetWeight: Float = 1f,
     val recursionAllowed: Boolean = true,
     val groupName: String = "",
+    val updatedAt: Long = 0L,
 )
 
 @Entity(tableName = "snippets")
@@ -144,6 +172,7 @@ data class SnippetEntity(
     val category: String = "",
     val pinned: Boolean = false,
     val createdAt: Long,
+    val updatedAt: Long = 0L,
 )
 
 @Entity(tableName = "chat_threads")
@@ -155,6 +184,8 @@ data class ChatThreadEntity(
     val promptId: String? = null,
     val modelRef: String = "",
     val sceneId: String? = null,
+    /** Brainstorm sub-categories: non-null nests this thread under a parent. */
+    val parentThreadId: String? = null,
     val createdAt: Long,
     val updatedAt: Long,
 )
@@ -169,6 +200,9 @@ data class ChatMessageEntity(
     val tokenCount: Int = 0,
     val wordCount: Int = 0,
     val createdAt: Long,
+    val promptTokens: Int = 0,
+    val completionTokens: Int = 0,
+    val costUsd: Double = 0.0,
 )
 
 @Entity(tableName = "rp_characters")
@@ -191,7 +225,66 @@ data class RpCharacterEntity(
     val defaultCodexId: String? = null,
     val colorHex: String? = null,
     val createdAt: Long,
+    /** JSON-encoded List<RpItem> this character is carrying. */
+    val inventoryJson: String = "[]",
+    /** In the player's immediate team. The wider cast lives in Lore. */
+    val inParty: Boolean = false,
+    /** Equipped item per slot, keyed by RpEquipSlot.name. */
+    val equipmentJson: String = "{}",
+    val updatedAt: Long = 0L,
 )
+
+/** One carried item. System-agnostic on purpose — no rules engine behind it. */
+@Serializable
+data class RpItem(
+    val id: String,
+    val name: String,
+    val quantity: Int = 1,
+    val notes: String = "",
+    /** Per-item weight used by the compact tabletop inventory ledger. */
+    val weightLb: Double = 0.0,
+    /** Per-item value in gold pieces; currency conversion stays campaign-specific. */
+    val costGp: Double = 0.0,
+    /** Comma-separated searchable labels such as Utility, Combat, or Consumable. */
+    val tags: String = "",
+    /** Whether an attunement-style item is currently bonded to the carrier. */
+    val attuned: Boolean = false,
+    /** Quick active/equipped marker shown in the inventory table. */
+    val active: Boolean = false,
+    /** Optional imported equipment/accessory illustration. */
+    val imageMediaId: String? = null,
+    /** Matches a functional equipment slot or Pack item. */
+    val template: String = "Pack item",
+    /** Space consumed per item while carried in a backpack. */
+    val slotSize: Int = 1,
+    /** Positive only for backpack items; becomes active when equipped. */
+    val backpackCapacity: Int = 0,
+)
+
+private val itemsJsonCodec = Json { ignoreUnknownKeys = true }
+
+fun decodeItems(json: String): List<RpItem> =
+    runCatching { itemsJsonCodec.decodeFromString<List<RpItem>>(json) }.getOrDefault(emptyList())
+
+fun encodeItems(items: List<RpItem>): String = itemsJsonCodec.encodeToString(items)
+
+/** The equipment slots a character plate shows. */
+enum class RpEquipSlot(val label: String) {
+    Head("Head"),
+    Torso("Torso"),
+    Arms("Arms"),
+    Legs("Legs"),
+    Weapon("Weapon"),
+    Accessory("Accessory"),
+    Backpack("Backpack"),
+}
+
+fun decodeEquipment(json: String): Map<String, String> =
+    runCatching { itemsJsonCodec.decodeFromString<Map<String, String>>(json) }
+        .getOrDefault(emptyMap())
+
+fun encodeEquipment(equipment: Map<String, String>): String =
+    itemsJsonCodec.encodeToString(equipment.filterValues { it.isNotBlank() })
 
 @Entity(tableName = "rp_personas")
 data class RpPersonaEntity(
@@ -200,6 +293,10 @@ data class RpPersonaEntity(
     val avatarMediaId: String? = null,
     val description: String = "",
     val isDefault: Boolean = false,
+    /** You carry gear the same way the rest of the team does. */
+    val inventoryJson: String = "[]",
+    val equipmentJson: String = "{}",
+    val updatedAt: Long = 0L,
 )
 
 @Entity(tableName = "rp_chats")
@@ -221,7 +318,44 @@ data class RpChatEntity(
     val oocColorHex: String? = null,
     val createdAt: Long,
     val updatedAt: Long,
+    /** JSON-encoded List<RpPageMeta> — storyboard pages for the DM/Roleplay canvases. */
+    val pagesJson: String = "[]",
+    /** When the user last opened this chat — drives the unread badge. */
+    val lastReadAt: Long = 0L,
+    /** Manuscript that owns this campaign/storyboard chat, when applicable. */
+    val bookId: String? = null,
+    /**
+     * Chatting-mode Discord room kind: "" = legacy messenger chat (reads as a DM),
+     * "channel" = work text channel, "character" = per-character room inside a
+     * work's server, "dm" = direct message conversation.
+     */
+    val roomKind: String = "",
 )
+
+/** One storyboard page within a roleplay chat's DM/Roleplay canvas. */
+@Serializable
+data class RpPageMeta(
+    val id: String,
+    val order: Int,
+    val title: String? = null,
+    /** Layout whose slot outlines this page shows; media drops into the slots. */
+    val templateId: String = "classic-6",
+    /** Persisted reading direction for generated and manually authored pages. */
+    val readingOrder: String = "ltr",
+    /** ai, offline, or manual; informational and safe for older saves to omit. */
+    val generationStatus: String = "manual",
+    /** Optional local manga-library chapter that produced this page. */
+    val sourceChapterId: String? = null,
+)
+
+private val pagesJsonCodec = Json { ignoreUnknownKeys = true }
+
+fun decodePages(json: String): List<RpPageMeta> =
+    runCatching { pagesJsonCodec.decodeFromString<List<RpPageMeta>>(json) }
+        .getOrDefault(emptyList())
+        .sortedBy { it.order }
+
+fun encodePages(pages: List<RpPageMeta>): String = pagesJsonCodec.encodeToString(pages)
 
 @Entity(tableName = "rp_messages", indices = [Index("chatId"), Index(value = ["chatId", "displayMode"])])
 data class RpMessageEntity(
@@ -238,6 +372,23 @@ data class RpMessageEntity(
     val createdAt: Long,
     /** messenger | dungeonMaster | roleplay — content is isolated per mode. */
     val displayMode: String = "messenger",
+    val promptTokens: Int = 0,
+    val completionTokens: Int = 0,
+    val costUsd: Double = 0.0,
+    /** Display name when the speaker is not a stored character (parsed multi-speaker replies). */
+    val speakerName: String = "",
+)
+
+/** One member of a Chatting room's cast — seeded with the room, or pulled in later by an @mention. */
+@Entity(tableName = "rp_room_members", primaryKeys = ["roomId", "characterId"])
+data class RpRoomMemberEntity(
+    val roomId: String,
+    val characterId: String,
+    /** Codex entry this member was materialized from, when there is one. */
+    val codexEntryId: String? = null,
+    /** true = seeded with the room, false = pulled in later by an @mention. */
+    val seeded: Boolean = true,
+    val addedAt: Long = System.currentTimeMillis(),
 )
 
 @Entity(tableName = "media")
@@ -252,7 +403,137 @@ data class MediaEntity(
     val durationMs: Long? = null,
     val thumbnailPath: String? = null,
     val checksum: String = "",
+    /** Human-readable Pictures-library title. */
+    val displayName: String = "",
+    /** User-facing organizational category, for example Adams Haven / Scene / Farm. */
+    val category: String = "",
+    /** Comma-separated machine-searchable labels used by scene selection and AI context. */
+    val tags: String = "",
     val createdAt: Long,
+)
+
+/** A chapter discovered through a reviewed manga source adapter. */
+@Entity(
+    tableName = "manga_chapters",
+    indices = [Index(value = ["sourceId", "remoteId"], unique = true), Index("mangaId")],
+)
+data class MangaChapterEntity(
+    @PrimaryKey val id: String,
+    val sourceId: String,
+    val remoteId: String,
+    val mangaId: String,
+    val mangaTitle: String,
+    val title: String,
+    val volume: String = "",
+    val chapterNumber: String = "",
+    val language: String = "en",
+    val canonicalUrl: String = "",
+    val readingOrder: String = "ltr",
+    val pageCount: Int = 0,
+    val status: String = "discovered",
+    val progress: Int = 0,
+    val errorMessage: String = "",
+    val updatedAt: Long = 0L,
+    val downloadedAt: Long? = null,
+    val scanlator: String = "",
+    val dateUpload: Long = 0L,
+    val read: Boolean = false,
+    val bookmarked: Boolean = false,
+    val lastPageRead: Int = 0,
+    val lastReadAt: Long = 0L,
+)
+
+/** One remote page and its immutable local/original copy. */
+@Entity(
+    tableName = "manga_pages",
+    indices = [Index(value = ["chapterId", "pageIndex"], unique = true)],
+)
+data class MangaPageEntity(
+    @PrimaryKey val id: String,
+    val chapterId: String,
+    val sourceId: String,
+    val pageIndex: Int,
+    val remoteUrl: String,
+    val fileName: String,
+    val localPath: String = "",
+    val checksum: String = "",
+    val status: String = "queued",
+    val errorMessage: String = "",
+    val mediaId: String? = null,
+    val updatedAt: Long = 0L,
+)
+
+/** A catalog title saved independently of its downloaded chapters. */
+@Entity(
+    tableName = "manga_series",
+    indices = [Index(value = ["sourceId", "remoteId"], unique = true)],
+)
+data class MangaSeriesEntity(
+    @PrimaryKey val id: String,
+    val sourceId: String,
+    val remoteId: String,
+    val title: String,
+    val description: String = "",
+    val coverUrl: String = "",
+    val canonicalUrl: String = "",
+    val updatedAt: Long = 0L,
+    val authors: String = "",
+    val artists: String = "",
+    val tags: String = "",
+    val languages: String = "",
+    val publicationStatus: String = "",
+    @ColumnInfo(defaultValue = "''") val publicationType: String = "",
+    @ColumnInfo(defaultValue = "''") val releaseYear: String = "",
+    @ColumnInfo(defaultValue = "''") val contentRating: String = "",
+    @ColumnInfo(defaultValue = "''") val catalogScore: String = "",
+)
+
+/** Provider-neutral tracker binding. Authentication secrets live in encrypted preferences, never here. */
+@Entity(
+    tableName = "manga_tracks",
+    indices = [Index(value = ["seriesId", "serviceId"], unique = true), Index("serviceId")],
+)
+data class MangaTrackingEntity(
+    @PrimaryKey val id: String,
+    val seriesId: String,
+    val serviceId: String,
+    val remoteId: String,
+    val remoteTitle: String = "",
+    val status: String = "",
+    val score: Float = 0f,
+    val progress: Int = 0,
+    val startedAt: Long? = null,
+    val completedAt: Long? = null,
+    val notes: String = "",
+    val updatedAt: Long = 0L,
+)
+
+@Entity(tableName = "manga_update_errors", indices = [Index("seriesId"), Index("createdAt")])
+data class MangaUpdateErrorEntity(
+    @PrimaryKey val id: String,
+    val seriesId: String,
+    val sourceId: String,
+    val message: String,
+    val createdAt: Long,
+)
+
+@Entity(tableName = "manga_favorite_categories", indices = [Index(value = ["name"], unique = true)])
+data class MangaFavoriteCategoryEntity(
+    @PrimaryKey val id: String,
+    val name: String,
+    val sortOrder: Int = 0,
+    val createdAt: Long = 0L,
+)
+
+@Entity(
+    tableName = "manga_favorites",
+    primaryKeys = ["seriesId", "categoryId"],
+    indices = [Index("categoryId")],
+)
+data class MangaFavoriteEntity(
+    val seriesId: String,
+    val categoryId: String,
+    val addedAt: Long = 0L,
 )
 
 @Entity(tableName = "prompt_folders")

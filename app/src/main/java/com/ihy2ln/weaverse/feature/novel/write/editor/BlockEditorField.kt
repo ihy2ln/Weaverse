@@ -3,6 +3,7 @@ package com.ihy2ln.weaverse.feature.novel.write.editor
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -14,6 +15,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -40,6 +43,7 @@ import com.ihy2ln.weaverse.core.ui.components.EditTextAction
 import com.ihy2ln.weaverse.core.ui.components.EditTextPopup
 import com.ihy2ln.weaverse.core.ui.components.EditTextPopupConfig
 import com.ihy2ln.weaverse.core.ui.theme.InkAccentBlue
+import com.ihy2ln.weaverse.feature.novel.write.CaretRequest
 
 @Composable
 fun BlockEditorField(
@@ -58,11 +62,13 @@ fun BlockEditorField(
     /** Codex entries whose name/aliases should be hyperlinked when they appear in this text. */
     codexMentionTargets: List<CodexMentionTarget> = emptyList(),
     onMentionClick: (String) -> Unit = {},
+    /** Set when a tap elsewhere on the page asked for the caret to land in this block. */
+    caretRequest: CaretRequest? = null,
 ) {
     val plain = paragraph.plainText()
     fun mentionsFor(text: String): List<CodexMention> = findCodexMentions(text, codexMentionTargets)
 
-    var value by remember(paragraph.id) {
+    var value by androidx.compose.runtime.saveable.rememberSaveable(paragraph.id, stateSaver = NovelTextFieldSaver) {
         mutableStateOf(
             TextFieldValue(
                 annotatedString = paragraph.spans.toAnnotatedString(
@@ -75,24 +81,33 @@ fun BlockEditorField(
         )
     }
     var layoutResult by remember(paragraph.id) { mutableStateOf<TextLayoutResult?>(null) }
+    /** Targets already reflected in [value]; avoids rebuilding the field on every keystroke. */
+    var appliedTargets by remember(paragraph.id) { mutableStateOf(codexMentionTargets) }
 
     // Sync external paragraph updates (undo/AI accept) without clobbering caret during typing
     LaunchedEffect(paragraph.id, plain, paragraph.spans, codexMentionTargets) {
-        if (value.text != plain || codexMentionTargets.isNotEmpty()) {
+        val annotated = paragraph.spans.toAnnotatedString(textColor, mentions = mentionsFor(plain), linkColor = InkAccentBlue)
+        if (value.annotatedString != annotated || appliedTargets != codexMentionTargets) {
             val sel = value.selection
             val capped = TextRange(
                 sel.start.coerceIn(0, plain.length),
                 sel.end.coerceIn(0, plain.length),
             )
             value = TextFieldValue(
-                annotatedString = paragraph.spans.toAnnotatedString(
-                    textColor,
-                    mentions = mentionsFor(plain),
-                    linkColor = InkAccentBlue,
-                ),
+                annotatedString = annotated,
                 selection = capped,
+                composition = value.composition.takeIf { value.text == plain },
             )
+            appliedTargets = codexMentionTargets
         }
+    }
+
+    val focusRequester = remember(paragraph.id) { FocusRequester() }
+    LaunchedEffect(caretRequest?.nonce) {
+        val request = caretRequest ?: return@LaunchedEffect
+        val caret = (request.offset ?: value.text.length).coerceIn(0, value.text.length)
+        value = value.copy(selection = TextRange(caret))
+        runCatching { focusRequester.requestFocus() }
     }
 
     val latestOnShow by rememberUpdatedState(onShowEditPopupChange)
@@ -133,6 +148,10 @@ fun BlockEditorField(
                 if (annotation != null) {
                     down.consume()
                     onMentionClick(annotation.item)
+                } else {
+                    // Plain tap: publish the tapped caret so the prompt dock's
+                    // ⌖ insert target follows the user's chosen paragraph spot.
+                    onSelectionChange(TextRange(offset))
                 }
             }
         },
@@ -193,9 +212,10 @@ fun BlockEditorField(
                     color = textColor,
                     fontSize = 16.sp,
                     lineHeight = 26.sp,
-                    fontFamily = FontFamily.Serif,
+                    fontFamily = MaterialTheme.typography.bodyLarge.fontFamily,
                 ),
                 cursorBrush = SolidColor(textColor),
+                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
                 onTextLayout = { layoutResult = it },
                 decorationBox = { inner ->
                     if (value.text.isEmpty() && showPromptPlaceholder) {

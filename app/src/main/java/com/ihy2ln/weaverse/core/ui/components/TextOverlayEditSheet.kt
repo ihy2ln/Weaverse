@@ -1,0 +1,176 @@
+package com.ihy2ln.weaverse.core.ui.components
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.Slider
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import com.ihy2ln.weaverse.core.text.TextOverlay
+import com.ihy2ln.weaverse.core.text.TextOverlayStyle
+import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
+import com.ihy2ln.weaverse.core.ui.util.parseHexColor
+
+private val OverlayTextSwatches = listOf("#FFFFFF", "#000000", "#FFE066", "#FF6B6B", "#6BCB77", "#4A90D9")
+private val OverlayBgSwatches = listOf("#000000", "#FFFFFF", "#1A1A2E", "#4A90D9", "#D94A4A")
+
+/** Editor dialog for one [TextOverlay]: text, Plain/Speech-bubble style, colors, delete. */
+@Composable
+fun TextOverlayEditSheet(
+    overlay: TextOverlay,
+    onDismiss: () -> Unit,
+    onSave: (TextOverlay) -> Unit,
+    onDelete: () -> Unit,
+) {
+    var text by remember(overlay.id) { mutableStateOf(overlay.text) }
+    var style by remember(overlay.id) { mutableStateOf(overlay.style) }
+    var writing by remember(overlay.id) { mutableStateOf(overlay.writingMode) }
+    var fit by remember(overlay.id) { mutableStateOf(overlay.autoFit) }
+    var fontSize by remember(overlay.id) { mutableStateOf(overlay.fontSizeSp) }
+    var bold by remember(overlay.id) { mutableStateOf(overlay.bold) }
+    var italic by remember(overlay.id) { mutableStateOf(overlay.italic) }
+    var family by remember(overlay.id) { mutableStateOf(overlay.fontFamily) }
+    var alignment by remember(overlay.id) { mutableStateOf(overlay.alignment) }
+    var spacing by remember(overlay.id) { mutableStateOf(overlay.lineSpacing) }
+    var padding by remember(overlay.id) { mutableStateOf(overlay.paddingFraction) }
+    var rotation by remember(overlay.id) { mutableStateOf(overlay.rotationDeg) }
+    var colorHex by remember(overlay.id) { mutableStateOf(overlay.colorHex) }
+    var backgroundHex by remember(overlay.id) { mutableStateOf(overlay.backgroundHex ?: "#000000") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Text overlay") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(InkSpacing.sm),
+            ) {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    label = { Text("Text") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
+                    FilterChip(
+                        selected = style == TextOverlayStyle.Plain,
+                        onClick = { style = TextOverlayStyle.Plain },
+                        label = { Text("Plain") },
+                    )
+                    FilterChip(
+                        selected = style == TextOverlayStyle.SpeechBubble,
+                        onClick = { style = TextOverlayStyle.SpeechBubble },
+                        label = { Text("Speech bubble") },
+                    )
+                }
+                Text("Text color", style = MaterialTheme.typography.labelSmall)
+                Text("Tap a box to select it; drag its body to move. Double-tap to edit.")
+                Row(horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                    listOf("Horizontal", "Vertical").forEach { direction ->
+                        FilterChip(writing == direction, { writing = direction }, label = { Text(direction) })
+                    }
+                }
+                FilterChip(fit, { fit = !fit }, label = { Text("Fit text inside box") })
+                Row(horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                    FilterChip(bold, { bold = !bold }, label = { Text("Bold") })
+                    FilterChip(italic, { italic = !italic }, label = { Text("Italic") })
+                }
+                Text("Font family")
+                listOf("Sans serif" to "sans-serif", "Serif" to "serif",
+                    "Monospace" to "monospace", "Cursive" to "cursive").forEach { (label, value) ->
+                    FilterChip(family == value, { family = value }, label = { Text(label) })
+                }
+                Text("Font size: ${fontSize.toInt()}")
+                Slider(fontSize.coerceIn(6f, 96f), { fontSize = it; fit = false }, valueRange = 6f..96f)
+                Text("Line spacing: ${"%.2f".format(spacing)}")
+                Slider(spacing.coerceIn(.5f, 3f), { spacing = it }, valueRange = .5f..3f)
+                Text("Padding: ${(padding * 100).toInt()}%")
+                Slider(padding.coerceIn(0f, .4f), { padding = it }, valueRange = 0f..0.4f)
+                Text("Rotation: ${rotation.toInt()}° (separate from writing direction)")
+                Slider(rotation.coerceIn(-180f, 180f), { rotation = it }, valueRange = -180f..180f)
+                Text("A red underline on the selected box means text is clipped. Enable Fit text or reduce the font size.")
+                Row(horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                    listOf("Start", "Center", "End").forEach { value ->
+                        FilterChip(alignment == value, { alignment = value }, label = { Text(value) })
+                    }
+                }
+                SwatchRow(OverlayTextSwatches, colorHex) { colorHex = it }
+                Text("Background", style = MaterialTheme.typography.labelSmall)
+                SwatchRow(OverlayBgSwatches, backgroundHex) { backgroundHex = it }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onSave(
+                    overlay.copy(
+                        text = text,
+                        writingMode = writing,
+                        autoFit = fit,
+                        fontSizeSp = fontSize,
+                        bold = bold,
+                        italic = italic,
+                        fontFamily = family,
+                        alignment = alignment,
+                        lineSpacing = spacing,
+                        paddingFraction = padding,
+                        rotationDeg = rotation,
+                        style = style,
+                        colorHex = colorHex,
+                        backgroundHex = backgroundHex,
+                    ),
+                )
+                onDismiss()
+            }) { Text("Save") }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = { onDelete(); onDismiss() }) { Text("Delete") }
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+            }
+        },
+    )
+}
+
+@Composable
+private fun SwatchRow(hexes: List<String>, selected: String, onSelect: (String) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+        hexes.forEach { hex ->
+            val color = parseHexColor(hex, Color.Gray)
+            val borderColor = if (hex.equals(selected, ignoreCase = true)) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.outline
+            }
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(color, CircleShape)
+                    .border(2.dp, borderColor, CircleShape)
+                    .clickable { onSelect(hex) },
+            )
+        }
+    }
+}

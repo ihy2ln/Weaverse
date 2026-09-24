@@ -10,3 +10,7 @@
 -dontwarn java.lang.management.**
 -dontwarn java.sql.**
 -dontwarn org.sqlite.**
+-keep class eu.kanade.tachiyomi.source.** { *; }
+-keep class eu.kanade.tachiyomi.network.** { *; }
+-keep class tachiyomi.core.common.util.lang.** { *; }
+-keep class uy.kohesive.injekt.** { *; }

@@ -26,8 +26,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastAny
 import androidx.compose.ui.util.fastForEach
@@ -64,11 +66,20 @@ fun ZoomableMedia(
     fillPanel: Boolean = false,
     onLongPress: (() -> Unit)? = null,
     onLongPressAt: ((Offset) -> Unit)? = null,
+    /** Seeds the persisted pan/zoom (e.g. from `MediaBlock.mediaScale`/`mediaOffsetXPercent`). */
+    initialScale: Float = 1f,
+    initialOffsetXPercent: Float = 0f,
+    initialOffsetYPercent: Float = 0f,
+    /** When set, pan/zoom is persisted (via this callback) instead of resetting on recomposition. */
+    onTransformEnd: ((scale: Float, offsetXPercent: Float, offsetYPercent: Float) -> Unit)? = null,
 ) {
-    var scale by remember(path) { mutableFloatStateOf(1f) }
-    var offset by remember(path) { mutableStateOf(Offset.Zero) }
+    var scale by remember(path) { mutableFloatStateOf(initialScale.coerceIn(1f, 5f)) }
+    var offsetXPercent by remember(path) { mutableFloatStateOf(initialOffsetXPercent) }
+    var offsetYPercent by remember(path) { mutableFloatStateOf(initialOffsetYPercent) }
+    var boxSize by remember { mutableStateOf(IntSize.Zero) }
     val latestLongPress by rememberUpdatedState(onLongPress)
     val latestLongPressAt by rememberUpdatedState(onLongPressAt)
+    val latestTransformEnd by rememberUpdatedState(onTransformEnd)
     val context = LocalContext.current
     val file = remember(path) { File(path) }
     val exists = file.exists() && file.length() > 0L
@@ -84,9 +95,11 @@ fun ZoomableMedia(
     Box(
         modifier = modifier
             .then(sizeModifier)
+            .onSizeChanged { boxSize = it }
             .pointerInput(path, scale) {
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false)
+                    var transformed = false
                     do {
                         val event = awaitPointerEvent()
                         val zoomChange = event.calculateZoom()
@@ -96,20 +109,34 @@ fun ZoomableMedia(
                         if (multiTouch || zoomed) {
                             val next = (scale * zoomChange).coerceIn(1f, 5f)
                             scale = next
-                            offset = if (next > 1f) offset + panChange else Offset.Zero
+                            val w = boxSize.width.toFloat().coerceAtLeast(1f)
+                            val h = boxSize.height.toFloat().coerceAtLeast(1f)
+                            if (next > 1f) {
+                                offsetXPercent += (panChange.x / w) * 100f
+                                offsetYPercent += (panChange.y / h) * 100f
+                            } else {
+                                offsetXPercent = 0f
+                                offsetYPercent = 0f
+                            }
+                            transformed = true
                             event.changes.fastForEach {
                                 if (it.positionChanged()) it.consume()
                             }
                         }
                         // Unzoomed single-finger: leave unconsumed so LazyColumn scrolls.
                     } while (event.changes.fastAny { it.pressed })
+                    if (transformed) {
+                        latestTransformEnd?.invoke(scale, offsetXPercent, offsetYPercent)
+                    }
                 }
             }
             .pointerInput(path, onLongPress != null, onLongPressAt != null) {
                 detectTapGestures(
                     onDoubleTap = {
                         scale = 1f
-                        offset = Offset.Zero
+                        offsetXPercent = 0f
+                        offsetYPercent = 0f
+                        latestTransformEnd?.invoke(scale, offsetXPercent, offsetYPercent)
                     },
                     onLongPress = if (onLongPress != null || onLongPressAt != null) {
                         { press ->
@@ -124,8 +151,8 @@ fun ZoomableMedia(
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
-                translationX = offset.x
-                translationY = offset.y
+                translationX = offsetXPercent / 100f * size.width
+                translationY = offsetYPercent / 100f * size.height
             },
         contentAlignment = Alignment.Center,
     ) {

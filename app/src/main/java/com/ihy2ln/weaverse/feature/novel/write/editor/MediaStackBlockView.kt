@@ -31,6 +31,8 @@ import com.ihy2ln.weaverse.core.ui.components.MediaEditAction
 import com.ihy2ln.weaverse.core.ui.components.MediaEditPopup
 import com.ihy2ln.weaverse.core.ui.components.MediaEditPopupConfig
 import com.ihy2ln.weaverse.core.ui.components.ZoomableMedia
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 
@@ -70,7 +72,7 @@ fun MediaStackBlockView(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = InkSpacing.sm)
-            .border(if (selected) 2.dp else 1.dp, borderColor, RoundedCornerShape(InkSpacing.radiusSm))
+            .border(if (selected) 2.dp else 1.dp, borderColor, RoundedCornerShape(inkRadiusSm()))
             .pointerInput(block.id) {
                 awaitPointerEventScope {
                     while (true) {
@@ -114,9 +116,9 @@ fun MediaStackBlockView(
                             .offset(x = (i * 4).dp, y = (i * 4).dp)
                             .background(
                                 inkTokens().hover.copy(alpha = 0.5f),
-                                RoundedCornerShape(InkSpacing.radiusSm),
+                                RoundedCornerShape(inkRadiusSm()),
                             )
-                            .border(1.dp, inkTokens().hairline, RoundedCornerShape(InkSpacing.radiusSm)),
+                            .border(1.dp, inkTokens().hairline, RoundedCornerShape(inkRadiusSm())),
                     )
                 }
             }

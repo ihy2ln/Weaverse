@@ -16,6 +16,21 @@ class DefaultAiGuidesTest {
     }
 
     @Test
+    fun `every mode instructs the model to finish its final sentence`() {
+        AppMode.entries.forEach { mode ->
+            val blocks = DefaultAiGuides.systemBlocks(mode, outputWords = 250)
+            assertTrue(
+                blocks.any { it.contains("complete the final sentence", ignoreCase = true) },
+                "$mode should prohibit cut-off sentences",
+            )
+            assertTrue(
+                blocks.any { it.contains("exceed it slightly", ignoreCase = true) },
+                "$mode should permit a small overrun to complete prose",
+            )
+        }
+    }
+
+    @Test
     fun seedPrompts_includeRoleplayAndContinue() {
         val prompts = DefaultAiGuides.seedPrompts(0L)
         assertTrue(prompts.any { it.id == "prompt-roleplay-reply" })
@@ -24,11 +39,42 @@ class DefaultAiGuidesTest {
         assertTrue(prompts.any { it.id == "prompt-summarize" && it.instructionsJson.contains("summarizer") })
         assertTrue(prompts.any { it.id == "prompt-replace" && it.name == "Scene Text Replacer" })
         assertTrue(prompts.any { it.id == "prompt-workshop-chat" && it.instructionsJson.contains("{book.title}") })
-        // Prompt Components (AdditionalContext/AdditionalInstructions) are deliberately seeded empty —
-        // they're the user's own customization stubs, not guiding prose.
+        assertTrue(prompts.any { it.id == "prompt-custom-wish-fulfilment" && it.folderId == "folder-custom" })
+        // Prompt Components (AdditionalContext/AdditionalInstructions, Chat/*) ship with adult male
+        // wish fulfilment defaults the user can edit later.
         prompts.filter { it.type != PromptComponentType }.forEach { prompt ->
             assertTrue(prompt.instructionsJson.length > 80, "${prompt.name} should have prose")
             assertTrue(prompt.description.isNotBlank())
+        }
+    }
+
+    @Test
+    fun seedPrompts_carryWishFulfilmentCanonInEveryTemplate() {
+        val canon = listOf("WAHB", "WAH", "WAHO", "AFM", "Gender Ratio", "GKOM", "Celestium")
+        DefaultAiGuides.seedPrompts(0L).forEach { prompt ->
+            canon.forEach { term ->
+                assertTrue(prompt.instructionsJson.contains(term), "${prompt.name} should include $term")
+            }
+            assertTrue(
+                prompt.instructionsJson.contains("wish fulfilment", ignoreCase = true) ||
+                    prompt.instructionsJson.contains("wish-fulfilment", ignoreCase = true),
+                "${prompt.name} should carry the adult male wish fulfilment frame",
+            )
+        }
+    }
+
+    @Test
+    fun adamsHavenMw_isSeededAsAnAdultOnlySceneTemplateWithRequestedCanon() {
+        val prompt = DefaultAiGuides.seedPrompts(0L).single { it.id == "prompt-adams-haven-mw" }
+        val instructions = prompt.instructionsJson
+
+        assertTrue(prompt.name == "Adams Haven MW")
+        assertTrue(prompt.folderId == "folder-novel")
+        assertTrue(prompt.type == "scene_beat")
+        assertTrue(instructions.contains("adult-themed ecchi mangaka"))
+        assertTrue(instructions.contains("18 or older"))
+        listOf("WAHB", "WAH", "WAHO", "AFM", "Gender Ratio", "GKOM", "Celestium").forEach { term ->
+            assertTrue(instructions.contains(term), "Adams Haven MW should include $term")
         }
     }
 
@@ -43,6 +89,35 @@ class DefaultAiGuidesTest {
                 DefaultAiGuides.characterSystemPrompt("Mara", "A historian.", "Dry humor.", "Harbor café."),
             ),
         )
+    }
+
+    @Test
+    fun `chatting mode writes a texting voice, not narrated dm prose`() {
+        val roleplayBlocks = DefaultAiGuides.systemBlocks(AppMode.Roleplay, outputWords = 150)
+        val chattingBlocks = DefaultAiGuides.systemBlocks(AppMode.Chatting, outputWords = 150)
+
+        assertTrue(
+            roleplayBlocks.any { it.contains("Dungeon Master", ignoreCase = true) },
+            "Roleplay should keep its narrated-scene DM framing",
+        )
+        assertFalse(
+            chattingBlocks.any { it.contains("Dungeon Master", ignoreCase = true) },
+            "Chatting is a messenger, not a narrated scene, and should drop the DM framing",
+        )
+        assertTrue(
+            chattingBlocks.any { it.contains("text message", ignoreCase = true) || it.contains("texting voice", ignoreCase = true) },
+            "Chatting should explicitly ask for a chat-message reply",
+        )
+    }
+
+    @Test
+    fun `characterSystemPrompt for chatting mode asks for a short reply, not a scene beat`() {
+        val roleplay = DefaultAiGuides.characterSystemPrompt("Mara", mode = AppMode.Roleplay)
+        val chatting = DefaultAiGuides.characterSystemPrompt("Mara", mode = AppMode.Chatting)
+
+        assertTrue(roleplay.contains("Write the next beat in prose"))
+        assertFalse(chatting.contains("Write the next beat in prose"))
+        assertTrue(chatting.contains("chat message", ignoreCase = true))
     }
 
     @Test

@@ -1,32 +1,33 @@
 package com.ihy2ln.weaverse.desktop
 
 import com.ihy2ln.weaverse.sync.ImportZipResult
+import com.ihy2ln.weaverse.sync.JdbcSyncSql
 import com.ihy2ln.weaverse.sync.LibrarySummary
 import com.ihy2ln.weaverse.sync.NoteDetail
 import com.ihy2ln.weaverse.sync.SceneDetail
 import com.ihy2ln.weaverse.sync.SyncAuth
 import com.ihy2ln.weaverse.sync.WorkspaceSnapshot
+import com.ihy2ln.weaverse.sync.SyncMerge
 import com.ihy2ln.weaverse.sync.SyncPackage
 import com.ihy2ln.weaverse.sync.SyncPairRequest
 import com.ihy2ln.weaverse.sync.SyncPairResponse
 import com.ihy2ln.weaverse.sync.SyncPushResult
+import com.ihy2ln.weaverse.sync.SyncSchema
 import com.ihy2ln.weaverse.sync.SyncStatusResponse
+import com.ihy2ln.weaverse.sync.SyncTls
 import com.ihy2ln.weaverse.sync.novelcrafter.NovelcrafterSqliteImporter
 import com.ihy2ln.weaverse.sync.novelcrafter.NovelcrafterZipParser
 import io.ktor.http.ContentType
-import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
 import io.ktor.server.application.call
 import io.ktor.server.application.install
+import io.ktor.server.cio.CIO
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
-import io.ktor.server.netty.Netty
-import io.ktor.server.netty.NettyApplicationEngine
+import io.ktor.server.engine.sslConnector
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.server.plugins.cors.routing.CORS
-import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.request.receive
 import io.ktor.server.request.receiveChannel
 import io.ktor.server.response.respond
@@ -38,9 +39,15 @@ import io.ktor.server.routing.put
 import io.ktor.server.routing.routing
 import io.ktor.utils.io.jvm.javaio.copyTo
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 import java.io.File
 import java.net.InetAddress
 import java.net.NetworkInterface
+import java.sql.DriverManager
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
 
@@ -50,18 +57,42 @@ class SyncHttpServer(
 ) {
     private val sessions = ConcurrentHashMap.newKeySet<String>()
     private val lastSyncAt = AtomicReference<Long?>(null)
-    private var engine: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
+    private var engine: EmbeddedServer<*, *>? = null
+    private var certSha256: String = ""
 
     private val json = Json {
         prettyPrint = true
         ignoreUnknownKeys = true
         encodeDefaults = true
     }
+    private val mcpTools = DesktopMcpTools(dataDir, config.appVersion)
 
-    fun start(): EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration> {
+    fun start(): EmbeddedServer<*, *> {
         maybeAutoImport()
-        val server = embeddedServer(Netty, host = "0.0.0.0", port = config.port) {
-            configure()
+        val held = if (config.tls) SyncTls.loadOrCreate(DesktopPaths.tlsFile(dataDir)) else null
+        certSha256 = held?.let { SyncTls.fingerprint(it) }.orEmpty()
+        val server = if (held != null) {
+            val ks = SyncTls.toKeyStore(held)
+            embeddedServer(
+                factory = CIO,
+                configure = {
+                    sslConnector(
+                        keyStore = ks,
+                        keyAlias = SyncTls.KEY_ALIAS,
+                        keyStorePassword = { SyncTls.STORE_PASSWORD.toCharArray() },
+                        privateKeyPassword = { SyncTls.STORE_PASSWORD.toCharArray() },
+                    ) {
+                        host = "0.0.0.0"
+                        port = config.port
+                    }
+                },
+            ) {
+                configure()
+            }
+        } else {
+            embeddedServer(CIO, host = "0.0.0.0", port = config.port) {
+                configure()
+            }
         }
         engine = server
         server.start(wait = false)
@@ -75,21 +106,6 @@ class SyncHttpServer(
 
     private fun Application.configure() {
         install(ContentNegotiation) { json(json) }
-        install(CORS) {
-            anyHost()
-            allowHeader(HttpHeaders.Authorization)
-            allowHeader(HttpHeaders.ContentType)
-            allowHeader("X-Weaverse-Token")
-            allowNonSimpleContentTypes = true
-        }
-        install(StatusPages) {
-            exception<Throwable> { call, cause ->
-                call.respond(
-                    HttpStatusCode.InternalServerError,
-                    mapOf("ok" to false, "message" to (cause.message ?: "error")),
-                )
-            }
-        }
         routing {
             get("/") {
                 call.respondText(webIndexHtml(), ContentType.Text.Html)
@@ -116,9 +132,56 @@ class SyncHttpServer(
                             DesktopPaths.latestSyncZip(dataDir).exists(),
                         bookCount = summary.books.size,
                         noteCount = summary.notes.size,
-                        webUrl = "http://127.0.0.1:${config.port}/",
+                        webUrl = "${if (config.tls) "https" else "http"}://127.0.0.1:${config.port}/",
                         lanHint = lan.ifBlank { "connect on this Wi‑Fi using this PC's IP" },
+                        tls = config.tls,
+                        certSha256 = certSha256,
                     ),
+                )
+            }
+            // MCP endpoint for Cursor, Claude Code, OpenCode, Codex CLI, and other
+            // clients. It uses the same pairing password as the sync hub.
+            post("/mcp") {
+                val bearer = call.request.headers["Authorization"]
+                    ?.removePrefix("Bearer ")?.trim().orEmpty()
+                val pin = call.request.headers["X-MCP-Pin"].orEmpty()
+                if (!SyncAuth.constantTimeEquals(config.pairPin, bearer) &&
+                    !SyncAuth.constantTimeEquals(config.pairPin, pin)
+                ) {
+                    call.respond(
+                        HttpStatusCode.Unauthorized,
+                        buildJsonObject {
+                            put("jsonrpc", "2.0")
+                            put("id", JsonNull)
+                            putJsonObject("error") {
+                                put("code", -32001)
+                                put("message", "Unauthorized — use the sync password as a Bearer token.")
+                            }
+                        },
+                    )
+                    return@post
+                }
+                val rpc = runCatching { call.receive<JsonObject>() }.getOrNull()
+                if (rpc == null) {
+                    call.respond(
+                        HttpStatusCode.BadRequest,
+                        buildJsonObject {
+                            put("jsonrpc", "2.0")
+                            put("id", JsonNull)
+                            putJsonObject("error") {
+                                put("code", -32700)
+                                put("message", "Invalid JSON")
+                            }
+                        },
+                    )
+                    return@post
+                }
+                call.respond(mcpTools.handle(rpc))
+            }
+            get("/mcp") {
+                call.respondText(
+                    "Weaverse MCP server for Cursor, Claude Code, OpenCode, and Codex CLI. POST JSON-RPC 2.0 here; auth uses Authorization: Bearer <sync password>.",
+                    ContentType.Text.Plain,
                 )
             }
             post("/api/pair") {
@@ -132,7 +195,15 @@ class SyncHttpServer(
                 }
                 val token = SyncAuth.newSessionToken()
                 sessions.add(token)
-                call.respond(SyncPairResponse(ok = true, token = token, message = "Paired"))
+                call.respond(
+                    SyncPairResponse(
+                        ok = true,
+                        token = token,
+                        message = "Paired",
+                        certSha256 = certSha256,
+                        tls = config.tls,
+                    ),
+                )
             }
             get("/api/library") {
                 if (!authorized(call.request.headers["X-Weaverse-Token"])) {
@@ -298,16 +369,47 @@ class SyncHttpServer(
                     call.respond(SyncPushResult(false, "Empty package"))
                     return@post
                 }
-                SyncPackage.restoreInto(
-                    incoming,
-                    DesktopPaths.dbFile(dataDir),
-                    DesktopPaths.mediaDir(dataDir),
-                )
+                val report = mergeIncoming(incoming)
                 incoming.copyTo(DesktopPaths.latestSyncZip(dataDir), overwrite = true)
                 lastSyncAt.set(System.currentTimeMillis())
-                call.respond(SyncPushResult(true, "Library updated on desktop host"))
+                call.respond(
+                    SyncPushResult(
+                        true,
+                        "Merged on desktop host — ${report.summary}",
+                        appliedRows = report.appliedRows,
+                        deletedRows = report.deletedRows,
+                        conflicts = report.conflicts,
+                    ),
+                )
             }
         }
+    }
+
+    private fun mergeIncoming(zip: File): SyncMerge.Report {
+        val dbFile = DesktopPaths.dbFile(dataDir)
+        snapshotDb(dbFile)
+        if (!dbFile.exists() || dbFile.length() == 0L) {
+            SyncPackage.restoreInto(zip, dbFile, DesktopPaths.mediaDir(dataDir))
+            return SyncMerge.Report()
+        }
+        Class.forName("org.sqlite.JDBC")
+        return DriverManager.getConnection("jdbc:sqlite:${dbFile.absolutePath}").use { conn ->
+            val sql = JdbcSyncSql(conn)
+            SyncSchema.ensure(sql)
+            SyncPackage.mergeFromZip(zip, sql, DesktopPaths.mediaDir(dataDir))
+        }
+    }
+
+    private fun snapshotDb(dbFile: File) {
+        if (!dbFile.exists()) return
+        val dir = DesktopPaths.backupsDir(dataDir)
+        val snap = File(dir, "pre-merge-${System.currentTimeMillis()}.db")
+        runCatching { dbFile.copyTo(snap, overwrite = true) }
+        dir.listFiles()
+            ?.filter { it.name.startsWith("pre-merge-") }
+            ?.sortedByDescending { it.lastModified() }
+            ?.drop(7)
+            ?.forEach { runCatching { it.delete() } }
     }
 
     private fun maybeAutoImport() {

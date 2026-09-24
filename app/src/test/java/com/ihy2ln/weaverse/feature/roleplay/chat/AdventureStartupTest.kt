@@ -1,0 +1,207 @@
+package com.ihy2ln.weaverse.feature.roleplay.chat
+
+import kotlin.random.Random
+import com.ihy2ln.weaverse.core.ui.components.CampaignSettingDetailTemplates
+import com.ihy2ln.weaverse.core.ui.components.CampaignSettingTemplates
+import com.ihy2ln.weaverse.core.ui.components.campaignSettingBrowserItems
+import com.ihy2ln.weaverse.core.ui.components.campaignSettingDetailBrowserItems
+import com.ihy2ln.weaverse.core.ui.components.decodeCampaignSettingTemplates
+import com.ihy2ln.weaverse.core.ui.components.decodeCampaignSettingDetailTemplates
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+
+class AdventureStartupTest {
+    @Test
+    fun noSelectedCharacterStartsGuidedSheetCreation() {
+        val stored = adventureStartupPrompt(userIsDungeonMaster = false, needsCharacter = true)
+        assertEquals(AdventureStartupPhase.Character, adventureStartupPhase(stored))
+        val visible = adventureStartupProseFrom(stored)
+        assertTrue("Standard Array" in visible)
+        assertTrue("complete editable roster sheet" in visible)
+        assertEquals(
+            AdventureStartupPhase.Choose,
+            nextAdventureStartupPhase(AdventureStartupPhase.Character, "surprise me"),
+        )
+        assertTrue("[[ROSTER_CHARACTER" in adventureStartupDirective(AdventureStartupPhase.Character, "surprise me"))
+    }
+
+    @Test
+    fun initialDmPromptOffersAllThreeStartupPaths() {
+        val stored = adventureStartupPrompt(userIsDungeonMaster = false)
+        assertEquals(AdventureStartupPhase.Choose, adventureStartupPhase(stored))
+        val visible = adventureStartupProseFrom(stored)
+        assertTrue("1 · AI Startup" in visible)
+        assertTrue("2 · Character Selector" in visible)
+        assertTrue("3 · Quick random start" in visible)
+        assertTrue("AI Dungeon Master" in visible)
+        assertFalse("[[ADVENTURE_STARTUP" in visible)
+    }
+
+    @Test
+    fun aiStartupRemainsInSetupUntilAnswersAreSubmitted() {
+        assertEquals(AdventureStartupChoice.Ai, adventureStartupChoice("1"))
+        assertEquals(
+            AdventureStartupPhase.Questions,
+            nextAdventureStartupPhase(AdventureStartupPhase.Choose, "1"),
+        )
+        assertEquals(
+            AdventureStartupPhase.Complete,
+            nextAdventureStartupPhase(AdventureStartupPhase.Questions, "At sunset in Waterdeep"),
+        )
+        val directive = adventureStartupDirective(AdventureStartupPhase.Choose, "1", Random(1))
+        listOf("Character backstory", "Current situation", "Future goals").forEach {
+            assertTrue(it in directive)
+        }
+        assertTrue("Do not roll dice during setup" in directive)
+    }
+
+    @Test
+    fun classicAndRandomBothMakeAiDmFrameTheQuest() {
+        val classic = adventureStartupDirective(AdventureStartupPhase.Choose, "classic", Random(2))
+        val random = adventureStartupDirective(AdventureStartupPhase.Choose, "3", Random(2))
+        assertTrue("AI DM—not the player—must begin the quest chain" in classic)
+        assertTrue("AI DM—not the player—must begin the quest chain" in random)
+        assertTrue("Random opening selected" in random)
+        assertEquals(
+            AdventureStartupPhase.Complete,
+            nextAdventureStartupPhase(AdventureStartupPhase.Choose, "3"),
+        )
+    }
+
+    @Test
+    fun curatedStartsAreOneTapCommandsThatUseCampaignContext() {
+        val presets = adventureStartupPresets()
+        assertTrue(presets.size >= 5)
+        assertTrue(presets.all { it.title.isNotBlank() && it.description.isNotBlank() })
+        assertTrue(presets.any { it.id == "isekai-arrival" })
+        val selected = presets.first()
+        assertEquals(selected, adventureStartupPreset(selected.command))
+        assertEquals(AdventureStartupChoice.Curated, adventureStartupChoice(selected.command))
+        assertEquals(
+            AdventureStartupPhase.CuratedQuestions,
+            nextAdventureStartupPhase(AdventureStartupPhase.Choose, selected.command),
+        )
+        val directive = adventureStartupDirective(AdventureStartupPhase.Choose, selected.command, Random(4))
+        assertTrue("saved campaign setting details" in directive)
+        assertTrue("six-question Adventure Plan" in directive)
+        assertTrue("Do not begin the adventure yet" in directive)
+        assertEquals(
+            AdventureStartupPhase.Complete,
+            nextAdventureStartupPhase(AdventureStartupPhase.CuratedQuestions, "randomize"),
+        )
+        val opening = adventureStartupDirective(AdventureStartupPhase.CuratedQuestions, "randomize", Random(4))
+        assertTrue("actual opening scene" in opening)
+        assertTrue("[SKIPPED]" in opening)
+    }
+
+    @Test
+    fun settingDetailsCatalogOffersMultipleCuratedWorlds() {
+        assertTrue(CampaignSettingDetailTemplates.size >= 12)
+        assertTrue(CampaignSettingDetailTemplates.any { it.id == "coastal" })
+        assertTrue(CampaignSettingDetailTemplates.any { it.id == "fae" })
+        assertTrue(CampaignSettingDetailTemplates.any { it.id == "clockwork" })
+        assertTrue(CampaignSettingDetailTemplates.any { it.id == "adult-plot" && "18+" in it.label })
+        assertTrue(CampaignSettingDetailTemplates.any { it.id == "adult-smut" && "consent" in it.details.lowercase() })
+        assertTrue(CampaignSettingDetailTemplates.any { it.id == "adult-hentai" && "adult" in it.details.lowercase() })
+        assertTrue(CampaignSettingDetailTemplates.any { it.id == "adult-ecchi" && "no minors" in it.details.lowercase() })
+        assertTrue(CampaignSettingDetailTemplates.any { it.id == "custom" })
+        assertTrue(CampaignSettingTemplates.any { it.id == "highschool-of-the-dead" })
+        assertTrue(CampaignSettingTemplates.any { it.id == "walking-dead" })
+        assertTrue(CampaignSettingTemplates.any { it.id == "world-war-z" })
+        assertTrue(CampaignSettingDetailTemplates.any { it.id == "slow-life" })
+        assertTrue(CampaignSettingDetailTemplates.any { it.id == "overpowered" })
+        assertTrue(CampaignSettingDetailTemplates.any { it.section == "Action" && it.theme.contains("Movies") })
+        assertTrue(CampaignSettingDetailTemplates.any { it.section == "Fantasy" })
+        assertTrue(CampaignSettingDetailTemplates.filter { it.section == "18+" }.size >= 4)
+    }
+
+    @Test
+    fun settingBrowsersExposeMainSectionsThemesAndAdamsHavenWorlds() {
+        val settings = campaignSettingBrowserItems()
+        val details = campaignSettingDetailBrowserItems()
+        assertTrue(settings.map { it.section }.distinct().size >= 6)
+        assertTrue(details.map { it.section }.distinct().size >= 7)
+        assertTrue(settings.filter { it.section == "Adams Haven" }.map { it.theme }.distinct().size >= 2)
+        listOf("aqualuria", "arcanis", "elysara", "heroica", "mythoria", "nexara-prime", "veridian")
+            .forEach { world -> assertTrue(settings.any { it.id == "adams-haven-$world" }) }
+    }
+
+    @Test
+    fun customTemplatesAndPresetsRetainTheirSectionAndTheme() {
+        val template = decodeCampaignSettingTemplates(
+            setOf("custom-moon|Moon Realm|Science fiction|Lost colonies|A moon colony mystery"),
+        ).single()
+        val preset = decodeCampaignSettingDetailTemplates(
+            setOf("custom-detail-calm|Calm voyage|Everyday adventure|Slow travel|A relaxed voyage"),
+        ).single()
+        assertEquals("Science fiction", template.section)
+        assertEquals("Lost colonies", template.theme)
+        assertEquals("A moon colony mystery", template.directive)
+        assertEquals("Everyday adventure", preset.section)
+        assertEquals("Slow travel", preset.theme)
+        assertTrue(campaignSettingBrowserItems(listOf(template)).any { it.id == template.id && it.removable })
+        assertTrue(campaignSettingDetailBrowserItems(listOf(preset)).any { it.id == preset.id && it.removable })
+    }
+
+    @Test
+    fun legacyCustomTemplateEncodingStillLoads() {
+        val legacy = decodeCampaignSettingTemplates(setOf("custom-old|Old World|Legacy guidance")).single()
+        assertEquals("Custom", legacy.section)
+        assertEquals("Saved templates", legacy.theme)
+        assertEquals("Legacy guidance", legacy.directive)
+    }
+
+    @Test
+    fun detectsThePreviousPassiveOpeningForMigration() {
+        assertTrue(
+            isLegacyPassiveAdventureOpening(
+                "Mira and Bran stand at the threshold of the first scene. " +
+                    "Describe what they do in the action box below.",
+            ),
+        )
+        assertFalse(isLegacyPassiveAdventureOpening("The party attacks the gate."))
+    }
+
+    @Test
+    fun setupQuickResponsesOfferFourCuratedAndTwoRandomChoices() {
+        val options = adventureSetupQuickResponses()
+        assertEquals(6, options.size)
+        assertEquals(4, options.count { !it.isRandom })
+        assertEquals(2, options.count { it.isRandom })
+        assertTrue(options.all { it.title.isNotBlank() && it.answer.isNotBlank() })
+        assertTrue(options.filter { it.isRandom }.all { "randomize" in it.answer.lowercase() })
+    }
+
+    @Test
+    fun adventurePlanOffersSixQuestionsWithPresets() {
+        val questions = adventurePlanQuestions()
+        assertEquals(6, questions.size)
+        assertTrue(questions.all { it.prompt.isNotBlank() && it.presets.size >= 7 })
+        assertTrue(questions.any { "plot premise" in it.prompt.lowercase() })
+        assertTrue(questions.any { "complication" in it.prompt.lowercase() })
+        assertTrue(questions.first { it.id == "plot" }.presets.any { "isekai" in it.lowercase() })
+        assertTrue(questions.first { it.id == "party" }.presets.any { "custom" in it.lowercase() })
+    }
+
+    @Test
+    fun completedFirstScenePushesPastAStalePlannerSnapshot() {
+        assertEquals(
+            AdventureStartupPhase.Complete,
+            effectiveAdventureStartupPhase(
+                persistedPhase = AdventureStartupPhase.Questions,
+                adventurePlanProgress = 100,
+                isStreaming = false,
+            ),
+        )
+        assertEquals(
+            AdventureStartupPhase.Questions,
+            effectiveAdventureStartupPhase(
+                persistedPhase = AdventureStartupPhase.Questions,
+                adventurePlanProgress = 90,
+                isStreaming = true,
+            ),
+        )
+    }
+}

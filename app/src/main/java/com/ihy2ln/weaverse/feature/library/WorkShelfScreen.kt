@@ -1,0 +1,566 @@
+package com.ihy2ln.weaverse.feature.library
+
+import android.content.Intent
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import coil3.compose.AsyncImage
+import com.ihy2ln.weaverse.core.media.MediaRepository
+import com.ihy2ln.weaverse.core.ui.components.InkOutlinedButton
+import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
+import com.ihy2ln.weaverse.core.ui.theme.inkTokens
+import com.ihy2ln.weaverse.core.ui.util.adaptiveContentPadding
+import com.ihy2ln.weaverse.data.db.WeaverseDatabase
+import com.ihy2ln.weaverse.data.repo.BookRepository
+import com.ihy2ln.weaverse.data.settings.SettingsRepository
+import com.ihy2ln.weaverse.feature.storyboard.MangaLibraryCoverGrid
+import com.ihy2ln.weaverse.feature.storyboard.MangaSourceDialog
+import com.ihy2ln.weaverse.feature.storyboard.MangaSourceViewModel
+import dagger.hilt.android.lifecycle.HiltViewModel
+import java.io.File
+import javax.inject.Inject
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+
+enum class WorkShelfKind(val workType: String, val heading: String, val emptyText: String) {
+    Novel("novel", "Bookshelf", "No novels yet. Add one to begin writing."),
+    Campaign("campaign", "Campaigns", "No campaigns yet. Create one to begin an adventure."),
+    TextGame("text_game", "Text Games", "No text-game sessions yet. Create one to enter Adams Haven."),
+    Storyboard("storyboard", "Window", "No storyboards yet. Create one to build your first page."),
+}
+
+/**
+ * Reads the `startup.step` out of a saved [com.ihy2ln.weaverse.feature.roleplay.campaign.RpgCampaignState]
+ * JSON blob and returns a shelf label for it, or null once the campaign has
+ * reached its first scene (`step == "Started"`, not a draft any more). A plain
+ * regex is enough here — `step` is a field unique to that one nested object,
+ * and it avoids pulling the full campaign model and its kotlinx.serialization
+ * deserializer into a shelf list that only needs one word out of it.
+ */
+private fun draftStepLabel(campaignStateJson: String): String? {
+    val step = Regex("\"step\"\\s*:\\s*\"(\\w+)\"").find(campaignStateJson)?.groupValues?.get(1)
+    return when (step) {
+        "Cyoa" -> "Draft · Create Your Own Adventure"
+        "GeneratingChapterPlan" -> "Draft · Creating chapter plan…"
+        "ChapterPlan" -> "Draft · Chapter plan"
+        "Verification" -> "Draft · Verify your adventure"
+        "GeneratingScene" -> "Draft · Creating opening scene…"
+        else -> null // "Started", or unrecognized — treat as a finished campaign
+    }
+}
+
+data class WorkShelfCard(
+    val id: String,
+    val workType: String,
+    val bookId: String?,
+    val chatId: String?,
+    val title: String,
+    val subtitle: String,
+    val artPath: String?,
+    val preferredStoryboardMode: String = "Manga",
+)
+
+@HiltViewModel
+class WorkShelfViewModel @Inject constructor(
+    private val bookRepository: BookRepository,
+    db: WeaverseDatabase,
+    private val mediaRepository: MediaRepository,
+    private val settings: SettingsRepository,
+) : ViewModel() {
+    private val _status = kotlinx.coroutines.flow.MutableStateFlow("")
+    val status: StateFlow<String> = _status
+    val cards: StateFlow<List<WorkShelfCard>> = combine(
+        bookRepository.observeBooks(),
+        db.roleplayDao().observeChats(),
+        mediaRepository.observeAll(),
+        db.roleplayDao().observeAllRpgCampaignSaves(),
+    ) { books, chats, media, campaignSaves ->
+        val mediaById = media.associateBy { it.id }
+        // A campaign whose saved startup step hasn't reached Started is still an
+        // unfinished CYOA/chapter-plan draft — label it so it's easy to find and
+        // resume from the shelf, alongside campaigns that are already playable.
+        val draftLabelByCampaignId = campaignSaves.mapNotNull { save ->
+            draftStepLabel(save.stateJson)?.let { save.campaignId to it }
+        }.toMap()
+        val typed = books.filter { it.workType in setOf("novel", "campaign", "text_game", "storyboard") }
+            .map { book ->
+                val chat = chats.firstOrNull { it.bookId == book.id }
+                val artId = chat?.backgroundMediaId ?: book.coverMediaId
+                WorkShelfCard(
+                    id = book.id,
+                    workType = book.workType,
+                    bookId = book.id,
+                    chatId = chat?.id,
+                    title = book.title,
+                    subtitle = if (book.workType == "campaign") {
+                        draftLabelByCampaignId[book.id] ?: book.genre
+                    } else {
+                        book.genre
+                    },
+                    preferredStoryboardMode = if (
+                        book.tense.equals("Comic", true) ||
+                        book.tense.equals("Webtoon", true) ||
+                        book.pov.equals("Left to right", true)
+                    ) "Comic" else "Manga",
+                    artPath = artId?.let(mediaById::get)
+                        ?.let(mediaRepository::resolveFile)
+                        ?.takeIf(File::exists)?.absolutePath,
+                )
+            }
+        val legacyBoards = chats.filter { chat ->
+            chat.displayMode == "roleplay" && chat.characterId == null &&
+                typed.none { it.chatId == chat.id }
+        }.map { chat ->
+            WorkShelfCard(
+                id = chat.id,
+                workType = "storyboard",
+                bookId = null,
+                chatId = chat.id,
+                title = chat.title,
+                subtitle = "Storyboard",
+                artPath = chat.backgroundMediaId?.let(mediaById::get)
+                    ?.let(mediaRepository::resolveFile)
+                    ?.takeIf(File::exists)?.absolutePath,
+                preferredStoryboardMode = "Manga",
+            )
+        }
+        typed + legacyBoards
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun duplicate(bookId: String) {
+        viewModelScope.launch {
+            runCatching { bookRepository.duplicateBook(bookId) }
+                .onSuccess { copy -> _status.value = copy?.let { "Copied as ${it.title}" } ?: "Could not find work" }
+                .onFailure { _status.value = "Copy failed: ${it.message}" }
+        }
+    }
+
+    fun setCover(bookId: String, uri: Uri) {
+        viewModelScope.launch {
+            runCatching {
+                val media = mediaRepository.importFromUri(uri)
+                val book = bookRepository.getBook(bookId) ?: error("Could not find work")
+                bookRepository.updateBook(book.copy(coverMediaId = media.id))
+            }.onSuccess {
+                _status.value = "Cover art updated"
+            }.onFailure { _status.value = "Cover update failed: ${it.message}" }
+        }
+    }
+
+    fun delete(bookIds: Set<String>) {
+        if (bookIds.isEmpty()) return
+        viewModelScope.launch {
+            val selectedBookId = settings.preferences.first().selectedBookId
+            bookIds.forEach { bookRepository.deleteBook(it) }
+            if (selectedBookId in bookIds) {
+                settings.setSelectedBookId(cards.value.firstOrNull { it.bookId !in bookIds }?.bookId.orEmpty())
+            }
+            _status.value = if (bookIds.size == 1) "Work removed" else "${bookIds.size} works removed"
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun WorkShelfScreen(
+    kind: WorkShelfKind,
+    onCreate: () -> Unit,
+    onOpen: (WorkShelfCard) -> Unit,
+    /** Novel and campaign shelves only: the + menu's "From CYOA template". */
+    onCreateFromTemplate: (() -> Unit)? = null,
+    onExport: (String) -> Unit = {},
+    modifier: Modifier = Modifier,
+    viewModel: WorkShelfViewModel = hiltViewModel(),
+) {
+    val allCards by viewModel.cards.collectAsState()
+    val status by viewModel.status.collectAsState()
+    var selectedIds by remember { mutableStateOf(emptySet<String>()) }
+    var pendingDeleteIds by remember { mutableStateOf(emptySet<String>()) }
+    var coverTargetId by remember { mutableStateOf<String?>(null) }
+    val coverPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        val bookId = coverTargetId
+        coverTargetId = null
+        if (uri != null && bookId != null) viewModel.setCover(bookId, uri)
+    }
+    val cards = allCards.filter { card ->
+        when (kind) {
+            WorkShelfKind.Novel -> card.workType == "novel"
+            WorkShelfKind.Campaign -> card.workType == "campaign"
+            // Pre-1.3.58 text-game testers were stored as campaigns. Keep them
+            // visible here while all newly-created sessions use text_game.
+            WorkShelfKind.TextGame -> card.workType in setOf("text_game", "campaign")
+            WorkShelfKind.Storyboard -> card.workType == "storyboard"
+        }
+    }
+    val tokens = inkTokens()
+    Column(modifier = modifier.fillMaxSize().padding(adaptiveContentPadding())) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(kind.heading, style = MaterialTheme.typography.headlineSmall)
+                Text(
+                    when (kind) {
+                        WorkShelfKind.Novel -> "Choose a novel or start a new story"
+                        WorkShelfKind.Storyboard -> "Your manga and comic library"
+                        WorkShelfKind.Campaign -> "Your worlds at a glance"
+                        WorkShelfKind.TextGame -> "Card-driven stories, battles, and haven simulations"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = tokens.secondaryText,
+                )
+            }
+            var createMenu by remember { mutableStateOf(false) }
+            Box {
+                InkOutlinedButton(
+                    label = when (kind) {
+                        WorkShelfKind.Novel -> "+ Novel"
+                        WorkShelfKind.Storyboard -> "+ Storyboard"
+                        WorkShelfKind.Campaign -> "+ Campaign"
+                        WorkShelfKind.TextGame -> "+ Text Game"
+                    },
+                    onClick = { if (onCreateFromTemplate == null) onCreate() else createMenu = true },
+                )
+                onCreateFromTemplate?.let { fromTemplate ->
+                    DropdownMenu(createMenu, { createMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text(if (kind == WorkShelfKind.Campaign) "Create campaign" else "Create novel") },
+                            onClick = { createMenu = false; onCreate() },
+                        )
+                        DropdownMenuItem(text = { Text("From CYOA template") }, onClick = { createMenu = false; fromTemplate() })
+                    }
+                }
+            }
+        }
+        if (selectedIds.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = InkSpacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("${selectedIds.size} selected", style = MaterialTheme.typography.labelLarge)
+                Row {
+                    TextButton(onClick = { selectedIds = emptySet() }) { Text("Clear") }
+                    TextButton(onClick = { pendingDeleteIds = selectedIds }) { Text("Quick remove") }
+                }
+            }
+        }
+        if (status.isNotBlank()) {
+            Text(
+                status,
+                style = MaterialTheme.typography.labelSmall,
+                color = tokens.secondaryText,
+                modifier = Modifier.padding(top = InkSpacing.xs),
+            )
+        }
+        if (cards.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(kind.emptyText, color = tokens.secondaryText)
+            }
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 170.dp),
+                modifier = Modifier.fillMaxSize().padding(top = InkSpacing.md),
+                horizontalArrangement = Arrangement.spacedBy(InkSpacing.md),
+                verticalArrangement = Arrangement.spacedBy(InkSpacing.md),
+            ) {
+                items(cards, key = { it.id }) { card ->
+                    WorkPosterCard(
+                        card = card,
+                        selected = card.id in selectedIds,
+                        onClick = {
+                            if (selectedIds.isEmpty()) onOpen(card)
+                            else selectedIds = if (card.id in selectedIds) selectedIds - card.id else selectedIds + card.id
+                        },
+                        onExport = card.bookId?.let { id -> { onExport(id) } },
+                        onCopy = card.bookId?.let { id -> { viewModel.duplicate(id) } },
+                        onCover = card.bookId?.let { id ->
+                            {
+                                coverTargetId = id
+                                coverPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            }
+                        },
+                        onSelect = {
+                            selectedIds = if (card.id in selectedIds) selectedIds - card.id else selectedIds + card.id
+                        },
+                        onDelete = card.bookId?.let { id -> { pendingDeleteIds = setOf(id) } },
+                    )
+                }
+            }
+        }
+    }
+    if (pendingDeleteIds.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { pendingDeleteIds = emptySet() },
+            title = { Text(if (pendingDeleteIds.size == 1) "Remove this work?" else "Remove selected works?") },
+            text = { Text("This permanently removes the selected work and its saved project data.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.delete(pendingDeleteIds)
+                    selectedIds = selectedIds - pendingDeleteIds
+                    pendingDeleteIds = emptySet()
+                }) { Text("Remove") }
+            },
+            dismissButton = { TextButton(onClick = { pendingDeleteIds = emptySet() }) { Text("Cancel") } },
+        )
+    }
+}
+
+@Composable
+private fun StoryboardSourceCatalog(
+    onOpenDownloads: () -> Unit,
+    sourceViewModel: MangaSourceViewModel = hiltViewModel(),
+) {
+    val sourceState by sourceViewModel.uiState.collectAsState()
+    val context = LocalContext.current
+    val tokens = inkTokens()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = InkSpacing.md)
+            .clip(RoundedCornerShape(inkRadiusMd()))
+            .background(tokens.panel.copy(alpha = 0.72f))
+            .padding(InkSpacing.md),
+        verticalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Extensions", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Reviewed source adapters for manga, manhwa, and comics.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = tokens.secondaryText,
+                )
+            }
+            InkOutlinedButton(label = "Open downloader", onClick = onOpenDownloads)
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("MangaDex", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            Text("Installed · authorized API", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = InkSpacing.sm))
+        }
+        Text(
+            "Websites",
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.padding(top = InkSpacing.xs),
+        )
+        Text(
+            "These open in your browser. Downloading inside Weaverse requires an authorized adapter; use manual CBZ/PDF/image import otherwise.",
+            style = MaterialTheme.typography.labelSmall,
+            color = tokens.secondaryText,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+        ) {
+            sourceState.websites.forEach { site ->
+                TextButton(onClick = {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(site.url)))
+                }) {
+                    Text(site.name)
+                }
+            }
+            TextButton(onClick = onOpenDownloads) { Text("+ Add website") }
+        }
+        if (sourceState.downloads.isNotEmpty()) {
+            Text(
+                "Library",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(top = InkSpacing.sm),
+            )
+            Text(
+                "Downloaded chapter covers are kept here until you add them to a storyboard.",
+                style = MaterialTheme.typography.labelSmall,
+                color = tokens.secondaryText,
+            )
+            MangaLibraryCoverGrid(
+                downloads = sourceState.downloads.take(6),
+                coverPaths = sourceState.coverPaths,
+                onSelectChapter = { chapterId ->
+                    sourceViewModel.openReader(chapterId)
+                    onOpenDownloads()
+                },
+                compact = true,
+                modifier = Modifier
+                    .padding(top = InkSpacing.xs)
+                    .heightIn(max = 260.dp),
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun WorkPosterCard(
+    card: WorkShelfCard,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onExport: (() -> Unit)?,
+    onCopy: (() -> Unit)?,
+    onCover: (() -> Unit)?,
+    onSelect: () -> Unit,
+    onDelete: (() -> Unit)?,
+) {
+    val tokens = inkTokens()
+    var menuOpen by remember(card.id) { mutableStateOf(false) }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(2f / 3f)
+            .clip(RoundedCornerShape(inkRadiusMd()))
+            .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = .18f) else tokens.panel)
+            .combinedClickable(onClick = onClick, onLongClick = { menuOpen = true }),
+    ) {
+        if (card.artPath != null) {
+            AsyncImage(
+                model = File(card.artPath),
+                contentDescription = card.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Box(modifier = Modifier.fillMaxSize().background(tokens.hover), contentAlignment = Alignment.Center) {
+                Text("W", style = MaterialTheme.typography.displayMedium, color = tokens.secondaryText)
+            }
+        }
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .9f))))
+                .padding(top = 48.dp, start = InkSpacing.md, end = InkSpacing.md, bottom = InkSpacing.md),
+        ) {
+            Text(
+                card.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                card.subtitle.ifBlank { "Tap to open" },
+                style = MaterialTheme.typography.labelMedium,
+                color = Color.White.copy(alpha = .78f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            onExport?.let { action ->
+                DropdownMenuItem(text = { Text("Export") }, onClick = { menuOpen = false; action() })
+            }
+            onCopy?.let { action ->
+                DropdownMenuItem(text = { Text("Copy") }, onClick = { menuOpen = false; action() })
+            }
+            onCover?.let { action ->
+                DropdownMenuItem(text = { Text("Cover art") }, onClick = { menuOpen = false; action() })
+            }
+            DropdownMenuItem(
+                text = { Text(if (selected) "Unselect" else "Select for quick remove") },
+                onClick = { menuOpen = false; onSelect() },
+            )
+            onDelete?.let { action ->
+                DropdownMenuItem(text = { Text("Delete") }, onClick = { menuOpen = false; action() })
+            }
+        }
+    }
+}
+
+@Composable
+internal fun NovelBooksShelf(books: List<BrowseBook>, onOpen: (BrowseBook) -> Unit, onRead: (String) -> Unit,
+    onShelf: (String) -> Unit, onCreate: () -> Unit, onCreateFromTemplate: () -> Unit, onImport: () -> Unit) {
+    LazyColumn(Modifier.fillMaxSize().testTag("books-feed"), verticalArrangement = Arrangement.spacedBy(24.dp), contentPadding = PaddingValues(bottom = 28.dp)) {
+        item {
+            Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Books", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                TextButton(onClick = { onShelf("all") }) { Text("All books") }
+                var menu by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Default.Add, "Library actions") }
+                    DropdownMenu(menu, { menu = false }) {
+                        DropdownMenuItem(text = { Text("Create book") }, onClick = { menu = false; onCreate() })
+                        DropdownMenuItem(text = { Text("From CYOA template") }, onClick = { menu = false; onCreateFromTemplate() })
+                        DropdownMenuItem(text = { Text("Import") }, onClick = { menu = false; onImport() })
+                    }
+                }
+            }
+            featuredBook(books)?.let { FeaturedBook(it, { onRead(it.id) }, { onOpen(it) }) }
+                ?: EmptyBrowse("Your next chapter starts here", "Create a book or import your library.")
+        }
+        items(listOf("reading", "writing", "list", "added") + books.map { it.book.genre }.filter { it.isNotBlank() }.distinct().sorted().map { "genre:$it" }, key = { it }) { id ->
+            val entries = booksForShelf(books, id)
+            BookCoverShelf(shelfTitle(id), entries.take(10), onOpen, { onShelf(id) }, emptyText = when (id) {
+                "reading" -> "Books you read will appear here."; "writing" -> "Return to your writing from here."
+                "list" -> "Save titles from their details page."; else -> "Your books will appear here."
+            })
+        }
+    }
+}

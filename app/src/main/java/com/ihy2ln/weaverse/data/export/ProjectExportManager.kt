@@ -3,6 +3,7 @@ package com.ihy2ln.weaverse.data.export
 import android.content.Context
 import android.net.Uri
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
+import com.ihy2ln.weaverse.core.media.MediaPackImporter
 import com.ihy2ln.weaverse.data.db.entities.ActEntity
 import com.ihy2ln.weaverse.data.db.entities.BookEntity
 import com.ihy2ln.weaverse.data.db.entities.ChapterEntity
@@ -46,6 +47,9 @@ class ProjectExportManager @Inject constructor(
     private val db: WeaverseDatabase,
     private val novelcrafterImporter: NovelcrafterImporter,
     private val manuscriptFormatImporter: ManuscriptFormatImporter,
+    private val sillyTavernImporter: SillyTavernImporter,
+    private val mediaPackImporter: MediaPackImporter,
+    private val mediaRepository: com.ihy2ln.weaverse.core.media.MediaRepository,
 ) {
     private val json = Json {
         prettyPrint = true
@@ -129,6 +133,12 @@ class ProjectExportManager @Inject constructor(
                 writeMinimalDocx(file, renderManuscript(bundle, options, forMarkdown = false))
                 file.absolutePath
             }
+            ExportFormat.Epub -> {
+                val file = File(exportDir, "$safeTitle-$timestamp.epub")
+                val chapters = epubChapters(bundle, options)
+                EpubWriter.write(file, bundle.book?.title ?: "Untitled", chapters)
+                file.absolutePath
+            }
         }
     }
 
@@ -185,6 +195,21 @@ class ProjectExportManager @Inject constructor(
 
     private suspend fun importBytes(bytes: ByteArray, displayName: String): ImportOutcome {
         val lower = displayName.lowercase()
+        if (looksLikeZip(bytes) && NovelcrafterZipParser.looksLikeNovelcrafterZipBytes(bytes)) {
+            val parsed = NovelcrafterZipParser.parse(bytes)
+            val result = novelcrafterImporter.import(parsed)
+            return ImportOutcome(
+                "Imported Novelcrafter ZIP as new book “${result.bookTitle}” — " +
+                    "${result.sceneCount} scenes, ${result.codexCount} codex, " +
+                    "${result.chatCount} chats, ${result.rpCharacterCount} RP characters, " +
+                    "${result.rpChatCount} RP chats, ${result.mediaCount} pictures",
+                result.bookId,
+            )
+        }
+        if (sillyTavernImporter.looksLike(bytes, displayName)) {
+            val result = sillyTavernImporter.importBytes(bytes, displayName)
+            return ImportOutcome(result.message())
+        }
         return when {
             lower.endsWith(".doc") && !lower.endsWith(".docx") ->
                 error("Legacy Word .doc is not supported. Export as .docx, Markdown, HTML, or JSON.")
@@ -255,6 +280,13 @@ class ProjectExportManager @Inject constructor(
     }
 
     private suspend fun importZipBytes(bytes: ByteArray): ImportOutcome {
+        if (mediaPackImporter.looksLikePack(bytes)) {
+            val result = mediaPackImporter.installFromBytes(bytes)
+            return ImportOutcome(
+                "Installed media pack ${result.name} v${result.version} — ${result.installed} pictures" +
+                    if (result.failed > 0) ", ${result.failed} skipped" else "",
+            )
+        }
         if (NovelcrafterZipParser.looksLikeNovelcrafterZipBytes(bytes)) {
             val parsed = NovelcrafterZipParser.parse(bytes)
             val result = novelcrafterImporter.import(parsed)
@@ -289,10 +321,16 @@ class ProjectExportManager @Inject constructor(
             }
         }
         val text = projectJson
-            ?: error(
-                "ZIP not recognized. Supported: Weaverse project.zip (project.json), " +
-                    "Novelcrafter full export (novel.md or novel.docx + characters/…).",
-            )
+            ?: run {
+                if (sillyTavernImporter.looksLike(bytes, "st.zip")) {
+                    val result = sillyTavernImporter.importBytes(bytes, "st.zip")
+                    return ImportOutcome(result.message())
+                }
+                error(
+                    "ZIP not recognized. Supported: Weaverse project.zip (project.json), " +
+                        "Novelcrafter full export, SillyTavern data ZIP (characters/ chats/ worlds/).",
+                )
+            }
         val bundle = json.decodeFromString<ProjectBundle>(text)
         importBundle(bundle)
         return ImportOutcome("Imported Weaverse project ZIP (${bundle.kind})", bundle.book?.id)
@@ -437,25 +475,81 @@ class ProjectExportManager @Inject constructor(
         }
     }
 
-    private fun renderHtml(bundle: ProjectBundle, options: ExportOptions): String {
-        val body = renderManuscript(bundle, options, forMarkdown = false)
-            .split("\n\n")
-            .joinToString("\n") { para ->
-                val escaped = para
-                    .replace("&", "&amp;")
-                    .replace("<", "&lt;")
-                    .replace(">", "&gt;")
-                "<p>${escaped.replace("\n", "<br/>")}</p>"
+    private suspend fun renderHtml(bundle: ProjectBundle, options: ExportOptions): String {
+        val images = mutableMapOf<String, String>()
+        var remainingBytes = 32L * 1024 * 1024
+        if (options.exportProse) {
+            val ids = bundle.scenes.flatMap { scene ->
+                com.ihy2ln.weaverse.feature.novel.inlineNovelMediaIds(com.ihy2ln.weaverse.core.text.documentFromJson(scene.docJson).blocks)
+            }.distinct()
+            for (id in ids) {
+                val asset = mediaRepository.getById(id) ?: continue
+                if (asset.type != "image") continue
+                val file = mediaRepository.resolveFile(asset)
+                val mime = when (file.extension.lowercase()) { "png" -> "image/png"; "jpg", "jpeg" -> "image/jpeg"; "webp" -> "image/webp"; "gif" -> "image/gif"; else -> continue }
+                if (!file.isFile || file.length() !in 1..minOf(8L * 1024 * 1024, remainingBytes)) continue
+                val bytes = file.readBytes()
+                remainingBytes -= bytes.size
+                images[id] = "data:$mime;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
             }
-        val title = bundle.book?.title?.replace("<", "&lt;").orEmpty()
+        }
+        fun esc(text: String) = NovelHtmlRenderer.escape(text)
+        val body = buildString {
+            var firstScene = true
+            bundle.acts.sortedBy { it.sortOrder }.forEach { act ->
+                if (options.includeActTitles) append("<h2>${esc(act.title)}</h2>")
+                bundle.chapters.filter { it.actId == act.id }.sortedBy { it.sortOrder }.forEach { chapter ->
+                    append("<h3>${esc(chapter.title)}</h3>")
+                    if (options.exportSummaries) append("<p>${esc(chapter.summary)}</p>")
+                    bundle.scenes.filter { it.chapterId == chapter.id }.sortedBy { it.sortOrder }.forEach { scene ->
+                        if (!firstScene && options.sceneDivider != SceneDivider.None) append("<hr/>")
+                        firstScene = false
+                        if (options.includeSceneSubtitles) append("<h4>${esc(scene.title)}</h4>")
+                        if (options.exportSummaries) append("<p>${esc(scene.summary)}</p>")
+                        if (options.exportProse) {
+                            val blocks = com.ihy2ln.weaverse.core.text.documentFromJson(scene.docJson).blocks
+                            append(if (blocks.isEmpty()) "<p>${esc(scene.plainText).replace("\n", "<br/>")}</p>" else NovelHtmlRenderer.render(blocks, images))
+                        }
+                    }
+                }
+            }
+            if (options.includeCodex) bundle.codexEntries.sortedBy { it.name }.forEach { append("<h2>${esc(it.name)}</h2><p>${esc(it.plainText)}</p>") }
+        }
+        val title = esc(bundle.book?.title.orEmpty())
         return """
             <!DOCTYPE html>
-            <html><head><meta charset="utf-8"/><title>$title</title></head>
+            <html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>$title</title>
+            <style>body{max-width:44rem;margin:auto;padding:1rem;line-height:1.6}img{max-width:100%;height:auto}figure{margin:1rem 0}pre{white-space:pre-wrap}</style></head>
             <body>
             <h1>$title</h1>
             $body
             </body></html>
         """.trimIndent()
+    }
+
+    private fun epubChapters(bundle: ProjectBundle, options: ExportOptions): List<EpubChapter> {
+        val chaptersByAct = bundle.chapters.groupBy { it.actId }
+        val scenesByChapter = bundle.scenes.groupBy { it.chapterId }
+        return bundle.acts.sortedBy { it.sortOrder }.flatMap { act ->
+            chaptersByAct[act.id].orEmpty().sortedBy { it.sortOrder }.map { chapter ->
+                val body = buildString {
+                    if (options.exportSummaries && chapter.summary.isNotBlank()) {
+                        append(chapter.summary).append("\n\n")
+                    }
+                    scenesByChapter[chapter.id].orEmpty().sortedBy { it.sortOrder }.forEach { scene ->
+                        if (options.includeSceneSubtitles) append(scene.title).append("\n\n")
+                        if (options.exportSummaries && scene.summary.isNotBlank()) {
+                            append(scene.summary).append("\n\n")
+                        }
+                        if (options.exportProse && scene.plainText.isNotBlank()) {
+                            append(scene.plainText.trim()).append("\n\n")
+                        }
+                    }
+                }
+                val title = if (options.includeActTitles) "${act.title} · ${chapter.title}" else chapter.title
+                EpubChapter(title = title, body = body)
+            }
+        }.ifEmpty { listOf(EpubChapter(bundle.book?.title ?: "Untitled", renderManuscript(bundle, options, false))) }
     }
 
     private fun writeMinimalDocx(file: File, plainText: String) {
@@ -508,10 +602,10 @@ class ProjectExportManager @Inject constructor(
 // --- Entity ↔ DTO mappers ---
 
 private fun BookEntity.toDto() = BookDto(
-    id, seriesId, title, genre, pov, tense, styleGuide, targetWordCount, coverMediaId, createdAt, updatedAt,
+    id, seriesId, title, genre, pov, tense, styleGuide, targetWordCount, coverMediaId, createdAt, updatedAt, workType,
 )
 private fun BookDto.toEntity() = BookEntity(
-    id, seriesId, title, genre, pov, tense, styleGuide, targetWordCount, coverMediaId, createdAt, updatedAt,
+    id, seriesId, title, genre, pov, tense, styleGuide, targetWordCount, coverMediaId, createdAt, updatedAt, workType,
 )
 private fun ActEntity.toDto() = ActDto(id, bookId, title, sortOrder)
 private fun ActDto.toEntity() = ActEntity(id, bookId, title, sortOrder)
@@ -544,16 +638,18 @@ private fun CodexEntryDto.toEntity() = CodexEntryEntity(
 private fun SnippetEntity.toDto() = SnippetDto(id, scopeType, scopeId, title, body, category, pinned, createdAt)
 private fun SnippetDto.toEntity() = SnippetEntity(id, scopeType, scopeId, title, body, category, pinned, createdAt)
 private fun ChatThreadEntity.toDto() = ChatThreadDto(
-    id, scopeId, name, pinned, promptId, modelRef, sceneId, createdAt, updatedAt,
+    id, scopeId, name, pinned, promptId, modelRef, sceneId, parentThreadId, createdAt, updatedAt,
 )
 private fun ChatThreadDto.toEntity() = ChatThreadEntity(
-    id, scopeId, name, pinned, promptId, modelRef, sceneId, createdAt, updatedAt,
+    id, scopeId, name, pinned, promptId, modelRef, sceneId, parentThreadId, createdAt, updatedAt,
 )
 private fun ChatMessageEntity.toDto() = ChatMessageDto(
     id, threadId, role, contentJson, contextUsedJson, tokenCount, wordCount, createdAt,
+    promptTokens, completionTokens, costUsd,
 )
 private fun ChatMessageDto.toEntity() = ChatMessageEntity(
     id, threadId, role, contentJson, contextUsedJson, tokenCount, wordCount, createdAt,
+    promptTokens, completionTokens, costUsd,
 )
 private fun PromptFolderEntity.toDto() = PromptFolderDto(id, name, type, isSystem)
 private fun PromptFolderDto.toEntity() = PromptFolderEntity(id, name, type, isSystem)
@@ -578,18 +674,20 @@ private fun RpPersonaDto.toEntity() = RpPersonaEntity(id, name, avatarMediaId, d
 private fun RpChatEntity.toDto() = RpChatDto(
     id, characterId, groupId, personaId, title, backgroundMediaId, authorsNote, authorsNoteDepth,
     presetId, promptTemplateId, branchOfChatId, displayMode, narrationColorHex, speechColorHex,
-    oocColorHex, createdAt, updatedAt,
+    oocColorHex, createdAt, updatedAt, pagesJson, lastReadAt, bookId,
 )
 private fun RpChatDto.toEntity() = RpChatEntity(
     id, characterId, groupId, personaId, title, backgroundMediaId, authorsNote, authorsNoteDepth,
     presetId, promptTemplateId, branchOfChatId, displayMode, narrationColorHex, speechColorHex,
-    oocColorHex, createdAt, updatedAt,
+    oocColorHex, createdAt, updatedAt, pagesJson, lastReadAt, bookId,
 )
 private fun RpMessageEntity.toDto() = RpMessageDto(
     id, chatId, swipeGroupId, swipeIndex, isActiveSwipe, role, speakerCharacterId, contentJson,
     tokenCount, isEdited, createdAt, displayMode.ifBlank { "messenger" },
+    promptTokens, completionTokens, costUsd,
 )
 private fun RpMessageDto.toEntity() = RpMessageEntity(
     id, chatId, swipeGroupId, swipeIndex, isActiveSwipe, role, speakerCharacterId, contentJson,
     tokenCount, isEdited, createdAt, displayMode.ifBlank { "messenger" },
+    promptTokens, completionTokens, costUsd,
 )

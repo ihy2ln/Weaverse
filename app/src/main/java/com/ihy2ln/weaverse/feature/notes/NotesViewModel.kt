@@ -90,6 +90,11 @@ class NotesViewModel @Inject constructor(
         }
     }
 
+    @Inject lateinit var homeHistory: com.ihy2ln.weaverse.feature.shell.HomeHistory
+    fun openNote(id: String) {
+        selectNote(id)
+        viewModelScope.launch { if (db.snippetDao().getById(id) != null) homeHistory.record("Notes", "note", id) }
+    }
     fun selectNote(id: String?) {
         promptEntryBus.activeNoteId = id
         if (notesDraftBaseline != null) {
@@ -164,6 +169,7 @@ class NotesViewModel @Inject constructor(
                 createdAt = now,
             )
             db.snippetDao().upsert(created)
+            homeHistory.record("Notes", "note", id)
             workspaceHistory.record(
                 undo = {
                     db.snippetDao().deleteById(id)
@@ -332,6 +338,8 @@ class NotesViewModel @Inject constructor(
                 }
             }
             MediaEditAction.Move -> Unit
+            // Panel-canvas only (Roleplay/DM storyboard).
+            MediaEditAction.AdjustImage, MediaEditAction.EditImage, MediaEditAction.SeparatePanels, MediaEditAction.SeparatePanelsAuto, MediaEditAction.AddMedia, MediaEditAction.GenerateMedia, MediaEditAction.AddTextOverlay -> Unit
         }
     }
 

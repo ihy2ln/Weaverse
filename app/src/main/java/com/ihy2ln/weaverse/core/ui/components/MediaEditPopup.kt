@@ -29,6 +29,13 @@ enum class MediaEditAction {
     Uncollapse,
     Stack,
     Move,
+    AdjustImage,
+    AddTextOverlay,
+    EditImage,
+    SeparatePanels,
+    SeparatePanelsAuto,
+    AddMedia,
+    GenerateMedia,
 }
 
 data class MediaEditPopupConfig(
@@ -38,6 +45,9 @@ data class MediaEditPopupConfig(
     val canExpand: Boolean = true,
     val showStack: Boolean = true,
     val showMove: Boolean = false,
+    val showAdjustImage: Boolean = false,
+    val showTextOverlay: Boolean = false,
+    val showPictureTools: Boolean = false,
 )
 
 /** Place the media menu at the long-press point inside its parent. */
@@ -106,6 +116,45 @@ fun MediaEditPopup(
         if (config.showStack) {
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
             Item("Stack pictures", labelColor) { onAction(MediaEditAction.Stack); onDismiss() }
+        }
+
+        if (config.showPictureTools) {
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            Text(
+                "Picture tools",
+                style = MaterialTheme.typography.labelSmall,
+                color = muted,
+                modifier = Modifier.padding(horizontal = InkSpacing.md, vertical = InkSpacing.xs),
+            )
+            Item("Edit picture", labelColor) {
+                onAction(MediaEditAction.EditImage); onDismiss()
+            }
+            Item("Add picture / video", labelColor) {
+                onAction(MediaEditAction.AddMedia); onDismiss()
+            }
+            Item("Generate picture (AI)", labelColor) {
+                onAction(MediaEditAction.GenerateMedia); onDismiss()
+            }
+            Item("Separate panels (AI)", labelColor) {
+                onAction(MediaEditAction.SeparatePanels); onDismiss()
+            }
+            Item("Separate panels (offline)", labelColor) {
+                onAction(MediaEditAction.SeparatePanelsAuto); onDismiss()
+            }
+        }
+
+        if (config.showAdjustImage || config.showTextOverlay) {
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            if (config.showAdjustImage) {
+                Item("Adjust image", labelColor) {
+                    onAction(MediaEditAction.AdjustImage); onDismiss()
+                }
+            }
+            if (config.showTextOverlay) {
+                Item("Add text", labelColor) {
+                    onAction(MediaEditAction.AddTextOverlay); onDismiss()
+                }
+            }
         }
         }
     }

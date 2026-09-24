@@ -44,9 +44,26 @@ class OpenRouterRepository @Inject constructor(
     /** Overridable for unit tests (MockWebServer). */
     @Volatile
     var baseUrl: String = BASE_URL
+    private val _imageEditingModels = kotlinx.coroutines.flow.MutableStateFlow<List<ModelInfo>>(emptyList())
+    val imageEditingModels: kotlinx.coroutines.flow.StateFlow<List<ModelInfo>> = _imageEditingModels
+
+    suspend fun fetchImageEditingModels(): List<ModelInfo> = withContext(Dispatchers.IO) {
+        val key = requireKey()
+        try {
+            executeGet("$baseUrl/images/models", key).use { response ->
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) throw OpenRouterErrorMapper.fromHttp(response.code, body)
+                OpenRouterImageApi.editingModels(body).also { _imageEditingModels.value = it }
+            }
+        } catch (error: Exception) {
+            _imageEditingModels.value = emptyList()
+            throw error
+        }
+    }
     private val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
+        coerceInputValues = true
         encodeDefaults = true
     }
 
@@ -80,26 +97,50 @@ class OpenRouterRepository @Inject constructor(
     }
 
     suspend fun fetchModels(forceRefresh: Boolean = false): List<ModelInfo> = withContext(Dispatchers.IO) {
-        if (!forceRefresh) {
+        if (!forceRefresh && modelCache.hasFullCatalog()) {
             val cached = modelCache.getCachedModels()
             if (cached.isNotEmpty()) return@withContext modelCache.toModelInfo(cached)
         }
         val key = requireKey()
-        val response = executeGet("$baseUrl/models", key)
-        val body = response.body?.string().orEmpty()
-        logResponse("$baseUrl/models", response.code, body)
-        if (!response.isSuccessful) {
-            throw OpenRouterErrorMapper.fromHttp(
-                response.code,
-                body,
-                response.header("Retry-After")?.toLongOrNull(),
-            )
+        val merged = linkedMapOf<String, OpenRouterModelDto>()
+        var offset = 0
+        val pageSize = MODELS_PAGE_SIZE
+        var pages = 0
+        do {
+            val url = modelsCatalogUrl(offset, pageSize)
+            val response = executeGet(url, key)
+            val body = response.body?.string().orEmpty()
+            logResponse(url, response.code, body)
+            if (!response.isSuccessful) {
+                throw OpenRouterErrorMapper.fromHttp(
+                    response.code,
+                    body,
+                    response.header("Retry-After")?.toLongOrNull(),
+                )
+            }
+            val parsed = try {
+                parseOpenRouterModelsBody(json, body)
+            } catch (e: Exception) {
+                throw OpenRouterErrorMapper.fromThrowable(e)
+            }
+            OpenRouterErrorMapper.fromEmbeddedError(parsed.error)?.let { throw it }
+            if (parsed.data.isEmpty()) break
+            val before = merged.size
+            parsed.data.forEach { dto -> merged[dto.id] = dto }
+            pages += 1
+            offset += parsed.data.size
+            if (parsed.data.size < pageSize || merged.size == before || pages >= MODELS_MAX_PAGES) break
+        } while (true)
+        if (merged.isEmpty()) {
+            throw AIError.HttpFailure(502, "OpenRouter returned no models")
         }
-        val parsed = json.decodeFromString(OpenRouterModelsResponse.serializer(), body)
-        OpenRouterErrorMapper.fromEmbeddedError(parsed.error)?.let { throw it }
-        modelCache.save(parsed)
-        modelCache.toModelInfo(parsed.data)
+        val catalog = OpenRouterModelsResponse(data = merged.values.toList())
+        modelCache.save(catalog)
+        modelCache.toModelInfo(catalog.data)
     }
+
+    private fun modelsCatalogUrl(offset: Int, limit: Int): String =
+        "$baseUrl/models?output_modalities=all&limit=$limit&offset=$offset"
 
     fun streamCompletion(request: AIRequest): Flow<AIChunk> = flow {
         val key = requireKey()
@@ -117,6 +158,7 @@ class OpenRouterRepository @Inject constructor(
                 maxTokens = request.maxTokens,
                 temperature = request.temperature,
                 topP = request.topP,
+                reasoning = OpenRouterReasoning(effort = "minimal", exclude = true),
             ),
         )
 
@@ -204,6 +246,7 @@ class OpenRouterRepository @Inject constructor(
                 maxTokens = request.maxTokens,
                 temperature = request.temperature,
                 topP = request.topP,
+                reasoning = OpenRouterReasoning(effort = "minimal", exclude = true),
             ),
         )
 
@@ -246,6 +289,59 @@ class OpenRouterRepository @Inject constructor(
     }
 
     fun storedApiKey(): String? = settings.apiKey(SecureKeyStore.OPENROUTER)
+
+    /**
+     * Cloud image generation through an OpenRouter image-output model
+     * (e.g. google/gemini-image, openai/gpt-image). Returns the decoded
+     * picture bytes and its mime type.
+     */
+    suspend fun generateImage(
+        modelId: String,
+        prompt: String,
+        imageAttachments: List<com.ihy2ln.weaverse.ai.ImageAttachment> = emptyList(),
+    ): Pair<ByteArray, String> =
+        withContext(Dispatchers.IO) {
+            val key = requireKey()
+            val model = normalizeModelId(modelId)
+            var aspectRatio: String? = null
+            if (imageAttachments.isNotEmpty()) {
+                val candidates = fetchImageEditingModels()
+                val selected = candidates.firstOrNull { it.id == model } ?: throw AIError.BadRequest(
+                    "This model is not currently listed for reference-image editing. Refresh the editor model list and choose another model.")
+                if ("ratio:auto" in selected.tags) aspectRatio = "auto"
+            }
+            val bodyJson = OpenRouterImageApi.request(model, prompt, imageAttachments, aspectRatio)
+            val httpRequest = authorizedRequest("$baseUrl/images", key)
+                .post(bodyJson.toRequestBody(JSON_MEDIA))
+                .build()
+
+            try {
+                streamingClient.newCall(httpRequest).execute().use { response ->
+                    val body = response.body?.string().orEmpty()
+                    // Never log generated image payloads or source reference data.
+                    if (!response.isSuccessful) {
+                        throw OpenRouterErrorMapper.fromHttp(
+                            response.code,
+                            body,
+                            response.header("Retry-After")?.toLongOrNull(),
+                        )
+                    }
+                    val decoded = OpenRouterImageApi.decode(body)
+                    val usage = json.decodeFromString(OpenRouterChatResponse.serializer(), body).usage
+                    if (usage != null) settings.recordUsage(usage.promptTokens, usage.completionTokens, usage.cost)
+                    currentCoroutineContext().ensureActive()
+                    decoded
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: AIError) {
+                throw e
+            } catch (e: IOException) {
+                throw AIError.NoNetwork(e)
+            } catch (e: Exception) {
+                throw OpenRouterErrorMapper.fromThrowable(e)
+            }
+        }
 
     suspend fun modelSupportsImages(modelRef: String): Boolean {
         val cached = modelCache.getCachedModels()
@@ -403,6 +499,8 @@ class OpenRouterRepository @Inject constructor(
         const val PROVIDER_NAME = "OpenRouter"
         const val HTTP_REFERER = "https://github.com/ihy2ln/weaverse"
         const val X_TITLE = "Weaverse"
+        const val MODELS_PAGE_SIZE = 1000
+        const val MODELS_MAX_PAGES = 10
         private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
     }
 }

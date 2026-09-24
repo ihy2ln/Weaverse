@@ -1,5 +1,6 @@
 package com.ihy2ln.weaverse.core.ui.components
 
+import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -18,9 +19,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.ihy2ln.weaverse.core.ui.theme.InkActivePill
-import com.ihy2ln.weaverse.core.ui.theme.InkActivePillLabel
-import com.ihy2ln.weaverse.core.ui.theme.InkPrimaryText
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 
 data class SegmentedOption(
@@ -35,13 +33,14 @@ fun InkSegmentedPill(
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
     scrollable: Boolean = false,
+    compact: Boolean = false,
 ) {
     Row(
         modifier = modifier
             .then(if (scrollable) Modifier.horizontalScroll(rememberScrollState()) else Modifier)
             .clip(RoundedCornerShape(999.dp))
             .background(Color.Transparent),
-        horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+        horizontalArrangement = Arrangement.spacedBy(if (compact) 0.dp else InkSpacing.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         options.forEach { option ->
@@ -50,10 +49,13 @@ fun InkSegmentedPill(
                 text = option.label,
                 modifier = Modifier
                     .clip(RoundedCornerShape(999.dp))
-                    .background(if (selected) InkActivePill else Color.Transparent)
+                    .background(if (selected) inkTokens().activePill else Color.Transparent)
                     .clickable { onSelect(option.id) }
-                    .padding(horizontal = InkSpacing.lg, vertical = InkSpacing.sm),
-                color = if (selected) InkActivePillLabel else InkPrimaryText,
+                    .padding(
+                        horizontal = if (compact) InkSpacing.md else InkSpacing.lg,
+                        vertical = if (compact) InkSpacing.xs else InkSpacing.sm,
+                    ),
+                color = if (selected) inkTokens().activePillLabel else inkTokens().primaryText,
                 fontSize = 14.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

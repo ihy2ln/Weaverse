@@ -52,6 +52,29 @@ class TextToSpeechController @Inject constructor(
         }
     }
 
+    fun speakParagraphs(paragraphs: List<String>, onProgress: (Int) -> Unit) {
+        if (paragraphs.isEmpty()) return
+        ensureReady { ok ->
+            if (!ok) return@ensureReady
+            stop()
+            tts?.setOnUtteranceProgressListener(
+                object : UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) {
+                        val idx = utteranceId?.removePrefix("p-")?.toIntOrNull() ?: return
+                        onProgress(idx)
+                    }
+                    override fun onDone(utteranceId: String?) = Unit
+                    @Deprecated("Deprecated in Java")
+                    override fun onError(utteranceId: String?) = Unit
+                },
+            )
+            paragraphs.forEachIndexed { index, para ->
+                val mode = if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+                tts?.speak(para, mode, null, "p-$index")
+            }
+        }
+    }
+
     fun stop() {
         tts?.stop()
         mediaPlayer?.run {

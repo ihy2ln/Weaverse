@@ -28,16 +28,79 @@ class RailTabDefaultsTest {
     }
 
     @Test
-    fun novelDestinationsStayPlanWriteChatReview() {
+    fun novelDestinationsIncludePremiumReader() {
         assertEquals(
-            listOf("Plan", "Write", "Chat", "Review"),
+            listOf("Bookshelf", "Plan", "Write", "Read", "Chat", "Review"),
             NovelDestination.entries.map { it.label },
         )
     }
 
     @Test
-    fun roleplayAndNotesAreTopLevelModes() {
-        assertEquals(listOf("Novel", "Roleplay", "Notes"), AppMode.entries.map { it.name })
+    fun theWorkspacesPlusNotesAreTopLevelModes() {
+        // Constants are persisted in shell state and the launchMode preference, so
+        // Roleplay keeps its name and only carries the "RPG" label.
+        assertEquals(
+            listOf("Novel", "Roleplay", "Games", "Chatting", "Storyboard", "Notes"),
+            AppMode.entries.map { it.name },
+        )
+        assertEquals(
+            listOf("Novel", "RPG", "Games", "Chatting", "Storyboard", "Brainstorm/Notes"),
+            AppMode.entries.map { it.label },
+        )
+    }
+
+    @Test
+    fun everyModeHasRailTabsAndAValidDefault() {
+        AppMode.entries.forEach { mode ->
+            val tabs = railTabsFor(mode)
+            assertTrue(tabs.isNotEmpty(), "$mode has no rail tabs")
+            assertTrue(
+                defaultRailTab(mode) in tabs,
+                "$mode default rail tab is not among its own tabs",
+            )
+        }
+    }
+
+    @Test
+    fun eachWorkspaceHasItsOwnSubModes() {
+        // Checked structurally rather than against a frozen list, so adding a
+        // sub-mode does not fail this test for no reason.
+        listOf(
+            RoleplayDestination.entries.map { it.label },
+            ChattingDestination.entries.map { it.label },
+            StoryboardDestination.entries.map { it.label },
+            NotesDestination.entries.map { it.label },
+            NovelDestination.entries.map { it.label },
+        ).forEach { labels ->
+            assertTrue(labels.isNotEmpty())
+            assertEquals(labels.size, labels.toSet().size, "duplicate sub-mode label in $labels")
+            assertTrue(labels.none { it.isBlank() }, "blank sub-mode label in $labels")
+        }
+        // The pieces the RPG workspace must always offer.
+        val rpg = RoleplayDestination.entries.map { it.label }
+        listOf("Adventure", "Inventory", "Roster", "Lore", "Town").forEach {
+            assertTrue(rpg.contains(it), "RPG is missing $it")
+        }
+    }
+
+    @Test
+    fun destinationLookupsSurviveStaleSavedState() {
+        // Personas was removed as a destination; shell state saved by an older build
+        // still names it, and must fall back rather than throw.
+        assertEquals(RoleplayDestination.Chats, roleplayDestinationOf("Personas"))
+        assertEquals(RoleplayDestination.Chats, roleplayDestinationOf(null))
+        assertEquals(RoleplayDestination.Presets, roleplayDestinationOf("Presets"))
+        assertEquals(RoleplayDestination.Codex, roleplayDestinationOf("Codex"))
+        assertEquals(ChattingDestination.Chats, chattingDestinationOf("nonsense"))
+        // Storyboard's Window/Manga/Comic tabs were replaced by Library/Browse/Downloads/
+        // Extensions/Projects; a stale saved id now lands on its real modern replacement
+        // instead of the dead placeholder, and an unrecognized id falls back to Library.
+        assertEquals(StoryboardDestination.Library, storyboardDestinationOf("Window"))
+        assertEquals(StoryboardDestination.Projects, storyboardDestinationOf("Manga"))
+        assertEquals(StoryboardDestination.Projects, storyboardDestinationOf("Comic"))
+        assertEquals(StoryboardDestination.Library, storyboardDestinationOf("Pages"))
+        assertEquals(NovelDestination.Bookshelf, novelDestinationOf("gone"))
+        assertEquals(NovelDestination.Write, novelDestinationOf("Write"))
     }
 
     @Test
@@ -60,10 +123,16 @@ class RailTabDefaultsTest {
     @Test
     fun chromeToolsStayGlobal() {
         val tools = workspaceChromeTools()
-        assertTrue(tools.containsAll(listOf(RailTab.Codex, RailTab.Prompts, RailTab.Notes)))
+        assertEquals(listOf(RailTab.Codex, RailTab.Prompts, RailTab.Pictures), tools)
+    }
+
+    @Test
+    fun savedNavigationOrderKeepsNewAndUnknownItemsSafe() {
+        val items = listOf("Novel", "Roleplay", "Chatting", "Storyboard", "Notes")
         assertEquals(
-            listOf("Codex", "Prompts", "Notes", "Snippets", "Chats", "Pictures"),
-            tools.map { it.label },
+            listOf("Chatting", "Novel", "Roleplay", "Storyboard", "Notes"),
+            applySavedOrder(items, "Chatting,Novel,removed") { it },
         )
+        assertEquals(items, applySavedOrder(items, "") { it })
     }
 }

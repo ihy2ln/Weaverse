@@ -9,6 +9,27 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+tasks.register<Exec>("stageMediaPacks") {
+    group = "distribution"
+    description = "Builds the debug APK and reproducible Adams Haven optional media packs."
+    dependsOn("assembleDebug")
+    workingDir(rootProject.projectDir)
+    commandLine(
+        "powershell.exe",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        rootProject.file("tools/build-media-packs.ps1").absolutePath,
+    )
+}
+
+// Room writes each schema version here; MigrationTest reads them to prove every
+// upgrade keeps the user's data. Commit new files in app/schemas with each bump.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 android {
     namespace = "com.ihy2ln.weaverse"
     compileSdk = 35
@@ -16,9 +37,9 @@ android {
     defaultConfig {
         applicationId = "com.ihy2ln.weaverse"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 40
-        versionName = "0.5.17"
+        targetSdk = 34
+        versionCode = 179
+        versionName = "1.4.47"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -46,18 +67,23 @@ android {
                 "proguard-rules.pro",
             )
             val keystorePath = System.getenv("KEYSTORE_PATH")
-            // Always assign a signingConfig so `assembleRelease` produces a signed,
-            // installable APK even with no keystore configured — falls back to the
-            // debug key rather than leaving the release build type unsigned.
-            signingConfig = if (!keystorePath.isNullOrBlank()) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
+            // A release signed with a different key cannot update the installed app;
+            // Android forces an uninstall and every novel, chat and save is lost. The
+            // debug-key fallback is only allowed when explicitly requested for a
+            // throwaway local build (-PallowDebugSignedRelease=true).
+            val allowDebugSigned = providers.gradleProperty("allowDebugSignedRelease").orNull == "true"
+            signingConfig = when {
+                !keystorePath.isNullOrBlank() -> signingConfigs.getByName("release")
+                allowDebugSigned -> signingConfigs.getByName("debug")
+                else -> null
             }
         }
         debug {
-            applicationIdSuffix = ".debug"
+            applicationIdSuffix = providers.gradleProperty("qaApplicationIdSuffix").getOrElse(".textgame")
             versionNameSuffix = "-debug"
+            // Keep locally installable test builds visually distinct from the
+            // production app so testers cannot accidentally reopen an older release.
+            resValue("string", "app_name", "Weaverse Test ${defaultConfig.versionName}")
         }
     }
 
@@ -73,6 +99,7 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        aidl = true
     }
 
     packaging {
@@ -87,6 +114,14 @@ android {
             it.useJUnitPlatform()
         }
     }
+
+    // AGP 8.7.3 + Kotlin 2.0 crashes androidx.lifecycle's NullSafeMutableLiveData
+    // detector (KaCallableMemberCall class vs interface). That aborts assembleRelease
+    // on GitHub Actions; skip release-lint until AGP/lifecycle are upgraded together.
+    lint {
+        checkReleaseBuilds = false
+        disable += "NullSafeMutableLiveData"
+    }
 }
 
 dependencies {
@@ -97,6 +132,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.navigation.compose)
 
     implementation(platform(libs.androidx.compose.bom))
@@ -104,11 +140,12 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
-    implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.compose.material:material-icons-extended:1.7.6")
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
+    implementation(libs.androidx.work.runtime)
 
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
@@ -134,6 +171,16 @@ dependencies {
 
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
+
+    // Mihon/Tachiyomi extension host ABI. Extension APKs compile these as
+    // provided dependencies and expect the host application to supply them.
+    implementation("io.reactivex:rxjava:1.3.8")
+    implementation("org.jsoup:jsoup:1.23.1")
+    implementation("androidx.preference:preference-ktx:1.2.1")
+    implementation("com.github.mihonapp:injekt:91edab2317")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-protobuf:1.7.3")
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
 
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.junit.jupiter.api)

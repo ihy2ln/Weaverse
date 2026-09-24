@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Adaptive-icon foreground: the gold W only. Adaptive icons crop to a safe zone
+  of roughly the middle 66dp of 108dp, so the glyph is kept well inside that.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#D4AF37"
+        android:pathData="M32,38 L40,38 L46,62 L52,46 L56,46 L62,62 L68,38 L76,38 L66,72 L57,72 L54,60 L51,72 L42,72 Z" />
+</vector>
