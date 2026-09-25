@@ -33,7 +33,7 @@ object HelpContent {
                 ),
                 HelpEntry(
                     "The three rows",
-                    "1) Modes: Novel, RPG, Chatting, Storyboard, Notes. " +
+                    "1) Modes: Novel, RPG, Games, Chatting, Storyboard, Notes. " +
                         "2) Sub-modes for whichever mode you are in. " +
                         "3) Extra: Codex, Prompts, Notes, Snippets, Chats and Pictures — " +
                         "the tools that do not belong to any one mode.",
@@ -239,6 +239,36 @@ object HelpContent {
                     "Slice of life, Normal, Hard, Ruthless. Each injects a directive into " +
                         "the prompt, so the world really does push back that much — it is " +
                         "not just a randomness slider.",
+                ),
+            ),
+        ),
+        HelpSection(
+            id = "games",
+            title = "Games",
+            summary = "Adams Haven, the card game, played in full.",
+            entries = listOf(
+                HelpEntry(
+                    "What it is",
+                    "Games runs Adams Haven itself: the Godot card game with Battle Journey, " +
+                        "Tower Tycoon, Party & Deck and the animated character cards. It is the " +
+                        "same game as the standalone Adams Haven build, not a copy of it.",
+                ),
+                HelpEntry(
+                    "Installing the game",
+                    "The game's art and battle videos come as one game pack, about 1.3 GB, so " +
+                        "they are not part of the Weaverse download. In Games, tap Import game " +
+                        "pack and pick the adams-haven-v….zip file. It is copied in once.",
+                ),
+                HelpEntry(
+                    "Playing",
+                    "Play opens the game full screen in landscape. Back, or Quit in the game, " +
+                        "returns to Weaverse. The game runs apart from your books, so a crash in " +
+                        "it never touches your writing.",
+                ),
+                HelpEntry(
+                    "Updating and removing",
+                    "Update game pack installs a newer pack over the old one. Remove game data " +
+                        "frees the space. Game saves are kept either way.",
                 ),
             ),
         ),

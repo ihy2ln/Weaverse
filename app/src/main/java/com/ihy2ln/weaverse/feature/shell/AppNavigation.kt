@@ -55,7 +55,7 @@ enum class RoleplayDestination(val label: String) {
 
 /** The Games workspace — text-driven card games in their own mode. */
 enum class GamesDestination(val label: String) {
-    TextGames("Text Games"),
+    AdamsHaven("Adams Haven"),
 }
 
 /** The messenger workspace: the Discord server view, plus the friends list. */
@@ -95,7 +95,7 @@ fun roleplayDestinationOf(id: String?): RoleplayDestination =
     RoleplayDestination.entries.firstOrNull { it.name == id } ?: RoleplayDestination.Chats
 
 fun gamesDestinationOf(id: String?): GamesDestination =
-    GamesDestination.entries.firstOrNull { it.name == id } ?: GamesDestination.TextGames
+    GamesDestination.entries.firstOrNull { it.name == id } ?: GamesDestination.AdamsHaven
 
 fun chattingDestinationOf(id: String?): ChattingDestination =
     ChattingDestination.entries.firstOrNull { it.name == id } ?: ChattingDestination.Chats

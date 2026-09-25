@@ -67,12 +67,6 @@ fun authoredEnemyIdsForGkom(monsterId: String): List<String> = AUTHORED_ENEMY_GK
     .keys
     .sorted()
 
-fun gkomTierFor(kind: DungeonKind?): GkomTier = when (kind) {
-    DungeonKind.Elite -> GkomTier.Elite
-    DungeonKind.Boss -> GkomTier.Boss
-    else -> GkomTier.Trash
-}
-
 internal fun adamsHavenGkomMediaCategory(): String = "Adams Haven / Monsters / GKOM"
 
 internal fun adamsHavenGkomMediaTags(monster: AdamsHavenGkomMonster): String = listOf(

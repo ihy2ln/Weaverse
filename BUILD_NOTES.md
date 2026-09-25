@@ -3,6 +3,35 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.48 - Games is Adams Haven, the real game
+
+- APK: `Beta.Test.Build/weaverse-v1.4.48.apk`, SHA-256
+  `b86db7dd5f77fb4f4a103d391310bc68b62e987ccd8150a807bf2981d74dcdf7`, debug-key signed
+  (`-PallowDebugSignedRelease=true`) like 1.4.47 so it updates in place.
+- Game pack: `Beta.Test.Build/adams-haven-v0.11.0.zip` (1281 MB), SHA-256
+  `10802def80b547e7f43a3df6528864393a51d23a495f61aa24289d111916177f`. Import it once from
+  **Games → Import game pack**.
+- **Games runs the Godot game itself.** Godot 4.7.1's Android runtime is bundled
+  (`app/libs/godot-lib-4.7.1.stable.template_release.aar`, arm64-v8a + x86_64) and
+  `AdamsHavenGameActivity` hosts it in its own `:game` process, so leaving or crashing the
+  game never touches Weaverse. Tested on MuMu: title screen, Tower Tycoon, the Briar Road
+  expedition map, and Back returning to Weaverse.
+- **Why a boot project.** Official Godot runtimes reject `--main-pack` from outside the APK.
+  The APK carries a tiny boot project (`assets/project.binary`, `assets/weaverse-game/boot.gd`)
+  whose first autoload mounts the pack with `ProjectSettings.load_resource_pack` before the
+  game's autoloads load. The game's settings come from `weaverse-game/override.cfg` in the
+  pack, written to `user://` before each launch. See `tools/README-games.md`.
+- **Game pack.** `tools/build_game_pack.py` turns an Adams Haven Android export into the pack
+  (stored zip + manifest + override). The pack's engine must match the bundled runtime.
+- **Renderer.** Vulkan (Mobile), same as the standalone game. x86 emulators get OpenGL,
+  because MuMu cannot present Vulkan frames. The standalone APK is black there too.
+- **Text Games retired.** The Kotlin text-game prototype (engine, screens, board, farm/town
+  sims, tutorial) is removed. The Adams Haven art catalogs that Codex, RPG and Pictures use
+  stay. The `text_game_saves` table is left in place and unused.
+- APK grows from 124 MB to 180 MB, all of it the Godot runtime (native libs are now stored
+  compressed).
+- Help, wiki, manual and guide gain a Games section.
+
 ## v1.4.47 - One theme on every page: glass, wallpapers, real font size
 
 - APK: `Beta.Test.Build/weaverse-v1.4.47.apk`, SHA-256

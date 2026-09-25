@@ -38,8 +38,8 @@ android {
         applicationId = "com.ihy2ln.weaverse"
         minSdk = 26
         targetSdk = 34
-        versionCode = 179
-        versionName = "1.4.47"
+        versionCode = 180
+        versionName = "1.4.48"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -103,6 +103,11 @@ android {
     }
 
     packaging {
+        // Compress native libraries in the APK. The Godot runtime for Games is ~145 MB
+        // uncompressed across its two ABIs and ~50 MB compressed; Android extracts it on install.
+        jniLibs {
+            useLegacyPackaging = true
+        }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
             excludes += "/META-INF/LICENSE*"
@@ -126,6 +131,11 @@ android {
 
 dependencies {
     implementation(project(":sync-core"))
+
+    // Games mode runs Adams Haven on the real Godot engine. This is Godot 4.7.1's
+    // template_release library cut down to arm64-v8a + x86_64 (tools/README-games.md);
+    // it must match the engine the game pack was exported with (GodotRuntime).
+    implementation(files("libs/godot-lib-4.7.1.stable.template_release.aar"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

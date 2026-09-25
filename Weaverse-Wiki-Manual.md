@@ -9,6 +9,7 @@
 - [Navigation and Shelves](#navigation-and-shelves) — Home, the three rows, and every shelf
 - [Novel and Reader](#novel-and-reader) — Plan, Write, Read, Chat, Review
 - [RPG](#rpg) — Campaigns, adventure play, dice, roster, town
+- [Games](#games) — Adams Haven, the Godot card game, inside Weaverse
 - [Chatting](#chatting) — A Discord-style space for your works
 - [Brainstorm and Notes](#brainstorm-and-notes) — AI brainstorm chat, and the notes board
 - [Storyboard](#storyboard) — Manga and comic pages — import, separate, edit, translate
@@ -357,6 +358,37 @@ master's prompt automatically.
 - **Lore** — this adventure's own codex, filling as you play.
 - **Presets** — difficulty (Slice of life → Ruthless) that
   changes how hard the world pushes back.
+
+---
+
+## Games
+
+### Adams Haven
+Games runs **Adams Haven**, the card game, on the same Godot
+engine as the standalone build. What you play is the game
+itself, not a copy of it:
+
+- **Battle Journey** — a roguelite run through Briar Hollow.
+  Start with one hero, recruit on the route, bring the haul home.
+- **Tower Tycoon** — build Silverbrook's tower, staff it,
+  farm it and keep it fed.
+- **Party & Deck** — equip the moves each hero fights with.
+- **Character Card Animations** — the animated character fronts.
+
+### Installing the game pack
+The art and battle videos are one **game pack** of about
+1.3 GB, so they are not part of the Weaverse download.
+
+- Open **Games** and tap **Import game pack**.
+- Pick the `adams-haven-v….zip` file. It is copied in once.
+- **Update game pack** installs a newer one over it;
+  **Remove game data** frees the space. Saves are kept.
+
+### Playing
+- **Play Adams Haven** opens the game full screen in landscape.
+- **Back**, or **Quit** in the game, returns to Weaverse.
+- The game runs apart from your books, so a crash in it
+  never touches your writing.
 
 ---
 

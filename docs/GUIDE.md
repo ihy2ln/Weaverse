@@ -295,6 +295,19 @@ current, maximum, and temporary hit points plus quick change controls.
   Ruthless. They add behavioral direction to play rather than merely changing
   randomness.
 
+## Games
+
+Games runs **Adams Haven**, the Godot card game, on the same engine as the
+standalone build: Battle Journey, Tower Tycoon, Party & Deck and the animated
+character cards.
+
+The game's art and battle videos come as one **game pack** (about 1.3 GB),
+so they are not part of the Weaverse download. Open **Games**, tap **Import
+game pack** and pick the `adams-haven-v….zip` file. **Play Adams Haven** opens
+it full screen in landscape; **Back** or **Quit** returns to Weaverse.
+**Update game pack** replaces it, **Remove game data** frees the space, and
+game saves are kept either way.
+
 ## Chatting
 
 Chatting opens at **Chats**, with **Friends/Contacts** for starting new

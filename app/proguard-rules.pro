@@ -14,3 +14,8 @@
 -keep class eu.kanade.tachiyomi.network.** { *; }
 -keep class tachiyomi.core.common.util.lang.** { *; }
 -keep class uy.kohesive.injekt.** { *; }
+
+# Godot's native engine calls back into its Java classes by name over JNI; the AAR ships
+# no consumer rules, so nothing in it may be renamed or stripped.
+-keep class org.godotengine.** { *; }
+-dontwarn org.godotengine.**

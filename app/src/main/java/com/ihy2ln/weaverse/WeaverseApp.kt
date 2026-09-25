@@ -70,6 +70,10 @@ class WeaverseApp : Application(), Configuration.Provider {
     override fun onCreate() {
         instance = this
         super.onCreate()
+        // The Games process only hosts the Godot runtime. Seeding, sync, backups and the
+        // extension host belong to the main process; running them twice would put two
+        // processes on one database.
+        if (isGameProcess()) return
         // Extension source classes use Mihon's small service locator at runtime.
         // Register only the host services that are part of the public source ABI.
         Injekt.importModule(object : InjektModule {
@@ -90,6 +94,16 @@ class WeaverseApp : Application(), Configuration.Provider {
                 AutoBackupScheduler.ensure(this@WeaverseApp)
             }
         }
+    }
+
+    private fun isGameProcess(): Boolean {
+        val name = if (android.os.Build.VERSION.SDK_INT >= 28) {
+            getProcessName()
+        } else {
+            (getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager).runningAppProcesses
+                ?.firstOrNull { it.pid == android.os.Process.myPid() }?.processName
+        }
+        return name != null && (name.endsWith(":game") || name.endsWith(":phoenix"))
     }
 
     companion object {

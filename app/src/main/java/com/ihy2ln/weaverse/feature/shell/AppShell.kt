@@ -110,7 +110,7 @@ import com.ihy2ln.weaverse.feature.roleplay.chat.RoleplayChatChrome
 import com.ihy2ln.weaverse.feature.roleplay.chat.RoleplayChatDetailScreen
 import com.ihy2ln.weaverse.feature.roleplay.chat.ImportedMangaEditorScreen
 import com.ihy2ln.weaverse.feature.roleplay.chat.roleplayModeSubtitle
-import com.ihy2ln.weaverse.feature.roleplay.textgame.TextGamesScreen
+import com.ihy2ln.weaverse.feature.games.GamesScreen
 import com.ihy2ln.weaverse.feature.roleplay.friends.FriendsScreen
 import com.ihy2ln.weaverse.feature.roleplay.lorebook.LorebookScreen
 import com.ihy2ln.weaverse.feature.roleplay.personas.PersonaDetailScreen
@@ -169,11 +169,6 @@ fun AppShell(
     var workspaceFocus by rememberSaveable { mutableStateOf(WorkspaceFocus.Story.name) }
     var chromeTool by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedRpChatId by rememberSaveable { mutableStateOf<String?>(null) }
-    // Games owns its session independently; sharing selectedRpChatId caused workspace
-    // switches and text-game creation to fall back into the RPG workspace.
-    var selectedGameSessionId by rememberSaveable { mutableStateOf<String?>(null) }
-    /** Text Game battle focus: collapses the prompt dock to its header line. */
-    var textGameBattleFocus by remember { mutableStateOf(false) }
     // Chatting mode: which work-server is open in the Discord rail (null = Home/DMs).
     var chatServerId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedCodexEntryId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -254,10 +249,9 @@ fun AppShell(
                     val accessMode = when (vocabulary) {
                         CreateWorkVocabulary.Storyboard -> "Storyboard"
                         CreateWorkVocabulary.Campaign -> "Roleplay"
-                        CreateWorkVocabulary.TextGame -> "Games"
                         else -> "Novel"
                     }
-                    shellViewModel.recordAccess(accessMode, if (accessMode == "Games") "chat" else "book", if (accessMode == "Games") chatId.orEmpty() else bookId)
+                    shellViewModel.recordAccess(accessMode, "book", bookId)
                     showLibrary = false
                     when (vocabulary) {
                         CreateWorkVocabulary.Storyboard -> {
@@ -277,10 +271,6 @@ fun AppShell(
                             mode = AppMode.Roleplay.name
                             rpDest = RoleplayDestination.Chats.name
                             selectedRpChatId = chatId
-                        }
-                        CreateWorkVocabulary.TextGame -> {
-                            mode = AppMode.Games.name
-                            selectedGameSessionId = chatId
                         }
                         else -> {
                             mode = AppMode.Novel.name
@@ -462,14 +452,17 @@ fun AppShell(
     val seriesTitle = shellInfo.series?.title ?: "Library"
     val inRpChat = (selectedRpChatId != null || storyboardChatId != null) && rpChrome != null
     val inNotes = mode == AppMode.Notes.name
+    val inGames = mode == AppMode.Games.name && !showHome
     val toolbarTitle = when {
         inRpChat -> rpChrome!!.title
         inNotes -> "Notes"
+        inGames -> "Adams Haven"
         else -> bookTitle
     }
     val toolbarSubtitle = when {
         inRpChat -> roleplayModeSubtitle(rpChrome!!.displayMode)
         inNotes -> "Shared notes · every book & mode"
+        inGames -> "The Godot card game"
         else -> "$seriesTitle · Codex & Prompts stay shared"
     }
 
@@ -576,7 +569,7 @@ fun AppShell(
             val modeId = when (currentMode) {
                 AppMode.Novel -> novelDest
                 AppMode.Roleplay -> rpDest
-                AppMode.Games -> GamesDestination.TextGames.name
+                AppMode.Games -> GamesDestination.AdamsHaven.name
                 AppMode.Chatting -> chatDest
                 AppMode.Storyboard -> storyboardDest
                 AppMode.Notes -> notesDest
@@ -617,7 +610,6 @@ fun AppShell(
                     currentMode == AppMode.Notes && notesDetailOpen -> notesDetailOpen = false
                     currentMode == AppMode.Notes && notesDest != NotesDestination.Chat.name -> notesDest = NotesDestination.Chat.name
                     selectedRpChatId != null -> { selectedRpChatId = null; rpDest = RoleplayDestination.Chats.name }
-                    selectedGameSessionId != null -> selectedGameSessionId = null
                     storyboardChatId != null -> {
                         storyboardChatId = null
                         mangaEditorOnly = false
@@ -643,7 +635,7 @@ fun AppShell(
                     browseRoutes = listOf("home")
                     showHome = true; showSettings = false; showExport = false; showSearch = false; showLibrary = false
                     chromeTool = null; selectedCodexEntryId = null; selectedCharacterId = null; selectedPersonaId = null
-                    selectedInventoryCarrierId = null; selectedRpChatId = null; selectedGameSessionId = null; storyboardChatId = null; rpChrome = null
+                    selectedInventoryCarrierId = null; selectedRpChatId = null; storyboardChatId = null; rpChrome = null
                     workspaceFocus = WorkspaceFocus.Story.name
                 },
                 onSearch = { showSearch = true },
@@ -703,7 +695,6 @@ fun AppShell(
                 onWorkspace = { next ->
                     if (next == AppMode.Novel.name) browseRoutes = listOf("books")
                     showHome = false
-                    selectedGameSessionId = null
                     homeThreadId = null
                     homeMangaId = null
                     showLibrary = false
@@ -854,7 +845,7 @@ fun AppShell(
                         onMode = { next ->
                             if (next == AppMode.Novel) browseRoutes = listOf("books")
                             mode = next.name; showHome = false; homeThreadId = null; homeMangaId = null
-                            selectedGameSessionId = null; selectedRpChatId = null; storyboardChatId = null
+                            selectedRpChatId = null; storyboardChatId = null
                             chatServerId = null; notesDetailOpen = false; rpChrome = null
                             selectedCodexEntryId = null; selectedCharacterId = null; selectedPersonaId = null
                             chromeTool = null; workspaceFocus = WorkspaceFocus.Story.name
@@ -867,7 +858,6 @@ fun AppShell(
                             when (recent.mode) {
                                 "Novel" -> { selectedSceneId = recent.target; novelDest = NovelDestination.Write.name }
                                 "Roleplay" -> { selectedRpChatId = recent.sessionId; rpDest = RoleplayDestination.Chats.name }
-                                "Games" -> selectedGameSessionId = recent.sessionId
                                 "Chatting" -> { chatServerId = recent.bookId; selectedRpChatId = recent.sessionId; chatDest = ChattingDestination.Chats.name }
                                 "Storyboard" -> { homeMangaId = recent.contentId.takeIf { recent.kind == "manga" }; storyboardChatId = recent.sessionId.takeIf { recent.kind != "manga" }; storyboardDest = StoryboardDestination.Library.name }
                                 "Notes" -> if (recent.kind == "note") { notesDest = NotesDestination.Board.name; notesViewModel.selectNote(recent.contentId); notesDetailOpen = true } else { notesDest = NotesDestination.Chat.name; homeThreadId = recent.contentId }
@@ -1030,7 +1020,7 @@ fun AppShell(
                         workspaceFocus,
                         listOf(
                             novelDest, rpDest, chatDest, storyboardDest,
-                            selectedRpChatId, storyboardChatId, selectedGameSessionId,
+                            selectedRpChatId, storyboardChatId,
                         ),
                     ),
                     animationSpec = tween(durationMillis = 120),
@@ -1047,7 +1037,6 @@ fun AppShell(
                     val sd = dests[3] ?: StoryboardDestination.Manga.name
                     val chatId = dests[4]
                     val boardId = dests[5]
-                    val gameSessionId = dests[6]
                     Box(modifier = Modifier.fillMaxSize()) {
                         if (tool != null) {
                             when (runCatching { RailTab.valueOf(tool) }.getOrNull()) {
@@ -1222,29 +1211,7 @@ fun AppShell(
                                     }
                                 }
                             }
-                            AppMode.Games.name -> {
-                                if (gameSessionId != null) {
-                                    TextGamesScreen(
-                                        campaignId = gameSessionId,
-                                        onOpenPrompt = { shellViewModel.openPrompt(PromptEntryKind.Ai) },
-                                        onBackToSessions = { selectedGameSessionId = null },
-                                        onBattleFocus = { textGameBattleFocus = it },
-                                    )
-                                } else {
-                                    WorkShelfScreen(
-                                        kind = WorkShelfKind.TextGame,
-                                        onCreate = { creatingWork = CreateWorkVocabulary.TextGame },
-                                        onOpen = { card ->
-                                            card.bookId?.let { bookId ->
-                                                shellViewModel.openCampaign(bookId) { sessionId ->
-                                                    selectedGameSessionId = sessionId
-                                                    shellViewModel.recordAccess("Games", "chat", sessionId)
-                                                }
-                                            }
-                                        },
-                                    )
-                                }
-                            }
+                            AppMode.Games.name -> GamesScreen()
                             else -> when (roleplayDestinationOf(rd)) {
                                 RoleplayDestination.Chats -> {
                                     if (chatId != null) {
@@ -1320,7 +1287,7 @@ fun AppShell(
             AppMode.Novel -> novelDestinationOf(novelDest) == NovelDestination.Write
             AppMode.Roleplay -> roleplayDestinationOf(rpDest) == RoleplayDestination.Chats &&
                 selectedRpChatId != null
-            AppMode.Games -> selectedGameSessionId != null
+            AppMode.Games -> false
             AppMode.Chatting -> false
             AppMode.Storyboard -> storyboardChatId != null
             AppMode.Notes -> false
@@ -1329,14 +1296,13 @@ fun AppShell(
             context = PromptInsertContext(
                 mode = runCatching { AppMode.valueOf(mode) }.getOrDefault(AppMode.Novel),
                 sceneId = selectedSceneId,
-                rpChatId = if (mode == AppMode.Games.name) selectedGameSessionId else selectedRpChatId,
+                rpChatId = selectedRpChatId,
                 noteId = notesState.selectedId,
                 bookId = shellInfo.book?.id.orEmpty(),
                 workshopThreadId = selectedThreadId,
                 novelDest = novelDest,
             ),
             novelDest = novelDest,
-            forceCollapsed = textGameBattleFocus,
             active = !showHome && activeWritingDestination &&
                 mode != AppMode.Novel.name &&
                 !(mode == AppMode.Storyboard.name && mangaEditorOnly) &&
