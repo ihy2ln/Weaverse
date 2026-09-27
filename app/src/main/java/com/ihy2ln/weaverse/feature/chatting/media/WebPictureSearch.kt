@@ -58,6 +58,7 @@ enum class WebSource(val label: String, val keyIds: List<String>) {
     Google("Google Images", listOf(KEY_GOOGLE, KEY_GOOGLE_CX)),
     Brave("Brave Image Search", listOf(KEY_BRAVE)),
     Civitai("Civitai", emptyList()),
+    Gelbooru("Gelbooru", emptyList()),
 }
 
 const val KEY_GIPHY = "giphy"
@@ -66,6 +67,8 @@ const val KEY_GOOGLE = "google_cse"
 const val KEY_GOOGLE_CX = "google_cse_cx"
 const val KEY_BRAVE = "brave_image_search"
 const val KEY_CIVITAI = "civitai"
+const val KEY_GELBOORU_USER = "gelbooru_user_id"
+const val KEY_GELBOORU_API = "gelbooru_api_key"
 
 /**
  * Searches picture and GIF sites for the chat pickers. Openverse, Wikimedia Commons and
@@ -113,17 +116,30 @@ class WebPictureSearch @Inject constructor(
             .getOrElse { "Civitai unavailable: ${it.message.orEmpty().take(90)}" }
     }
 
-    /** Public, indexed previews from creator and adult video sites. No account access or scraping. */
-    suspend fun publicPreviews(query: String, adultAllowed: Boolean): SearchOutcome = coroutineScope {
+    suspend fun gelbooruStatus(adultAllowed: Boolean): String = withContext(Dispatchers.IO) {
+        if (!adultAllowed) return@withContext "WeaverSocial 18+ is off"
+        runCatching { "Gelbooru connected · ${gelbooru("beach nude", false).size} matching preview(s)" }
+            .getOrElse { "Gelbooru unavailable: ${it.message.orEmpty().take(90)}" }
+    }
+
+    /** Public indexed previews. Source URLs are checked against the requested site. */
+    suspend fun publicPreviews(query: String, adultAllowed: Boolean, adultTopic: Boolean = false, gifs: Boolean = false): SearchOutcome = coroutineScope {
         if (key(KEY_BRAVE).isBlank()) return@coroutineScope SearchOutcome(emptyList(), emptyList(), emptyList())
-        val sites = if (adultAllowed) ADULT_PREVIEW_SITES else GENERAL_PREVIEW_SITES
         val offset = previewRotation.getAndIncrement()
-        val selected = (0 until 2).map { sites[(offset + it).mod(sites.size)] }
+        val adultSearch = adultAllowed && adultTopic
+        val selected = if (adultSearch) AdultMediaSources.choose(offset, gifs)
+            else (0 until 2).map { AdultMediaSources.Site(GENERAL_PREVIEW_SITES[(offset + it).mod(GENERAL_PREVIEW_SITES.size)], "Public media") }
         val jobs = selected.flatMap { site ->
-            val q = "site:$site ${query.split(' ').take(5).joinToString(" ")}"
-            val imageJob = "$site images" to async(Dispatchers.IO) { runCatching { brave(q, false, adultAllowed) } }
-            val videoJob = "$site videos" to async(Dispatchers.IO) { runCatching { braveVideos(q, adultAllowed) } }
-            if (offset % 2 == 0) listOf(videoJob, imageJob) else listOf(imageJob, videoJob)
+            val q = "${site.query} ${query.split(' ').take(5).joinToString(" ")}"
+            val imageJob = "${site.domain} images" to async(Dispatchers.IO) {
+                runCatching { brave(q, gifs, adultSearch).filter { AdultMediaSources.belongsTo(site, it.pageUrl) }
+                    .map { it.copy(source = site.label, adult = adultSearch || it.adult) } }
+            }
+            val videoJobs = if (gifs) emptyList() else listOf("${site.domain} videos" to async(Dispatchers.IO) {
+                runCatching { braveVideos(q, adultSearch).filter { AdultMediaSources.belongsTo(site, it.pageUrl) }
+                    .map { it.copy(source = site.label, adult = adultSearch || it.adult) } }
+            })
+            listOf(imageJob) + videoJobs
         }
         val results = jobs.map { it.first to it.second.await() }
         val lists = results.map { it.second.getOrDefault(emptyList()).iterator() }
@@ -131,7 +147,7 @@ class WebPictureSearch @Inject constructor(
             while (lists.any { it.hasNext() }) lists.forEach { if (it.hasNext()) add(it.next()) }
         }
         SearchOutcome(
-            merged.distinctBy { it.pageUrl },
+            merged.distinctBy { it.fullUrl },
             results.filter { it.second.isFailure }.map { it.first },
             results.map { it.first },
         )
@@ -163,7 +179,8 @@ class WebPictureSearch @Inject constructor(
     /** Results from every enabled source that fits [kind], interleaved so no one site dominates. */
     suspend fun search(query: String, kind: WebSearchKind, adultAllowed: Boolean = SocialContentPolicy.explicit): SearchOutcome = coroutineScope {
         val q = query.trim()
-        val sources = sourcesFor(kind).filter { enabled(it) }
+        val sources = sourcesFor(kind).filter { enabled(it) &&
+            (it != WebSource.Gelbooru || (adultAllowed && ADULT_QUERY_WORDS.containsMatchIn(q))) }
         val jobs = sources.map { source ->
             source to async(Dispatchers.IO) { runCatching { fetch(source, q, kind, adultAllowed) } }
         }
@@ -180,10 +197,10 @@ class WebPictureSearch @Inject constructor(
     data class SearchOutcome(val results: List<WebPicture>, val failedSources: List<String>, val searchedSources: List<String>)
 
     private fun sourcesFor(kind: WebSearchKind): List<WebSource> = when (kind) {
-        WebSearchKind.Gifs -> listOf(WebSource.Brave, WebSource.Giphy, WebSource.Tenor, WebSource.Openverse, WebSource.Commons, WebSource.Google)
+        WebSearchKind.Gifs -> listOf(WebSource.Gelbooru, WebSource.Brave, WebSource.Giphy, WebSource.Tenor, WebSource.Openverse, WebSource.Commons, WebSource.Google)
         // Reddit is not a source: it refuses API calls without a signed-in app.
         WebSearchKind.Memes -> listOf(WebSource.Brave, WebSource.Imgflip, WebSource.Giphy, WebSource.Openverse, WebSource.Google)
-        WebSearchKind.Pictures -> listOf(WebSource.Civitai, WebSource.Brave, WebSource.Openverse, WebSource.Commons, WebSource.Google)
+        WebSearchKind.Pictures -> listOf(WebSource.Civitai, WebSource.Gelbooru, WebSource.Brave, WebSource.Openverse, WebSource.Commons, WebSource.Google)
         WebSearchKind.All -> WebSource.entries
     }
 
@@ -198,6 +215,7 @@ class WebPictureSearch @Inject constructor(
             WebSource.Google -> google(if (kind == WebSearchKind.Memes) "$q meme".trim() else q, gifs, adultAllowed)
             WebSource.Brave -> brave(if (kind == WebSearchKind.Memes) "$q meme".trim() else q, gifs, adultAllowed)
             WebSource.Civitai -> if (gifs || kind == WebSearchKind.Memes) emptyList() else civitai(q, adultAllowed)
+            WebSource.Gelbooru -> if (kind == WebSearchKind.Memes) emptyList() else gelbooru(q, gifs)
         }
     }
 
@@ -266,6 +284,7 @@ class WebPictureSearch @Inject constructor(
             val level = o.str("browsingLevel")?.toIntOrNull() ?: return@mapNotNull null
             if ((level and 32) != 0 || (!wantsAdult && (level and 24) != 0)) return@mapNotNull null
             val prompt = o["meta"].obj().str("prompt").orEmpty().lowercase()
+            if (!AdultMediaSources.adultTagsAreEligible(prompt)) return@mapNotNull null
             val score = words.count { prompt.contains(it) }
             val creator = o.str("username").orEmpty()
             val page = "$base/images/$id"
@@ -279,6 +298,53 @@ class WebPictureSearch @Inject constructor(
         }.sortedByDescending { it.second }
         val relevant = candidates.filter { it.second > 0 }
         return relevant.take(20).map { it.first }
+    }
+
+    /** Gelbooru's documented read-only DAPI. Anonymous access can be throttled by the site. */
+    private fun gelbooru(q: String, gifs: Boolean): List<WebPicture> {
+        val lower = q.lowercase()
+        val hints = listOf(
+            "blonde" to "blonde_hair", "brunette" to "brown_hair", "redhead" to "red_hair",
+            "beach" to "beach", "lingerie" to "lingerie", "cosplay" to "cosplay",
+            "tattoo" to "tattoo", "elf" to "elf", "catgirl" to "cat_girl",
+        )
+        val subject = hints.firstOrNull { Regex("\\b${it.first}\\b").containsMatchIn(lower) }?.second
+            ?: lower.split(Regex("[^a-z0-9]+"))
+                .firstOrNull { it.length >= 4 && it !in STOP_WORDS && it !in CIVITAI_GENERIC_WORDS &&
+                    it !in setOf("nude", "nudity", "porn", "explicit", "sexual", "erotic", "onlyfans", "fansly") }
+            ?: return emptyList()
+        val url = "https://gelbooru.com/index.php".toHttpUrl().newBuilder()
+            .addQueryParameter("page", "dapi").addQueryParameter("s", "post")
+            .addQueryParameter("q", "index").addQueryParameter("json", "1")
+            .addQueryParameter("limit", "80").addQueryParameter("pid", "0")
+            .addQueryParameter("tags", "rating:explicit $subject")
+            .apply {
+                if (key(KEY_GELBOORU_USER).isNotBlank() && key(KEY_GELBOORU_API).isNotBlank()) {
+                    addQueryParameter("user_id", key(KEY_GELBOORU_USER))
+                    addQueryParameter("api_key", key(KEY_GELBOORU_API))
+                }
+            }.build()
+        val root = getJson(url.toString()).obj()
+        return root["post"].arr().mapNotNull { item ->
+            val post = item.obj()
+            val id = post.str("id") ?: return@mapNotNull null
+            val tags = post.str("tags").orEmpty()
+            if (!AdultMediaSources.adultTagsAreEligible(tags)) return@mapNotNull null
+            if (post.str("rating")?.lowercase() !in setOf("explicit", "e")) return@mapNotNull null
+            val file = post.str("file_url")?.takeIf { it.startsWith("https://") } ?: return@mapNotNull null
+            val gif = file.substringBefore('?').endsWith(".gif", true)
+            if (gifs && !gif) return@mapNotNull null
+            if (!gif && !Regex("\\.(jpe?g|png|webp)$", RegexOption.IGNORE_CASE)
+                    .containsMatchIn(file.substringBefore('?'))) return@mapNotNull null
+            val page = "https://gelbooru.com/index.php?page=post&s=view&id=$id"
+            WebPicture(
+                id = "gel-$id", title = tags.replace('_', ' ').take(140),
+                thumbUrl = post.str("preview_url") ?: post.str("sample_url") ?: file,
+                fullUrl = file, isGif = gif, source = "Gelbooru",
+                pageUrl = page, credit = post.str("owner")?.let { "@$it on Gelbooru" } ?: "Gelbooru uploader",
+                adult = true, description = tags.replace('_', ' ').take(1200),
+            )
+        }
     }
 
     private fun openverse(q: String, gifs: Boolean, adultAllowed: Boolean): List<WebPicture> {
@@ -529,7 +595,7 @@ class WebPictureSearch @Inject constructor(
 
     companion object {
         private val previewRotation = java.util.concurrent.atomic.AtomicInteger()
-        private val ADULT_PREVIEW_SITES = listOf("onlyfans.com", "pornhub.com", "redgifs.com", "fansly.com", "patreon.com", "civitai.red")
+        private val ADULT_PREVIEW_SITES = listOf("onlyfans.com", "fansly.com", "patreon.com", "pornhub.com", "xvideos.com", "xhamster.com", "xnxx.com", "redgifs.com", "sex.com", "rule34.xxx", "gelbooru.com", "danbooru.donmai.us", "civitai.red")
         private val GENERAL_PREVIEW_SITES = listOf("youtube.com", "twitch.tv", "x.com", "civitai.com")
         /** Wikimedia refuses images to clients without a descriptive agent like this one. */
         const val USER_AGENT = "android:com.ihy2ln.weaverse:v1 (Weaverse picture search)"
@@ -543,6 +609,6 @@ class WebPictureSearch @Inject constructor(
             "image", "photo", "picture", "adult", "creator", "clearly", "editorial", "illustration",
             "candid", "search", "words", "style", "content", "public", "media",
         )
-        private val ADULT_QUERY_WORDS = Regex("\\b(nude|nudity|porn|xxx|erotic|explicit|sexual|onlyfans|fansly)\\b", RegexOption.IGNORE_CASE)
+        private val ADULT_QUERY_WORDS = Regex("\\b(nude|nudity|porn|xxx|erotic|explicit|sexual|nsfw|onlyfans|fansly|fetish|lingerie)\\b", RegexOption.IGNORE_CASE)
     }
 }

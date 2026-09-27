@@ -23,6 +23,8 @@ import com.ihy2ln.weaverse.feature.chatting.media.WebSearchKind
 import com.ihy2ln.weaverse.feature.chatting.media.WebPictureSearch
 import com.ihy2ln.weaverse.feature.chatting.media.KEY_BRAVE
 import com.ihy2ln.weaverse.feature.chatting.media.KEY_CIVITAI
+import com.ihy2ln.weaverse.feature.chatting.media.KEY_GELBOORU_USER
+import com.ihy2ln.weaverse.feature.chatting.media.KEY_GELBOORU_API
 import com.ihy2ln.weaverse.feature.chatting.media.KEY_GIPHY
 import com.ihy2ln.weaverse.feature.chatting.media.KEY_TENOR
 import com.ihy2ln.weaverse.feature.chatting.matchNamedCharacters
@@ -154,6 +156,7 @@ data class SocialUiState(
     val comfyStatus: String = "",
     val braveStatus: String = "",
     val civitaiStatus: String = "",
+    val gelbooruStatus: String = "",
     val addedCreatorIds: Set<String> = emptySet(),
 ) {
     val youHandle: String get() = handleFor(personaName)
@@ -618,6 +621,10 @@ class SocialFeedViewModel @Inject constructor(
     fun setBraveKey(value: String) = webPictures.setKey(KEY_BRAVE, value)
     fun civitaiKey(): String = webPictures.key(KEY_CIVITAI)
     fun setCivitaiKey(value: String) = webPictures.setKey(KEY_CIVITAI, value)
+    fun gelbooruUserId(): String = webPictures.key(KEY_GELBOORU_USER)
+    fun setGelbooruUserId(value: String) = webPictures.setKey(KEY_GELBOORU_USER, value)
+    fun gelbooruApiKey(): String = webPictures.key(KEY_GELBOORU_API)
+    fun setGelbooruApiKey(value: String) = webPictures.setKey(KEY_GELBOORU_API, value)
     fun giphyKey(): String = webPictures.key(KEY_GIPHY)
     fun setGiphyKey(value: String) = webPictures.setKey(KEY_GIPHY, value)
     fun tenorKey(): String = webPictures.key(KEY_TENOR)
@@ -643,6 +650,12 @@ class SocialFeedViewModel @Inject constructor(
     fun checkCivitai() {
         viewModelScope.launch {
             _uiState.update { it.copy(civitaiStatus = webPictures.civitaiStatus(safety.adultEnabled)) }
+        }
+    }
+
+    fun checkGelbooru() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(gelbooruStatus = webPictures.gelbooruStatus(safety.adultEnabled)) }
         }
     }
 
@@ -896,10 +909,12 @@ class SocialFeedViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val adultAllowed = safety.adultEnabled
+                val adultTopic = adultAllowed && (ContentLabel.Sexual in SocialTags.labelsOf(post.contentTags) ||
+                    SEXUAL_TERMS.containsMatchIn(post.text))
                 val used = entities.values.flatMap { listOf(it.sourceMediaUrl, it.sourceUrl) }
                     .filter { it.isNotBlank() }.toSet() + claimedMediaUrls
                 val source = if (publicReshare && tags.isNotEmpty())
-                    characterMedia.fetchPublic(tags.first(), adultAllowed, used, post.text) else null
+                    characterMedia.fetchPublic(tags.first(), adultAllowed, used, post.text, adultTopic) else null
                 if (source != null && !claimedMediaUrls.add(source.second.fullUrl)) {
                     _uiState.update { it.copy(mediaNotice = "A media source repeated; trying new posts on the next refresh.") }
                     return@launch
@@ -912,12 +927,14 @@ class SocialFeedViewModel @Inject constructor(
                 val found = when {
                     source != null -> listOf(source.first)
                     uniqueGenerated != null -> listOf(uniqueGenerated)
-                    else -> tags.mapNotNull { characterMedia.fetch(it, adultAllowed, used, post.text) }
+                    else -> tags.mapNotNull { characterMedia.fetch(it, adultAllowed, used, post.text, adultTopic) }
                 }
                 found.mapNotNull { it.sourceUrl.takeIf(String::isNotBlank) }.forEach { claimedMediaUrls.add(it) }
                 if (found.isEmpty()) {
                     _uiState.update { it.copy(mediaNotice = if (generatePrompt != null && tags.isEmpty())
                         "No matching character photo was available. Set an image-capable OpenRouter model or ComfyUI workflow in Media sources & AI images."
+                    else if (adultTopic && webPictures.key(KEY_BRAVE).isBlank())
+                        "No matching adult media found. Add a Brave Image Search key in Media sources for public creator, hub and forum previews."
                     else "No media with a clear match was found for this post.") }
                     return@launch
                 }

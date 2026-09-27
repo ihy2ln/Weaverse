@@ -93,15 +93,18 @@ class CharacterMediaFetcher @Inject constructor(
     private val web: WebPictureSearch,
     private val reuse: SocialMediaReuse,
 ) {
-    suspend fun fetch(tag: MediaTag, adultAllowed: Boolean = SocialContentPolicy.explicit, usedUrls: Set<String> = emptySet(), postText: String? = null): MediaEntity? {
-        fromLibrary(tag, adultAllowed, postText != null)?.let {
+    suspend fun fetch(tag: MediaTag, adultAllowed: Boolean = SocialContentPolicy.explicit, usedUrls: Set<String> = emptySet(), postText: String? = null, adultTopic: Boolean = false): MediaEntity? {
+        val searchAdult = adultAllowed && (postText == null || adultTopic)
+        val searchQuery = if (adultAllowed && adultTopic) "${tag.query} nsfw" else tag.query
+        fromLibrary(tag, searchAdult, postText != null)?.let {
             if (postText == null || reuse.claimExisting(it)) return it
         }
-        val results = runCatching { web.search(tag.query, tag.kind, adultAllowed).results }.getOrDefault(emptyList())
+        val results = runCatching { web.search(searchQuery, tag.kind, searchAdult).results }.getOrDefault(emptyList())
             .filter { tag.kind != WebSearchKind.Gifs || it.isGif }
-            .ifEmpty { runCatching { web.search(tag.query, WebSearchKind.All, adultAllowed).results }.getOrDefault(emptyList())
+            .ifEmpty { runCatching { web.search(searchQuery, WebSearchKind.All, searchAdult).results }.getOrDefault(emptyList())
                 .filter { tag.kind != WebSearchKind.Gifs || it.isGif } }
             .filterNot { it.fullUrl in usedUrls || it.pageUrl in usedUrls }
+            .filter { !it.adult || AdultMediaSources.adultTagsAreEligible(it.title + " " + it.description) }
         val ranked = if (postText == null) results else results
             .map { it to SocialMediaMatch.score(it, tag.query, postText) }
             .filter { it.second > 0 }.sortedByDescending { it.second }.map { it.first }
@@ -113,12 +116,15 @@ class CharacterMediaFetcher @Inject constructor(
     }
 
     /** An indexed public item for an attributed bot reshare. A page URL is required. */
-    suspend fun fetchPublic(tag: MediaTag, adultAllowed: Boolean, usedUrls: Set<String>, postText: String = tag.query): Pair<MediaEntity, WebPicture>? {
-        val indexed = runCatching { web.publicPreviews(tag.query, adultAllowed).results }.getOrDefault(emptyList())
-        val results = (indexed + runCatching { web.search(tag.query, tag.kind, adultAllowed).results }.getOrDefault(emptyList()))
+    suspend fun fetchPublic(tag: MediaTag, adultAllowed: Boolean, usedUrls: Set<String>, postText: String = tag.query, adultTopic: Boolean = false): Pair<MediaEntity, WebPicture>? {
+        val searchAdult = adultAllowed && adultTopic
+        val searchQuery = if (searchAdult) "${tag.query} nsfw" else tag.query
+        val indexed = runCatching { web.publicPreviews(searchQuery, adultAllowed, adultTopic, tag.kind == WebSearchKind.Gifs).results }.getOrDefault(emptyList())
+        val results = (indexed + runCatching { web.search(searchQuery, tag.kind, searchAdult).results }.getOrDefault(emptyList()))
             .distinctBy { it.fullUrl }
             .filter { tag.kind != WebSearchKind.Gifs || it.isGif }
             .filter { it.pageUrl.startsWith("https://") && it.fullUrl !in usedUrls && it.pageUrl !in usedUrls }
+            .filter { !it.adult || AdultMediaSources.adultTagsAreEligible(it.title + " " + it.description) }
             .map { it to SocialMediaMatch.score(it, tag.query, postText) }
             .filter { it.second > 0 }.sortedByDescending { it.second }.map { it.first }
         for (pick in results.take(24)) {

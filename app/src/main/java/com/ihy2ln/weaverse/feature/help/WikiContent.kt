@@ -503,6 +503,16 @@ object WikiContent {
                 If no media fits, the new post remains text-only and shows a
                 short status. Refresh does not change older saved posts.
 
+                With WeaverSocial **18+** on, adult-labeled posts search public
+                Civitai and Gelbooru gallery items. An optional Brave Image
+                Search key also searches indexed previews from creator pages,
+                adult hubs, aggregators and adult forums. Source links and
+                credits stay on reshares; private and paid media stays on its
+                source site. The **18+** switch stops these searches when off.
+                GIF requests accept actual GIF files, while video pages appear
+                as attributed preview cards. Gelbooru may require its optional
+                user ID and API key or restrict access by region.
+
                 How open the
                 feed is follows the **Age rating** in Settings: from **R**
                 it is an open feed like X (politics, religion, crude or

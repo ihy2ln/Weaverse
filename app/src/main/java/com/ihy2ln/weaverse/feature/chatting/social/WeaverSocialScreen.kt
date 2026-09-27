@@ -2184,7 +2184,7 @@ private fun SafetyScreen(
             Column(Modifier.fillMaxWidth().clickable { mediaSettings = true }
                 .padding(horizontal = 16.dp, vertical = 12.dp)) {
                 Text("Media sources & AI images", color = c.accent, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                Text("Civitai gallery, Brave image key, OpenRouter image model, optional ComfyUI workflow and connection status.",
+                Text("Civitai and Gelbooru galleries, Brave adult-site search, OpenRouter image model, optional ComfyUI workflow and connection status.",
                     color = c.muted, fontSize = 12.sp)
                 if (state.mediaNotice.isNotBlank()) Text(state.mediaNotice, color = c.muted, fontSize = 12.sp)
             }
@@ -2357,6 +2357,8 @@ private fun SocialMediaSettingsDialog(state: SocialUiState, viewModel: SocialFee
     val context = LocalContext.current
     var brave by remember { mutableStateOf(viewModel.braveKey()) }
     var civitai by remember { mutableStateOf(viewModel.civitaiKey()) }
+    var gelbooruUser by remember { mutableStateOf(viewModel.gelbooruUserId()) }
+    var gelbooruKey by remember { mutableStateOf(viewModel.gelbooruApiKey()) }
     var giphy by remember { mutableStateOf(viewModel.giphyKey()) }
     var tenor by remember { mutableStateOf(viewModel.tenorKey()) }
     var endpoint by remember { mutableStateOf(state.comfyEndpoint) }
@@ -2368,7 +2370,7 @@ private fun SocialMediaSettingsDialog(state: SocialUiState, viewModel: SocialFee
         text = {
             Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Public search is read-only. Civitai gallery needs no key; an optional token uses your account's browsing level. Brave searches indexed images and video previews from creator, adult, gaming and social sites when 18+ is enabled. Private or paid posts cannot be imported.",
+                Text("Public search is read-only. Civitai and Gelbooru galleries work without a key when their servers allow it. Brave searches indexed creator sites, adult hubs, galleries and forums for 18+ posts. Private or paid posts cannot be imported.",
                     fontSize = 12.sp, color = c.muted)
                 OutlinedTextField(civitai, { civitai = it }, label = { Text("Civitai API token (optional)") },
                     singleLine = true, modifier = Modifier.fillMaxWidth(),
@@ -2385,6 +2387,13 @@ private fun SocialMediaSettingsDialog(state: SocialUiState, viewModel: SocialFee
                         context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
                             android.net.Uri.parse(if (state.safety.adultEnabled) "https://civitai.red/videos" else "https://civitai.com/videos")))
                     })
+                OutlinedTextField(gelbooruUser, { gelbooruUser = it }, label = { Text("Gelbooru user ID (optional)") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(gelbooruKey, { gelbooruKey = it }, label = { Text("Gelbooru API key (optional)") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
+                Text("Check Gelbooru · ${state.gelbooruStatus.ifBlank { "Not checked" }}", color = c.accent,
+                    fontSize = 13.sp, modifier = Modifier.clickable { viewModel.checkGelbooru() })
                 OutlinedTextField(brave, { brave = it }, label = { Text("Brave Image & Video Search API key") },
                     singleLine = true, modifier = Modifier.fillMaxWidth(),
                     visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
@@ -2392,7 +2401,7 @@ private fun SocialMediaSettingsDialog(state: SocialUiState, viewModel: SocialFee
                     fontSize = 12.sp, color = c.muted)
                 Text("Check Brave · ${state.braveStatus.ifBlank { "Not checked" }}", color = c.accent,
                     fontSize = 13.sp, modifier = Modifier.clickable { viewModel.checkBrave() })
-                Text("Animated GIFs use keyless Openverse and Wikimedia results. GIPHY and Tenor keys add larger GIF catalogs. Only actual GIF files attach to GIF requests.",
+                Text("Adult GIF searches include public Gelbooru GIFs and indexed adult hubs/forums. Openverse, Wikimedia, GIPHY and Tenor remain available. Only actual GIF files attach to GIF requests; video pages use credited preview cards.",
                     fontSize = 12.sp, color = c.muted)
                 OutlinedTextField(giphy, { giphy = it }, label = { Text("GIPHY API key (optional)") },
                     singleLine = true, modifier = Modifier.fillMaxWidth(),
@@ -2421,6 +2430,8 @@ private fun SocialMediaSettingsDialog(state: SocialUiState, viewModel: SocialFee
         confirmButton = { androidx.compose.material3.TextButton(onClick = {
             viewModel.setBraveKey(brave)
             viewModel.setCivitaiKey(civitai)
+            viewModel.setGelbooruUserId(gelbooruUser)
+            viewModel.setGelbooruApiKey(gelbooruKey)
             viewModel.setGiphyKey(giphy)
             viewModel.setTenorKey(tenor)
             viewModel.saveMediaSettings(endpoint, workflow, imageModel)
