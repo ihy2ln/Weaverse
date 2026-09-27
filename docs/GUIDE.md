@@ -1,9 +1,8 @@
 # Weaverse Helper Guide
 
-This guide describes the Android app at the
-`checkpoint-v1.3.2-codex-navigation` checkpoint. Weaverse is an offline-first
-creative workspace with five modes over one shared library: Novel, RPG,
-Chatting, Manga Studio, and Notes. AI generation needs OpenRouter; editing,
+This guide describes the Android app's current workspaces. Weaverse is an
+offline-first creative workspace with five modes over one shared library:
+Novel, RPG, WeaverSocial, Manga Studio, and Notes. AI generation needs OpenRouter; editing,
 reading, organizing, and local media continue to work offline.
 
 ## Quick start
@@ -12,7 +11,7 @@ reading, organizing, and local media continue to work offline.
 2. Choose a mode. Its main button always opens that mode's home:
    - **Novel** → **Bookshelf**
    - **RPG** → **Campaign**
-   - **Chatting** → **Chats**
+   - **WeaverSocial** → **Chats**
    - **Manga Studio** → **Library**
    - **Notes** → shared notes board
 3. Create or select a work from its shelf.
@@ -27,7 +26,7 @@ portable backup before large changes.
 
 The top chrome has three logical groups:
 
-1. **Mode**: Novel, RPG, Chatting, Manga Studio, Notes.
+1. **Mode**: Novel, RPG, WeaverSocial, Manga Studio, Notes.
 2. **Workspace**: destinations belonging to the active mode.
 3. **Extra**: shared tools usable across works and modes.
 
@@ -308,16 +307,46 @@ it full screen in landscape; **Back** or **Quit** returns to Weaverse.
 **Update game pack** replaces it, **Remove game data** frees the space, and
 game saves are kept either way.
 
-## Chatting
+## WeaverSocial servers and chats
 
-Chatting opens at **Chats**, with **Friends/Contacts** for starting new
-conversations. The layout follows a modern messenger: search, filters, unread
-counts, avatars, speaker colors, timestamps, grouped messages, and day dividers.
+**WeaverSocial** combines the cast's social network with work-based server
+conversations. Its six bottom tabs are **Home**, **Social**,
+**Servers**, **Explore**, **Alerts** and **You**.
 
-The chat list is collapsible so the conversation can use the screen. Add chats
-from Friends/Contacts. Press and hold a chat for its actions, including select
-or unselect for quick removal; selected chats can be removed together. Opening
-a character for the first time creates a conversation and may seed a greeting.
+- **Home** combines stories and the post composer with recent server chats,
+  activity, trends and the social timeline.
+- **Social** is the focused feed, with **For you** and **Following** views.
+  Pull down to refresh. Reaching the end of either feed generates another
+  batch of character posts; **Refresh** in the composer row also asks for more.
+- **Servers** opens the Discord-style workspace. Each novel and campaign has a
+  server; channels and character rooms are created for the work.
+- **Explore** searches people, posts and #tags and shows trends and people to
+  follow. **Alerts** gathers feed activity and unread server rooms. **You** is
+  your profile, including saved posts and **Privacy & filters**.
+
+Characters are prompted to attach a relevant picture, GIF or meme to about
+half of generated social updates when it suits the character. A matching
+picture from your library may be used instead. Actual images depend on media
+availability.
+
+### Privacy and filters
+
+The default Age rating is **X**, and topic filters start off so legal content
+shows until you choose what to hide. From the profile shield, warn before
+sensitive media, filter sexual, violence, politics, religion, offensive, or
+drugs labels, mute words, restore posts marked **Not interested**, and review
+muted accounts, blocked accounts, and characters who blocked you. Characters
+label their own posts; labels do not tone them down.
+
+Use **Not interested**, **Mute**, or **Block** from a post's **⋯** menu. Mute
+hides an account's posts; Block also stops replies and DMs and removes your
+follow. Characters can block you in replies or DMs when it fits their
+character. You then cannot see, follow, reply to, or message them; lift a
+character's block from **Accounts that blocked you**.
+
+**Friends/Contacts** is available from WeaverSocial's side navigation
+when you want to find a character and start a conversation. Opening a character
+for the first time may seed a greeting.
 
 ## Manga Studio
 
@@ -343,7 +372,7 @@ main art, and page-oriented setup.
 ## Prompt dock and AI
 
 The full prompt dock appears only where generating or entering prose is useful:
-Novel Write and applicable RPG, Chatting, or Manga Studio play/creation surfaces.
+Novel Write and applicable RPG, WeaverSocial, or Manga Studio play/creation surfaces.
 It is not shown on Bookshelf, Campaign, Library, reader pages, Notes, Codex, or
 other management screens.
 

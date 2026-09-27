@@ -26,7 +26,7 @@ Play action. Opening details does not create reading/writing progress or run AI.
 Back restores the originating shelf or grid, including scroll positions and filters.
 
 Home history records actual opens, not background loading or edit timestamps.
-History starts with this update and is local to this device. Storyboard mixes
+History starts with this update and is local to this device. Manga Studio mixes
 manga and authored projects; Brainstorm/Notes mixes threads and notes.
 
 Use a cover's overflow menu (or long press) to **Remove from recents**. A mode's
@@ -39,7 +39,7 @@ Campaign and Window retain their existing work cards and context menus. Their
 selection and management behavior is unchanged. Book management now lives in
 the details page's **More** menu.
 
-For multiple removals in the existing campaign/storyboard shelves:
+For multiple removals in the existing campaign and Manga Studio shelves:
 
 1. Hold an item.
 2. Choose **Select for quick remove**.

@@ -74,9 +74,12 @@ also become Roleplay cards with Messenger, DM, and manga chats.
 | **DM** | Invisible **3×3** snap canvas |
 | **Roleplay** | Invisible **6×6** manga canvas |
 
-### Chatting — a Discord-style space for your works
-- Every novel/campaign is a **server**; Home holds direct messages, reachable
-  from any room through the **DM envelope** in the rail.
+### WeaverSocial — the cast's social network and work servers
+- **Home** combines stories and the composer with the timeline, recent server
+  conversations, activity, and trends. **Social** is the focused, refreshable,
+  continuously loading feed.
+- **Servers** keeps every novel/campaign as a workspace; its channels and
+  character rooms are reachable alongside direct messages.
 - Auto-created **#general / #lore / #brainstorm** plus a room per character,
   each seated with **1-5 Codex characters** shown as an avatar strip.
 - **@Name** adds that person to the room for good; they reply first and other
@@ -164,10 +167,10 @@ JUnit 5 + Turbine (app), a Go launcher for the Windows `.exe` shim.
 
 - Build notes / working log: [BUILD_NOTES.md](BUILD_NOTES.md)
 - **User helper guide:** [docs/GUIDE.md](docs/GUIDE.md)
-- **Latest hard checkpoint:** [docs/CHECKPOINT-v1.4.47-HARD-CHECKPOINT.md](docs/CHECKPOINT-v1.4.47-HARD-CHECKPOINT.md)
+- **Latest hard checkpoint:** [docs/CHECKPOINT-v1.4.54-WEAVERSOCIAL-MANGA-STUDIO.md](docs/CHECKPOINT-v1.4.54-WEAVERSOCIAL-MANGA-STUDIO.md)
 - **Appearance wiki guide:** [docs/wiki/Appearance.md](docs/wiki/Appearance.md)
 - Earlier manga hub checkpoint: [docs/CHECKPOINT-v1.4.9-STORYBOARD-MANGA-HUB.md](docs/CHECKPOINT-v1.4.9-STORYBOARD-MANGA-HUB.md)
-- **Manga Studio guide:** [docs/wiki/Storyboard-Manga-Hub.md](docs/wiki/Storyboard-Manga-Hub.md)
+- **Manga Studio guide:** [docs/wiki/Manga-Studio.md](docs/wiki/Manga-Studio.md)
 - **Prompt Templates wiki guide:** [docs/wiki/Prompt-Templates-and-Add-Ons.md](docs/wiki/Prompt-Templates-and-Add-Ons.md)
 - Earlier Codex checkpoint: [docs/CHECKPOINT-v1.3.2-CODEX-NAVIGATION.md](docs/CHECKPOINT-v1.3.2-CODEX-NAVIGATION.md)
 - **RPG Adventure checkpoint:** [docs/CHECKPOINT-v1.3.2-RPG-ADVENTURE.md](docs/CHECKPOINT-v1.3.2-RPG-ADVENTURE.md)

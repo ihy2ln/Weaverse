@@ -1,7 +1,7 @@
 # Getting Started
 
 1. Tap the book icon for Home.
-2. Choose Novel, RPG, Chatting, Manga Studio, or Notes.
+2. Choose Novel, RPG, WeaverSocial, Manga Studio, or Notes.
 3. Select a work from Bookshelf, Campaign, or Window, or create one.
 4. Use the second menu to move between that mode's workspaces.
 5. Open Extra for shared Codex, Prompts, Notes, Snippets, Chats, and Pictures.
@@ -14,7 +14,7 @@ shelf, reader, Codex entry, Notes board, or management screen does not need it.
 
 ## Offline and AI
 
-Books, campaigns, chats, storyboards, notes, local media, import, export, and
+Books, campaigns, chats, manga/comic projects, notes, local media, import, export, and
 organization are offline-first. AI generation needs internet access, an
 OpenRouter API key in Settings, and a selected text model.
 

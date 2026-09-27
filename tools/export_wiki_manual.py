@@ -33,7 +33,7 @@ PAGE_RE = re.compile(
 # Kept in step with WikiFigure's `when (kind)` branches in WikiScreen.kt --
 # add an entry here whenever a new figure kind is drawn there.
 FIGURE_CAPTIONS = {
-    "chatting": "Chatting — a server rail, channel list, and message thread.",
+    "chatting": "WeaverSocial — a social timeline, server rail, and message thread.",
     "rpg": "RPG Adventure — one large scene illustration above the ongoing prose and action bar.",
     "novel": "Novel Write — the manuscript with Plan, Write, Read, Chat, and Review across the top.",
     "brainstorm": "Brainstorm — a threaded AI chat alongside the classic notes board.",

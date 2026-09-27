@@ -10,9 +10,9 @@
 - [Novel and Reader](#novel-and-reader) — Plan, Write, Read, Chat, Review
 - [RPG](#rpg) — Campaigns, adventure play, dice, roster, town
 - [Games](#games) — Adams Haven, the Godot card game, inside Weaverse
-- [Chatting](#chatting) — A Discord-style space for your works
+- [WeaverSocial](#weaversocial) — Your cast's social network
 - [Brainstorm and Notes](#brainstorm-and-notes) — AI brainstorm chat, and the notes board
-- [Manga Studio](#manga-studio) — Manga and comic pages — import, separate, edit, translate
+- [Manga Studio](#manga-studio) — Browse, download, edit and translate manga or comic pages
 - [Codex](#codex) — One shared library for every mode
 - [Prompts and AI](#prompts-and-ai) — The dock, the composer, models and keys
 - [Appearance](#appearance) — Profiles, themes and section colors
@@ -34,7 +34,7 @@ Blue links like [Novel and Reader](#novel-and-reader) jump straight to a page.
   review your manuscripts.
 - [RPG](#rpg) — AI game-master campaigns, dice, roster, inventory,
   towns, and illustrated adventure scenes.
-- [Chatting](#chatting) — a Discord-style space where your novels and
+- [WeaverSocial](#weaversocial) — WeaverSocial, a social network where your novels and
   campaigns are servers with channels and character rooms.
 - [Manga Studio](#manga-studio) — manga and comic page building.
 - [Brainstorm and Notes](#brainstorm-and-notes) — chat with the AI to brainstorm and
@@ -64,7 +64,7 @@ can be filled in later from Plan or the editor.
 
 ### 2. Learn the three rows
 
-Across the top: **modes** (Novel, RPG, Chatting, Manga Studio,
+Across the top: **modes** (Novel, RPG, WeaverSocial, Manga Studio,
 Brainstorm/Notes), then the current mode's **sub-modes**
 (Plan, Write, Read…), then **Extra** — Codex, Prompts, Notes,
 Snippets, Chats, Pictures. See [Navigation and Shelves](#navigation-and-shelves).
@@ -106,7 +106,7 @@ novels underneath.
 
 ### The three rows
 
-1. **Modes** — Novel, RPG, Chatting, Manga Studio,
+1. **Modes** — Novel, RPG, WeaverSocial, Manga Studio,
    Brainstorm/Notes.
 2. **Sub-modes** for the current mode — for example Novel:
    Bookshelf, Plan, Write, Read, Chat, Review.
@@ -122,7 +122,7 @@ gallery.
 - **Bookshelf** — novels, on the Novel mode.
 - **Campaign shelf** — campaigns, on RPG mode (Campaign or
   Adventure).
-- **Manga Studio shelf** — visual series, on Manga Studio mode.
+- **Manga Studio shelf** — manga and comic projects.
 
 All three are manuscripts underneath — the same library,
 different doors.
@@ -225,7 +225,7 @@ else — attach pictures, roll dice, dictate, pick the model.
 A read-through pass over the manuscript with scene-by-scene
 notes.
 
-Your work here feeds [RPG](#rpg) and [Chatting](#chatting) too — every
+Your work here feeds [RPG](#rpg) and [WeaverSocial](#weaversocial) too — every
 mode shares the same [Codex](#codex).
 
 ---
@@ -392,14 +392,47 @@ The art and battle videos are one **game pack** of about
 
 ---
 
-## Chatting
+## WeaverSocial
+
+### One social app
+
+WeaverSocial has six bottom tabs:
+**Home**, **Social**, **Servers**, **Explore**, **Alerts** and
+**You**. Home is the all-in-one overview: stories and the post
+composer, live server chats, recent activity, trends and the
+timeline. Social is the focused timeline with **For you** and
+**Following** views. Servers is the Discord-style workspace
+below. Explore searches people, posts and #tags, and lists
+servers, trends and people to follow. Alerts gathers unread
+server rooms and feed activity; You opens your profile. The
+envelope opens direct messages.
+
+### Scrolling and refreshing the feed
+
+Pull down at the top of Home or Social to ask characters for
+fresh posts. Keep scrolling either feed; when you reach its
+end, another batch of character posts is generated.
+You can also tap **Refresh** in the composer row. Character
+posts are prompted to include a relevant picture, GIF or meme
+in about half of updates when it fits; a matching image from
+your Pictures library may be attached instead. Availability
+depends on matching library media or a usable image source.
+
+### Home brings it together
+
+Home combines the social timeline with stories, live server
+conversations, recent feed activity and trending topics. Use
+the message button for DMs, **Explore** to search and discover
+people, **Alerts** for the full activity list, and **Servers**
+to open a channel or conversation.
 
 ### Servers are your works
 
-> *[Illustration: Chatting — a server rail, channel list, and message thread.]*
+> *[Illustration: WeaverSocial — a social timeline, server rail, and message thread.]*
 
 The left rail lists every novel and campaign as a server
-icon. The house button is **Home**; directly under it the
+icon, with a red badge when something is unread. The blue
+controller button is **Home**; directly under it the
 **envelope marked DM** opens your direct messages from
 anywhere. Opening a server for the first time auto-creates
 **#general**, **#lore** and **#brainstorm**, plus one room
@@ -411,8 +444,81 @@ Every room is seeded with **1-5 people** drawn from the
 work's Codex characters, shown as an avatar strip under the
 room header. Each channel gets its own stable cast, so
 #general and #lore are not the same crowd. Character rooms
-seat that character plus a couple of others. **Long-press**
-an avatar to remove that person from the room.
+seat that character plus a couple of others. The **people
+icon** in the header opens the member list; tap someone for
+their profile, where **Message** starts a DM and **Remove**
+takes them out of the room.
+
+### Message actions
+
+**Long-press** any message for quick reactions, **Reply**,
+**Edit** (your own), **Pin**, **Copy Text**, **Mark Unread**,
+**Regenerate** and **Delete**. The header's **pin** lists
+pinned messages and the **magnifier** searches the room
+(`from: name` and `has: image` work too). Messages render
+Discord formatting: bold, italic, underline, strikethrough,
+inline code, code blocks, quotes and spoilers.
+
+### Pictures and GIFs
+
+Posts, replies and server messages carry up to **four**
+pictures or GIFs, laid out in a grid. The **picture-search
+button** beside Send (and **Photo** / **GIF**) opens the
+picker: **Search web** looks up memes, GIFs and pictures,
+**Library** and **My GIFs** use your **Pictures**, and the
+corner button picks from the device. Web picks are saved to
+Pictures under *Web*, credited to their source.
+
+Openverse (openly licensed), Wikimedia Commons and Imgflip's
+meme templates need no account. Tap **Sources** to add a
+free **GIPHY**, **Tenor** or **Google Images** key (Custom
+Search API key plus search engine ID) for the big meme and
+reaction-GIF libraries. GIFs play in place. Tap a picture to view it full screen: swipe between
+them, pinch or double-tap to zoom, and share. Characters
+sometimes post pictures from your library whose title, tags
+or category name them.
+
+### Characters' memes and what they post
+
+Characters attach memes, GIFs and photos on their own —
+found in your Pictures library or on the web. How open the
+feed is follows the **Age rating** in Settings: from **R**
+it is an open feed like X (politics, religion, crude or
+offensive humour, controversial opinions), and **NC-17 / X**
+add explicit adult content and turn web safe-search off.
+Nothing illegal is ever allowed: nothing sexual involving
+anyone under 18 or about real people, no real people's
+private information, no real threats.
+
+### Blocking, muting and filters
+
+Anything legal shows by default — the **Age rating** starts
+at **X**. A post's **⋯** menu has **Not interested**,
+**Mute** and **Block**; a profile's **⋯** has Mute and
+Block. Blocked people leave your feed and can't reply to or
+message you. The **shield** on your profile opens **Privacy
+& filters**: warn before sensitive media, hide topics
+(sexual, violence, politics, religion, offensive and drugs —
+characters label their own posts), muted words, restore posts
+marked Not interested, and manage muted accounts, blocked
+accounts and characters who blocked you. Filters start off,
+so the feed shows everything until you choose otherwise.
+
+Characters can **block you** too, in replies or DMs, when
+they really would. You then can't see, follow, reply to or
+message them. As the author you can lift it under *Accounts
+that blocked you*.
+
+### The feed
+
+Your characters post in their own voice; tap **Refresh**
+for more. Post yourself — up to 500 characters, with a photo
+or a feeling — and they reply and react; reply to a post and
+its author answers. Tap **React** to like, or hold it for
+seven reactions. The repeat button **reshares** or
+**quotes**. **Save** keeps a post under You → Saved.
+Profiles show followers, roles and presence, with **Follow**
+and **Message**.
 
 - **Text channels** are group chats with the people seated
   there — never a narrator.
@@ -458,7 +564,7 @@ every codex character, with a search box. Tap someone to open
 their direct message — a DM holds just the two of you, unlike a
 room, which seats a cast.
 
-### Home
+### Servers workspace home
 
 Home lists **Recent Conversations** first, then **Direct
 Messages**, then a section per server listing all of its
@@ -469,7 +575,7 @@ OpenRouter key.
 
 ### The prompt window
 
-Chatting uses the same resizable **prompt window** as Novel,
+WeaverSocial uses the same resizable **prompt window** as Novel,
 not a slim bar: drag its handle to resize, then use the
 message box and **Send**, the **/A** AI versus **\M**
 manual chip, the word target (**W**), the model row — which has
@@ -538,7 +644,7 @@ prompt dock — you can generate into a note or paste from it.
 
 ### Library, Manga, Comic
 
-**Library** is the cover-art shelf for titles and offline chapters. The top row also has **Browse,
+**Library** opens the dedicated manga hub: **Library, Browse,
 Downloads, Extensions, and Projects**. **Manga** reads
 right-to-left; **Comic** the other way.
 
@@ -603,10 +709,10 @@ and zooms inside the frame and is remembered per panel.
 
 ### Import a whole manga, comic, or webtoon
 
-When creating a manga/comic project from the **+ Manga Studio** button,
+When creating a project from the **+ Manga project** button,
 choose an optional whole comic file. You can also use **Add
 pages** into the dedicated Manga Editor. Downloaded/imported
-pages no longer open in the blank six-panel Manga Studio composer.
+pages no longer open in the blank six-panel comic-page composer.
 Each source page stays full-size and can be viewed as **Original**
 or **Edited**. Select a page or picture to use its bottom tools:
 
@@ -745,8 +851,8 @@ adventure's codex.
 ### The prompt dock
 
 **/** opens an AI prompt and **\\** opens manual entry from
-any writing surface — Novel Write, RPG Adventure, Chatting,
-Brainstorm. Novel and RPG share one dock design; Chatting and
+any writing surface — Novel Write, RPG Adventure, WeaverSocial,
+Brainstorm. Novel and RPG share one dock design; WeaverSocial and
 Brainstorm use the same controls in a slightly simpler shell.
 
 > *[Illustration: The prompt dock — drag handle, compact control row, and the template/preset grid.]*

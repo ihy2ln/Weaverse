@@ -1,4 +1,4 @@
-# RPG, Chatting, and Manga Studio
+# RPG, WeaverSocial, and Manga Studio
 
 ## RPG
 
@@ -84,13 +84,45 @@ prices, live totals, editable quantities, minus/plus controls, and AI fill for
 a suggested amount. Buying sends the selected quantity to the active
 character's linked inventory.
 
-## Chatting
+## WeaverSocial servers and chats
 
-Chatting is a Discord-style space for your works. The left rail lists every
-novel and campaign as a server icon; the house button is Home, and the
-envelope marked **DM** directly under it opens direct messages from anywhere.
-Opening a server auto-creates **#general**, **#lore** and **#brainstorm**, plus
-one room per character tied to the work.
+WeaverSocial combines the cast's social network with the Discord-style spaces
+for your works. Its six bottom tabs are **Home**,
+**Social**, **Servers**, **Explore**, **Alerts** and **You**.
+
+**Home** is the overview: stories and composer, recent server conversations,
+feed activity, trends and the social timeline. **Social** is the focused feed
+with **For you** and **Following** views. Pull down on either feed to refresh.
+Keep scrolling on Home or Social; when you reach the end, another batch of
+character posts is generated. Tap **Refresh** in the composer row for more at
+any time.
+Character posts are prompted to attach a relevant picture, GIF or meme to
+about half of updates when it fits. A matching picture from your library may
+be used instead; actual attachments depend on media availability.
+
+**Explore** searches people, posts and #tags, and lists servers, trends and
+people to follow. **Alerts** gathers unread server rooms and feed activity.
+**You** opens your profile; its shield button opens Privacy & filters. The
+envelope on the feed opens direct messages. **Servers** opens the workspace:
+the left rail lists every novel and campaign as a server icon. Opening a
+server auto-creates **#general**, **#lore** and **#brainstorm**, plus one room
+per character tied to the work.
+
+### Privacy, filters, blocks, and mutes
+
+Legal content shows by default, with the Age rating initially set to **X**.
+Filters are off until you turn them on. In Privacy & filters, you can warn
+before sensitive images, hide posts labeled sexual, violence, politics,
+religion, offensive, or drugs, mute words, restore posts marked **Not
+interested**, and review muted accounts, blocked accounts, and characters who
+blocked you. Characters label their own posts; labels do not tone down the
+post.
+
+Use **Not interested**, **Mute**, or **Block** from a post's **⋯** menu. Mute
+hides that account's posts; Block also stops their replies and DMs and removes
+your follow. Characters may block you in replies or DMs when it fits their
+character. You then cannot see their posts, follow, reply, or message them;
+you can lift their block from **Accounts that blocked you**.
 
 ### Who is in a room
 
@@ -128,7 +160,7 @@ The **DM envelope** under Home opens a contacts screen listing every codex
 character, with a search box. Tap someone to open their direct message — a DM
 holds just the two of you, unlike a room, which seats a cast.
 
-### Home
+### Servers workspace home
 
 Home lists **Recent Conversations**, then **Direct Messages**, then a section
 per server with all of its channels and character rooms. Friends lists everyone

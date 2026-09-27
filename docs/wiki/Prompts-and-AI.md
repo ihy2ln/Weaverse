@@ -1,9 +1,9 @@
 # Prompts and AI
 
 The prompt dock is available on actual writing and play surfaces — Novel Write,
-RPG Adventure, Chatting, Brainstorm — not on Home, Bookshelf, Campaign, Window,
+RPG Adventure, WeaverSocial, Brainstorm — not on Home, Bookshelf, Campaign, Window,
 reading, Notes, Codex, or management screens. Novel and RPG share one dock
-design; Chatting and Brainstorm use the same controls in a slightly simpler
+design; WeaverSocial and Brainstorm use the same controls in a slightly simpler
 shell.
 
 ## Resizing the dock

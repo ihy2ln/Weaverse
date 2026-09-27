@@ -65,7 +65,7 @@ object WikiContent {
 
                 ## 2. Learn the three rows
 
-                Across the top: **modes** (Novel, RPG, Chatting, Manga Studio,
+                Across the top: **modes** (Novel, RPG, WeaverSocial, Manga Studio,
                 Brainstorm/Notes), then the current mode's **sub-modes**
                 (Plan, Write, Read…), then **Extra** — Codex, Prompts, Notes,
                 Snippets, Chats, Pictures. See [[Navigation and Shelves]].
@@ -109,7 +109,7 @@ object WikiContent {
 
                 ## The three rows
 
-                1. **Modes** — Novel, RPG, Chatting, Manga Studio,
+                1. **Modes** — Novel, RPG, WeaverSocial, Manga Studio,
                    Brainstorm/Notes.
                 2. **Sub-modes** for the current mode — for example Novel:
                    Bookshelf, Plan, Write, Read, Chat, Review.
@@ -407,13 +407,35 @@ object WikiContent {
             markdown = """
                 ## One social app
 
-                WeaverSocial is the Chatting mode. Its five tabs are
-                **Home** (stories, a post box, rooms live in your servers,
-                then the feed), **Servers** (the Discord-style workspace
-                below), **Explore** (search, your servers, trends, people to
-                follow), **Alerts** (unread server rooms and feed activity)
-                and **You** (your profile). The envelope on Home opens
-                direct messages.
+                WeaverSocial has six bottom tabs:
+                **Home**, **Social**, **Servers**, **Explore**, **Alerts** and
+                **You**. Home is the all-in-one overview: stories and the post
+                composer, live server chats, recent activity, trends and the
+                timeline. Social is the focused timeline with **For you** and
+                **Following** views. Servers is the Discord-style workspace
+                below. Explore searches people, posts and #tags, and lists
+                servers, trends and people to follow. Alerts gathers unread
+                server rooms and feed activity; You opens your profile. The
+                envelope opens direct messages.
+
+                ## Scrolling and refreshing the feed
+
+                Pull down at the top of Home or Social to ask characters for
+                fresh posts. Keep scrolling either feed; when you reach its
+                end, another batch of character posts is generated.
+                You can also tap **Refresh** in the composer row. Character
+                posts are prompted to include a relevant picture, GIF or meme
+                in about half of updates when it fits; a matching image from
+                your Pictures library may be attached instead. Availability
+                depends on matching library media or a usable image source.
+
+                ## Home brings it together
+
+                Home combines the social timeline with stories, live server
+                conversations, recent feed activity and trending topics. Use
+                the message button for DMs, **Explore** to search and discover
+                people, **Alerts** for the full activity list, and **Servers**
+                to open a channel or conversation.
 
                 ## Servers are your works
 
@@ -487,8 +509,11 @@ object WikiContent {
                 Block. Blocked people leave your feed and can't reply to or
                 message you. The **shield** on your profile opens **Privacy
                 & filters**: warn before sensitive media, hide topics
-                (characters label their own posts), muted words, and your
-                muted and blocked lists.
+                (sexual, violence, politics, religion, offensive and drugs —
+                characters label their own posts), muted words, restore posts
+                marked Not interested, and manage muted accounts, blocked
+                accounts and characters who blocked you. Filters start off,
+                so the feed shows everything until you choose otherwise.
 
                 Characters can **block you** too, in replies or DMs, when
                 they really would. You then can't see, follow, reply to or
@@ -550,7 +575,7 @@ object WikiContent {
                 their direct message — a DM holds just the two of you, unlike a
                 room, which seats a cast.
 
-                ## Home
+                ## Servers workspace home
 
                 Home lists **Recent Conversations** first, then **Direct
                 Messages**, then a section per server listing all of its
@@ -561,7 +586,7 @@ object WikiContent {
 
                 ## The prompt window
 
-                Chatting uses the same resizable **prompt window** as Novel,
+                WeaverSocial uses the same resizable **prompt window** as Novel,
                 not a slim bar: drag its handle to resize, then use the
                 message box and **Send**, the **/A** AI versus **\M**
                 manual chip, the word target (**W**), the model row — which has
@@ -845,8 +870,8 @@ object WikiContent {
                 ## The prompt dock
 
                 **/** opens an AI prompt and **\\** opens manual entry from
-                any writing surface — Novel Write, RPG Adventure, Chatting,
-                Brainstorm. Novel and RPG share one dock design; Chatting and
+                any writing surface — Novel Write, RPG Adventure, WeaverSocial,
+                Brainstorm. Novel and RPG share one dock design; WeaverSocial and
                 Brainstorm use the same controls in a slightly simpler shell.
 
                 {{figure:prompts}}

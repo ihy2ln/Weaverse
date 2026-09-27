@@ -33,7 +33,7 @@ object HelpContent {
                 ),
                 HelpEntry(
                     "The three rows",
-                    "1) Modes: Novel, RPG, Games, Chatting, Manga Studio, Notes. " +
+                    "1) Modes: Novel, RPG, Games, WeaverSocial, Manga Studio, Notes. " +
                         "2) Sub-modes for whichever mode you are in. " +
                         "3) Extra: Codex, Prompts, Notes, Snippets, Chats and Pictures — " +
                         "the tools that do not belong to any one mode.",
@@ -275,16 +275,19 @@ object HelpContent {
         HelpSection(
             id = "chatting",
             title = "WeaverSocial",
-            summary = "Your cast's social network: feed, servers, explore, alerts and profiles",
+            summary = "Your cast's social network: an all-in-one Home, Social feed, servers and more",
             entries = listOf(
                 HelpEntry(
                     "One social app",
-                    "WeaverSocial (the Chatting mode) has five tabs. Home is the feed: stories, " +
-                        "a post box with photo and feeling, the rooms that are live in your " +
-                        "servers, then posts. Servers is the Discord-style workspace. Explore " +
-                        "searches people, posts and #tags, and lists your servers, trends and " +
-                        "people to follow. Alerts gathers unread server rooms and feed " +
-                        "activity. You is your profile. The envelope on Home opens direct messages.",
+                    "WeaverSocial has six bottom tabs. Home combines your " +
+                        "stories, post composer, live server chats, recent activity, trends and " +
+                        "social timeline. Social is the focused feed, with For you and Following " +
+                        "views. Pull down to refresh; keep scrolling on either feed and new " +
+                        "character posts are generated as you reach the end. Servers is the " +
+                        "Discord-style workspace. " +
+                        "Explore searches people, posts and #tags, and lists servers, trends and " +
+                        "people to follow. Alerts gathers unread server rooms and feed activity. " +
+                        "You is your profile. The envelope opens direct messages.",
                 ),
                 HelpEntry(
                     "Servers are your works",
@@ -328,8 +331,10 @@ object HelpContent {
                 HelpEntry(
                     "Characters post memes and GIFs",
                     "Characters in the feed and in servers attach memes, GIFs and photos on " +
-                        "their own when it fits. The app finds each one in your Pictures library " +
-                        "or on the web and adds it once it downloads.",
+                        "their own when it fits. Social posts are prompted to use a relevant " +
+                        "visual for about half of updates when it suits the character; a matching " +
+                        "library photo may be used instead. The app finds tagged media in your " +
+                        "Pictures library or on the web and adds it once it downloads.",
                 ),
                 HelpEntry(
                     "What characters can post",
@@ -347,8 +352,9 @@ object HelpContent {
                         "Blocked people leave your feed and can't reply to you or DM you. The " +
                         "shield on your profile opens Privacy & filters: warn before sensitive " +
                         "media, hide topics (sexual, violence, politics, religion, offensive, " +
-                        "drugs — characters label their own posts), muted words, and your muted " +
-                        "and blocked lists.",
+                        "drugs — characters label their own posts), muted words, restore posts " +
+                        "marked Not interested, and manage muted accounts, blocked accounts, " +
+                        "and characters who blocked you.",
                 ),
                 HelpEntry(
                     "Characters can block you",
@@ -359,7 +365,9 @@ object HelpContent {
                 ),
                 HelpEntry(
                     "Posting, reacting and resharing",
-                    "Your characters post in their own voice; tap Refresh for more. Post " +
+                    "Your characters post in their own voice; tap Refresh or pull down for more. " +
+                        "Keep scrolling on Home or Social to generate another batch at the end " +
+                        "of the feed. Post " +
                         "yourself (up to 500 characters, with a photo or a feeling) and they " +
                         "reply and react; reply to a post and its author answers. Tap React " +
                         "to like, or hold it for seven reactions. The repeat button reshares " +
@@ -393,8 +401,9 @@ object HelpContent {
                         "into the room and renders inline.",
                 ),
                 HelpEntry(
-                    "Home",
-                    "Home lists Recent Conversations, then Direct Messages, then a section " +
+                    "Servers workspace home",
+                    "On the Servers workspace's Home screen, Recent Conversations appear first, " +
+                        "then Direct Messages, then a section " +
                         "per server with all of its channels and character rooms. Friends " +
                         "lists everyone you can talk to; Meet someone writes a new character " +
                         "daily when you have an OpenRouter key.",
