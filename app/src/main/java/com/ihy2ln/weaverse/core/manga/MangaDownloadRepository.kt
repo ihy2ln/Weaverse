@@ -504,12 +504,16 @@ class MangaDownloadRepository @Inject constructor(
     suspend fun importChapterPages(chapterId: String): List<MediaEntity> = withContext(Dispatchers.IO) {
         val pages = db.mangaDao().getPages(chapterId)
         pages.mapNotNull { page ->
+            val existingMedia = page.mediaId?.let { mediaRepository.getById(it) }
+                ?.takeIf { media ->
+                    mediaRepository.resolveFile(media).let { it.isFile && it.length() > 0L }
+                }
+            if (existingMedia != null) return@mapNotNull existingMedia
             val file = page.localPath.takeIf { it.isNotBlank() }?.let { File(context.filesDir, it) }
             if (file == null || !file.isFile || file.length() == 0L) return@mapNotNull null
-            val media = page.mediaId?.let { mediaRepository.getById(it) }
-                ?: mediaRepository.importFromFile(file, mimeFor(file.name)).also {
-                    db.mangaDao().upsertPage(page.copy(mediaId = it.id, updatedAt = System.currentTimeMillis()))
-                }
+            val media = mediaRepository.importFromFile(file, mimeFor(file.name)).also {
+                db.mangaDao().upsertPage(page.copy(mediaId = it.id, updatedAt = System.currentTimeMillis()))
+            }
             media
         }
     }
@@ -536,6 +540,10 @@ class MangaDownloadRepository @Inject constructor(
         if (chapter.status != "completed") error("Chapter is not fully downloaded")
         val media = importChapterPages(chapterId)
         if (media.isEmpty()) error("No downloaded pages are available")
+        val expectedPages = maxOf(chapter.pageCount, db.mangaDao().getPages(chapterId).size)
+        require(media.size == expectedPages) {
+            "Only ${media.size} of $expectedPages chapter pages are readable. Retry the chapter download before editing."
+        }
         val pages = decodePages(chat.pagesJson).toMutableList()
         val importedPageIds = mutableListOf<String>()
         val blocks = media.mapIndexed { index, item ->

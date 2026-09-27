@@ -294,7 +294,7 @@ private fun ChatEmojiPicker(onPick: (String) -> Unit) {
     }
 }
 
-private val ChatEmoji = listOf(
+internal val ChatEmoji = listOf(
     "😂", "😅", "😊", "😉", "😍", "😘",
     "😏", "😒", "😔", "😩", "😭", "😡",
     "😳", "😱", "🤔", "🙄", "😎", "🥰",

@@ -3,6 +3,33 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.52 - Chatting gets Facebook and Twitter; Discord gets the real thing
+
+- APK: `Beta.Test.Build/weaverse-v1.4.52.apk`, SHA-256
+  `4ec2b1073ca86d565602eb442b3596873087fa5f7009670a3689a6fca0d81abb`, debug-key signed
+  (`-PallowDebugSignedRelease=true`), same certificate as 1.4.47-1.4.51, so it updates in place.
+- **Database 29 -> 30.** `rp_messages` gains `reactionsJson`, `userReactions`, `replyToId`,
+  `pinned`; new `social_posts` table (Facebook/Twitter posts, comments are posts with a
+  `parentId`, shares/quotes use `repostOfId`). `MIGRATION_29_30`, checked against the
+  exported `30.json`.
+- **Facebook and Twitter** (`feature/chatting/social/`). One `SocialFeedViewModel`, keyed per
+  platform. The cast is `ChatCastResolver.allChatContacts()`; posts, comments and replies come
+  from `AiGenerationService.complete` with "Name: text" output, parsed by `parseSocialLines`
+  (matches the whole cast, so quoted nicknames don't glue two posts together). Like/view/
+  reaction counts are generated numbers, not real. Follows/friends are a DataStore set per
+  platform (`social_follows_<platform>`).
+- **Discord redesign.** `DiscordTheme` swaps in Discord's dark/light palette and re-skins the
+  ink tokens so the shared prompt window matches. New: rail pills + unread badges, collapsible
+  categories, server menu, user panel (status; mute/deafen are visual only), long-press
+  actions (reactions, reply, edit, pin, copy, mark unread, regenerate, delete), reply previews,
+  Discord markdown, jumbo emoji, NEW divider, jump to present, typing dots, member list,
+  profile popout, pinned and search panels. The per-message `SelectionContainer` is gone: it
+  ate the long-press. Characters sometimes react to the writer's messages on their own.
+- **Presence is simulated** (`presenceFor(name)`); there are no voice channels or threads.
+- **Also in this build (1.4.49-1.4.51, previously local-only):** Games can check GitHub for
+  Adams Haven updates and install them, or import an APK/pack from a file; manga chapter AI
+  runs as a background batch under a foreground service.
+
 ## v1.4.48 - Games is Adams Haven, the real game
 
 - APK: `Beta.Test.Build/weaverse-v1.4.48.apk`, SHA-256

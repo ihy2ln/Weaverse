@@ -403,14 +403,15 @@ object WikiContent {
         Page(
             id = "chatting",
             title = "Chatting",
-            summary = "A Discord-style space for your works",
+            summary = "Discord, Facebook and Twitter for your works",
             markdown = """
                 ## Servers are your works
 
                 {{figure:chatting}}
 
                 The left rail lists every novel and campaign as a server
-                icon. The house button is **Home**; directly under it the
+                icon, with a red badge when something is unread. The blue
+                controller button is **Home**; directly under it the
                 **envelope marked DM** opens your direct messages from
                 anywhere. Opening a server for the first time auto-creates
                 **#general**, **#lore** and **#brainstorm**, plus one room
@@ -422,8 +423,30 @@ object WikiContent {
                 work's Codex characters, shown as an avatar strip under the
                 room header. Each channel gets its own stable cast, so
                 #general and #lore are not the same crowd. Character rooms
-                seat that character plus a couple of others. **Long-press**
-                an avatar to remove that person from the room.
+                seat that character plus a couple of others. The **people
+                icon** in the header opens the member list; tap someone for
+                their profile, where **Message** starts a DM and **Remove**
+                takes them out of the room.
+
+                ## Message actions
+
+                **Long-press** any message for quick reactions, **Reply**,
+                **Edit** (your own), **Pin**, **Copy Text**, **Mark Unread**,
+                **Regenerate** and **Delete**. The header's **pin** lists
+                pinned messages and the **magnifier** searches the room
+                (`from: name` and `has: image` work too). Messages render
+                Discord formatting: bold, italic, underline, strikethrough,
+                inline code, code blocks, quotes and spoilers.
+
+                ## Facebook and Twitter
+
+                Pick **Facebook** or **Twitter** under *In this mode*. Your
+                characters post in their own voice; refresh for more. When
+                you post they comment and react, and when you reply the
+                author answers. Facebook has stories, seven reactions
+                (long-press **Like**), comments, shares and friends. Twitter
+                has For you / Following, reposts and quotes, likes,
+                bookmarks, Explore with trends, and profiles.
 
                 - **Text channels** are group chats with the people seated
                   there — never a narrator.

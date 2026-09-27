@@ -9,6 +9,11 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
 import java.util.zip.ZipFile
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -65,19 +70,19 @@ class GamePackStore @Inject constructor(
      * installed pack once it has been checked, so a failed or cancelled import leaves the old
      * game playable.
      */
-    suspend fun import(uri: Uri, onProgress: (copied: Long, total: Long) -> Unit): Result<GamePackManifest> =
+    suspend fun import(uri: Uri, onProgress: (progress: Float, copied: Long) -> Unit): Result<GamePackManifest> =
         withContext(Dispatchers.IO) {
             val target = packFile()
-            val part = File(target.parentFile, target.name + ".part")
+            val source = File(target.parentFile, target.name + ".source.part")
             runCatching {
                 val total = sizeOf(uri)
                 val free = target.parentFile?.usableSpace ?: Long.MAX_VALUE
-                if (total > 0 && total > free) {
-                    error("Not enough space: the pack needs ${formatBytes(total)}, ${formatBytes(free)} is free.")
+                if (total > 0 && total * 2 > free) {
+                    error("Not enough space: importing needs about ${formatBytes(total * 2)} free.")
                 }
                 val input = context.contentResolver.openInputStream(uri) ?: error("Could not open the file.")
                 input.use { src ->
-                    part.outputStream().use { dst ->
+                    source.outputStream().use { dst ->
                         val buffer = ByteArray(1 shl 20)
                         var copied = 0L
                         var lastReport = 0L
@@ -88,24 +93,102 @@ class GamePackStore @Inject constructor(
                             copied += read
                             if (copied - lastReport >= (8 shl 20)) {
                                 lastReport = copied
-                                onProgress(copied, total)
+                                onProgress(if (total > 0) 0.5f * copied / total else -1f, copied)
                             }
                         }
-                        onProgress(copied, total)
+                        onProgress(if (total > 0) 0.5f else -1f, copied)
                     }
                 }
-                val manifest = readManifest(part)
-                if (manifest.engine.isNotBlank() && manifest.engine != GodotRuntime.ENGINE_VERSION) {
-                    error(
-                        "This pack was exported with Godot ${manifest.engine}. Weaverse runs " +
-                            "Godot ${GodotRuntime.ENGINE_VERSION}; re-export it with that version.",
-                    )
+                installSource(source, target, versionFromName(nameOf(uri))) { copied, size ->
+                    onProgress(if (size > 0) 0.5f + 0.5f * copied / size else -1f, copied)
                 }
-                if (target.exists() && !target.delete()) error("Could not replace the installed game.")
-                if (!part.renameTo(target)) error("Could not move the game into place.")
-                manifest
-            }.onFailure { part.delete() }
+            }.also { source.delete() }
         }
+
+    /** Downloads the official release, checks GitHub's SHA-256, then imports its APK assets. */
+    suspend fun update(release: GameRelease, onProgress: (Float, Long) -> Unit): Result<GamePackManifest> =
+        withContext(Dispatchers.IO) {
+            val target = packFile()
+            val source = File(target.parentFile, target.name + ".download.part")
+            runCatching {
+                val connection = (URL(release.downloadUrl).openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 20_000
+                    readTimeout = 30_000
+                    setRequestProperty("User-Agent", "Weaverse-Games")
+                }
+                try {
+                    if (connection.responseCode != 200) error("Download failed: HTTP ${connection.responseCode}.")
+                    val total = connection.contentLengthLong
+                    val free = target.parentFile?.usableSpace ?: Long.MAX_VALUE
+                    if (total > 0 && total * 2 > free) error("Not enough space: the update needs about ${formatBytes(total * 2)} free.")
+                    val digest = MessageDigest.getInstance("SHA-256")
+                    var copied = 0L
+                    connection.inputStream.use { input ->
+                        source.outputStream().use { output ->
+                            val buffer = ByteArray(1 shl 20)
+                            while (true) {
+                                val count = input.read(buffer)
+                                if (count < 0) break
+                                output.write(buffer, 0, count)
+                                digest.update(buffer, 0, count)
+                                copied += count
+                                if (copied % (8L shl 20) < count) {
+                                    onProgress(if (total > 0) 0.5f * copied / total else -1f, copied)
+                                }
+                            }
+                        }
+                    }
+                    val actual = digest.digest().joinToString("") { "%02x".format(it) }
+                    require(actual == release.sha256) { "The download did not match the release checksum." }
+                } finally {
+                    connection.disconnect()
+                }
+                installSource(source, target, release.version) { copied, size ->
+                    onProgress(if (size > 0) 0.5f + 0.5f * copied / size else -1f, copied)
+                }
+            }.also { source.delete() }
+        }
+
+    private fun installSource(
+        source: File,
+        target: File,
+        version: String,
+        onProgress: (Long, Long) -> Unit,
+    ): GamePackManifest {
+        val part = File(target.parentFile, target.name + ".part")
+        try {
+            val isApk = ZipFile(source).use { it.getEntry("assets/project.binary") != null }
+            if (isApk) {
+                val apkVersion = version.ifBlank {
+                    runCatching {
+                        context.packageManager.getPackageArchiveInfo(source.absolutePath, 0)?.versionName.orEmpty()
+                    }.getOrDefault("")
+                }
+                GameApkImporter.convert(source, part, apkVersion, onProgress)
+            } else {
+                Files.move(source.toPath(), part.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                onProgress(part.length(), part.length())
+            }
+            val manifest = readManifest(part)
+            require(manifest.id == "adams-haven") { "This is not an Adams Haven game pack." }
+            require(manifest.engine == GodotRuntime.ENGINE_VERSION) {
+                "This game needs Godot ${manifest.engine}; Weaverse runs ${GodotRuntime.ENGINE_VERSION}."
+            }
+            Files.move(part.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            return manifest
+        } finally {
+            part.delete()
+        }
+    }
+
+    private fun versionFromName(name: String): String =
+        Regex("v(\\d+\\.\\d+\\.\\d+)").find(name)?.groupValues?.get(1).orEmpty()
+
+    private fun nameOf(uri: Uri): String = runCatching {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getString(0) else null
+        } ?: uri.lastPathSegment.orEmpty()
+    }.getOrDefault(uri.lastPathSegment.orEmpty())
 
     suspend fun remove(): Boolean = withContext(Dispatchers.IO) {
         val file = packFile()
@@ -122,7 +205,7 @@ class GamePackStore @Inject constructor(
         }
         zip.getEntry(MANIFEST)?.let { entry ->
             json.decodeFromString<GamePackManifest>(zip.getInputStream(entry).bufferedReader().readText())
-        } ?: GamePackManifest(byteSize = file.length())
+        } ?: error("This game pack has no Weaverse manifest.")
     }
 
     private fun sizeOf(uri: Uri): Long = runCatching {

@@ -311,12 +311,14 @@ class AppShellViewModel @Inject constructor(
                 val chapter = db.mangaDao().getChapter(chapterId)
                     ?: error("Downloaded chapter not found")
                 require(chapter.status == "completed") { "Finish downloading the chapter before editing it" }
+                val expectedPages = maxOf(chapter.pageCount, db.mangaDao().getPages(chapterId).size)
                 // Reopen the durable derived copy for this chapter instead of
                 // creating another hidden edit document every time the reader
                 // taps Translate/Color/Edit.
                 val existing = db.roleplayDao().getChats().firstOrNull { chat ->
                     chat.displayMode == "roleplay" &&
-                        decodePages(chat.pagesJson).any { it.sourceChapterId == chapterId }
+                        expectedPages > 0 &&
+                        decodePages(chat.pagesJson).count { it.sourceChapterId == chapterId } >= expectedPages
                 }
                 if (existing != null && existing.bookId != null) {
                     settings.setSelectedBookId(existing.bookId)
@@ -329,6 +331,10 @@ class AppShellViewModel @Inject constructor(
                         existing.id,
                         focusPageIndex?.let(pageIds::getOrNull) ?: pageIds.firstOrNull(),
                     )
+                }
+                val readablePages = mangaDownloadRepository.offlinePageFiles(chapterId).size
+                require(readablePages == expectedPages) {
+                    "Only $readablePages of $expectedPages chapter pages are readable. Retry the chapter download before editing."
                 }
                 val book = bookRepository.createBook(
                     title = "${chapter.mangaTitle} · ${chapter.title}",

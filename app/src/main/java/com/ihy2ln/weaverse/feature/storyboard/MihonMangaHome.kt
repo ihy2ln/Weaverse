@@ -1599,7 +1599,8 @@ private fun MihonMangaDetail(state: MangaSourceUiState, viewModel: MangaSourceVi
         lazyItems(visibleChapters, key = { "${it.sourceId}:${it.remoteId}" }) { chapter ->
             val existing = state.downloads.firstOrNull { it.sourceId == chapter.sourceId && it.remoteId == chapter.remoteId }
             Row(Modifier.fillMaxWidth().clickable {
-                if (existing?.status == "completed") viewModel.openReader(existing.id) else viewModel.openOnlineReader(chapter)
+                if (existing?.status == "completed") onEditChapter(MangaEditRequest(existing.id))
+                else viewModel.enqueue(chapter)
             }.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(mihonChapterLabel(chapter), maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -1607,7 +1608,6 @@ private fun MihonMangaDetail(state: MangaSourceUiState, viewModel: MangaSourceVi
                 }
                 when (existing?.status) {
                     "completed" -> {
-                        IconButton(onClick = { onEditChapter(MangaEditRequest(existing.id)) }) { Icon(Icons.Outlined.Edit, "Edit") }
                         IconButton(onClick = { viewModel.downloadOptions(existing) }) { Icon(Icons.Outlined.CheckCircle, "Download / AI options", tint = MihonPrimary) }
                     }
                     "queued", "downloading" -> IconButton(onClick = { viewModel.stop(existing) }) { Icon(Icons.Outlined.GetApp, "Stop", tint = MihonPrimary) }

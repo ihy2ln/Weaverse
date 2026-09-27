@@ -75,13 +75,7 @@ private val HubColors = com.ihy2ln.weaverse.core.ui.theme.StreamingColors
 data class MangaEditRequest(
     val chapterId: String,
     val pageIndex: Int? = null,
-    val returnToReader: Boolean = false,
     val action: MangaReaderAction = MangaReaderAction.EditPage,
-)
-
-data class MangaReaderReturnTarget(
-    val chapterId: String,
-    val pageIndex: Int,
 )
 
 @Composable
@@ -91,8 +85,6 @@ fun StoryboardMangaHubScreen(
     onCreateProject: () -> Unit,
     onOpenProject: (WorkShelfCard) -> Unit,
     onEditChapter: (MangaEditRequest) -> Unit,
-    readerReturnTarget: MangaReaderReturnTarget? = null,
-    onReaderReturnConsumed: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: MangaSourceViewModel = hiltViewModel(),
 ) {
@@ -105,27 +97,16 @@ fun StoryboardMangaHubScreen(
         tabName = runCatching { MangaHubTab.valueOf(initialTab).name }.getOrDefault(MangaHubTab.Library.name)
     }
 
-    LaunchedEffect(readerReturnTarget) {
-        readerReturnTarget?.let {
-            viewModel.openReader(it.chapterId, it.pageIndex)
-            onReaderReturnConsumed()
+    // All chapter entry points use the same reader/editor. Streaming chapters need a
+    // local copy before that surface can create its editable pages.
+    LaunchedEffect(state.readerChapter?.id, state.readerOnline) {
+        state.readerChapter?.let { chapter ->
+            val pageIndex = state.readerPageIndex
+            val online = state.readerOnline
+            viewModel.closeReader()
+            if (online) viewModel.downloadOptions(chapter)
+            else onEditChapter(MangaEditRequest(chapter.id, pageIndex))
         }
-    }
-
-    state.readerChapter?.let { chapter ->
-        MangaChapterReader(
-            chapter = chapter,
-            pagePaths = state.readerPagePaths,
-            onDismiss = viewModel::closeReader,
-            initialPageIndex = state.readerPageIndex,
-            online = state.readerOnline,
-            onPageChanged = { page -> viewModel.recordReaderPage(chapter.id, page, state.readerPagePaths.size) },
-            onAction = { action, chapterId, pageIndex ->
-                viewModel.closeReader()
-                onEditChapter(MangaEditRequest(chapterId, pageIndex, returnToReader = true, action = action))
-            },
-        )
-        return
     }
 
     MihonMangaHome(

@@ -199,6 +199,8 @@ fun RoleplayChatDetailScreen(
     LaunchedEffect(chatId, initialPageId, initialEditorAction, initialMangaChapterId, state.activePageId, state.pages, state.mediaPanels) {
         if (!editorOnly || initialEditorActionApplied || initialEditorAction == null) return@LaunchedEffect
         if (initialPageId != null && state.activePageId != initialPageId) return@LaunchedEffect
+        if (initialEditorAction.endsWith("Chapter") && initialMangaChapterId != null &&
+            state.pages.none { it.sourceChapterId == initialMangaChapterId }) return@LaunchedEffect
         when (initialEditorAction) {
             "TranslatePage" -> viewModel.translateActiveMangaPageToEnglish()
             "TranslateChapter" -> initialMangaChapterId?.let(viewModel::translateDownloadedChapter)

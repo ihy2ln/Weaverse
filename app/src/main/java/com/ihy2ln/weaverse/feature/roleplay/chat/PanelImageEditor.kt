@@ -305,9 +305,8 @@ fun PanelImageEditor(
     Box(modifier = Modifier.fillMaxSize().background(EditorBg)) {
     Column(modifier = Modifier.fillMaxSize()) {
         androidx.compose.material3.Surface(color = EditorPanel, contentColor = Color.White) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = ::closeEditor) { Text("Read", color = Color.White) }
-                Text("EDIT", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                ReadEditToggle(reading = false, onRead = ::closeEditor, onEdit = {}, editEnabled = true)
                 TextButton(onClick = ::undoEdit, enabled = history.canUndo && !editor.busy,
                     colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = Color.White, disabledContentColor = Color.Gray)) { Text("Undo") }
                 TextButton(onClick = ::redoEdit, enabled = history.canRedo && !editor.busy,

@@ -3,13 +3,15 @@ package com.ihy2ln.weaverse.feature.chatting
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,26 +22,38 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.snapshotFlow
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Headset
+import androidx.compose.material.icons.filled.HeadsetOff
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SportsEsports
+import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.MailOutline
+import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -47,39 +61,33 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.ihy2ln.weaverse.core.ui.components.InkTextButton
-import com.ihy2ln.weaverse.core.ui.components.PromptActionMenuButton
-import com.ihy2ln.weaverse.feature.prompt.UnifiedPromptBar
-import com.ihy2ln.weaverse.core.ui.components.VoiceToTextField
 import com.ihy2ln.weaverse.core.ui.components.mergeSpokenText
 import com.ihy2ln.weaverse.core.ui.components.rememberSpeechToText
-import com.ihy2ln.weaverse.core.ui.theme.InkAccentBlue
-import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
-import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
-import com.ihy2ln.weaverse.core.ui.theme.inkTokens
-import com.ihy2ln.weaverse.core.ui.util.alwaysScrollEndSpacer
 import com.ihy2ln.weaverse.core.ui.util.parseHexColor
 import com.ihy2ln.weaverse.feature.prompt.PromptModelPickerDialog
-import com.ihy2ln.weaverse.feature.prompt.PromptModelSelection
-import com.ihy2ln.weaverse.feature.prompt.PromptWordLimit
+import com.ihy2ln.weaverse.feature.roleplay.friends.CharacterAvatar
 
 /**
  * Discord-style Chatting workspace: a server rail of works (novels and campaign
@@ -94,27 +102,32 @@ fun DiscordChatScreen(
     onRoomSelect: (String?) -> Unit,
     onOpenFriends: () -> Unit,
     viewModel: DiscordChatViewModel = hiltViewModel(),
-) {
+) = DiscordTheme {
     val state by viewModel.uiState.collectAsState()
-    val tokens = inkTokens()
+    val colors = discordColors()
 
     // Keep the VM's selection in step with the shell-owned state. When both props change
     // together (e.g. opening a recent conversation in a different server from Home),
     // selectedRoomId is already the new target here, so the server switch skips its own
     // "return to the last room" lookup instead of racing to override this room choice.
-    androidx.compose.runtime.LaunchedEffect(selectedServerId) {
+    LaunchedEffect(selectedServerId) {
         viewModel.selectServer(selectedServerId, autoRestoreLastRoom = selectedRoomId == null)
     }
-    androidx.compose.runtime.LaunchedEffect(selectedRoomId) {
+    LaunchedEffect(selectedRoomId) {
         viewModel.selectRoom(selectedRoomId)
     }
 
     var pickerOpen by rememberSaveable { mutableStateOf(false) }
     var channelDialogOpen by rememberSaveable { mutableStateOf(false) }
     var pendingDeleteRoomId by rememberSaveable { mutableStateOf<String?>(null) }
-    var promptCollapsed by rememberSaveable { mutableStateOf(false) }
     var modelsOpen by rememberSaveable { mutableStateOf(false) }
     var modelSearch by rememberSaveable { mutableStateOf("") }
+    var memberListOpen by rememberSaveable { mutableStateOf(false) }
+    var sidePanel by rememberSaveable { mutableStateOf(SidePanel.None) }
+    var status by rememberSaveable { mutableStateOf(DiscordStatus.Online) }
+    var muted by rememberSaveable { mutableStateOf(false) }
+    var deafened by rememberSaveable { mutableStateOf(false) }
+    var jumpToMessageId by remember { mutableStateOf<String?>(null) }
     val startDictate = rememberSpeechToText { spoken ->
         viewModel.onInputChange(mergeSpokenText(viewModel.currentInput(), spoken))
     }
@@ -123,18 +136,20 @@ fun DiscordChatScreen(
     ) { uris ->
         if (uris.isNotEmpty()) viewModel.attachMedia(uris)
     }
-    androidx.compose.runtime.LaunchedEffect(state.mediaPickRequestId) {
+    LaunchedEffect(state.mediaPickRequestId) {
         if (state.mediaPickRequestId > 0L) {
             mediaPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
         }
     }
+    LaunchedEffect(state.selectedRoomId) { sidePanel = SidePanel.None }
 
-    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
         // Landscape on a phone is wide enough to show the room list beside the
         // conversation, so it uses the two-pane layout even under the 700dp bar.
-        val scaledWidth = maxWidth / androidx.compose.ui.platform.LocalDensity.current.fontScale
+        val scaledWidth = maxWidth / LocalDensity.current.fontScale
         val landscape = maxWidth > maxHeight
         val compact = if (landscape) scaledWidth < 560.dp else scaledWidth < 700.dp
+        val roomyEnoughForMembers = scaledWidth >= 980.dp
         var channelsOpen by rememberSaveable { mutableStateOf(selectedRoomId == null) }
         // Back-to-list must also clear the actual room selection, not just toggle this
         // local flag — otherwise the room list still shows the old room as selected, and
@@ -146,14 +161,18 @@ fun DiscordChatScreen(
             onServerSelect(null)
             viewModel.openDmContacts()
         }
-        androidx.activity.compose.BackHandler(compact && !channelsOpen) { backToRoomList() }
-        androidx.compose.runtime.LaunchedEffect(state.selectedRoomId) {
+        val sidePanelOverlay = sidePanel != SidePanel.None && (compact || !roomyEnoughForMembers)
+        androidx.activity.compose.BackHandler(sidePanel != SidePanel.None) { sidePanel = SidePanel.None }
+        androidx.activity.compose.BackHandler(compact && !channelsOpen && sidePanel == SidePanel.None) {
+            backToRoomList()
+        }
+        LaunchedEffect(state.selectedRoomId) {
             channelsOpen = state.selectedRoomId == null
         }
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .background(tokens.background)
+                .background(colors.chat)
                 // Without these the pane runs under the navigation bar and keyboard, which
                 // in landscape pushed the prompt window off the bottom of the screen.
                 .navigationBarsPadding()
@@ -161,25 +180,46 @@ fun DiscordChatScreen(
         ) {
             if ((!compact || channelsOpen) && !(compact && state.dmContactsOpen)) {
                 ServerRail(
-                    servers = state.servers,
+                    state = state,
                     selectedServerId = selectedServerId,
-                    dmSelected = state.selectedRoom?.kind == ROOM_KIND_DM || selectedServerId == null,
                     onOpenDirectMessages = openDirectMessages,
                     onSelect = onServerSelect,
                 )
-                ChannelSidebar(
-                    state = state,
-                    onRoomSelect = { onRoomSelect(it); channelsOpen = false },
-                    onOpenRecent = { room ->
-                        onServerSelect(room.bookId)
-                        onRoomSelect(room.chatId)
-                        channelsOpen = false
-                    },
-                    onAddChannel = { channelDialogOpen = true },
-                    onAddCharacter = { pickerOpen = true },
-                    onDeleteRoom = { pendingDeleteRoomId = it },
-                    modifier = if (compact) Modifier.weight(1f) else Modifier.width(224.dp),
-                )
+                Column(
+                    modifier = (if (compact) Modifier.weight(1f) else Modifier.width(240.dp))
+                        .fillMaxHeight()
+                        .background(colors.sidebar),
+                ) {
+                    ChannelSidebar(
+                        state = state,
+                        onRoomSelect = { onRoomSelect(it); channelsOpen = false },
+                        onOpenRecent = { room ->
+                            onServerSelect(room.bookId)
+                            onRoomSelect(room.chatId)
+                            channelsOpen = false
+                        },
+                        onAddChannel = { channelDialogOpen = true },
+                        onAddCharacter = { pickerOpen = true },
+                        onDeleteRoom = { pendingDeleteRoomId = it },
+                        onFindConversation = openDirectMessages,
+                        onOpenFriends = onOpenFriends,
+                        onMarkRead = viewModel::markServerRead,
+                        modifier = Modifier.weight(1f),
+                    )
+                    UserPanel(
+                        name = state.personaName,
+                        status = status,
+                        onStatusChange = { status = it },
+                        muted = muted,
+                        deafened = deafened,
+                        onToggleMute = { muted = !muted; if (!muted) deafened = false },
+                        onToggleDeafen = { deafened = !deafened; muted = deafened },
+                        onOpenProfile = {
+                            viewModel.openProfile(null, state.personaName, "", isYou = true)
+                            sidePanel = SidePanel.Profile
+                        },
+                    )
+                }
             }
             if (state.dmContactsOpen) {
                 DmContactsPane(
@@ -188,27 +228,70 @@ fun DiscordChatScreen(
                     onClose = viewModel::closeDmContacts,
                     modifier = Modifier.weight(1f).fillMaxHeight(),
                 )
-            } else if (!compact || !channelsOpen) Column(Modifier.weight(1f).fillMaxHeight()) {
-                if (compact) {
-                    IconButton(
-                        onClick = backToRoomList,
-                        modifier = Modifier.semantics { contentDescription = "Back to conversations" },
+            } else if (!compact || !channelsOpen) {
+                if (sidePanelOverlay) {
+                    SidePanelContent(
+                        panel = sidePanel,
+                        state = state,
+                        viewModel = viewModel,
+                        status = status,
+                        onClose = { sidePanel = SidePanel.None },
+                        onJump = { id -> jumpToMessageId = id; sidePanel = SidePanel.None },
+                        onOpenProfile = { sidePanel = SidePanel.Profile },
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                    )
+                } else {
+                    MessagePane(
+                        state = state,
+                        viewModel = viewModel,
+                        compact = compact,
+                        onBack = backToRoomList,
+                        onOpenFriends = onOpenFriends,
+                        onOpenDirectMessages = openDirectMessages,
+                        onModelClick = { modelsOpen = true },
+                        onMicTap = { if (!state.isStreaming) startDictate() },
+                        onTogglePanel = { panel ->
+                            if (panel == SidePanel.Members && roomyEnoughForMembers) {
+                                memberListOpen = !memberListOpen
+                            } else {
+                                sidePanel = if (sidePanel == panel) SidePanel.None else panel
+                            }
+                        },
+                        onOpenProfile = { sidePanel = SidePanel.Profile },
+                        jumpToMessageId = jumpToMessageId,
+                        onJumpHandled = { jumpToMessageId = null },
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                    )
+                    if (roomyEnoughForMembers && sidePanel != SidePanel.None) {
+                        SidePanelContent(
+                            panel = sidePanel,
+                            state = state,
+                            viewModel = viewModel,
+                            status = status,
+                            onClose = { sidePanel = SidePanel.None },
+                            onJump = { id -> jumpToMessageId = id },
+                            onOpenProfile = { sidePanel = SidePanel.Profile },
+                            modifier = Modifier.width(300.dp).fillMaxHeight(),
+                        )
+                    } else if (roomyEnoughForMembers && memberListOpen && state.selectedRoom != null &&
+                        state.selectedRoom?.kind != ROOM_KIND_DM
                     ) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = null,
-                            tint = tokens.primaryText,
+                        MemberListPanel(
+                            state = state,
+                            status = status,
+                            onOpenProfile = { m ->
+                                viewModel.openProfile(m.characterId, m.name, m.colorHex)
+                                sidePanel = SidePanel.Profile
+                            },
+                            onOpenYou = {
+                                viewModel.openProfile(null, state.personaName, "", isYou = true)
+                                sidePanel = SidePanel.Profile
+                            },
+                            onClose = null,
+                            modifier = Modifier.width(240.dp).fillMaxHeight(),
                         )
                     }
                 }
-                MessagePane(
-                    state = state, viewModel = viewModel, onOpenFriends = onOpenFriends,
-                    onOpenDirectMessages = openDirectMessages,
-                    promptCollapsed = promptCollapsed, onPromptCollapsedChange = { promptCollapsed = it },
-                    onModelClick = { modelsOpen = true },
-                    onMicTap = { if (!state.isStreaming) startDictate() },
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                )
             }
         }
     }
@@ -244,14 +327,24 @@ fun DiscordChatScreen(
         var channelName by rememberSaveable { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { channelDialogOpen = false },
-            title = { Text("New channel") },
+            title = { Text("Create Channel") },
             text = {
-                OutlinedTextField(
-                    value = channelName,
-                    onValueChange = { channelName = it },
-                    singleLine = true,
-                    placeholder = { Text("new-channel") },
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "CHANNEL NAME",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.muted,
+                    )
+                    OutlinedTextField(
+                        value = channelName,
+                        // Discord channel names are lowercase and hyphenated.
+                        onValueChange = { channelName = it.lowercase().replace(' ', '-') },
+                        singleLine = true,
+                        leadingIcon = { Icon(Icons.Filled.Tag, contentDescription = null) },
+                        placeholder = { Text("new-channel") },
+                    )
+                }
             },
             confirmButton = {
                 TextButton(
@@ -260,7 +353,7 @@ fun DiscordChatScreen(
                         channelDialogOpen = false
                     },
                     enabled = channelName.isNotBlank(),
-                ) { Text("Create") }
+                ) { Text("Create Channel") }
             },
             dismissButton = {
                 TextButton(onClick = { channelDialogOpen = false }) { Text("Cancel") }
@@ -278,7 +371,7 @@ fun DiscordChatScreen(
                 TextButton(onClick = {
                     viewModel.deleteRoom(roomId)
                     pendingDeleteRoomId = null
-                }) { Text("Delete") }
+                }) { Text("Delete", color = colors.red) }
             },
             dismissButton = {
                 TextButton(onClick = { pendingDeleteRoomId = null }) { Text("Cancel") }
@@ -287,97 +380,215 @@ fun DiscordChatScreen(
     }
 }
 
+/** Right-hand panels Discord opens from the channel header. */
+enum class SidePanel { None, Members, Pinned, Search, Profile }
+
+@Composable
+private fun SidePanelContent(
+    panel: SidePanel,
+    state: DiscordChatUiState,
+    viewModel: DiscordChatViewModel,
+    status: DiscordStatus,
+    onClose: () -> Unit,
+    onJump: (String) -> Unit,
+    onOpenProfile: () -> Unit,
+    modifier: Modifier,
+) {
+    when (panel) {
+        SidePanel.Members -> MemberListPanel(
+            state = state,
+            status = status,
+            onOpenProfile = { m ->
+                viewModel.openProfile(m.characterId, m.name, m.colorHex)
+                onOpenProfile()
+            },
+            onOpenYou = {
+                viewModel.openProfile(null, state.personaName, "", isYou = true)
+                onOpenProfile()
+            },
+            onClose = onClose,
+            modifier = modifier,
+        )
+        SidePanel.Pinned -> PinnedMessagesPanel(
+            state = state,
+            onJump = onJump,
+            onUnpin = viewModel::togglePin,
+            onClose = onClose,
+            modifier = modifier,
+        )
+        SidePanel.Search -> SearchMessagesPanel(
+            state = state,
+            viewModel = viewModel,
+            onJump = onJump,
+            onClose = onClose,
+            modifier = modifier,
+        )
+        SidePanel.Profile -> ProfilePanel(
+            profile = state.profile,
+            status = status,
+            onMessage = { id -> onClose(); viewModel.closeProfile(); viewModel.openDirectMessage(id) },
+            onRemove = { id -> viewModel.removeMember(id); viewModel.closeProfile(); onClose() },
+            onClose = { viewModel.closeProfile(); onClose() },
+            modifier = modifier,
+        )
+        SidePanel.None -> Unit
+    }
+}
+
 // ------------------------------------------------------------------ server rail
 
 @Composable
 private fun ServerRail(
-    servers: List<DiscordServerUi>,
+    state: DiscordChatUiState,
     selectedServerId: String?,
-    dmSelected: Boolean,
     onOpenDirectMessages: () -> Unit,
     onSelect: (String?) -> Unit,
 ) {
-    val tokens = inkTokens()
+    val colors = discordColors()
     Column(
         modifier = Modifier
-            .width(64.dp)
+            .width(72.dp)
             .fillMaxHeight()
-            .background(tokens.panel)
-            .padding(vertical = InkSpacing.md),
+            .background(colors.rail)
+            .verticalScroll(rememberScrollState())
+            .padding(vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(InkSpacing.sm),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        ServerIcon(
-            label = "⌂",
-            colorHex = null,
+        RailItem(
             selected = selectedServerId == null,
+            unread = state.dmUnread,
+            background = colors.blurple,
+            idleBackground = colors.elevated,
             onClick = { onSelect(null) },
-        )
-        DmRailButton(
-            selected = selectedServerId == null && dmSelected,
-            onClick = onOpenDirectMessages,
-        )
-        Box(
-            modifier = Modifier
-                .width(28.dp)
-                .height(2.dp)
-                .clip(RoundedCornerShape(1.dp))
-                .background(tokens.hairline),
-        )
-        if (servers.isEmpty()) {
-            Text(
-                "—",
-                style = MaterialTheme.typography.labelLarge,
-                color = tokens.secondaryText,
+            description = "Direct Messages home",
+        ) { selected ->
+            Icon(
+                Icons.Filled.SportsEsports,
+                contentDescription = null,
+                tint = if (selected) Color.White else colors.text,
+                modifier = Modifier.size(28.dp),
             )
         }
-        servers.forEach { server ->
-            ServerIcon(
-                label = server.monogram,
-                colorHex = server.colorHex,
+        RailItem(
+            selected = false,
+            unread = 0,
+            background = colors.blurple,
+            idleBackground = colors.elevated,
+            onClick = onOpenDirectMessages,
+            description = "Start a direct message",
+        ) {
+            Icon(
+                Icons.Outlined.MailOutline,
+                contentDescription = null,
+                tint = colors.text,
+                modifier = Modifier.size(24.dp),
+            )
+        }
+        Box(
+            modifier = Modifier
+                .width(32.dp)
+                .height(2.dp)
+                .clip(RoundedCornerShape(1.dp))
+                .background(colors.divider),
+        )
+        state.servers.forEach { server ->
+            val tint = parseHexColor(server.colorHex, colors.blurple)
+            RailItem(
                 selected = selectedServerId == server.bookId,
+                unread = state.serverUnread[server.bookId] ?: 0,
+                background = tint,
+                idleBackground = tint.copy(alpha = if (colors.dark) 0.55f else 0.75f),
                 onClick = { onSelect(server.bookId) },
+                description = server.title,
+            ) {
+                Text(
+                    server.monogram,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                )
+            }
+        }
+    }
+}
+
+/** A rail icon: circle when idle, rounded square when selected, with Discord's left pill. */
+@Composable
+private fun RailItem(
+    selected: Boolean,
+    unread: Int,
+    background: Color,
+    idleBackground: Color,
+    onClick: () -> Unit,
+    description: String,
+    content: @Composable (Boolean) -> Unit,
+) {
+    val colors = discordColors()
+    val corner by animateDpAsState(if (selected) 16.dp else 24.dp, label = "rail-corner")
+    val pill by animateDpAsState(
+        when {
+            selected -> 40.dp
+            unread > 0 -> 8.dp
+            else -> 0.dp
+        },
+        label = "rail-pill",
+    )
+    Box(Modifier.fillMaxWidth().height(48.dp)) {
+        if (pill > 0.dp) {
+            Box(
+                Modifier
+                    .align(Alignment.CenterStart)
+                    .width(4.dp)
+                    .height(pill)
+                    .clip(RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp))
+                    .background(colors.header),
+            )
+        }
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .size(48.dp)
+                .clip(RoundedCornerShape(corner))
+                .background(if (selected) background else idleBackground)
+                .clickable(onClick = onClick)
+                .semantics { contentDescription = description },
+            contentAlignment = Alignment.Center,
+        ) { content(selected) }
+        if (unread > 0) {
+            UnreadBadge(
+                count = unread,
+                modifier = Modifier.align(Alignment.BottomEnd).offset(x = (-6).dp, y = 2.dp),
+                ring = colors.rail,
             )
         }
     }
 }
 
 @Composable
-private fun ServerIcon(
-    label: String,
-    colorHex: String?,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    val tokens = inkTokens()
-    val shape = if (selected) RoundedCornerShape(14.dp) else CircleShape
+fun UnreadBadge(count: Int, modifier: Modifier = Modifier, ring: Color = Color.Transparent) {
+    val colors = discordColors()
     Box(
-        modifier = Modifier
-            .size(44.dp)
-            .clip(shape)
-            .background(
-                when {
-                    selected -> parseHexColor(colorHex, MaterialTheme.colorScheme.primary)
-                    colorHex != null ->
-                        parseHexColor(colorHex, MaterialTheme.colorScheme.primary).copy(alpha = 0.55f)
-                    else -> tokens.hover
-                },
-            )
-            .clickable(onClick = onClick),
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(ring)
+            .padding(3.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(colors.red)
+            .padding(horizontal = 5.dp, vertical = 0.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            label,
-            style = MaterialTheme.typography.titleMedium,
+            if (count > 99) "99+" else count.toString(),
+            fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
-            color = if (selected && colorHex == null) tokens.activePillLabel else tokens.primaryText,
+            color = Color.White,
         )
     }
 }
 
 // --------------------------------------------------------------- channel sidebar
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ChannelSidebar(
     state: DiscordChatUiState,
@@ -386,125 +597,287 @@ private fun ChannelSidebar(
     onAddChannel: () -> Unit,
     onAddCharacter: () -> Unit,
     onDeleteRoom: (String) -> Unit,
+    onFindConversation: () -> Unit,
+    onOpenFriends: () -> Unit,
+    onMarkRead: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val tokens = inkTokens()
-    Column(
-        modifier = modifier
-            .fillMaxHeight()
-            .background(tokens.background)
-            .padding(vertical = InkSpacing.md),
-    ) {
-        Text(
-            state.selectedServer?.title ?: "Direct Messages",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
-            color = tokens.primaryText,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = InkSpacing.lg),
-        )
-        Text(
-            when {
-                state.selectedServer == null -> "Your private conversations"
-                state.selectedServer.workType == "campaign" -> "Campaign server"
-                else -> "Novel server"
-            },
-            style = MaterialTheme.typography.labelSmall,
-            color = tokens.secondaryText,
-            modifier = Modifier.padding(horizontal = InkSpacing.lg, vertical = InkSpacing.xxs),
-        )
-        Spacer(Modifier.height(InkSpacing.sm))
-
-        if (state.selectedServerId == null) {
-            if (state.recentConversations.isNotEmpty()) {
-                CategoryHeader("Recent Conversations")
-                RecentConversationList(
-                    rooms = state.recentConversations,
-                    selectedRoomId = state.selectedRoomId,
-                    onOpenRecent = onOpenRecent,
-                )
-                Spacer(Modifier.height(InkSpacing.sm))
-            }
-            CategoryHeader("Direct Messages")
-            if (state.directMessages.isEmpty()) {
-                SidebarHint("No DMs yet — open Contacts and tap a friend.")
-            }
-            RoomList(
-                rooms = state.directMessages,
-                selectedRoomId = state.selectedRoomId,
-                onRoomSelect = onRoomSelect,
-                onDeleteRoom = onDeleteRoom,
-            )
-            // Recent is capped and sorted by activity, so every server's channels and
-            // character sub-rooms are also listed in full underneath it.
-            state.serverSections.forEach { section ->
-                Spacer(Modifier.height(InkSpacing.sm))
-                CategoryHeader(section.title)
-                RecentConversationList(
-                    rooms = section.channels + section.characterRooms,
-                    selectedRoomId = state.selectedRoomId,
-                    onOpenRecent = onOpenRecent,
+    val colors = discordColors()
+    var collapsed by rememberSaveable { mutableStateOf(setOf<String>()) }
+    fun toggle(key: String) {
+        collapsed = if (key in collapsed) collapsed - key else collapsed + key
+    }
+    Column(modifier = modifier.fillMaxWidth()) {
+        val server = state.selectedServer
+        if (server == null) {
+            // Home: search box, Friends, then the DM list.
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .padding(horizontal = 10.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    "Find or start a conversation",
+                    fontSize = 13.sp,
+                    color = colors.muted,
+                    maxLines = 1,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(colors.rail)
+                        .clickable(onClick = onFindConversation)
+                        .padding(horizontal = 8.dp, vertical = 7.dp),
                 )
             }
+            HorizontalHairline()
         } else {
-            CategoryHeaderRow(label = "Text Channels", trailing = "+", onTrailing = onAddChannel)
-            RoomList(
-                rooms = state.rooms.filter { it.kind == ROOM_KIND_CHANNEL },
-                selectedRoomId = state.selectedRoomId,
-                onRoomSelect = onRoomSelect,
-                onDeleteRoom = onDeleteRoom,
+            ServerHeader(
+                server = server,
+                onAddChannel = onAddChannel,
+                onAddCharacter = onAddCharacter,
+                onMarkRead = onMarkRead,
             )
-            CategoryHeaderRow(label = "Characters", trailing = "+", onTrailing = onAddCharacter)
-            val characterRooms = state.rooms.filter { it.kind == ROOM_KIND_CHARACTER }
-            if (characterRooms.isEmpty()) {
-                SidebarHint("Tap + to give a character a room here.")
+        }
+        LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp)) {
+            if (server == null) {
+                item(key = "friends") {
+                    SidebarNavRow(icon = Icons.Filled.People, label = "Friends", onClick = onOpenFriends)
+                }
+                item(key = "dm-header") {
+                    CategoryHeader(
+                        label = "Direct Messages",
+                        collapsed = false,
+                        onToggle = null,
+                        onAdd = onFindConversation,
+                    )
+                }
+                if (state.directMessages.isEmpty()) {
+                    item(key = "dm-empty") { SidebarHint("No DMs yet — tap + and pick someone to write to.") }
+                }
+                items(state.directMessages, key = { "dm-" + it.chatId }) { room ->
+                    DmRow(
+                        room = room,
+                        selected = room.chatId == state.selectedRoomId,
+                        onClick = { onRoomSelect(room.chatId) },
+                        onLongClick = { onDeleteRoom(room.chatId) },
+                    )
+                }
+                val others = state.recentConversations.filter { it.kind != ROOM_KIND_DM }
+                if (others.isNotEmpty()) {
+                    item(key = "recent-header") {
+                        CategoryHeader("Recent Conversations", "recent" in collapsed, onToggle = { toggle("recent") })
+                    }
+                    if ("recent" !in collapsed) {
+                        items(others, key = { "recent-" + it.chatId }) { room ->
+                            ChannelRow(
+                                room = room,
+                                selected = room.chatId == state.selectedRoomId,
+                                subtitle = room.serverTitle,
+                                onClick = { onOpenRecent(room) },
+                                onLongClick = {},
+                            )
+                        }
+                    }
+                }
+                // Recent is capped and sorted by activity, so every server's channels and
+                // character sub-rooms are also listed in full underneath it.
+                state.serverSections.forEach { section ->
+                    val key = "section-" + section.bookId
+                    item(key = key) { CategoryHeader(section.title, key in collapsed, onToggle = { toggle(key) }) }
+                    if (key !in collapsed) {
+                        items(section.channels + section.characterRooms, key = { key + it.chatId }) { room ->
+                            ChannelRow(
+                                room = room,
+                                selected = room.chatId == state.selectedRoomId,
+                                onClick = { onOpenRecent(room) },
+                                onLongClick = {},
+                            )
+                        }
+                    }
+                }
+            } else {
+                item(key = "welcome") {
+                    SidebarNavRow(icon = Icons.Filled.Tag, label = "Browse Channels", onClick = onAddChannel)
+                }
+                item(key = "text-header") {
+                    CategoryHeader(
+                        "Text Channels",
+                        "text" in collapsed,
+                        onToggle = { toggle("text") },
+                        onAdd = onAddChannel,
+                    )
+                }
+                val channels = state.rooms.filter { it.kind == ROOM_KIND_CHANNEL }
+                // Collapsed categories still show the open channel and anything unread, like Discord.
+                items(
+                    channels.filter { "text" !in collapsed || it.chatId == state.selectedRoomId || it.unread > 0 },
+                    key = { "ch-" + it.chatId },
+                ) { room ->
+                    ChannelRow(
+                        room = room,
+                        selected = room.chatId == state.selectedRoomId,
+                        onClick = { onRoomSelect(room.chatId) },
+                        onLongClick = { onDeleteRoom(room.chatId) },
+                    )
+                }
+                item(key = "char-header") {
+                    CategoryHeader(
+                        "Characters",
+                        "chars" in collapsed,
+                        onToggle = { toggle("chars") },
+                        onAdd = onAddCharacter,
+                    )
+                }
+                val characterRooms = state.rooms.filter { it.kind == ROOM_KIND_CHARACTER }
+                if (characterRooms.isEmpty()) {
+                    item(key = "char-empty") { SidebarHint("Tap + to give a character a room here.") }
+                }
+                items(
+                    characterRooms.filter { "chars" !in collapsed || it.chatId == state.selectedRoomId || it.unread > 0 },
+                    key = { "cr-" + it.chatId },
+                ) { room ->
+                    ChannelRow(
+                        room = room,
+                        selected = room.chatId == state.selectedRoomId,
+                        onClick = { onRoomSelect(room.chatId) },
+                        onLongClick = { onDeleteRoom(room.chatId) },
+                    )
+                }
             }
-            RoomList(
-                rooms = characterRooms,
-                selectedRoomId = state.selectedRoomId,
-                onRoomSelect = onRoomSelect,
-                onDeleteRoom = onDeleteRoom,
-            )
         }
     }
 }
 
+/** Server name banner with Discord's dropdown of server actions. */
 @Composable
-private fun CategoryHeader(label: String) {
-    Text(
-        label.uppercase(),
-        style = MaterialTheme.typography.labelSmall,
-        fontWeight = FontWeight.Bold,
-        color = inkTokens().secondaryText,
-        modifier = Modifier.padding(horizontal = InkSpacing.lg, vertical = InkSpacing.xs),
-    )
+private fun ServerHeader(
+    server: DiscordServerUi,
+    onAddChannel: () -> Unit,
+    onAddCharacter: () -> Unit,
+    onMarkRead: () -> Unit,
+) {
+    val colors = discordColors()
+    val tint = parseHexColor(server.colorHex, colors.blurple)
+    var menuOpen by remember { mutableStateOf(false) }
+    Box {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(Brush.verticalGradient(listOf(tint.copy(alpha = 0.85f), tint.copy(alpha = 0.25f))))
+                .clickable { menuOpen = true },
+        ) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 12.dp, top = 14.dp, bottom = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    server.title,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Server menu", tint = Color.White)
+            }
+            Text(
+                if (server.workType == "campaign") "Campaign server" else "Novel server",
+                fontSize = 11.sp,
+                color = Color.White.copy(alpha = 0.85f),
+                modifier = Modifier.padding(start = 16.dp, bottom = 8.dp),
+            )
+        }
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            DropdownMenuItem(text = { Text("Mark As Read") }, onClick = { menuOpen = false; onMarkRead() })
+            DropdownMenuItem(
+                text = { Text("Create Channel") },
+                leadingIcon = { Icon(Icons.Filled.Tag, null) },
+                onClick = { menuOpen = false; onAddChannel() },
+            )
+            DropdownMenuItem(
+                text = { Text("Invite a Character") },
+                leadingIcon = { Icon(Icons.Outlined.PersonAdd, null) },
+                onClick = { menuOpen = false; onAddCharacter() },
+            )
+        }
+    }
+    HorizontalHairline()
 }
 
 @Composable
-private fun CategoryHeaderRow(label: String, trailing: String, onTrailing: () -> Unit) {
+fun HorizontalHairline() {
+    Box(Modifier.fillMaxWidth().height(1.dp).background(discordColors().rail.copy(alpha = 0.6f)))
+}
+
+@Composable
+private fun SidebarNavRow(icon: ImageVector, label: String, onClick: () -> Unit) {
+    val colors = discordColors()
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 1.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = colors.muted, modifier = Modifier.size(22.dp))
+        Text(label, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = colors.muted)
+    }
+}
+
+@Composable
+private fun CategoryHeader(
+    label: String,
+    collapsed: Boolean,
+    onToggle: (() -> Unit)?,
+    onAdd: (() -> Unit)? = null,
+) {
+    val colors = discordColors()
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = InkSpacing.lg, vertical = InkSpacing.xs),
+            .padding(top = 16.dp, start = 4.dp, end = 8.dp, bottom = 4.dp)
+            .then(if (onToggle != null) Modifier.clickable(onClick = onToggle) else Modifier),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (onToggle != null) {
+            Icon(
+                if (collapsed) Icons.Filled.KeyboardArrowRight else Icons.Filled.KeyboardArrowDown,
+                contentDescription = null,
+                tint = colors.muted,
+                modifier = Modifier.size(14.dp),
+            )
+        } else {
+            Spacer(Modifier.width(12.dp))
+        }
         Text(
             label.uppercase(),
-            style = MaterialTheme.typography.labelSmall,
+            fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
-            color = inkTokens().secondaryText,
-            modifier = Modifier.weight(1f),
+            letterSpacing = 0.4.sp,
+            color = colors.muted,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).padding(start = 2.dp),
         )
-        Text(
-            trailing,
-            style = MaterialTheme.typography.titleMedium,
-            color = inkTokens().secondaryText,
-            modifier = Modifier
-                .clip(RoundedCornerShape(6.dp))
-                .clickable(onClick = onTrailing)
-                .padding(horizontal = InkSpacing.xs),
-        )
+        if (onAdd != null) {
+            Icon(
+                Icons.Filled.Add,
+                contentDescription = "Add to $label",
+                tint = colors.muted,
+                modifier = Modifier
+                    .size(20.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onAdd),
+            )
+        }
     }
 }
 
@@ -512,166 +885,257 @@ private fun CategoryHeaderRow(label: String, trailing: String, onTrailing: () ->
 private fun SidebarHint(text: String) {
     Text(
         text,
-        style = MaterialTheme.typography.bodySmall,
-        color = inkTokens().secondaryText,
-        modifier = Modifier.padding(horizontal = InkSpacing.lg, vertical = InkSpacing.xxs),
+        fontSize = 12.sp,
+        color = discordColors().muted,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
     )
 }
 
-/** Most recently active rooms across every server — each row shows which one it's from. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun RecentConversationList(
-    rooms: List<DiscordRoomUi>,
-    selectedRoomId: String?,
-    onOpenRecent: (DiscordRoomUi) -> Unit,
-) {
-    rooms.forEach { room ->
-        RecentConversationRow(
-            room = room,
-            selected = room.chatId == selectedRoomId,
-            onClick = { onOpenRecent(room) },
-        )
-    }
-}
-
-@Composable
-private fun RecentConversationRow(
+private fun ChannelRow(
     room: DiscordRoomUi,
     selected: Boolean,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    subtitle: String = "",
 ) {
-    val tokens = inkTokens()
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = InkSpacing.sm, vertical = 2.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (selected) tokens.activePill else Color.Transparent)
-            .clickable(onClick = onClick)
-            .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
-    ) {
-        if (room.kind == ROOM_KIND_CHANNEL) {
-            Text(
-                "#",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = tokens.secondaryText,
-            )
-        } else {
-            com.ihy2ln.weaverse.feature.roleplay.friends.CharacterAvatar(
-                name = room.name,
-                colorHex = room.avatarColorHex,
-                size = 22.dp,
+    val colors = discordColors()
+    val unread = room.unread > 0 && !selected
+    Box(Modifier.fillMaxWidth()) {
+        if (unread) {
+            Box(
+                Modifier
+                    .align(Alignment.CenterStart)
+                    .width(4.dp)
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp))
+                    .background(colors.header),
             )
         }
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                room.name,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (selected) tokens.activePillLabel else tokens.primaryText,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (room.serverTitle.isNotBlank()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 1.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(if (selected) colors.selected else Color.Transparent)
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (room.kind == ROOM_KIND_CHANNEL) {
+                Icon(Icons.Filled.Tag, contentDescription = null, tint = colors.muted, modifier = Modifier.size(20.dp))
+            } else {
+                CharacterAvatar(name = room.name, colorHex = room.avatarColorHex, size = 22.dp)
+            }
+            Column(Modifier.weight(1f)) {
                 Text(
-                    room.serverTitle,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (selected) tokens.activePillLabel else tokens.secondaryText,
+                    room.name,
+                    fontSize = 15.sp,
+                    fontWeight = if (selected || unread) FontWeight.SemiBold else FontWeight.Medium,
+                    color = if (selected || unread) colors.header else colors.muted,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (subtitle.isNotBlank()) {
+                    Text(subtitle, fontSize = 11.sp, color = colors.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
+            if (room.unread > 0 && !selected) UnreadBadge(room.unread)
         }
-        if (room.unread > 0) {
-            Text(
-                room.unread.toString(),
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.primary)
-                    .padding(horizontal = 6.dp, vertical = 1.dp),
-            )
-        }
-    }
-}
-
-@Composable
-private fun RoomList(
-    rooms: List<DiscordRoomUi>,
-    selectedRoomId: String?,
-    onRoomSelect: (String?) -> Unit,
-    onDeleteRoom: (String) -> Unit,
-) {
-    rooms.forEach { room ->
-        RoomRow(
-            room = room,
-            selected = room.chatId == selectedRoomId,
-            onClick = { onRoomSelect(room.chatId) },
-            onLongClick = { onDeleteRoom(room.chatId) },
-        )
     }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun RoomRow(
+private fun DmRow(
     room: DiscordRoomUi,
     selected: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
-    val tokens = inkTokens()
+    val colors = discordColors()
+    val unread = room.unread > 0 && !selected
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = InkSpacing.sm, vertical = 2.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (selected) tokens.activePill else Color.Transparent)
+            .padding(horizontal = 8.dp, vertical = 1.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(if (selected) colors.selected else Color.Transparent)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
+            .padding(horizontal = 8.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        if (room.kind == ROOM_KIND_CHANNEL) {
+        StatusAvatar(name = room.name, colorHex = room.avatarColorHex, size = 32.dp, status = presenceFor(room.name))
+        Column(Modifier.weight(1f)) {
             Text(
-                "#",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = tokens.secondaryText,
+                room.name,
+                fontSize = 15.sp,
+                fontWeight = if (unread) FontWeight.Bold else FontWeight.Medium,
+                color = if (selected || unread) colors.header else colors.muted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-        } else {
-            com.ihy2ln.weaverse.feature.roleplay.friends.CharacterAvatar(
-                name = room.name,
-                colorHex = room.avatarColorHex,
-                size = 22.dp,
-            )
+            if (room.preview.isNotBlank()) {
+                Text(
+                    room.preview,
+                    fontSize = 12.sp,
+                    color = colors.muted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
-        Text(
-            room.name,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            color = if (selected) tokens.activePillLabel else tokens.primaryText,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
+        if (unread) UnreadBadge(room.unread)
+    }
+}
+
+/** Avatar with Discord's presence dot cut into its bottom-right corner. */
+@Composable
+fun StatusAvatar(
+    name: String,
+    colorHex: String,
+    size: Dp,
+    status: DiscordStatus?,
+    ring: Color = discordColors().sidebar,
+) {
+    val colors = discordColors()
+    Box {
+        CharacterAvatar(name = name, colorHex = colorHex, size = size)
+        if (status != null) {
+            val dot = (size.value * 0.36f).coerceAtLeast(10f).dp
+            Box(
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .offset(x = 2.dp, y = 2.dp)
+                    .size(dot)
+                    .clip(CircleShape)
+                    .background(ring)
+                    .padding(2.dp)
+                    .clip(CircleShape)
+                    .background(colors.statusColor(status)),
+            ) {
+                if (status == DiscordStatus.Invisible) {
+                    Box(
+                        Modifier
+                            .align(Alignment.Center)
+                            .size(dot / 3)
+                            .clip(CircleShape)
+                            .background(ring),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Characters don't really go offline; a stable per-name mix of presences keeps the list lively. */
+fun presenceFor(name: String): DiscordStatus = when (Math.floorMod(name.hashCode(), 7)) {
+    0 -> DiscordStatus.Idle
+    1 -> DiscordStatus.DoNotDisturb
+    else -> DiscordStatus.Online
+}
+
+/** Bottom-left user panel: avatar with status, name, mute, deafen and settings. */
+@Composable
+private fun UserPanel(
+    name: String,
+    status: DiscordStatus,
+    onStatusChange: (DiscordStatus) -> Unit,
+    muted: Boolean,
+    deafened: Boolean,
+    onToggleMute: () -> Unit,
+    onToggleDeafen: () -> Unit,
+    onOpenProfile: () -> Unit,
+) {
+    val colors = discordColors()
+    var statusMenu by remember { mutableStateOf(false) }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(colors.panel)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box {
+            Row(
+                Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .clickable { statusMenu = true }
+                    .padding(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                StatusAvatar(
+                    name = name,
+                    colorHex = com.ihy2ln.weaverse.core.roleplay.avatarColorHexFor(name, null),
+                    size = 32.dp,
+                    status = status,
+                    ring = colors.panel,
+                )
+                Column(Modifier.width(96.dp)) {
+                    Text(
+                        name,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.header,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(status.label, fontSize = 12.sp, color = colors.muted, maxLines = 1)
+                }
+            }
+            DropdownMenu(expanded = statusMenu, onDismissRequest = { statusMenu = false }) {
+                DropdownMenuItem(
+                    text = { Text("View Profile") },
+                    onClick = { statusMenu = false; onOpenProfile() },
+                )
+                DiscordStatus.entries.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(option.label) },
+                        leadingIcon = {
+                            Box(
+                                Modifier
+                                    .size(10.dp)
+                                    .clip(CircleShape)
+                                    .background(colors.statusColor(option)),
+                            )
+                        },
+                        onClick = { statusMenu = false; onStatusChange(option) },
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        PanelIcon(
+            if (muted) Icons.Filled.MicOff else Icons.Filled.Mic,
+            if (muted) "Unmute" else "Mute",
+            tint = if (muted) colors.red else colors.muted,
+            onClick = onToggleMute,
         )
-        if (room.unread > 0) {
-            Text(
-                room.unread.toString(),
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.primary)
-                    .padding(horizontal = 6.dp, vertical = 1.dp),
-            )
-        }
+        PanelIcon(
+            if (deafened) Icons.Filled.HeadsetOff else Icons.Filled.Headset,
+            if (deafened) "Undeafen" else "Deafen",
+            tint = if (deafened) colors.red else colors.muted,
+            onClick = onToggleDeafen,
+        )
+        PanelIcon(Icons.Filled.Settings, "User settings", tint = colors.muted, onClick = { statusMenu = true })
+    }
+}
+
+@Composable
+private fun PanelIcon(icon: ImageVector, description: String, tint: Color, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(32.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
     }
 }
 
@@ -681,104 +1145,50 @@ private fun RoomRow(
 private fun MessagePane(
     state: DiscordChatUiState,
     viewModel: DiscordChatViewModel,
+    compact: Boolean,
+    onBack: () -> Unit,
     onOpenFriends: () -> Unit,
     onOpenDirectMessages: () -> Unit,
-    promptCollapsed: Boolean,
-    onPromptCollapsedChange: (Boolean) -> Unit,
     onModelClick: () -> Unit,
     onMicTap: () -> Unit,
+    onTogglePanel: (SidePanel) -> Unit,
+    onOpenProfile: () -> Unit,
+    jumpToMessageId: String?,
+    onJumpHandled: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val tokens = inkTokens()
-    Column(
-        modifier = modifier.background(tokens.page),
-    ) {
+    val colors = discordColors()
+    Column(modifier = modifier.background(colors.chat)) {
         val room = state.selectedRoom
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(tokens.background)
-                .padding(horizontal = InkSpacing.lg, vertical = InkSpacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
-        ) {
-            if (room?.kind == ROOM_KIND_CHANNEL) {
-                Text(
-                    "#",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = tokens.secondaryText,
-                )
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    room?.name ?: "Welcome",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = tokens.primaryText,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (room != null && room.topic.isNotBlank()) {
-                    Text(
-                        room.topic,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = tokens.secondaryText,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-            if (room != null) {
-                // Lives in the header, not the prompt bar: the compact composer row has no
-                // spare width, and crowding it squeezes the other controls out.
-                IconButton(
-                    onClick = { viewModel.requestMediaPick() },
-                    modifier = Modifier
-                        .size(34.dp)
-                        .semantics { contentDescription = "Send a picture" },
-                ) {
-                    Icon(
-                        Icons.Outlined.Image,
-                        contentDescription = null,
-                        tint = if (state.hasPendingMedia) tokens.activePill else tokens.primaryText,
-                    )
-                }
-            }
-            if (state.selectedServerId != null) {
-                DmRailButton(selected = false, onClick = onOpenDirectMessages)
-            }
-            InkTextButton(
-                label = "Friends",
-                onClick = onOpenFriends,
-            )
-        }
+        ChannelHeader(
+            room = room,
+            compact = compact,
+            pinnedCount = state.pinnedMessages.size,
+            hasPendingMedia = state.hasPendingMedia,
+            onBack = onBack,
+            onPickMedia = viewModel::requestMediaPick,
+            onTogglePanel = onTogglePanel,
+            onOpenDirectMessages = onOpenDirectMessages.takeIf { state.selectedServerId != null },
+            onOpenFriends = onOpenFriends,
+        )
 
         if (room == null) {
             EmptyPaneHint(state)
         } else {
-            if (room.kind != ROOM_KIND_DM && state.members.isNotEmpty()) {
-                MemberStrip(members = state.members, onRemove = viewModel::removeMember)
-            }
-            MessageList(state, viewModel, Modifier.weight(1f))
-            if (state.lastUsage.isNotBlank()) {
-                Text(
-                    state.lastUsage,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = tokens.secondaryText,
-                    modifier = Modifier.padding(horizontal = InkSpacing.lg, vertical = InkSpacing.xxs),
-                )
-            }
-            if (state.errorMessage.isNotBlank()) {
-                Text(
-                    state.errorMessage,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { viewModel.onInputChange(state.input) }
-                        .padding(horizontal = InkSpacing.lg, vertical = InkSpacing.xxs),
-                )
+            DiscordMessageList(
+                state = state,
+                viewModel = viewModel,
+                onOpenProfile = { characterId, name, colorHex, isYou ->
+                    viewModel.openProfile(characterId, name, colorHex, isYou)
+                    onOpenProfile()
+                },
+                jumpToMessageId = jumpToMessageId,
+                onJumpHandled = onJumpHandled,
+                modifier = Modifier.weight(1f),
+            )
+            TypingIndicator(state)
+            state.replyingTo?.let { reply ->
+                ReplyBanner(reply = reply, onCancel = viewModel::cancelReply)
             }
             ChatPromptWindow(
                 state = state,
@@ -791,8 +1201,160 @@ private fun MessagePane(
                     // Floor so the message list's weight cannot squeeze the window down to
                     // its drag handle, which is what happened in landscape.
                     .heightIn(min = 148.dp)
-                    .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
             )
+        }
+    }
+}
+
+@Composable
+private fun ChannelHeader(
+    room: DiscordRoomUi?,
+    compact: Boolean,
+    pinnedCount: Int,
+    hasPendingMedia: Boolean,
+    onBack: () -> Unit,
+    onPickMedia: () -> Unit,
+    onTogglePanel: (SidePanel) -> Unit,
+    onOpenDirectMessages: (() -> Unit)?,
+    onOpenFriends: () -> Unit,
+) {
+    val colors = discordColors()
+    var topicOpen by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().background(colors.chat)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (compact) {
+                IconButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "Back to conversations" }) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = colors.muted)
+                }
+            }
+            when (room?.kind) {
+                ROOM_KIND_CHANNEL -> Icon(Icons.Filled.Tag, null, tint = colors.muted, modifier = Modifier.size(22.dp))
+                null -> Unit
+                else -> StatusAvatar(room.name, room.avatarColorHex, 24.dp, presenceFor(room.name), ring = colors.chat)
+            }
+            Spacer(Modifier.width(8.dp))
+            Row(
+                Modifier
+                    .weight(1f)
+                    .clickable(enabled = room?.topic?.isNotBlank() == true) { topicOpen = !topicOpen },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    room?.name ?: "Welcome",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.header,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (!compact && room != null && room.topic.isNotBlank()) {
+                    Box(Modifier.padding(horizontal = 10.dp).width(1.dp).height(20.dp).background(colors.divider))
+                    Text(
+                        room.topic,
+                        fontSize = 13.sp,
+                        color = colors.muted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            if (room != null) {
+                HeaderIcon(
+                    Icons.Outlined.Image,
+                    "Send a picture",
+                    tint = if (hasPendingMedia) colors.blurple else colors.muted,
+                    onClick = onPickMedia,
+                )
+                Box {
+                    HeaderIcon(Icons.Filled.PushPin, "Pinned messages", tint = colors.muted) {
+                        onTogglePanel(SidePanel.Pinned)
+                    }
+                    if (pinnedCount > 0) {
+                        Box(
+                            Modifier
+                                .align(Alignment.TopEnd)
+                                .offset(x = (-4).dp, y = 6.dp)
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(colors.red),
+                        )
+                    }
+                }
+                if (room.kind != ROOM_KIND_DM) {
+                    HeaderIcon(Icons.Filled.People, "Member list", tint = colors.muted) {
+                        onTogglePanel(SidePanel.Members)
+                    }
+                }
+                HeaderIcon(Icons.Filled.Search, "Search", tint = colors.muted) { onTogglePanel(SidePanel.Search) }
+            }
+            if (onOpenDirectMessages != null && !compact) {
+                HeaderIcon(Icons.Outlined.MailOutline, "Direct Messages", tint = colors.muted, onClick = onOpenDirectMessages)
+            }
+            HeaderIcon(Icons.Outlined.PersonAdd, "Friends", tint = colors.muted, onClick = onOpenFriends)
+        }
+        if (topicOpen && room != null && room.topic.isNotBlank()) {
+            Text(
+                room.topic,
+                fontSize = 13.sp,
+                color = colors.text,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(colors.sidebar)
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+        }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(colors.rail.copy(alpha = 0.5f)))
+    }
+}
+
+@Composable
+private fun HeaderIcon(icon: ImageVector, description: String, tint: Color, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+    }
+}
+
+@Composable
+private fun ReplyBanner(reply: DiscordReplyPreviewUi, onCancel: () -> Unit) {
+    val colors = discordColors()
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp)
+            .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+            .background(colors.sidebar)
+            .padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            androidx.compose.ui.text.buildAnnotatedString {
+                append("Replying to ")
+                pushStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold, color = colors.header))
+                append(reply.authorName)
+                pop()
+            },
+            fontSize = 13.sp,
+            color = colors.muted,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        IconButton(onClick = onCancel, modifier = Modifier.size(28.dp)) {
+            Icon(Icons.Filled.Close, contentDescription = "Cancel reply", tint = colors.muted, modifier = Modifier.size(16.dp))
         }
     }
 }
@@ -805,44 +1367,42 @@ private fun DmContactsPane(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val tokens = inkTokens()
+    val colors = discordColors()
     var search by rememberSaveable { mutableStateOf("") }
     val shown = state.dmContacts.filter { it.name.contains(search, true) }
-    Column(modifier = modifier.background(tokens.page)) {
+    Column(modifier = modifier.background(colors.chat)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(tokens.background)
-                .padding(horizontal = InkSpacing.lg, vertical = InkSpacing.sm),
+                .height(52.dp)
+                .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
         ) {
             IconButton(onClick = onClose, modifier = Modifier.semantics { contentDescription = "Close contacts" }) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = tokens.primaryText)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = colors.muted)
             }
-            Column(Modifier.weight(1f)) {
-                Text(
-                    "Direct Messages",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = tokens.primaryText,
-                )
-                Text(
-                    "Pick someone to write to",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = tokens.secondaryText,
-                )
-            }
+            Text("New Message", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = colors.header)
         }
-        OutlinedTextField(
-            value = search,
-            onValueChange = { search = it },
-            singleLine = true,
-            placeholder = { Text("Search contacts") },
-            modifier = Modifier
+        Row(
+            Modifier
                 .fillMaxWidth()
-                .padding(horizontal = InkSpacing.lg, vertical = InkSpacing.xs),
-        )
+                .padding(horizontal = 16.dp, vertical = 4.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(colors.rail)
+                .padding(horizontal = 12.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("To:", fontSize = 14.sp, color = colors.muted)
+            androidx.compose.foundation.text.BasicTextField(
+                value = search,
+                onValueChange = { search = it },
+                singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(color = colors.text, fontSize = 15.sp),
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(colors.blurple),
+                modifier = Modifier.weight(1f).padding(horizontal = 8.dp, vertical = 10.dp),
+            )
+        }
+        CategoryHeader("Suggested", collapsed = false, onToggle = null)
         if (state.dmContacts.isEmpty()) {
             SidebarHint("No codex characters yet — add some in the Codex.")
         } else if (shown.isEmpty()) {
@@ -854,134 +1414,33 @@ private fun DmContactsPane(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { onPick(contact.characterId) }
-                        .padding(horizontal = InkSpacing.lg, vertical = InkSpacing.sm),
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    com.ihy2ln.weaverse.feature.roleplay.friends.CharacterAvatar(
-                        name = contact.name,
-                        colorHex = contact.colorHex,
-                        size = 34.dp,
+                    StatusAvatar(contact.name, contact.colorHex, 36.dp, presenceFor(contact.name), ring = colors.chat)
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            contact.name,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = colors.header,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            contact.name.lowercase().replace(' ', '_'),
+                            fontSize = 12.sp,
+                            color = colors.muted,
+                            maxLines = 1,
+                        )
+                    }
+                    Box(
+                        Modifier
+                            .size(20.dp)
+                            .clip(CircleShape)
+                            .border(2.dp, colors.muted, CircleShape),
                     )
-                    Text(
-                        contact.name,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = tokens.primaryText,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-        }
-    }
-}
-
-/** Rail shortcut to Home's Direct Messages: an envelope carrying a "DM" label. */
-@Composable
-private fun DmRailButton(selected: Boolean, onClick: () -> Unit) {
-    val tokens = inkTokens()
-    Box(
-        modifier = Modifier
-            .size(48.dp)
-            .clip(if (selected) RoundedCornerShape(14.dp) else CircleShape)
-            .background(if (selected) tokens.activePill else tokens.hover)
-            .clickable(onClick = onClick)
-            .semantics { contentDescription = "Direct Messages" },
-        contentAlignment = Alignment.Center,
-    ) {
-        val ink = if (selected) tokens.activePillLabel else tokens.primaryText
-        Icon(
-            Icons.Outlined.MailOutline,
-            contentDescription = null,
-            tint = ink,
-            modifier = Modifier.size(34.dp),
-        )
-        Text(
-            "DM",
-            style = MaterialTheme.typography.labelSmall,
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Bold,
-            color = ink,
-            modifier = Modifier.padding(top = 4.dp),
-        )
-    }
-}
-
-/** Compact avatar strip for who's seated in the room; long-press to remove. */
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun MemberStrip(members: List<DiscordMemberUi>, onRemove: (String) -> Unit) {
-    val tokens = inkTokens()
-    LazyRow(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(tokens.background)
-            .padding(horizontal = InkSpacing.lg, vertical = InkSpacing.xs),
-        horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
-    ) {
-        items(members, key = { it.characterId }) { member ->
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier
-                    .combinedClickable(onClick = {}, onLongClick = { onRemove(member.characterId) })
-                    .padding(InkSpacing.xxs),
-            ) {
-                com.ihy2ln.weaverse.feature.roleplay.friends.CharacterAvatar(
-                    name = member.name,
-                    colorHex = member.colorHex,
-                    size = 32.dp,
-                )
-                Text(
-                    member.name,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = tokens.secondaryText,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.width(48.dp),
-                    textAlign = TextAlign.Center,
-                )
-            }
-        }
-    }
-}
-
-/**
- * The Chatting composer: the same prompt window the RPG adventure and Novel
- * editor use (word range, AI/manual, model, retry/continue/cancel, context
- * meter, backspace clear with hold-to-undo).
- */
-@Composable
-private fun MentionAutocompleteRow(
-    candidates: List<DiscordMemberUi>,
-    memberIds: Set<String>,
-    onPick: (String) -> Unit,
-) {
-    val tokens = inkTokens()
-    LazyRow(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = InkSpacing.lg, vertical = InkSpacing.xxs),
-        horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
-    ) {
-        items(candidates, key = { it.characterId }) { candidate ->
-            val isMember = candidate.characterId in memberIds
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(InkSpacing.xxs),
-                modifier = Modifier
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(tokens.hover)
-                    .clickable { onPick(candidate.name) }
-                    .padding(horizontal = InkSpacing.sm, vertical = InkSpacing.xs),
-            ) {
-                com.ihy2ln.weaverse.feature.roleplay.friends.CharacterAvatar(
-                    name = candidate.name,
-                    colorHex = candidate.colorHex,
-                    size = 18.dp,
-                )
-                Text(candidate.name, style = MaterialTheme.typography.labelMedium, color = tokens.primaryText)
-                if (!isMember) {
-                    Text("+ add", style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
                 }
             }
         }
@@ -990,290 +1449,40 @@ private fun MentionAutocompleteRow(
 
 @Composable
 private fun EmptyPaneHint(state: DiscordChatUiState) {
-    val tokens = inkTokens()
+    val colors = discordColors()
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(InkSpacing.xs),
-            modifier = Modifier.padding(InkSpacing.xl),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(32.dp),
         ) {
+            Box(
+                Modifier.size(72.dp).clip(CircleShape).background(colors.elevated),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    if (state.selectedServerId == null) Icons.Filled.SportsEsports else Icons.Filled.Tag,
+                    contentDescription = null,
+                    tint = colors.muted,
+                    modifier = Modifier.size(40.dp),
+                )
+            }
             Text(
-                if (state.selectedServerId == null) "Pick a conversation" else "Pick a channel",
-                style = MaterialTheme.typography.titleMedium,
+                if (state.selectedServerId == null) "No one's around to play with Wumpus." else "Pick a channel",
+                fontSize = 17.sp,
                 fontWeight = FontWeight.Bold,
-                color = tokens.primaryText,
+                color = colors.header,
             )
             Text(
                 if (state.selectedServerId == null) {
-                    "Choose a DM under Home, or pick a work's server from the rail to chat about it."
+                    "Choose a DM, or pick a work's server from the rail to chat about it."
                 } else {
                     "Choose a text channel, or open a character's room and @mention them anywhere."
                 },
-                style = MaterialTheme.typography.bodyMedium,
-                color = tokens.secondaryText,
+                fontSize = 14.sp,
+                color = colors.muted,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
-        }
-    }
-}
-
-@Composable
-private fun MessageList(
-    state: DiscordChatUiState,
-    viewModel: DiscordChatViewModel,
-    modifier: Modifier = Modifier,
-) {
-    val tokens = inkTokens()
-    val roomId = state.selectedRoomId
-    val listState = rememberSaveable(roomId, saver = LazyListState.Saver) { LazyListState() }
-    LaunchedEffect(roomId) {
-        if (roomId == null) return@LaunchedEffect
-        val saved = viewModel.scrollFor(roomId)
-        if (saved != null) {
-            listState.scrollToItem(saved.first, saved.second)
-        } else if (state.messages.isNotEmpty()) {
-            listState.scrollToItem((listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0))
-        }
-    }
-    LaunchedEffect(roomId, state.messages.size) {
-        if (roomId == null) return@LaunchedEffect
-        val totalItems = listState.layoutInfo.totalItemsCount
-        val atBottom = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index == totalItems - 1
-        if (viewModel.scrollFor(roomId) == null || atBottom) {
-            listState.scrollToItem((totalItems - 1).coerceAtLeast(0))
-        }
-    }
-    LaunchedEffect(roomId) {
-        if (roomId == null) return@LaunchedEffect
-        snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
-            .collect { (index, offset) -> viewModel.rememberScroll(roomId, index, offset) }
-    }
-    LazyColumn(state = listState, modifier = modifier) {
-        if (state.messages.isEmpty() && !state.isStreaming) {
-            item(key = "empty") {
-                Text(
-                    state.selectedRoom?.let { room ->
-                        val label = if (room.kind == ROOM_KIND_CHANNEL) "#${room.name}" else room.name
-                        "This is the start of $label."
-                    }.orEmpty(),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = tokens.secondaryText,
-                    modifier = Modifier.padding(InkSpacing.lg),
-                )
-            }
-        }
-        DayGroupedMessages(state, viewModel)
-        if (state.isStreaming) {
-            item(key = "streaming") {
-                StreamingRow(
-                    authorName = state.members.firstOrNull()?.name
-                        ?: state.selectedRoom?.name
-                        ?: "…",
-                    text = state.streamingText,
-                )
-            }
-        }
-        alwaysScrollEndSpacer()
-    }
-}
-
-/** Groups messages by day, then renders Discord-style compact groups per author. */
-private fun LazyListScope.DayGroupedMessages(
-    state: DiscordChatUiState,
-    viewModel: DiscordChatViewModel,
-) {
-    var lastDay = ""
-    state.messages.forEachIndexed { index, message ->
-        val day = viewModel.dayLabel(message.createdAt)
-        if (day != lastDay) {
-            lastDay = day
-            item(key = "day-$day-$index") {
-                DayDivider(label = day)
-            }
-        }
-        val previous = state.messages.getOrNull(index - 1)
-        val grouped = previous != null &&
-            previous.authorName == message.authorName &&
-            message.createdAt - previous.createdAt < GROUP_WINDOW_MS &&
-            viewModel.dayLabel(previous.createdAt) == day
-        item(key = message.id) {
-            if (message.isSystem) {
-                SystemMessageRow(message.text)
-            } else {
-                MessageRow(
-                    message = message,
-                    grouped = grouped,
-                    timeFull = viewModel.timestampFull(message.createdAt),
-                    timeShort = viewModel.timestampShort(message.createdAt),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun DayDivider(label: String) {
-    val tokens = inkTokens()
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = InkSpacing.lg, vertical = InkSpacing.sm),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
-            color = tokens.secondaryText,
-            modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .background(tokens.background)
-                .padding(horizontal = InkSpacing.sm, vertical = 2.dp),
-        )
-    }
-}
-
-/** A join/system line — centered and dimmed, not a chat bubble. */
-@Composable
-private fun SystemMessageRow(text: String) {
-    val tokens = inkTokens()
-    Box(
-        modifier = Modifier.fillMaxWidth().padding(vertical = InkSpacing.xxs),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text,
-            style = MaterialTheme.typography.labelSmall,
-            color = tokens.secondaryText,
-            textAlign = TextAlign.Center,
-        )
-    }
-}
-
-@Composable
-private fun MessageRow(
-    message: DiscordMessageUi,
-    grouped: Boolean,
-    timeFull: String,
-    timeShort: String,
-) {
-    val tokens = inkTokens()
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = InkSpacing.lg, vertical = if (grouped) 1.dp else InkSpacing.xs),
-        verticalAlignment = Alignment.Top,
-    ) {
-        if (grouped) {
-            Spacer(Modifier.width(36.dp))
-            Text(
-                timeShort,
-                style = MaterialTheme.typography.labelSmall,
-                color = tokens.secondaryText,
-                modifier = Modifier.padding(top = 3.dp),
-            )
-            Spacer(Modifier.width(InkSpacing.sm))
-        } else {
-            com.ihy2ln.weaverse.feature.roleplay.friends.CharacterAvatar(
-                name = message.authorName,
-                colorHex = message.authorColorHex,
-                size = 36.dp,
-            )
-            Spacer(Modifier.width(InkSpacing.sm))
-        }
-        Column(modifier = Modifier.weight(1f)) {
-            if (!grouped) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
-                ) {
-                    Text(
-                        message.authorName,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = parseHexColor(message.authorColorHex, tokens.primaryText),
-                    )
-                    if (message.isBot) {
-                        Text(
-                            "APP",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(MaterialTheme.colorScheme.primary)
-                                .padding(horizontal = 5.dp, vertical = 1.dp),
-                        )
-                    }
-                    Text(
-                        timeFull,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = tokens.secondaryText,
-                    )
-                }
-            }
-            if (message.text.isNotBlank()) {
-                // Per row, not around the whole list: a SelectionContainer wrapping the
-                // LazyColumn makes it report its full content height, which squeezes the
-                // prompt window down to its drag handle.
-                SelectionContainer {
-                    Text(
-                        message.text,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = tokens.primaryText,
-                    )
-                }
-            }
-            message.mediaPaths.take(4).forEach { path ->
-                coil3.compose.AsyncImage(
-                    model = java.io.File(path),
-                    contentDescription = "Attached image",
-                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                    modifier = Modifier
-                        .padding(top = InkSpacing.xs)
-                        .size(width = 200.dp, height = 130.dp)
-                        .clip(RoundedCornerShape(10.dp)),
-                )
-            }
-            if (message.hasMedia && message.mediaPaths.isEmpty()) {
-                Text(
-                    "media attachment",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = tokens.secondaryText,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun StreamingRow(authorName: String, text: String) {
-    val tokens = inkTokens()
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = InkSpacing.lg, vertical = InkSpacing.xs),
-        verticalAlignment = Alignment.Top,
-    ) {
-        com.ihy2ln.weaverse.feature.roleplay.friends.CharacterAvatar(
-            name = authorName,
-            colorHex = com.ihy2ln.weaverse.core.roleplay.avatarColorHexFor(authorName, null),
-            size = 36.dp,
-        )
-        Spacer(Modifier.width(InkSpacing.sm))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                "$authorName is typing…",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = tokens.secondaryText,
-            )
-            if (text.isNotBlank()) {
-                Text(
-                    text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = tokens.primaryText,
-                )
-            }
         }
     }
 }
@@ -1287,7 +1496,7 @@ private fun CharacterPickerDialog(
     val characters by viewModel.characters.collectAsState()
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add a character room") },
+        title = { Text("Invite a character") },
         text = {
             if (characters.isEmpty()) {
                 Text("No characters yet — add one under RPG → Roster or Contacts → Meet someone.")
@@ -1298,17 +1507,17 @@ private fun CharacterPickerDialog(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { onPick(character.id) }
-                                .padding(vertical = InkSpacing.xs),
+                                .padding(vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
-                            com.ihy2ln.weaverse.feature.roleplay.friends.CharacterAvatar(
+                            CharacterAvatar(
                                 name = character.name,
                                 colorHex = com.ihy2ln.weaverse.core.roleplay.avatarColorHexFor(
                                     character.name,
                                     character.colorHex,
                                 ),
-                                size = 28.dp,
+                                size = 32.dp,
                             )
                             Text(
                                 character.name,
@@ -1327,5 +1536,3 @@ private fun CharacterPickerDialog(
         },
     )
 }
-
-private const val GROUP_WINDOW_MS = 7L * 60L * 1000L

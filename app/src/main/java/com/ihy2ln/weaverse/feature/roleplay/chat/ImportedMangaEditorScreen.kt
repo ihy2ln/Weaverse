@@ -243,7 +243,7 @@ fun ImportedMangaEditorScreen(
     Box(Modifier.fillMaxSize().background(Color.Black).clipToBounds()) {
         LazyColumn(
             state = pageScroll,
-            contentPadding = PaddingValues(top = 48.dp, bottom = if (focusMode) 0.dp else 48.dp),
+            contentPadding = PaddingValues(top = if (focusMode) 48.dp else 96.dp),
             modifier = Modifier.fillMaxSize()
                 .transformable(transform, canPan = { zoom > 1f })
                 .graphicsLayer { scaleX = zoom; scaleY = zoom; translationX = panX; translationY = panY },
@@ -278,34 +278,28 @@ fun ImportedMangaEditorScreen(
         val banner = Color.Black
         val bannerText = Color.White
         Surface(Modifier.align(Alignment.TopCenter).fillMaxWidth(), color = banner, contentColor = bannerText) {
+            Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     MangaTool("Back", { back() })
                     Text(state.title.ifBlank { "Manga" }, modifier = Modifier.weight(1f).padding(horizontal = 4.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp, fontFamily = FontFamily.SansSerif)
-                    // Read / Edit stay on screen in every state, so switching never needs a hunt.
                     ReadEditToggle(
-                        reading = focusMode,
-                        onRead = { focusMode = !focusMode },
+                        reading = true,
+                        onRead = { focusMode = true },
                         onEdit = ::openEditor,
                         editEnabled = editTarget != null && !state.mangaEditBusy,
                     )
-                    if (!focusMode) MangaTool("More", { sheet = "More" })
                 }
-        }
-        if (focusMode) Surface(Modifier.align(Alignment.BottomEnd), color = banner, contentColor = bannerText) {
-            MangaTool("${pageIndex + 1}/${pages.size.coerceAtLeast(1)}", { sheet = "Pages" })
-        }
-        if (!focusMode) {
-            Surface(Modifier.align(Alignment.BottomCenter).fillMaxWidth(), color = banner, contentColor = bannerText) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                if (!focusMode) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
                     MangaTool("${pageIndex + 1}/${pages.size.coerceAtLeast(1)}", { sheet = "Pages" })
                     MangaTool("Read", { focusMode = true })
                     MangaTool("Versions", { sheet = "Versions" }, selected != null && !state.mangaEditBusy)
                     MangaTool("AI", { sheet = "AI" })
+                    MangaTool("More", { sheet = "More" })
                 }
             }
         }
         if (state.mangaEditBusy) {
-            Surface(Modifier.align(Alignment.TopEnd).padding(top = 52.dp), shape = RoundedCornerShape(8.dp)) {
+            Surface(Modifier.align(Alignment.TopEnd).padding(top = if (focusMode) 52.dp else 100.dp), shape = RoundedCornerShape(8.dp)) {
                 val total = state.mangaEditTotal.coerceAtLeast(1)
                 val fraction = ((state.mangaEditCurrent + state.mangaEditItemProgress) / total).coerceIn(0f, 1f)
                 val animated by androidx.compose.animation.core.animateFloatAsState(fraction, label = "manga-edit-progress")
@@ -540,13 +534,13 @@ fun ImportedMangaEditorScreen(
 
 /** The reader's always-visible mode switch: Read hides the chrome, Edit opens the page editor. */
 @Composable
-private fun ReadEditToggle(reading: Boolean, onRead: () -> Unit, onEdit: () -> Unit, editEnabled: Boolean) {
+internal fun ReadEditToggle(reading: Boolean, onRead: () -> Unit, onEdit: () -> Unit, editEnabled: Boolean) {
     Row(
         Modifier.padding(horizontal = 4.dp)
             .border(1.dp, Color.White.copy(alpha = .4f), RoundedCornerShape(16.dp)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        listOf("Read" to reading, "Edit" to false).forEach { (label, active) ->
+        listOf("Read" to reading, "Edit" to !reading).forEach { (label, active) ->
             val enabled = label == "Read" || editEnabled
             Box(
                 Modifier.clip(RoundedCornerShape(16.dp))

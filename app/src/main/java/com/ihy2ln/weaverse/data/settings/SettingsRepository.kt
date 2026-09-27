@@ -392,6 +392,17 @@ class SettingsRepository @Inject constructor(
         context.dataStore.edit { it[stringPreferencesKey("chat_last_room_$bookId")] = chatId }
     }
 
+    /** Character ids the writer follows (Twitter) or has friended (Facebook), per platform. */
+    fun socialFollows(platform: String): kotlinx.coroutines.flow.Flow<Set<String>> =
+        context.dataStore.data.map { prefs ->
+            prefs[stringPreferencesKey("social_follows_$platform")].orEmpty()
+                .split(',').filter { it.isNotBlank() }.toSet()
+        }
+
+    suspend fun setSocialFollows(platform: String, ids: Set<String>) {
+        context.dataStore.edit { it[stringPreferencesKey("social_follows_$platform")] = ids.joinToString(",") }
+    }
+
     /** The unsent draft left in a Chatting room, so it survives an app restart. */
     suspend fun chatDraft(roomId: String): String =
         context.dataStore.data.map { it[stringPreferencesKey("chat_draft_$roomId")].orEmpty() }.first()

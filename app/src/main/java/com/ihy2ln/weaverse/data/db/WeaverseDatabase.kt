@@ -84,8 +84,9 @@ import com.ihy2ln.weaverse.data.db.entities.RpgCampaignSaveEntity
         TextGameSaveEntity::class,
         RpgCampaignSaveEntity::class,
         RpRoomMemberEntity::class,
+        com.ihy2ln.weaverse.data.db.entities.SocialPostEntity::class,
     ],
-    version = 29,
+    version = 30,
     exportSchema = true,
 )
 @TypeConverters(InkTypeConverters::class)
@@ -103,6 +104,7 @@ abstract class WeaverseDatabase : RoomDatabase() {
     abstract fun mangaDao(): MangaDao
     abstract fun promptDao(): PromptDao
     abstract fun textGameSaveDao(): TextGameSaveDao
+    abstract fun socialDao(): com.ihy2ln.weaverse.data.db.dao.SocialDao
 
     abstract fun homeAccessDao(): com.ihy2ln.weaverse.feature.shell.HomeAccessDao
     abstract fun bookBrowsingDao(): com.ihy2ln.weaverse.feature.library.BookBrowsingDao
@@ -116,6 +118,24 @@ abstract class WeaverseDatabase : RoomDatabase() {
             if (!exists) execSQL("ALTER TABLE `$table` ADD COLUMN `$column` $definition")
         }
 
+        val MIGRATION_29_30 = object : Migration(29, 30) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.addColumnIfMissing("rp_messages", "reactionsJson", "TEXT NOT NULL DEFAULT '{}'")
+                db.addColumnIfMissing("rp_messages", "userReactions", "TEXT NOT NULL DEFAULT ''")
+                db.addColumnIfMissing("rp_messages", "replyToId", "TEXT")
+                db.addColumnIfMissing("rp_messages", "pinned", "INTEGER NOT NULL DEFAULT 0")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `social_posts` (`id` TEXT NOT NULL, `platform` TEXT NOT NULL, " +
+                        "`authorCharacterId` TEXT, `authorName` TEXT NOT NULL, `text` TEXT NOT NULL, `mediaId` TEXT, " +
+                        "`parentId` TEXT, `repostOfId` TEXT, `likeCount` INTEGER NOT NULL, `repostCount` INTEGER NOT NULL, " +
+                        "`viewCount` INTEGER NOT NULL, `userReaction` TEXT NOT NULL, `userReposted` INTEGER NOT NULL, " +
+                        "`bookmarked` INTEGER NOT NULL, `reactionsJson` TEXT NOT NULL, `feeling` TEXT NOT NULL, " +
+                        "`bookId` TEXT, `pinned` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_social_posts_platform` ON `social_posts` (`platform`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_social_posts_parentId` ON `social_posts` (`parentId`)")
+            }
+        }
         val MIGRATION_28_29 = object : Migration(28, 29) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.addColumnIfMissing("novel_writing_settings", "startProgress", "TEXT NOT NULL DEFAULT ''")
@@ -439,6 +459,7 @@ abstract class WeaverseDatabase : RoomDatabase() {
             MIGRATION_26_27,
             MIGRATION_27_28,
             MIGRATION_28_29,
+            MIGRATION_29_30,
         )
     }
 }

@@ -74,7 +74,7 @@ fun GamesScreen(viewModel: GamesViewModel = hiltViewModel()) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(viewModel::import)
     }
-    val importing = ui.importProgress != null
+    val importing = ui.importProgress != null || ui.updateProgress != null
     val installed = ui.installed
 
     Column(
@@ -123,15 +123,19 @@ fun GamesScreen(viewModel: GamesViewModel = hiltViewModel()) {
                         CircularProgressIndicator(Modifier.size(28.dp))
                     }
                     importing -> {
-                        Text("Installing game data…", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        val progress = ui.importProgress ?: 0f
+                        Text(
+                            if (ui.updateProgress != null) "Updating from GitHub…" else "Installing game data…",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        val progress = ui.importProgress ?: ui.updateProgress ?: 0f
                         if (progress >= 0f) {
                             LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
                         } else {
                             LinearProgressIndicator(Modifier.fillMaxWidth())
                         }
                         Text(
-                            "${formatBytes(ui.importedBytes)} copied. Keep Weaverse open until it finishes.",
+                            "${formatBytes(if (ui.updateProgress != null) ui.updatedBytes else ui.importedBytes)} processed. Keep Weaverse open until it finishes.",
                             color = tokens.secondaryText,
                             style = MaterialTheme.typography.bodySmall,
                         )
@@ -160,23 +164,36 @@ fun GamesScreen(viewModel: GamesViewModel = hiltViewModel()) {
                     else -> {
                         Text("Install the game data", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         Text(
-                            "The game's art, battle videos and scenes come as one game pack, about 1.3 GB, " +
-                                "so they are not inside the Weaverse download. Pick the pack file " +
-                                "(adams-haven-v….zip) to install it once.",
+                            "The game's art, battle videos and scenes are separate from the Weaverse download. " +
+                                "Check GitHub for the latest release or import an Adams Haven APK or Weaverse game-pack ZIP.",
                             color = tokens.secondaryText,
                         )
                     }
                 }
                 if (!ui.loading && !importing) {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
-                        OutlinedButton(onClick = { picker.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }) {
+                        OutlinedButton(
+                            onClick = viewModel::checkForUpdates,
+                            enabled = !ui.checkingUpdates,
+                        ) {
+                            if (ui.checkingUpdates) CircularProgressIndicator(Modifier.size(18.dp))
+                            else Icon(Icons.Default.Download, contentDescription = null)
+                            Spacer(Modifier.size(InkSpacing.xs))
+                            Text(if (ui.checkingUpdates) "Checking GitHub…" else "Check for updates")
+                        }
+                        OutlinedButton(onClick = { picker.launch(arrayOf("application/zip", "application/vnd.android.package-archive", "application/octet-stream", "*/*")) }) {
                             Icon(Icons.Default.Download, contentDescription = null)
                             Spacer(Modifier.size(InkSpacing.xs))
-                            Text(if (installed != null) "Update game pack" else "Import game pack")
+                            Text("Import game")
                         }
                         if (installed != null) {
                             TextButton(onClick = { confirmRemove = true }) { Text("Remove game data") }
                         }
+                    }
+                }
+                if (ui.updateAvailable && ui.release != null && !importing) {
+                    Button(onClick = viewModel::updateFromGitHub, modifier = Modifier.fillMaxWidth()) {
+                        Text("Download and install Adams Haven ${ui.release?.version}")
                     }
                 }
                 ui.message?.let { message ->

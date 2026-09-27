@@ -25,29 +25,33 @@ it, update `app/build.gradle.kts`, `GodotRuntime.ENGINE_VERSION` and `ENGINE` in
 ## Building a game pack
 
 ```bash
-python tools/build_game_pack.py "S:/AI/Game/AHCG test builds/AdamsHaven-v0.11.0.apk"
+python tools/build_game_pack.py "S:/AI/Game/AHCG test builds/AdamsHaven-v0.15.0-Android.apk"
 ```
 
 This reads an Adams Haven Android export and writes `build/game-packs/adams-haven-v<version>.zip`:
 the APK's `assets/` as the zip root, stored uncompressed so Godot can seek in the videos,
 plus a `weaverse-game.json` manifest. The source APK is never modified.
 
-## Installing it
+## Installing and updating it
 
-- **In the app:** Games → **Import game pack** → pick the zip. It is copied to
-  `Android/data/<package>/files/games/adams-haven.zip`.
+- **From GitHub:** Games → **Check for updates**. When a newer release is available,
+  **Download and install** fetches its Android APK, verifies the release SHA-256, and
+  converts its Godot assets into a game pack. Keep Weaverse open during the download.
+- **From a local file:** Games → **Import game** → pick an Adams Haven Android APK or
+  a Weaverse game-pack ZIP. The APK's assets are converted on the device.
+- Both routes install the pack at `Android/data/<package>/files/games/adams-haven.zip`.
 - **With adb (testing):** push the zip straight to that path. The debug build's package is
   `com.ihy2ln.weaverse.textgame`.
 
 ```bash
-adb push build/game-packs/adams-haven-v0.11.0.zip /sdcard/Android/data/com.ihy2ln.weaverse.textgame/files/games/adams-haven.zip
+adb push build/game-packs/adams-haven-v0.15.0.zip /sdcard/Android/data/com.ihy2ln.weaverse.textgame/files/games/adams-haven.zip
 ```
 
 ## How it runs
 
 `AdamsHavenGameActivity` extends Godot's `GodotActivity` and runs in its own `:game`
 process: Godot's engine starts once per process and kills the process when the game
-quits, so this keeps Weaverse alive underneath. It passes `--main-pack <zip>` plus the
-command line the standalone export bakes into `assets/_cl_`. `WeaverseApp` skips its
+quits, so this keeps Weaverse alive underneath. A small boot project inside Weaverse
+mounts the imported pack before the game's autoloads start. `WeaverseApp` skips its
 startup work (seeding, sync, backups) in that process. Game saves live in the app's own
 storage (`user://`), apart from the pack, so updating or removing the pack keeps them.

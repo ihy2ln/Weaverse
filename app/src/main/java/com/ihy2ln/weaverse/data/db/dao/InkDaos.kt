@@ -435,6 +435,9 @@ interface RoleplayDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertMessage(entity: RpMessageEntity)
 
+    @Query("SELECT * FROM rp_messages WHERE id = :id LIMIT 1")
+    suspend fun getRpMessage(id: String): RpMessageEntity?
+
     @Query("DELETE FROM rp_messages WHERE id = :id")
     suspend fun deleteMessage(id: String)
 
@@ -587,3 +590,22 @@ data class ReaderSceneRow(
     val chapterTitle: String,
 )
 
+
+/** Chatting mode's Facebook and Twitter feeds. */
+@Dao
+interface SocialDao {
+    @Query("SELECT * FROM social_posts WHERE platform = :platform ORDER BY createdAt DESC")
+    fun observePosts(platform: String): Flow<List<com.ihy2ln.weaverse.data.db.entities.SocialPostEntity>>
+
+    @Query("SELECT * FROM social_posts WHERE id = :id LIMIT 1")
+    suspend fun getPost(id: String): com.ihy2ln.weaverse.data.db.entities.SocialPostEntity?
+
+    @Query("SELECT * FROM social_posts WHERE parentId = :parentId ORDER BY createdAt")
+    suspend fun getReplies(parentId: String): List<com.ihy2ln.weaverse.data.db.entities.SocialPostEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(post: com.ihy2ln.weaverse.data.db.entities.SocialPostEntity)
+
+    @Query("DELETE FROM social_posts WHERE id = :id OR parentId = :id OR repostOfId = :id")
+    suspend fun deleteWithReplies(id: String)
+}

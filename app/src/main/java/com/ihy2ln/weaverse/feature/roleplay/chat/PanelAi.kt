@@ -300,7 +300,7 @@ object PanelAi {
                 cleanupW = (right - x).coerceAtLeast(0.01f),
                 cleanupH = (bottom - y).coerceAtLeast(0.01f),
             )
-        }.takeIf { it.isNotEmpty() }
+        }
     }
 
     /** Boxes only — used when Detection is selected without OCR or translation. */

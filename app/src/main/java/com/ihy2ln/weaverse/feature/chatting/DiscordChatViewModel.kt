@@ -41,6 +41,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.encodeToString
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -74,6 +75,17 @@ data class DiscordRoomUi(
     val serverTitle: String = "",
 )
 
+/** One emoji reaction chip under a message. */
+data class DiscordReactionUi(val emoji: String, val count: Int, val mine: Boolean)
+
+/** The quoted line a Discord reply shows above its message. */
+data class DiscordReplyPreviewUi(
+    val messageId: String,
+    val authorName: String,
+    val authorColorHex: String,
+    val snippet: String,
+)
+
 /** One rendered message row in the Discord pane. */
 data class DiscordMessageUi(
     val id: String,
@@ -86,6 +98,13 @@ data class DiscordMessageUi(
     val hasMedia: Boolean,
     val mediaPaths: List<String> = emptyList(),
     val createdAt: Long,
+    val authorCharacterId: String? = null,
+    val reactions: List<DiscordReactionUi> = emptyList(),
+    val replyTo: DiscordReplyPreviewUi? = null,
+    val pinned: Boolean = false,
+    val edited: Boolean = false,
+    /** The message @mentions the writer, so the row gets Discord's gold highlight. */
+    val mentionsYou: Boolean = false,
 )
 
 /** One seat in a room's member strip. */
@@ -95,6 +114,18 @@ data class DiscordMemberUi(
     val colorHex: String,
     val monogram: String,
     val joinedViaMention: Boolean,
+)
+
+/** The profile popout for a member or message author. */
+data class DiscordProfileUi(
+    val characterId: String?,
+    val name: String,
+    val colorHex: String,
+    val about: String,
+    val memberSince: Long,
+    val isMember: Boolean,
+    val isYou: Boolean,
+    val roles: List<String>,
 )
 
 /** One server's rooms as shown on the Home screen: its channels, then its character sub-rooms. */
@@ -152,7 +183,22 @@ data class DiscordChatUiState(
     val dmContacts: List<DiscordMemberUi> = emptyList(),
     /** True while the Direct Messages contact list is showing. */
     val dmContactsOpen: Boolean = false,
+    /** Message the next send replies to. */
+    val replyingTo: DiscordReplyPreviewUi? = null,
+    /** Messages newer than this were unread when the room was opened — the red NEW line. */
+    val unreadSince: Long = 0L,
+    /** Unread messages per server, for the rail's red badges. */
+    val serverUnread: Map<String, Int> = emptyMap(),
+    /** Unread total across DMs, for the Home button badge. */
+    val dmUnread: Int = 0,
+    /** The writer's display name (default persona). */
+    val personaName: String = "You",
+    /** Open profile popout, if any. */
+    val profile: DiscordProfileUi? = null,
 ) {
+    val pinnedMessages: List<DiscordMessageUi>
+        get() = messages.filter { it.pinned }
+
     val wordRangeValid: Boolean
         get() = minimumWords in PromptWordLimit.Minimum..PromptWordLimit.Maximum &&
             maximumWords in PromptWordLimit.Minimum..PromptWordLimit.Maximum &&
@@ -343,6 +389,8 @@ class DiscordChatViewModel @Inject constructor(
                 isStreaming = false,
                 streamingText = "",
                 errorMessage = "",
+                replyingTo = null,
+                unreadSince = 0L,
             )
         }
         if (chatId != null) {
@@ -357,6 +405,10 @@ class DiscordChatViewModel @Inject constructor(
                 }
                 db.roleplayDao().getChat(chatId)?.let { chat ->
                     boundRoom = chat
+                    val hasUnread = db.roleplayDao().countUnread(chat.id, chat.lastReadAt) > 0
+                    if (hasUnread && chat.lastReadAt > 0L && _uiState.value.selectedRoomId == chatId) {
+                        _uiState.update { it.copy(unreadSince = chat.lastReadAt) }
+                    }
                     if (chat.lastReadAt < System.currentTimeMillis() - READ_GRACE_MS) {
                         val read = chat.copy(lastReadAt = System.currentTimeMillis())
                         db.roleplayDao().upsertChat(read)
@@ -665,6 +717,8 @@ class DiscordChatViewModel @Inject constructor(
         val room = boundRoom ?: return
         val userText = state.input.trim()
         val media = pendingMedia
+        val replyTarget = state.replyingTo
+        _uiState.update { it.copy(replyingTo = null) }
         if (state.aiMode) {
             if (!state.wordRangeValid) return
             generateJob?.cancel()
@@ -685,13 +739,17 @@ class DiscordChatViewModel @Inject constructor(
                     contentJson = userMessageDocument(userText, media).toJson(),
                     createdAt = now,
                     displayMode = "messenger",
+                    replyToId = replyTarget?.messageId,
                 )
                 db.roleplayDao().upsertMessage(userMessage)
                 pendingMedia = emptyList()
                 _uiState.update { it.copy(hasPendingMedia = false) }
                 _uiState.update { it.copy(input = "", isStreaming = true, streamingText = "", errorMessage = "") }
                 invitesForMentions(room, userText)
-                generateReply(room, userText, now, userMessageAlreadyStored = true)
+                val prompt = replyTarget?.let {
+                    "(Replying to ${it.authorName}: \"${it.snippet}\")\n$userText"
+                } ?: userText
+                generateReply(room, prompt, now, userMessageAlreadyStored = true)
             }
         } else {
             // \M manual mode: file the text as a user message without a model call.
@@ -709,6 +767,7 @@ class DiscordChatViewModel @Inject constructor(
                         contentJson = userMessageDocument(userText, media).toJson(),
                         createdAt = now,
                         displayMode = "messenger",
+                        replyToId = replyTarget?.messageId,
                     ),
                 )
                 pendingMedia = emptyList()
@@ -967,6 +1026,168 @@ class DiscordChatViewModel @Inject constructor(
         _uiState.update {
             it.copy(isStreaming = false, streamingText = "", lastUsage = usageText)
         }
+        // Now and then someone in the room drops a reaction on what the writer said,
+        // the way people do on Discord instead of typing a whole reply.
+        if (userMessageAlreadyStored && kotlin.random.Random.nextFloat() < AI_REACTION_CHANCE) {
+            db.roleplayDao().getMessagesForMode(room.id, "messenger")
+                .lastOrNull { it.role == "user" && it.isActiveSwipe }
+                ?.let { target ->
+                    val counts = decodeReactions(target.reactionsJson).toMutableMap()
+                    val emoji = AI_REACTION_POOL.random()
+                    counts[emoji] = (counts[emoji] ?: 0) + 1
+                    db.roleplayDao().upsertMessage(target.copy(reactionsJson = encodeReactions(counts)))
+                }
+        }
+    }
+
+    // ------------------------------------------------------ message actions
+
+    /** Opens the profile popout for a character, or for the writer when [characterId] is null and [isYou]. */
+    fun openProfile(characterId: String?, name: String, colorHex: String, isYou: Boolean = false) {
+        viewModelScope.launch {
+            if (isYou) {
+                val persona = roomSeeder.defaultPersona()
+                _uiState.update {
+                    it.copy(
+                        profile = DiscordProfileUi(
+                            characterId = null,
+                            name = persona.name.ifBlank { "You" },
+                            colorHex = avatarColorHexFor(persona.name.ifBlank { "You" }, null),
+                            about = persona.description.ifBlank { "The writer behind every world here." },
+                            memberSince = persona.updatedAt.takeIf { t -> t > 0 } ?: System.currentTimeMillis(),
+                            isMember = false,
+                            isYou = true,
+                            roles = listOf("Writer", "Server Owner"),
+                        ),
+                    )
+                }
+                return@launch
+            }
+            val character = characterId?.let { db.roleplayDao().getCharacter(it) }
+                ?: charactersById.values.firstOrNull { it.name.equals(name, ignoreCase = true) }
+            val member = _uiState.value.members.firstOrNull { m -> m.characterId == character?.id }
+            val roles = buildList {
+                add(if (character?.inParty == true) "Party" else "Character")
+                if (member != null) add(if (member.joinedViaMention) "Invited" else "Room regular")
+                _uiState.value.selectedServer?.let { s -> add(if (s.workType == "campaign") "Adventurer" else "Cast") }
+            }
+            _uiState.update {
+                it.copy(
+                    profile = DiscordProfileUi(
+                        characterId = character?.id,
+                        name = character?.name ?: name,
+                        colorHex = character?.let { c -> avatarColorHexFor(c.name, c.colorHex) } ?: colorHex,
+                        about = character?.description?.trim()?.take(PROFILE_ABOUT_CHARS)
+                            ?.ifBlank { null }
+                            ?: character?.personality?.trim()?.take(PROFILE_ABOUT_CHARS).orEmpty(),
+                        memberSince = character?.createdAt ?: System.currentTimeMillis(),
+                        isMember = member != null,
+                        isYou = false,
+                        roles = roles,
+                    ),
+                )
+            }
+        }
+    }
+
+    fun closeProfile() {
+        _uiState.update { it.copy(profile = null) }
+    }
+
+    /** Adds or removes the writer's own [emoji] reaction on a message. */
+    fun toggleReaction(messageId: String, emoji: String) {
+        viewModelScope.launch {
+            val msg = db.roleplayDao().getRpMessage(messageId) ?: return@launch
+            val mine = msg.userReactions.split(',').filter { it.isNotBlank() }.toMutableList()
+            val counts = decodeReactions(msg.reactionsJson).toMutableMap()
+            if (emoji in mine) {
+                mine.remove(emoji)
+                val next = (counts[emoji] ?: 1) - 1
+                if (next <= 0) counts.remove(emoji) else counts[emoji] = next
+            } else {
+                mine.add(emoji)
+                counts[emoji] = (counts[emoji] ?: 0) + 1
+            }
+            db.roleplayDao().upsertMessage(
+                msg.copy(reactionsJson = encodeReactions(counts), userReactions = mine.joinToString(",")),
+            )
+        }
+    }
+
+    fun startReply(message: DiscordMessageUi) {
+        _uiState.update {
+            it.copy(
+                replyingTo = DiscordReplyPreviewUi(
+                    messageId = message.id,
+                    authorName = message.authorName,
+                    authorColorHex = message.authorColorHex,
+                    snippet = message.text.replace('\n', ' ').take(REPLY_SNIPPET_CHARS)
+                        .ifBlank { "Click to see attachment" },
+                ),
+            )
+        }
+    }
+
+    fun cancelReply() {
+        _uiState.update { it.copy(replyingTo = null) }
+    }
+
+    /** Rewrites a message's text in place and marks it (edited). */
+    fun editMessage(messageId: String, newText: String) {
+        val clean = newText.trim()
+        if (clean.isBlank()) return
+        viewModelScope.launch {
+            val msg = db.roleplayDao().getRpMessage(messageId) ?: return@launch
+            val old = documentFromJson(msg.contentJson)
+            val media = old.blocks.filterNot { it is com.ihy2ln.weaverse.core.text.Paragraph }
+            val doc = Document(
+                blocks = listOf(
+                    com.ihy2ln.weaverse.core.text.Paragraph(
+                        "p-${System.currentTimeMillis()}",
+                        listOf(com.ihy2ln.weaverse.core.text.Span(clean)),
+                    ),
+                ) + media,
+            )
+            db.roleplayDao().upsertMessage(msg.copy(contentJson = doc.toJson(), isEdited = true))
+        }
+    }
+
+    fun deleteMessage(messageId: String) {
+        viewModelScope.launch {
+            db.roleplayDao().deleteMessage(messageId)
+            if (_uiState.value.replyingTo?.messageId == messageId) cancelReply()
+        }
+    }
+
+    fun togglePin(messageId: String) {
+        viewModelScope.launch {
+            val msg = db.roleplayDao().getRpMessage(messageId) ?: return@launch
+            db.roleplayDao().upsertMessage(msg.copy(pinned = !msg.pinned))
+        }
+    }
+
+    /** Makes the message and everything after it unread again. */
+    fun markUnreadFrom(message: DiscordMessageUi) {
+        val room = boundRoom ?: return
+        viewModelScope.launch {
+            val chat = db.roleplayDao().getChat(room.id) ?: return@launch
+            val read = chat.copy(lastReadAt = message.createdAt - 1)
+            db.roleplayDao().upsertChat(read)
+            boundRoom = read
+            _uiState.update { it.copy(unreadSince = message.createdAt - 1) }
+        }
+    }
+
+    /** Marks every room in the selected server (or every DM on Home) as read. */
+    fun markServerRead() {
+        val serverId = _uiState.value.selectedServerId
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            allChats.filter { chat ->
+                chat.displayMode == "messenger" &&
+                    if (serverId == null) chat.bookId == null else chat.bookId == serverId
+            }.forEach { chat -> db.roleplayDao().upsertChat(chat.copy(lastReadAt = now)) }
+        }
     }
 
     /** "context: used / limit" estimate from the room's system prompt, history, and draft. */
@@ -1076,6 +1297,9 @@ class DiscordChatViewModel @Inject constructor(
         val roomCharacter = room?.characterId?.let { charactersById[it] }
         val serverTitle = state.selectedServer?.title
         val memberNames = state.members.map { it.name }
+        val byId = messages.associateBy { it.id }
+        val persona = roomSeeder.defaultPersona().name.ifBlank { "You" }
+        if (persona != state.personaName) _uiState.update { it.copy(personaName = persona) }
         val rows = messages
             .filter { it.isActiveSwipe }
             .map { msg ->
@@ -1114,6 +1338,31 @@ class DiscordChatViewModel @Inject constructor(
                     hasMedia = documentFromJson(msg.contentJson).hasMedia(),
                     mediaPaths = mediaPathsOf(msg),
                     createdAt = msg.createdAt,
+                    authorCharacterId = character?.id ?: if (isUser) null else roomCharacter?.id,
+                    reactions = decodeReactions(msg.reactionsJson).map { (emoji, count) ->
+                        DiscordReactionUi(emoji, count, emoji in msg.userReactions.split(','))
+                    },
+                    replyTo = msg.replyToId?.let { id ->
+                        val target = byId[id] ?: return@let null
+                        val targetCharacter = target.speakerCharacterId?.let { charactersById[it] }
+                        val name = when {
+                            target.role == "user" -> "You"
+                            targetCharacter != null -> targetCharacter.name
+                            target.speakerName.isNotBlank() -> target.speakerName
+                            else -> roomCharacter?.name ?: "Unknown"
+                        }
+                        DiscordReplyPreviewUi(
+                            messageId = id,
+                            authorName = name,
+                            authorColorHex = avatarColorHexFor(name, targetCharacter?.colorHex),
+                            snippet = documentFromJson(target.contentJson).plainText()
+                                .replace('\n', ' ').trim().take(REPLY_SNIPPET_CHARS)
+                                .ifBlank { "Click to see attachment" },
+                        )
+                    },
+                    pinned = msg.pinned,
+                    edited = msg.isEdited,
+                    mentionsYou = !isUser && mentionsWriter(documentFromJson(msg.contentJson).plainText(), persona),
                 )
             }
         messageCacheByRoom[roomId] = rows
@@ -1154,6 +1403,7 @@ class DiscordChatViewModel @Inject constructor(
         }
 
     private suspend fun refreshBadges() {
+        refreshServerBadges()
         val state = _uiState.value
         val allRooms = (state.rooms + state.directMessages + state.recentConversations).distinctBy { it.chatId }
         if (allRooms.isEmpty()) return
@@ -1184,6 +1434,20 @@ class DiscordChatViewModel @Inject constructor(
                     .find { it.chatId == current.selectedRoomId },
             )
         }
+    }
+
+    /** Sums unread messages per server and across DMs for the rail's badges. */
+    private suspend fun refreshServerBadges() {
+        val perServer = mutableMapOf<String, Int>()
+        var dms = 0
+        allChats.filter { it.displayMode == "messenger" }.forEach { chat ->
+            if (chat.id == _uiState.value.selectedRoomId) return@forEach
+            val unread = db.roleplayDao().countUnread(chat.id, chat.lastReadAt)
+            if (unread <= 0) return@forEach
+            val bookId = chat.bookId
+            if (bookId == null) dms += unread else perServer[bookId] = (perServer[bookId] ?: 0) + unread
+        }
+        _uiState.update { it.copy(serverUnread = perServer, dmUnread = dms) }
     }
 
     // ----------------------------------------------------------- prompting
@@ -1444,7 +1708,29 @@ class DiscordChatViewModel @Inject constructor(
         private const val MULTI_SPEAKER_STAGGER_MS = 1_200L
         private const val DAY_MS = 24L * 60L * 60L * 1000L
         private const val READ_GRACE_MS = 1_000L
+        private const val REPLY_SNIPPET_CHARS = 90
+        private const val PROFILE_ABOUT_CHARS = 600
+        private const val AI_REACTION_CHANCE = 0.35f
+        private val AI_REACTION_POOL = listOf("👍", "❤️", "😂", "🔥", "😮", "💯", "👀")
     }
+}
+
+private val reactionJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+
+/** Emoji → count, in insertion order; tolerant of blank or malformed JSON. */
+internal fun decodeReactions(json: String): Map<String, Int> = runCatching {
+    reactionJson.decodeFromString<Map<String, Int>>(json.ifBlank { "{}" })
+}.getOrDefault(emptyMap()).filterValues { it > 0 }
+
+internal fun encodeReactions(counts: Map<String, Int>): String =
+    reactionJson.encodeToString<Map<String, Int>>(counts.filterValues { it > 0 })
+
+/** True when [text] @mentions the writer by persona name, @you, @everyone or @here. */
+internal fun mentionsWriter(text: String, personaName: String): Boolean {
+    val lower = text.lowercase()
+    if ("@everyone" in lower || "@here" in lower || Regex("@you\\b").containsMatchIn(lower)) return true
+    val name = personaName.trim().lowercase()
+    return name.isNotBlank() && name != "you" && "@$name" in lower
 }
 
 /** Whether a block-based document carries any media at all. */

@@ -377,6 +377,46 @@ data class RpMessageEntity(
     val costUsd: Double = 0.0,
     /** Display name when the speaker is not a stored character (parsed multi-speaker replies). */
     val speakerName: String = "",
+    /** Chatting-mode emoji reactions: JSON map of emoji to count, e.g. {"👍":2}. */
+    val reactionsJson: String = "{}",
+    /** Emoji the writer themselves reacted with, comma-separated, so a tap can toggle them. */
+    val userReactions: String = "",
+    /** The message this one replies to (Discord-style reply preview). */
+    val replyToId: String? = null,
+    /** Pinned to its room's pinned-messages list. */
+    val pinned: Boolean = false,
+)
+
+/**
+ * One post on the Chatting mode's Facebook or Twitter feed. Comments and replies are
+ * posts too, pointing at their [parentId]; shares and retweets point at [repostOfId].
+ */
+@Entity(tableName = "social_posts", indices = [Index("platform"), Index("parentId")])
+data class SocialPostEntity(
+    @PrimaryKey val id: String,
+    /** facebook | twitter */
+    val platform: String,
+    /** null = the writer. */
+    val authorCharacterId: String? = null,
+    val authorName: String,
+    val text: String,
+    val mediaId: String? = null,
+    val parentId: String? = null,
+    val repostOfId: String? = null,
+    val likeCount: Int = 0,
+    val repostCount: Int = 0,
+    val viewCount: Int = 0,
+    /** Facebook: like/love/care/haha/wow/sad/angry; Twitter: "like"; blank = none. */
+    val userReaction: String = "",
+    val userReposted: Boolean = false,
+    val bookmarked: Boolean = false,
+    /** Facebook reaction tallies from everyone else: JSON map of reaction to count. */
+    val reactionsJson: String = "{}",
+    /** Facebook "is feeling …" status, blank when none. */
+    val feeling: String = "",
+    val bookId: String? = null,
+    val pinned: Boolean = false,
+    val createdAt: Long,
 )
 
 /** One member of a Chatting room's cast — seeded with the room, or pulled in later by an @mention. */

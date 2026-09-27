@@ -58,9 +58,11 @@ enum class GamesDestination(val label: String) {
     AdamsHaven("Adams Haven"),
 }
 
-/** The messenger workspace: the Discord server view, plus the friends list. */
+/** The messenger workspace: the Discord server view, the friends list, and the social feeds. */
 enum class ChattingDestination(val label: String) {
-    Chats("Chats"),
+    Chats("Discord"),
+    Facebook("Facebook"),
+    Twitter("Twitter"),
     Friends("Friends"),
 }
 

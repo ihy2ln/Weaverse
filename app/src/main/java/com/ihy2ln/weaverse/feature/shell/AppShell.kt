@@ -124,7 +124,6 @@ import com.ihy2ln.weaverse.feature.search.GlobalSearchScreen
 import com.ihy2ln.weaverse.feature.search.SearchResultType
 import com.ihy2ln.weaverse.feature.settings.SettingsScreen
 import com.ihy2ln.weaverse.feature.storyboard.MangaEditRequest
-import com.ihy2ln.weaverse.feature.storyboard.MangaReaderReturnTarget
 import com.ihy2ln.weaverse.feature.storyboard.StoryboardMangaHubScreen
 import java.io.File
 
@@ -152,8 +151,6 @@ fun AppShell(
     var mangaEditorPageId by rememberSaveable { mutableStateOf<String?>(null) }
     var mangaEditorAction by rememberSaveable { mutableStateOf<String?>(null) }
     var mangaEditorChapterId by rememberSaveable { mutableStateOf<String?>(null) }
-    var mangaReaderChapterId by rememberSaveable { mutableStateOf<String?>(null) }
-    var mangaReaderPageIndex by rememberSaveable { mutableStateOf(0) }
     // + Storyboard: choose between a fresh storyboard and importing a whole file.
     var storyboardPlusMenu by rememberSaveable { mutableStateOf(false) }
     var mangaImportUri by rememberSaveable { mutableStateOf<String?>(null) }
@@ -1131,6 +1128,13 @@ fun AppShell(
                                     onRoomSelect = { selectedRpChatId = it; if (it != null) shellViewModel.recordAccess("Chatting", "chat", it) },
                                     onOpenFriends = { chatDest = ChattingDestination.Friends.name },
                                 )
+                                ChattingDestination.Facebook -> com.ihy2ln.weaverse.feature.chatting.social.FacebookScreen(
+                                    // Messenger opens the Discord-style DMs under Home.
+                                    onOpenMessenger = { chatServerId = null; selectedRpChatId = null; chatDest = ChattingDestination.Chats.name },
+                                )
+                                ChattingDestination.Twitter -> com.ihy2ln.weaverse.feature.chatting.social.TwitterScreen(
+                                    onOpenMessages = { chatServerId = null; selectedRpChatId = null; chatDest = ChattingDestination.Chats.name },
+                                )
                             }
                             AppMode.Storyboard.name -> {
                                 if (boardId == null) {
@@ -1138,18 +1142,7 @@ fun AppShell(
                                         initialTab = storyboardDestinationOf(sd).name,
                                         initialSeriesId = homeMangaId,
                                         onCreateProject = { storyboardPlusMenu = true },
-                                        readerReturnTarget = mangaReaderChapterId?.let { chapterId ->
-                                            MangaReaderReturnTarget(chapterId, mangaReaderPageIndex)
-                                        },
-                                        onReaderReturnConsumed = {
-                                            mangaReaderChapterId = null
-                                            mangaReaderPageIndex = 0
-                                        },
                                         onEditChapter = { request: MangaEditRequest ->
-                                            if (request.returnToReader) {
-                                                mangaReaderChapterId = request.chapterId
-                                                mangaReaderPageIndex = request.pageIndex ?: 0
-                                            }
                                             shellViewModel.createMangaEditorFromChapter(
                                                 chapterId = request.chapterId,
                                                 focusPageIndex = request.pageIndex,

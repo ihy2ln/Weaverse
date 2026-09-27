@@ -275,12 +275,12 @@ object HelpContent {
         HelpSection(
             id = "chatting",
             title = "Chatting",
-            summary = "A Discord-style workspace for your works",
+            summary = "Discord, Facebook and Twitter for your works and characters",
             entries = listOf(
                 HelpEntry(
                     "Servers are your works",
-                    "The left rail lists every novel and campaign as a server icon. The " +
-                        "house button is Home; the envelope marked DM right below it opens " +
+                    "The left rail lists every novel and campaign as a server icon, with a " +
+                        "red badge for unread messages. The blue controller button is Home; the envelope marked DM right below it opens " +
                         "direct messages from anywhere. Opening a server for the first time " +
                         "auto-creates #general, #lore, and #brainstorm, plus one room per " +
                         "character tied to the work.",
@@ -290,7 +290,28 @@ object HelpContent {
                     "Every room seats 1-5 people from the work's Codex characters, shown as " +
                         "an avatar strip under the room header. Each channel gets its own " +
                         "stable cast, so #general and #lore are not the same crowd. " +
-                        "Long-press an avatar to remove that person.",
+                        "The people icon in the header opens the member list; tap someone " +
+                        "for their profile, where Message starts a DM and Remove takes " +
+                        "them out of the room.",
+                ),
+                HelpEntry(
+                    "Reactions, replies, pins",
+                    "Long-press any message for quick reactions, Reply, Edit (your own), " +
+                        "Pin, Copy Text, Mark Unread, Regenerate and Delete. The pin icon " +
+                        "in the header lists pinned messages; the magnifier searches the " +
+                        "room (from: name and has: image work too). Messages support " +
+                        "Discord formatting: **bold**, *italic*, __underline__, " +
+                        "~~strike~~, `code`, code blocks, > quotes and ||spoilers||.",
+                ),
+                HelpEntry(
+                    "Facebook and Twitter",
+                    "Switch to Facebook or Twitter from In this mode. Your characters post " +
+                        "in their own voice, and tap refresh (See new posts / Show new " +
+                        "posts) for more. Post yourself and they comment and react; reply " +
+                        "and the author answers. Facebook has stories, seven reactions " +
+                        "(long-press Like), comments, shares and friends. Twitter has For " +
+                        "you and Following, reposts and quotes, likes, bookmarks, Explore " +
+                        "with trends, and profiles.",
                 ),
                 HelpEntry(
                     "@mention autocomplete",

@@ -31,6 +31,11 @@ class PanelAiTranslationTest {
     }
 
     @Test
+    fun validEmptyPageIsDifferentFromAnUnusableVisionResponse() {
+        assertEquals(emptyList<PanelTextRegion>(), PanelAi.parseTranslatedRegions("[]"))
+    }
+
+    @Test
     fun parseDetectedRegionsKeepsEmptyTextBoxes() {
         val regions = PanelAi.parseDetectedRegions(
             """[{"x":10,"y":20,"w":100,"h":80},{"x":200,"y":40,"w":50,"h":60}]""",

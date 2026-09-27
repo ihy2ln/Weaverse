@@ -220,6 +220,7 @@ class RoleplayChatViewModel @Inject constructor(
     private val promptRepository: com.ihy2ln.weaverse.data.repo.PromptRepository,
     private val codexQuickAdd: com.ihy2ln.weaverse.feature.novel.codex.CodexQuickAdd,
     private val startSlots: com.ihy2ln.weaverse.core.story.StartSlotStore,
+    private val mangaAiRunner: MangaAiBackgroundRunner,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(RoleplayChatUiState())
     val uiState: StateFlow<RoleplayChatUiState> = _uiState.asStateFlow()
@@ -266,6 +267,30 @@ class RoleplayChatViewModel @Inject constructor(
         _uiState.update { it.copy(chatId = chatId) }
         bindJob?.cancel()
         bindJob = viewModelScope.launch {
+            launch {
+                mangaAiRunner.state.collect { task ->
+                    _uiState.update { state ->
+                        if (task.chatId != chatId) {
+                            if (!state.mangaEditBusy) state else state.copy(
+                                mangaEditBusy = false,
+                                mangaEditAction = "",
+                                mangaEditCurrent = 0,
+                                mangaEditTotal = 0,
+                                mangaEditItemProgress = 0f,
+                            )
+                        } else {
+                            state.copy(
+                                mangaEditBusy = task.running,
+                                mangaEditAction = if (task.running) task.action else "",
+                                mangaEditCurrent = task.current,
+                                mangaEditTotal = task.total,
+                                mangaEditItemProgress = task.itemProgress,
+                                storyboardStatus = task.status.ifBlank { state.storyboardStatus },
+                            )
+                        }
+                    }
+                }
+            }
             launch {
                 workspaceHistory.state.collect { history ->
                     _uiState.update {
@@ -4719,15 +4744,28 @@ class RoleplayChatViewModel @Inject constructor(
         val path: String,
     )
 
-    private suspend fun mangaEditTargets(pageIds: Set<String>): List<MangaEditTarget> =
-        rawMessages.flatMap { message ->
-            documentFromJson(message.contentJson).blocks.mapNotNull { candidate ->
-                val block = candidate as? MediaBlock ?: return@mapNotNull null
-                if (block.pageId !in pageIds || block.kind != MediaKind.Image) return@mapNotNull null
-                val entity = mediaRepository.getById(block.mediaId) ?: return@mapNotNull null
-                MangaEditTarget(message, block, mediaRepository.resolveFile(entity).absolutePath)
+    private data class MangaEditTargets(val items: List<MangaEditTarget>, val missing: Int)
+
+    private suspend fun mangaEditTargets(pageIds: Set<String>): MangaEditTargets {
+        var missing = 0
+        val imagePageIds = mutableSetOf<String>()
+        val items = db.roleplayDao().getMessagesForMode(_uiState.value.chatId, "roleplay")
+            .filter { it.isActiveSwipe }
+            .flatMap { message ->
+                documentFromJson(message.contentJson).blocks.mapNotNull { candidate ->
+                    val block = candidate as? MediaBlock ?: return@mapNotNull null
+                    if (block.pageId !in pageIds || block.kind != MediaKind.Image) return@mapNotNull null
+                    imagePageIds += block.pageId.orEmpty()
+                    val file = mediaRepository.getById(block.mediaId)?.let(mediaRepository::resolveFile)
+                    if (file?.isFile != true) {
+                        missing++
+                        return@mapNotNull null
+                    }
+                    MangaEditTarget(message, block, file.absolutePath)
+                }
             }
-        }
+        return MangaEditTargets(items, missing + (pageIds - imagePageIds).size)
+    }
 
     private fun MangaCleanupBounds.toRectF(): RectF = RectF(x, y, right, bottom)
 
@@ -5040,20 +5078,26 @@ class RoleplayChatViewModel @Inject constructor(
     }
 
     private fun startMangaTranslation(pageIds: Set<String>, scopeLabel: String, colorizeFirst: Boolean = false) {
-        if (_uiState.value.mangaEditBusy || mangaEditJob?.isActive == true) return
+        if (_uiState.value.mangaEditBusy || mangaAiRunner.state.value.running) {
+            _uiState.update { it.copy(storyboardStatus = "Another manga AI task is already running. Finish or stop it before starting a new one.") }
+            return
+        }
         // Claim the job before suspending so repeated taps cannot start parallel bitmap jobs.
         _uiState.update { it.copy(mangaEditBusy = true, mangaEditAction = "Translating to English") }
-        mangaEditJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+        mangaEditJob = mangaAiRunner.start(_uiState.value.chatId, "Translating to English", uiState, work = launch@{
             var completed = 0
             var translatedPanels = 0
             var retriedPanels = 0
             var translatedRegions = 0
             var rejectedPages = 0
             var alreadyEnglish = 0
+            var failedPages = 0
             try {
-                val targets = mangaEditTargets(pageIds)
+                val selection = mangaEditTargets(pageIds)
+                val targets = selection.items
+                failedPages += selection.missing
                 if (targets.isEmpty()) {
-                    _uiState.update { it.copy(storyboardStatus = "No imported manga pictures were found in this $scopeLabel.") }
+                    _uiState.update { it.copy(storyboardStatus = "No readable manga pictures were found in this $scopeLabel. Retry the chapter download if pages are missing.") }
                     return@launch
                 }
                 _uiState.update {
@@ -5091,7 +5135,18 @@ class RoleplayChatViewModel @Inject constructor(
                 }
                 val combinedImageModel = if (colorizeFirst) imageEditModelRef()
                     ?: error("Choose an image-editing model before colorizing and translating.") else null
-                targets.forEachIndexed { index, sourceTarget ->
+                runMangaChapterBatch(targets, onFailure = { index, failure ->
+                    failedPages++
+                    completed = index + 1
+                    android.util.Log.e("MangaTranslation", "Page ${index + 1}/${targets.size} failed; continuing", failure)
+                    _uiState.update {
+                        it.copy(
+                            storyboardStatus = "Could not translate page ${index + 1}/${targets.size}: ${failure.message?.take(160) ?: "Unknown error"}. Continuing…",
+                            mangaEditCurrent = completed,
+                            mangaEditItemProgress = 0f,
+                        )
+                    }
+                }) page@{ index, sourceTarget ->
                     var target = sourceTarget
                     fun stage(step: String) {
                         // Rough share of one page's work done when each stage starts.
@@ -5136,8 +5191,8 @@ class RoleplayChatViewModel @Inject constructor(
                     }
                     stage("Reading")
                     val quality = _uiState.value.mangaAiQuality
-                    val detected = PanelAi.readText(aiGeneration, modelRef, target.path, "English", maxDim = quality.readMaxDim)
-                        .orEmpty()
+                    val detected = (PanelAi.readText(aiGeneration, modelRef, target.path, "English", maxDim = quality.readMaxDim)
+                        ?: error("Vision returned no usable response for this page"))
                         .filter { it.translation.isNotBlank() || it.original.isNotBlank() }
                     // Lettering already printed in English is left exactly as the artist drew it.
                     val planned = MangaTranslationPlan.translatable(detected)
@@ -5146,7 +5201,7 @@ class RoleplayChatViewModel @Inject constructor(
                         if (MangaTranslationPlan.preservedEnglish(detected).isNotEmpty()) alreadyEnglish++
                         completed = index + 1
                         _uiState.update { it.copy(mangaEditCurrent = completed, mangaEditItemProgress = 0f) }
-                        return@forEachIndexed
+                        return@page
                     }
                     stage("Translating")
                     // The Vision pass already translated each line while looking at the art;
@@ -5188,22 +5243,21 @@ class RoleplayChatViewModel @Inject constructor(
                             reason = "the translation was incomplete or was not English",
                         )
                         _uiState.update { it.copy(mangaEditCurrent = completed, mangaEditItemProgress = 0f) }
-                        return@forEachIndexed
+                        return@page
                     }
                     val render = renderTranslatedPage(target.path, modelRef, textModelRef, safeRegions, skippedLines, quality) { step -> stage(step) }
                     if (render.cleaned == null) {
                         rejectedPages++
                         markPageNeedsReview(target, render.regions, render.reason)
                         _uiState.update { it.copy(mangaEditCurrent = completed, mangaEditItemProgress = 0f) }
-                        return@forEachIndexed
+                        return@page
                     }
                     val blocks = workingBlocks[target.message.id]
                     val blockIndex = blocks?.indexOfFirst { it.id == target.block.id } ?: -1
                     val base = blocks?.getOrNull(blockIndex) as? MediaBlock
                     if (base == null) {
                         render.cleaned.recycle()
-                        _uiState.update { it.copy(mangaEditCurrent = completed, mangaEditItemProgress = 0f) }
-                        return@forEachIndexed
+                        error("The page panel changed before its translation could be saved")
                     }
                     val entity = try {
                         mediaRepository.importFromBytes(
@@ -5264,7 +5318,7 @@ class RoleplayChatViewModel @Inject constructor(
                             translatedRegions = translatedRegions,
                             rejectedPages = rejectedPages,
                             alreadyEnglish = alreadyEnglish,
-                        ),
+                        ) + if (failedPages > 0) " $failedPages page(s) failed; the rest of the chapter was processed." else "",
                     )
                 }
             } catch (cancelled: CancellationException) {
@@ -5287,6 +5341,10 @@ class RoleplayChatViewModel @Inject constructor(
                     it.copy(mangaEditBusy = false, mangaEditAction = "", mangaEditCurrent = 0, mangaEditTotal = 0, mangaEditItemProgress = 0f)
                 }
             }
+        })
+        if (mangaEditJob == null) _uiState.update {
+            it.copy(mangaEditBusy = false, mangaEditAction = "", storyboardStatus =
+                mangaAiRunner.state.value.status.ifBlank { "Could not start background manga processing." })
         }
     }
 
@@ -5357,16 +5415,22 @@ class RoleplayChatViewModel @Inject constructor(
     }
 
     private fun startMangaColorization(pageIds: Set<String>, scopeLabel: String) {
-        if (_uiState.value.mangaEditBusy || mangaEditJob?.isActive == true) return
+        if (_uiState.value.mangaEditBusy || mangaAiRunner.state.value.running) {
+            _uiState.update { it.copy(storyboardStatus = "Another manga AI task is already running. Finish or stop it before starting a new one.") }
+            return
+        }
         _uiState.update { it.copy(mangaEditBusy = true, mangaEditAction = "Colorizing black-and-white art") }
-        mangaEditJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+        mangaEditJob = mangaAiRunner.start(_uiState.value.chatId, "Colorizing black-and-white art", uiState, work = launch@{
             var completed = 0
             var colorized = 0
             var alreadyColor = 0
+            var failedPages = 0
             try {
-                val targets = mangaEditTargets(pageIds)
+                val selection = mangaEditTargets(pageIds)
+                val targets = selection.items
+                failedPages += selection.missing
                 if (targets.isEmpty()) {
-                    _uiState.update { it.copy(storyboardStatus = "No imported manga pictures were found in this $scopeLabel.") }
+                    _uiState.update { it.copy(storyboardStatus = "No readable manga pictures were found in this $scopeLabel. Retry the chapter download if pages are missing.") }
                     return@launch
                 }
                 _uiState.update {
@@ -5388,7 +5452,18 @@ class RoleplayChatViewModel @Inject constructor(
                 val workingBlocks = targets.map { it.message }.distinctBy { it.id }.associate { message ->
                     message.id to documentFromJson(message.contentJson).blocks.toMutableList()
                 }
-                targets.forEachIndexed { index, target ->
+                runMangaChapterBatch(targets, onFailure = { index, failure ->
+                    failedPages++
+                    completed = index + 1
+                    android.util.Log.e("MangaColorization", "Page ${index + 1}/${targets.size} failed; continuing", failure)
+                    _uiState.update {
+                        it.copy(
+                            storyboardStatus = "Could not colorize page ${index + 1}/${targets.size}: ${failure.message?.take(160) ?: "Unknown error"}. Continuing…",
+                            mangaEditCurrent = completed,
+                            mangaEditItemProgress = 0f,
+                        )
+                    }
+                }) page@{ index, target ->
                     _uiState.update {
                         it.copy(
                             storyboardStatus =
@@ -5397,43 +5472,46 @@ class RoleplayChatViewModel @Inject constructor(
                         )
                     }
                     val bitmap = ImageOps.loadBitmap(target.path, maxDim = 480)
-                    if (bitmap != null) {
-                        try {
-                            if (ImageOps.isMostlyGrayscale(bitmap)) {
-                                // A full-page edit needs more than the 1100px used for a
-                                // read-the-lettering vision call, or fine line art and small
-                                // text turn to mush once the model repaints the page.
-                                val (bytes, mime) = colorizeMangaImage(target.path, imageModelRef)
-                                val entity = mediaRepository.importFromBytes(
-                                    bytes = bytes,
-                                    fileName = "manga-ai-color-${UUID.randomUUID()}.${if (mime == "image/png") "png" else "jpg"}",
-                                    mimeType = mime,
-                                )
-                                val blocks = workingBlocks[target.message.id] ?: return@forEachIndexed
-                                val blockIndex = blocks.indexOfFirst { it.id == target.block.id }
-                                val current = blocks.getOrNull(blockIndex) as? MediaBlock ?: return@forEachIndexed
-                                blocks[blockIndex] = current.copy(
-                                    mediaId = entity.id,
-                                    originalMediaId = current.originalMediaId ?: current.mediaId,
-                                    variantKind = "colorized",
-                                )
-                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
-                                    persistMessageBlocks(target.message, blocks)
-                                }
-                                colorized++
-                            } else {
-                                alreadyColor++
+                        ?: error("Could not open this chapter page image")
+                    try {
+                        if (ImageOps.isMostlyGrayscale(bitmap)) {
+                            // A full-page edit needs more than the 1100px used for a
+                            // read-the-lettering vision call, or fine line art and small
+                            // text turn to mush once the model repaints the page.
+                            val (bytes, mime) = colorizeMangaImage(target.path, imageModelRef)
+                            val entity = mediaRepository.importFromBytes(
+                                bytes = bytes,
+                                fileName = "manga-ai-color-${UUID.randomUUID()}.${if (mime == "image/png") "png" else "jpg"}",
+                                mimeType = mime,
+                            )
+                            val blocks = workingBlocks[target.message.id]
+                                ?: error("The page panel could not be loaded")
+                            val blockIndex = blocks.indexOfFirst { it.id == target.block.id }
+                            val current = blocks.getOrNull(blockIndex) as? MediaBlock
+                                ?: error("The page panel changed before colorization could be saved")
+                            blocks[blockIndex] = current.copy(
+                                mediaId = entity.id,
+                                originalMediaId = current.originalMediaId ?: current.mediaId,
+                                variantKind = "colorized",
+                            )
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                                persistMessageBlocks(target.message, blocks)
                             }
-                        } finally {
-                            bitmap.recycle()
+                            colorized++
+                        } else {
+                            alreadyColor++
                         }
+                    } finally {
+                        bitmap.recycle()
                     }
                     completed = index + 1
                     _uiState.update { it.copy(mangaEditCurrent = completed, mangaEditItemProgress = 0f) }
                 }
                 _uiState.update {
                     it.copy(
-                        storyboardStatus = "AI-colorized $colorized black-and-white picture(s); $alreadyColor already contained color. Original files remain unchanged.",
+                        storyboardStatus = "AI-colorized $colorized black-and-white picture(s); $alreadyColor already contained color. " +
+                            if (failedPages > 0) "$failedPages page(s) failed; the rest of the chapter was processed. Original files remain unchanged."
+                            else "Original files remain unchanged.",
                     )
                 }
             } catch (cancelled: CancellationException) {
@@ -5456,11 +5534,15 @@ class RoleplayChatViewModel @Inject constructor(
                     it.copy(mangaEditBusy = false, mangaEditAction = "", mangaEditCurrent = 0, mangaEditTotal = 0)
                 }
             }
+        })
+        if (mangaEditJob == null) _uiState.update {
+            it.copy(mangaEditBusy = false, mangaEditAction = "", storyboardStatus =
+                mangaAiRunner.state.value.status.ifBlank { "Could not start background manga processing." })
         }
     }
 
     fun stopMangaEditProcessing() {
-        mangaEditJob?.cancel()
+        mangaAiRunner.stop(_uiState.value.chatId)
     }
 
     /**
@@ -6409,6 +6491,13 @@ class RoleplayChatViewModel @Inject constructor(
             val originals = mangaDownloadRepository.importChapterPages(chapterId)
             if (originals.isEmpty()) {
                 _uiState.update { it.copy(storyboardStatus = "The chapter has no readable local pages. Retry the download.") }
+                return@launch
+            }
+            val expectedPages = maxOf(chapter.pageCount, db.mangaDao().getPages(chapterId).size)
+            if (originals.size != expectedPages) {
+                _uiState.update {
+                    it.copy(storyboardStatus = "Only ${originals.size} of $expectedPages chapter pages are readable. Retry the download before adding it to Storyboard.")
+                }
                 return@launch
             }
             val rightToLeft = chapter.readingOrder.equals("rtl", ignoreCase = true)
