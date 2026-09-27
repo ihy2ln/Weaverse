@@ -31,8 +31,9 @@ import javax.inject.Inject
 import kotlin.math.absoluteValue
 import kotlin.random.Random
 
-const val PLATFORM_FACEBOOK = "facebook"
-const val PLATFORM_TWITTER = "twitter"
+/** The one WeaverSocial feed. Older Facebook/Twitter posts keep their ids and show in it too. */
+const val PLATFORM_WEAVERSOCIAL = "weaversocial"
+private val LEGACY_PLATFORMS = listOf("facebook", "twitter")
 
 /** Facebook's seven reactions, in the order its picker shows them. */
 enum class FbReaction(val id: String, val emoji: String, val label: String, val colorHex: Long) {
@@ -145,7 +146,7 @@ class SocialFeedViewModel @Inject constructor(
     private var pendingMedia: MediaEntity? = null
     private var entities: Map<String, SocialPostEntity> = emptyMap()
 
-    fun bind(platformId: String) {
+    fun bind(platformId: String = PLATFORM_WEAVERSOCIAL) {
         if (platform == platformId) return
         platform = platformId
         _uiState.update { it.copy(platform = platformId) }
@@ -156,7 +157,7 @@ class SocialFeedViewModel @Inject constructor(
             }
             cast = castResolver.allChatContacts()
             _uiState.update { it.copy(castLoaded = true) }
-            combine(db.socialDao().observePosts(platformId), settings.socialFollows(platformId)) { posts, follows ->
+            combine(db.socialDao().observeAllPosts(), allFollows()) { posts, follows ->
                 posts to follows
             }.collect { (posts, follows) -> publish(posts, follows) }
         }
@@ -226,7 +227,8 @@ class SocialFeedViewModel @Inject constructor(
             colorHex = avatarColorHexFor(name, character?.colorHex),
             isYou = isYou,
             verified = !isYou && seed % 3 == 0,
-            text = text,
+            // Older posts were saved before markdown was unwrapped on the way in.
+            text = text.replace(Regex("\\*{1,2}([^*\\n]+)\\*{1,2}"), "$1"),
             imagePath = image,
             createdAt = createdAt,
             parentId = parentId,
@@ -247,7 +249,7 @@ class SocialFeedViewModel @Inject constructor(
     private fun buildNotifications(posts: List<SocialPostEntity>, follows: Set<String>): List<SocialNotificationUi> {
         val mine = posts.filter { it.authorCharacterId == null }.associateBy { it.id }
         val out = mutableListOf<SocialNotificationUi>()
-        val verb = if (platform == PLATFORM_FACEBOOK) "commented on your post" else "replied to your post"
+        val verb = "replied to your post"
         posts.forEach { post ->
             if (post.authorCharacterId == null) return@forEach
             val parent = post.parentId?.let { mine[it] }
@@ -268,7 +270,7 @@ class SocialFeedViewModel @Inject constructor(
                     kind = "repost",
                     actorName = post.authorName,
                     actorColorHex = avatarColorHexFor(post.authorName, null),
-                    text = if (platform == PLATFORM_FACEBOOK) "${post.authorName} shared your post." else "${post.authorName} quoted your post",
+                    text = "${post.authorName} reshared your post",
                     postId = post.id,
                     createdAt = post.createdAt,
                 )
@@ -294,9 +296,9 @@ class SocialFeedViewModel @Inject constructor(
                     actorName = actor.name,
                     actorColorHex = avatarColorHexFor(actor.name, actor.colorHex),
                     text = if (others > 0) {
-                        "${actor.name} and $others others ${if (platform == PLATFORM_FACEBOOK) "reacted to" else "liked"} your post"
+                        "${actor.name} and $others others reacted to your post"
                     } else {
-                        "${actor.name} ${if (platform == PLATFORM_FACEBOOK) "reacted to" else "liked"} your post"
+                        "${actor.name} reacted to your post"
                     },
                     postId = post.id,
                     createdAt = post.createdAt + 60_000,
@@ -309,11 +311,7 @@ class SocialFeedViewModel @Inject constructor(
                 kind = "follow",
                 actorName = character.name,
                 actorColorHex = avatarColorHexFor(character.name, character.colorHex),
-                text = if (platform == PLATFORM_FACEBOOK) {
-                    "${character.name} accepted your friend request."
-                } else {
-                    "${character.name} followed you back"
-                },
+                text = "${character.name} followed you back",
                 postId = null,
                 createdAt = character.updatedAt.takeIf { it > 0 } ?: character.createdAt,
             )
@@ -370,7 +368,7 @@ class SocialFeedViewModel @Inject constructor(
                 text = clean,
                 mediaId = media?.id,
                 repostOfId = quoteOf,
-                viewCount = if (platform == PLATFORM_TWITTER) Random.nextInt(12, 240) else 0,
+                viewCount = Random.nextInt(12, 240),
                 feeling = feeling,
                 createdAt = now,
             )
@@ -398,7 +396,7 @@ class SocialFeedViewModel @Inject constructor(
                 authorName = _uiState.value.personaName,
                 text = body,
                 parentId = parentId,
-                viewCount = if (platform == PLATFORM_TWITTER) Random.nextInt(5, 60) else 0,
+                viewCount = Random.nextInt(5, 60),
                 createdAt = System.currentTimeMillis(),
             )
             db.socialDao().upsert(reply)
@@ -440,10 +438,24 @@ class SocialFeedViewModel @Inject constructor(
         viewModelScope.launch { db.socialDao().deleteWithReplies(postId) }
     }
 
+    /** Follows made on the old Facebook (friends) and Twitter (follows) screens still count. */
+    private fun allFollows() = combine(
+        settings.socialFollows(PLATFORM_WEAVERSOCIAL),
+        settings.socialFollows(LEGACY_PLATFORMS[0]),
+        settings.socialFollows(LEGACY_PLATFORMS[1]),
+    ) { a, b, c -> a + b + c }
+
     fun toggleFollow(characterId: String) {
         viewModelScope.launch {
-            val current = settings.socialFollows(platform).first()
-            settings.setSocialFollows(platform, if (characterId in current) current - characterId else current + characterId)
+            if (characterId in allFollows().first()) {
+                (LEGACY_PLATFORMS + PLATFORM_WEAVERSOCIAL).forEach { key ->
+                    val set = settings.socialFollows(key).first()
+                    if (characterId in set) settings.setSocialFollows(key, set - characterId)
+                }
+            } else {
+                val set = settings.socialFollows(PLATFORM_WEAVERSOCIAL).first()
+                settings.setSocialFollows(PLATFORM_WEAVERSOCIAL, set + characterId)
+            }
         }
     }
 
@@ -497,7 +509,7 @@ class SocialFeedViewModel @Inject constructor(
             if (post.feeling.isNotBlank()) append(" (feeling ${post.feeling})")
             if (post.mediaId != null) append(" [with a photo]")
             quoted?.let { append("\nThey were sharing ${it.authorName}'s post: \"${it.text.take(200)}\"") }
-            append("\nWrite ${repliers.size.coerceIn(1, 4)} ${if (platform == PLATFORM_FACEBOOK) "comments" else "replies"}, ")
+            append("\nWrite ${repliers.size.coerceIn(1, 4)} replies, ")
             append("one per person, from: ${repliers.joinToString(", ") { it.name }}.")
         }
         val raw = complete(system, user, maxTokens = 600) ?: return
@@ -511,11 +523,11 @@ class SocialFeedViewModel @Inject constructor(
         }
         // Everyone else who saw it leaves a like or reaction.
         db.socialDao().getPost(post.id)?.let { fresh ->
-            val reactions = if (platform == PLATFORM_FACEBOOK) randomReactions(lines.size + Random.nextInt(1, 9)) else emptyMap()
+            val reactions = randomReactions(lines.size + Random.nextInt(1, 9))
             db.socialDao().upsert(
                 fresh.copy(
-                    likeCount = if (platform == PLATFORM_FACEBOOK) reactions.values.sum() else lines.size + Random.nextInt(2, 40),
-                    repostCount = if (platform == PLATFORM_TWITTER) Random.nextInt(0, 6) else Random.nextInt(0, 3),
+                    likeCount = reactions.values.sum(),
+                    repostCount = Random.nextInt(0, 6),
                     viewCount = fresh.viewCount + Random.nextInt(80, 1_400),
                     reactionsJson = encodeCounts(reactions),
                 ),
@@ -565,7 +577,7 @@ class SocialFeedViewModel @Inject constructor(
             it.copy(
                 generating = true,
                 error = "",
-                status = if (platform == PLATFORM_FACEBOOK) "Loading new posts…" else "Fetching new posts…",
+                status = "Weaving new posts…",
             )
         }
         return true
@@ -598,18 +610,15 @@ class SocialFeedViewModel @Inject constructor(
             }
         }.getOrNull()?.takeIf { it.isNotBlank() }
 
-    private fun platformVoice(): String = if (platform == PLATFORM_FACEBOOK) {
-        "You write Facebook posts and comments for fictional people, each living in their own world. " +
-            "Facebook voice: personal life updates, photos described in words, feelings, questions to friends, " +
-            "family and community news, the odd long reflective post. Warm, chatty, sometimes oversharing. " +
-            "Posts are 1-5 sentences; comments are one or two lines. Emoji where the person would use them. " +
-            "A post may start with [feeling X] (for example [feeling blessed]) when the person would set a feeling."
-    } else {
-        "You write tweets for fictional people, each living in their own world. " +
-            "Twitter voice: short, punchy, under 280 characters, opinions, jokes, hot takes, observations, " +
-            "live-reactions to what's happening in their world, the occasional #hashtag or @handle " +
-            "(handles are names in lowercase with no spaces). Replies are even shorter."
-    }
+    private fun platformVoice(): String =
+        "You write posts for WeaverSocial, one social network shared by fictional people from many " +
+            "worlds. It mixes three habits: Twitter's short, punchy takes and live reactions (most posts " +
+            "stay under 280 characters, with the odd #hashtag or @handle — handles are names in lowercase " +
+            "with no spaces); Facebook's personal life updates, feelings, photos described in words and " +
+            "questions to friends (now and then a longer, warmer post); and Discord's in-jokes and " +
+            "community chatter about the groups and places people belong to. Everyone stays true to " +
+            "their own world. A post may start with [feeling X] (for example [feeling blessed]) when the " +
+            "person would set a feeling. Replies are one or two lines. Emoji where the person would use them."
 
     private fun outputRules(reply: Boolean = false): String = buildString {
         appendLine("Output format, no exceptions:")
@@ -639,7 +648,7 @@ class SocialFeedViewModel @Inject constructor(
     private fun splitFeeling(text: String): Pair<String, String> {
         val trimmed = text.trim().trim('"')
         val match = Regex("^\\[feeling ([^\\]]{1,30})\\]\\s*", RegexOption.IGNORE_CASE).find(trimmed)
-        return if (match != null && platform == PLATFORM_FACEBOOK) {
+        return if (match != null) {
             match.groupValues[1].trim() to trimmed.substring(match.range.last + 1).trim()
         } else {
             "" to trimmed.replace(Regex("^\\[feeling [^\\]]*\\]\\s*", RegexOption.IGNORE_CASE), "")
@@ -656,7 +665,7 @@ class SocialFeedViewModel @Inject constructor(
     ): SocialPostEntity {
         val reach = if (small) 12 else 60 + author.name.hashCode().absoluteValue % 900
         val likes = Random.nextInt(0, reach)
-        val reactions = if (platform == PLATFORM_FACEBOOK) randomReactions(likes) else emptyMap()
+        val reactions = randomReactions(likes)
         return SocialPostEntity(
             id = "sp-${UUID.randomUUID()}",
             platform = platform,
@@ -664,11 +673,11 @@ class SocialFeedViewModel @Inject constructor(
             authorName = author.name,
             // Feeds show plain text, so markdown emphasis the model slips in is unwrapped.
             text = text.replace(Regex("\\*{1,2}([^*\\n]+)\\*{1,2}"), "$1")
-                .take(if (platform == PLATFORM_TWITTER) 280 else 2_000),
+                .take(POST_CHARS),
             parentId = parentId,
-            likeCount = if (platform == PLATFORM_FACEBOOK) reactions.values.sum() else likes,
+            likeCount = reactions.values.sum(),
             repostCount = likes / Random.nextInt(4, 14),
-            viewCount = if (platform == PLATFORM_TWITTER) likes * Random.nextInt(18, 70) + Random.nextInt(10, 200) else 0,
+            viewCount = likes * Random.nextInt(18, 70) + Random.nextInt(10, 200),
             reactionsJson = encodeCounts(reactions),
             feeling = feeling,
             createdAt = createdAt,
@@ -690,6 +699,7 @@ class SocialFeedViewModel @Inject constructor(
     companion object {
         private const val CARD_CHARS = 420
         private const val BIO_CHARS = 160
+        const val POST_CHARS = 500
     }
 }
 

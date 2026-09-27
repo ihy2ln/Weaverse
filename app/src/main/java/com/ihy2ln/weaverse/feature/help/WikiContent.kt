@@ -33,7 +33,7 @@ object WikiContent {
                   review your manuscripts.
                 - [[RPG]] — AI game-master campaigns, dice, roster, inventory,
                   towns, and illustrated adventure scenes.
-                - [[Chatting]] — a Discord-style space where your novels and
+                - [[WeaverSocial]] — WeaverSocial, a social network where your novels and
                   campaigns are servers with channels and character rooms.
                 - [[Storyboard]] — manga and comic page building.
                 - [[Brainstorm and Notes]] — chat with the AI to brainstorm and
@@ -230,7 +230,7 @@ object WikiContent {
                 A read-through pass over the manuscript with scene-by-scene
                 notes.
 
-                Your work here feeds [[RPG]] and [[Chatting]] too — every
+                Your work here feeds [[RPG]] and [[WeaverSocial]] too — every
                 mode shares the same [[Codex]].
             """.trimIndent(),
         ),
@@ -402,9 +402,19 @@ object WikiContent {
         ),
         Page(
             id = "chatting",
-            title = "Chatting",
-            summary = "Discord, Facebook and Twitter for your works",
+            title = "WeaverSocial",
+            summary = "Your cast's social network",
             markdown = """
+                ## One social app
+
+                WeaverSocial is the Chatting mode. Its five tabs are
+                **Home** (stories, a post box, rooms live in your servers,
+                then the feed), **Servers** (the Discord-style workspace
+                below), **Explore** (search, your servers, trends, people to
+                follow), **Alerts** (unread server rooms and feed activity)
+                and **You** (your profile). The envelope on Home opens
+                direct messages.
+
                 ## Servers are your works
 
                 {{figure:chatting}}
@@ -438,15 +448,16 @@ object WikiContent {
                 Discord formatting: bold, italic, underline, strikethrough,
                 inline code, code blocks, quotes and spoilers.
 
-                ## Facebook and Twitter
+                ## The feed
 
-                Pick **Facebook** or **Twitter** under *In this mode*. Your
-                characters post in their own voice; refresh for more. When
-                you post they comment and react, and when you reply the
-                author answers. Facebook has stories, seven reactions
-                (long-press **Like**), comments, shares and friends. Twitter
-                has For you / Following, reposts and quotes, likes,
-                bookmarks, Explore with trends, and profiles.
+                Your characters post in their own voice; tap **Refresh**
+                for more. Post yourself — up to 500 characters, with a photo
+                or a feeling — and they reply and react; reply to a post and
+                its author answers. Tap **React** to like, or hold it for
+                seven reactions. The repeat button **reshares** or
+                **quotes**. **Save** keeps a post under You → Saved.
+                Profiles show followers, roles and presence, with **Follow**
+                and **Message**.
 
                 - **Text channels** are group chats with the people seated
                   there — never a narrator.

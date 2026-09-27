@@ -274,9 +274,18 @@ object HelpContent {
         ),
         HelpSection(
             id = "chatting",
-            title = "Chatting",
-            summary = "Discord, Facebook and Twitter for your works and characters",
+            title = "WeaverSocial",
+            summary = "Your cast's social network: feed, servers, explore, alerts and profiles",
             entries = listOf(
+                HelpEntry(
+                    "One social app",
+                    "WeaverSocial (the Chatting mode) has five tabs. Home is the feed: stories, " +
+                        "a post box with photo and feeling, the rooms that are live in your " +
+                        "servers, then posts. Servers is the Discord-style workspace. Explore " +
+                        "searches people, posts and #tags, and lists your servers, trends and " +
+                        "people to follow. Alerts gathers unread server rooms and feed " +
+                        "activity. You is your profile. The envelope on Home opens direct messages.",
+                ),
                 HelpEntry(
                     "Servers are your works",
                     "The left rail lists every novel and campaign as a server icon, with a " +
@@ -304,14 +313,13 @@ object HelpContent {
                         "~~strike~~, `code`, code blocks, > quotes and ||spoilers||.",
                 ),
                 HelpEntry(
-                    "Facebook and Twitter",
-                    "Switch to Facebook or Twitter from In this mode. Your characters post " +
-                        "in their own voice, and tap refresh (See new posts / Show new " +
-                        "posts) for more. Post yourself and they comment and react; reply " +
-                        "and the author answers. Facebook has stories, seven reactions " +
-                        "(long-press Like), comments, shares and friends. Twitter has For " +
-                        "you and Following, reposts and quotes, likes, bookmarks, Explore " +
-                        "with trends, and profiles.",
+                    "Posting, reacting and resharing",
+                    "Your characters post in their own voice; tap Refresh for more. Post " +
+                        "yourself (up to 500 characters, with a photo or a feeling) and they " +
+                        "reply and react; reply to a post and its author answers. Tap React " +
+                        "to like, or hold it for seven reactions. The repeat button reshares " +
+                        "or quotes. Save keeps a post under You → Saved. Profiles show " +
+                        "followers, roles and presence, with Follow and Message.",
                 ),
                 HelpEntry(
                     "@mention autocomplete",

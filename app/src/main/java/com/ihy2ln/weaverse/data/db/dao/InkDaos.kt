@@ -591,11 +591,12 @@ data class ReaderSceneRow(
 )
 
 
-/** Chatting mode's Facebook and Twitter feeds. */
+/** WeaverSocial's feed: posts, comments and reshares. */
 @Dao
 interface SocialDao {
-    @Query("SELECT * FROM social_posts WHERE platform = :platform ORDER BY createdAt DESC")
-    fun observePosts(platform: String): Flow<List<com.ihy2ln.weaverse.data.db.entities.SocialPostEntity>>
+    /** WeaverSocial shows every post in one feed, including ones made on the old Facebook/Twitter screens. */
+    @Query("SELECT * FROM social_posts ORDER BY createdAt DESC")
+    fun observeAllPosts(): Flow<List<com.ihy2ln.weaverse.data.db.entities.SocialPostEntity>>
 
     @Query("SELECT * FROM social_posts WHERE id = :id LIMIT 1")
     suspend fun getPost(id: String): com.ihy2ln.weaverse.data.db.entities.SocialPostEntity?

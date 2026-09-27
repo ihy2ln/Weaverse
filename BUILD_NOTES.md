@@ -3,6 +3,25 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.53 - WeaverSocial: one social app
+
+- APK: `Beta.Test.Build/weaverse-v1.4.53.apk`, SHA-256
+  `64548d03370fa6f35078f0da72becc0f2fe210b65681e3f6eb52155a55f79325`, debug-key signed
+  (`-PallowDebugSignedRelease=true`), same certificate as 1.4.47-1.4.52. Local build only.
+- **Chatting is shown as WeaverSocial.** `AppMode.Chatting` keeps its persisted id; only the
+  label changed. `ChattingDestination` is now `Chats` ("WeaverSocial") and `Friends`
+  ("Contacts"); saved Facebook/Twitter ids fall back to `Chats`.
+- **`WeaverSocialScreen`** replaces `FacebookScreen` and `TwitterScreen` (deleted). Five
+  tabs: Home (blended feed), Servers (the unchanged `DiscordChatScreen`, sharing the same
+  `DiscordChatViewModel` so Message buttons can open DMs), Explore, Alerts (unread rooms plus
+  feed activity), You. The bottom bar hides while the keyboard is up on Servers, and the
+  Servers pane consumes the navigation-bar inset so it doesn't pad twice.
+- **One feed.** `SocialFeedViewModel` is a single `weaversocial` platform: every row in
+  `social_posts` shows (old facebook/twitter posts included, via `observeAllPosts`), follows
+  are the union of the three DataStore sets, and posts get Facebook reactions plus Twitter
+  views and reshares, 500-character limit. No schema change.
+- Stray `*markdown*` is also unwrapped at display time, for posts saved before 1.4.52's fix.
+
 ## v1.4.52 - Chatting gets Facebook and Twitter; Discord gets the real thing
 
 - APK: `Beta.Test.Build/weaverse-v1.4.52.apk`, SHA-256

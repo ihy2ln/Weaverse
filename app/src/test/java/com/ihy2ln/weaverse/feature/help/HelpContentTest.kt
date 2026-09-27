@@ -23,7 +23,7 @@ class HelpContentTest {
     @Test
     fun everyWorkspaceIsDocumented() {
         val titles = HelpContent.sections.map { it.title }
-        listOf("Novel", "RPG", "Chatting", "Storyboard").forEach {
+        listOf("Novel", "RPG", "WeaverSocial", "Storyboard").forEach {
             assertTrue(titles.contains(it), "no help section for $it")
         }
     }

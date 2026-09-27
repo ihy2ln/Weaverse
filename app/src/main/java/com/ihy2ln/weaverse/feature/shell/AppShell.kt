@@ -105,7 +105,6 @@ import com.ihy2ln.weaverse.feature.novel.write.WriteScreen
 import com.ihy2ln.weaverse.feature.prompts.PromptsScreen
 import com.ihy2ln.weaverse.feature.roleplay.characters.CharacterDetailScreen
 import com.ihy2ln.weaverse.feature.roleplay.chat.AdventurePlayScreen
-import com.ihy2ln.weaverse.feature.chatting.DiscordChatScreen
 import com.ihy2ln.weaverse.feature.roleplay.chat.RoleplayChatChrome
 import com.ihy2ln.weaverse.feature.roleplay.chat.RoleplayChatDetailScreen
 import com.ihy2ln.weaverse.feature.roleplay.chat.ImportedMangaEditorScreen
@@ -1118,7 +1117,7 @@ fun AppShell(
                                         chatDest = ChattingDestination.Chats.name
                                     },
                                 )
-                                ChattingDestination.Chats -> DiscordChatScreen(
+                                ChattingDestination.Chats -> com.ihy2ln.weaverse.feature.chatting.social.WeaverSocialScreen(
                                     selectedServerId = chatServerId,
                                     selectedRoomId = selectedRpChatId,
                                     onServerSelect = {
@@ -1127,13 +1126,6 @@ fun AppShell(
                                     },
                                     onRoomSelect = { selectedRpChatId = it; if (it != null) shellViewModel.recordAccess("Chatting", "chat", it) },
                                     onOpenFriends = { chatDest = ChattingDestination.Friends.name },
-                                )
-                                ChattingDestination.Facebook -> com.ihy2ln.weaverse.feature.chatting.social.FacebookScreen(
-                                    // Messenger opens the Discord-style DMs under Home.
-                                    onOpenMessenger = { chatServerId = null; selectedRpChatId = null; chatDest = ChattingDestination.Chats.name },
-                                )
-                                ChattingDestination.Twitter -> com.ihy2ln.weaverse.feature.chatting.social.TwitterScreen(
-                                    onOpenMessages = { chatServerId = null; selectedRpChatId = null; chatDest = ChattingDestination.Chats.name },
                                 )
                             }
                             AppMode.Storyboard.name -> {
