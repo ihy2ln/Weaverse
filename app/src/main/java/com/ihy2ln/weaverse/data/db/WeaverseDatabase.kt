@@ -6,6 +6,7 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.ihy2ln.weaverse.data.db.dao.BookDao
+import com.ihy2ln.weaverse.data.db.dao.BrainstormIdeaDao
 import com.ihy2ln.weaverse.data.db.dao.CodexDao
 import com.ihy2ln.weaverse.data.db.dao.MediaDao
 import com.ihy2ln.weaverse.data.db.dao.MangaDao
@@ -19,6 +20,7 @@ import com.ihy2ln.weaverse.data.db.dao.TextGameSaveDao
 import com.ihy2ln.weaverse.data.db.entities.ActEntity
 import com.ihy2ln.weaverse.data.db.entities.AiProfileEntity
 import com.ihy2ln.weaverse.data.db.entities.BookEntity
+import com.ihy2ln.weaverse.data.db.entities.BrainstormIdeaEntity
 import com.ihy2ln.weaverse.data.db.entities.ChapterEntity
 import com.ihy2ln.weaverse.data.db.entities.ChatMessageEntity
 import com.ihy2ln.weaverse.data.db.entities.ChatThreadEntity
@@ -66,6 +68,7 @@ import com.ihy2ln.weaverse.data.db.entities.RpgCampaignSaveEntity
         SnippetEntity::class,
         ChatThreadEntity::class,
         ChatMessageEntity::class,
+        BrainstormIdeaEntity::class,
         RpCharacterEntity::class,
         RpPersonaEntity::class,
         RpChatEntity::class,
@@ -86,7 +89,7 @@ import com.ihy2ln.weaverse.data.db.entities.RpgCampaignSaveEntity
         RpRoomMemberEntity::class,
         com.ihy2ln.weaverse.data.db.entities.SocialPostEntity::class,
     ],
-    version = 31,
+    version = 32,
     exportSchema = true,
 )
 @TypeConverters(InkTypeConverters::class)
@@ -99,6 +102,7 @@ abstract class WeaverseDatabase : RoomDatabase() {
     abstract fun codexDao(): CodexDao
     abstract fun snippetDao(): SnippetDao
     abstract fun workshopChatDao(): WorkshopChatDao
+    abstract fun brainstormIdeaDao(): BrainstormIdeaDao
     abstract fun roleplayDao(): RoleplayDao
     abstract fun mediaDao(): MediaDao
     abstract fun mangaDao(): MangaDao
@@ -116,6 +120,21 @@ abstract class WeaverseDatabase : RoomDatabase() {
                 generateSequence { if (c.moveToNext()) c.getString(nameIndex) else null }.any { it == column }
             }
             if (!exists) execSQL("ALTER TABLE `$table` ADD COLUMN `$column` $definition")
+        }
+
+        val MIGRATION_31_32 = object : Migration(31, 32) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `brainstorm_ideas` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, " +
+                        "`premise` TEXT NOT NULL, `strengths` TEXT NOT NULL, `risks` TEXT NOT NULL, " +
+                        "`nextStep` TEXT NOT NULL, `status` TEXT NOT NULL, `pinned` INTEGER NOT NULL, " +
+                        "`bookId` TEXT, `sourceThreadId` TEXT, `sourceMessageId` TEXT, " +
+                        "`createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_brainstorm_ideas_status` ON `brainstorm_ideas` (`status`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_brainstorm_ideas_bookId` ON `brainstorm_ideas` (`bookId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_brainstorm_ideas_sourceThreadId` ON `brainstorm_ideas` (`sourceThreadId`)")
+            }
         }
 
         val MIGRATION_30_31 = object : Migration(30, 31) {
@@ -466,6 +485,7 @@ abstract class WeaverseDatabase : RoomDatabase() {
             MIGRATION_28_29,
             MIGRATION_29_30,
             MIGRATION_30_31,
+            MIGRATION_31_32,
         )
     }
 }

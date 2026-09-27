@@ -3,6 +3,24 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.59 - Brainstorm creative workshop
+
+- APK: `Beta.Test.Build/weaverse-v1.4.59.apk`, SHA-256
+  `8e727cd9bceae975ca3624d45087a0c4e834fbd0ca2ba70d66fcbbcdff0f555b`.
+  Signed with the same certificate as v1.4.58 (`f16db5088b05af8c941a0e23eb2364dab470dd4ae07c3023f858708f6451fc05`).
+- Brainstorm now sends bounded prior chat turns once, includes supported image attachments,
+  and keeps the previous answer if retry fails. Explore alternatives presents three
+  comparable directions; Develop, Challenge and Combine refine a concept.
+- The Ideas board stores only alternatives the writer saves. Cards have Inbox,
+  Exploring, Keep and Archived lanes, editing, search, pinning, optional project
+  links and source-chat navigation. A card can be copied to Notes, Codex, or
+  Novel Plan as a draft scene or scene beat.
+- Database 31 -> 32 adds `brainstorm_ideas` without changing old chat rows.
+  Updated in-app Help, wiki content and `docs/wiki/Brainstorm-and-Ideas.md`.
+- Verified focused unit tests, direct emulator migration tests (3), and the
+  emulator Ideas save/promotion flow (1). Release build, version metadata and
+  APK certificate verification passed.
+
 ## v1.4.54 - WeaverSocial privacy, filters and blocks
 
 - APK: `Beta.Test.Build/weaverse-v1.4.54.apk`, SHA-256

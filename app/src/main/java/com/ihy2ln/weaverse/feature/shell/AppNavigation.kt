@@ -86,6 +86,8 @@ enum class StoryboardDestination(val label: String) {
 enum class NotesDestination(val label: String) {
     /** NovelCrafter-style AI brainstorm chat — the mode's home. */
     Chat("Brainstorm"),
+    /** Chosen ideas, organized by progress and optionally linked to a project. */
+    Ideas("Ideas"),
     /** The classic notes board. */
     Board("Notes"),
 }

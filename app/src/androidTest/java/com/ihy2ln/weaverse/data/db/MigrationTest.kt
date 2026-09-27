@@ -4,6 +4,10 @@ import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.ihy2ln.weaverse.core.text.Document
+import com.ihy2ln.weaverse.core.text.toJson
+import com.ihy2ln.weaverse.data.db.entities.ChatMessageEntity
+import com.ihy2ln.weaverse.data.db.entities.ChatThreadEntity
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -62,5 +66,34 @@ class MigrationTest {
         // The column already exists but the version says 28, as after a killed upgrade.
         SQLiteDatabase.openDatabase(context.getDatabasePath(dbName).path, null, SQLiteDatabase.OPEN_READWRITE).use { it.version = 28 }
         open().apply { openHelper.writableDatabase; close() }
+    }
+
+    @Test
+    fun upgradeFrom31AddsIdeasWithoutLosingBrainstormChats() {
+        context.deleteDatabase(dbName)
+        open().apply {
+            runBlocking {
+                workshopChatDao().upsertThread(ChatThreadEntity(
+                    id = "brainstorm-old", scopeId = "brainstorm", name = "Old ideas",
+                    createdAt = 1L, updatedAt = 1L,
+                ))
+                workshopChatDao().upsertMessage(ChatMessageEntity(
+                    id = "message-old", threadId = "brainstorm-old", role = "user",
+                    contentJson = Document.fromPlainText("Keep this concept").toJson(), createdAt = 2L,
+                ))
+            }
+            close()
+        }
+        SQLiteDatabase.openDatabase(context.getDatabasePath(dbName).path, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
+            db.execSQL("DROP TABLE brainstorm_ideas")
+            db.version = 31
+        }
+        val upgraded = open()
+        val messages = runBlocking { upgraded.workshopChatDao().getMessages("brainstorm-old") }
+        val ideas = runBlocking { upgraded.brainstormIdeaDao().getById("missing") }
+        upgraded.close()
+        assertEquals(1, messages.size)
+        assertEquals("message-old", messages.single().id)
+        assertEquals(null, ideas)
     }
 }

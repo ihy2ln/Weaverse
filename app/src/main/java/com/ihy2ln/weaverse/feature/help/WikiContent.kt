@@ -614,25 +614,41 @@ object WikiContent {
         Page(
             id = "brainstorm",
             title = "Brainstorm and Notes",
-            summary = "AI brainstorm chat, and the notes board",
+            summary = "Creative chat, an ideas board, and notes",
             markdown = """
                 ## Brainstorm — chat with the AI
 
                 {{figure:brainstorm}}
 
-                The Brainstorm/Notes mode is a NovelCrafter-style AI chat for
-                ideas and information: plots, worldbuilding, research,
-                names, structure, honest feedback. It is not character chat —
-                the AI is a brainstorming partner, not a persona.
+                Brainstorm is a creative workshop for plots, worldbuilding,
+                names, structure and honest feedback. The AI uses recent chat
+                turns, the chosen model and relevant Codex entries.
+
+                ## Explore and compare
+
+                Write a rough idea and tap **Explore alternatives** to get
+                three distinct directions. Compare each premise, strengths,
+                risks and next step. Select two or more and tap **Combine
+                selected**, or save only the options you want. **Develop**
+                expands an idea; **Challenge** tests its weak points. Each
+                message also offers these actions and **Save idea**.
 
                 ## Main categories and sub-categories
 
-                **+ Add** starts a main category. Every main row carries a
-                **+** beside its ⌫ delete — that adds a **sub-category**
-                nested underneath (indented with a `└` prefix). Long-press a
-                category to delete it; deleting a main category removes its
-                sub-categories and their history. Threads are app-wide,
-                shared across every book and mode.
+                **+ Add** starts a main chat. **+** beside a main row adds
+                a nested chat. Search the rail to find a conversation; use
+                **⋯** to rename, pin or delete one. Threads are app-wide.
+
+                ## Ideas board
+
+                Chosen ideas are saved in **Inbox**, then can move through
+                **Exploring**, **Keep** and **Archived**. Edit, pin and search
+                cards; optionally link one to a book or campaign. **Source**
+                opens the chat it came from. **Send to…** copies the card to
+                Notes or a Codex category, or into Novel Plan as a draft scene
+                outline or a beat in an existing scene. Choose the plan target
+                when sending. On wide screens Ideas sits beside chat; on
+                phones use the **Ideas** sub-mode.
 
                 - **Codex context** — + Codex pins entries; mentioning an
                   entry pulls it in automatically; chips show what the AI
@@ -640,13 +656,13 @@ object WikiContent {
                 - **Composer** — the full dock: word range, model picker,
                   ✓ send with hold-menu **retry and continue**, × cancel,
                   usage and context meter, ⌫ clear with hold-to-undo, plus
-                  **+** picture attachments that render inline, **🎲** rolls
+                  **+** picture attachments sent to vision models, **🎲** rolls
                   and **🎤** dictation.
 
                 ## Notes — the board
 
-                The classic notes board is the mode's second sub-mode —
-                switch with the **Brainstorm / Notes** pills in the
+                The classic notes board remains a separate sub-mode —
+                switch with the **Brainstorm / Ideas / Notes** pills in the
                 sub-mode row. Notes have a title, rich text, images and
                 audio, shared across all books, and integrate with the
                 prompt dock — you can generate into a note or paste from it.

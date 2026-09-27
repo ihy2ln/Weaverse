@@ -114,6 +114,7 @@ import com.ihy2ln.weaverse.feature.roleplay.friends.FriendsScreen
 import com.ihy2ln.weaverse.feature.roleplay.lorebook.LorebookScreen
 import com.ihy2ln.weaverse.feature.roleplay.personas.PersonaDetailScreen
 import com.ihy2ln.weaverse.feature.brainstorm.BrainstormChatScreen
+import com.ihy2ln.weaverse.feature.brainstorm.BrainstormIdeasBoard
 import com.ihy2ln.weaverse.feature.roleplay.party.InventoryScreen
 import com.ihy2ln.weaverse.feature.roleplay.party.PartyScreen
 import com.ihy2ln.weaverse.feature.roleplay.town.TownScreen
@@ -1099,13 +1100,24 @@ fun AppShell(
                                 )
                             }
                             AppMode.Notes.name -> when (notesDest) {
+                                NotesDestination.Ideas.name -> BrainstormIdeasBoard(
+                                    compact = configuration.screenWidthDp < 700,
+                                    onOpenSource = { threadId ->
+                                        homeThreadId = threadId
+                                        notesDest = NotesDestination.Chat.name
+                                    },
+                                    modifier = Modifier.fillMaxSize(),
+                                )
                                 NotesDestination.Board.name -> NotesWorkspaceScreen(
                                     viewModel = notesViewModel,
                                     detailOpen = notesDetailOpen,
                                     onDetailOpen = { notesDetailOpen = true },
                                     modifier = Modifier.fillMaxSize(),
                                 )
-                                else -> BrainstormChatScreen(initialThreadId = homeThreadId)
+                                else -> BrainstormChatScreen(
+                                    initialThreadId = homeThreadId,
+                                    onOpenIdeas = { notesDest = NotesDestination.Ideas.name },
+                                )
                             }
                             AppMode.Chatting.name -> when (chattingDestinationOf(cd)) {
                                 ChattingDestination.Friends -> FriendsScreen(

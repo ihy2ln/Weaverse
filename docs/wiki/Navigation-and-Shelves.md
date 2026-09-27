@@ -27,7 +27,8 @@ Back restores the originating shelf or grid, including scroll positions and filt
 
 Home history records actual opens, not background loading or edit timestamps.
 History starts with this update and is local to this device. Manga Studio mixes
-manga and authored projects; Brainstorm/Notes mixes threads and notes.
+manga and authored projects; Brainstorm/Notes includes chats, chosen ideas,
+and notes.
 
 Use a cover's overflow menu (or long press) to **Remove from recents**. A mode's
 overflow menu offers **Clear recent history**, with confirmation. Neither action

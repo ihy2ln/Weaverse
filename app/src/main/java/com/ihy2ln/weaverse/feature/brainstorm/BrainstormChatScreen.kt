@@ -23,10 +23,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Checkbox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -74,6 +77,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 @Composable
 fun BrainstormChatScreen(
     initialThreadId: String? = null,
+    onOpenIdeas: () -> Unit = {},
     viewModel: BrainstormChatViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(initialThreadId) { initialThreadId?.let(viewModel::selectThread) }
@@ -82,10 +86,12 @@ fun BrainstormChatScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     val compact = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp / androidx.compose.ui.platform.LocalDensity.current.fontScale < 700
+    val showBoardBesideChat = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 1050
     var threadsOpen by rememberSaveable { mutableStateOf(!compact) }
     var modelsOpen by remember { mutableStateOf(false) }
     var modelSearch by rememberSaveable { mutableStateOf("") }
     var showAddText by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf<BrainstormThreadUi?>(null) }
 
     var minimumWordsText by rememberSaveable { mutableStateOf(state.minimumWords.toString()) }
     var maximumWordsText by rememberSaveable { mutableStateOf(state.maximumWords.toString()) }
@@ -119,7 +125,7 @@ fun BrainstormChatScreen(
     }
     LaunchedEffect(state.mediaPickRequestId) {
         if (state.mediaPickRequestId > 0L) {
-            mediaPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+            mediaPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
         }
     }
 
@@ -132,6 +138,8 @@ fun BrainstormChatScreen(
                 onCreate = { viewModel.createThread() },
                 onCreateSub = viewModel::createSubThread,
                 onDelete = { deleting = setOf(it) },
+                onRename = { id -> renaming = state.threads.firstOrNull { it.id == id } },
+                onPin = viewModel::toggleThreadPin,
                 modifier = Modifier
                     .widthIn(min = 170.dp, max = 250.dp)
                     .fillMaxHeight(),
@@ -157,6 +165,14 @@ fun BrainstormChatScreen(
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.padding(start = InkSpacing.sm),
                 )
+                if (!showBoardBesideChat) InkTextButton(label = "Ideas", onClick = onOpenIdeas, compact = true)
+            }
+
+            Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                InkTextButton(label = "Explore alternatives", onClick = { viewModel.creativeAction("Explore") }, compact = true)
+                InkTextButton(label = "Develop", onClick = { viewModel.creativeAction("Develop") }, compact = true)
+                InkTextButton(label = "Challenge", onClick = { viewModel.creativeAction("Challenge") }, compact = true)
             }
 
             LazyColumn(modifier = Modifier.weight(1f)) {
@@ -175,7 +191,16 @@ fun BrainstormChatScreen(
                     }
                 }
                 items(state.messages, key = { it.id }) { message ->
-                    BrainstormMessageRow(message)
+                    BrainstormMessageRow(
+                        message = message,
+                        onSaveAlternative = { viewModel.saveAlternative(message.id, it) },
+                        onSaveMessage = { viewModel.saveMessageAsIdea(message.id) },
+                        onExplore = { viewModel.creativeAction("Explore", message.id) },
+                        onDevelop = { viewModel.creativeAction("Develop", message.id) },
+                        onChallenge = { viewModel.creativeAction("Challenge", message.id) },
+                        onCombine = viewModel::combineAlternatives,
+                        onUseAsPrompt = { viewModel.onInputChange(message.text) },
+                    )
                 }
                 if (state.isStreaming) {
                     item("streaming") {
@@ -241,6 +266,11 @@ fun BrainstormChatScreen(
                 }
             }
 
+            if (state.noticeMessage.isNotBlank()) {
+                Text(state.noticeMessage, color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(bottom = InkSpacing.xs))
+            }
             if (state.errorMessage.isNotBlank()) {
                 Text(
                     state.errorMessage,
@@ -257,6 +287,19 @@ fun BrainstormChatScreen(
                     color = tokens.secondaryText,
                     modifier = Modifier.padding(bottom = InkSpacing.xxs),
                 )
+            }
+
+            if (state.pendingMediaPaths.isNotEmpty()) {
+                Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
+                    state.pendingMediaPaths.forEach { path ->
+                        Column {
+                            coil3.compose.AsyncImage(model = java.io.File(path), contentDescription = "Staged image",
+                                modifier = Modifier.size(72.dp))
+                            TextButton(onClick = { viewModel.removePendingMedia(path) }) { Text("Remove") }
+                        }
+                    }
+                }
             }
 
             // The same prompt window the RPG adventure and Novel editor use.
@@ -301,6 +344,11 @@ fun BrainstormChatScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
+        if (showBoardBesideChat) {
+            BrainstormIdeasBoard(compact = true,
+                onOpenSource = { viewModel.selectThread(it) },
+                modifier = Modifier.width(350.dp).fillMaxHeight())
+        }
     }
 
     if (compact && threadsOpen) {
@@ -311,6 +359,8 @@ fun BrainstormChatScreen(
                 onCreate = { viewModel.createThread(); threadsOpen = false },
                 onCreateSub = { viewModel.createSubThread(it); threadsOpen = false },
                 onDelete = { deleting = setOf(it) },
+                onRename = { id -> renaming = state.threads.firstOrNull { it.id == id }; threadsOpen = false },
+                onPin = viewModel::toggleThreadPin,
                 modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp),
             )
         }
@@ -390,15 +440,34 @@ fun BrainstormChatScreen(
             },
         )
     }
+
+    renaming?.let { thread ->
+        var newName by remember(thread.id) { mutableStateOf(thread.name) }
+        AlertDialog(onDismissRequest = { renaming = null }, title = { Text("Rename chat") },
+            text = { OutlinedTextField(newName, { newName = it }, label = { Text("Name") }) },
+            confirmButton = { TextButton(onClick = {
+                viewModel.renameThread(thread.id, newName)
+                renaming = null
+            }) { Text("Save") } },
+            dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } })
+    }
 }
 
 @Composable
 private fun BrainstormMessageRow(
     message: BrainstormMessageUi,
     streaming: Boolean = false,
+    onSaveAlternative: (BrainstormAlternative) -> Unit = {},
+    onSaveMessage: () -> Unit = {},
+    onExplore: () -> Unit = {},
+    onDevelop: () -> Unit = {},
+    onChallenge: () -> Unit = {},
+    onCombine: (List<BrainstormAlternative>) -> Unit = {},
+    onUseAsPrompt: () -> Unit = {},
 ) {
     val tokens = inkTokens()
     val isUser = message.role == "user"
+    var selected by remember(message.id) { mutableStateOf(emptySet<Int>()) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -407,7 +476,7 @@ private fun BrainstormMessageRow(
     ) {
         Column(
             modifier = Modifier
-                .widthIn(max = 560.dp)
+                .widthIn(max = if (message.alternatives.isEmpty()) 560.dp else 850.dp)
                 .clip(
                     RoundedCornerShape(
                         topStart = 12.dp,
@@ -435,7 +504,37 @@ private fun BrainstormMessageRow(
                 fontWeight = FontWeight.Bold,
                 color = tokens.secondaryText,
             )
-            if (message.text.isNotBlank()) {
+            if (message.alternatives.isNotEmpty()) {
+                Text("Three directions · choose what to keep", style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(top = InkSpacing.xs))
+                Row(modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
+                    message.alternatives.forEachIndexed { index, option ->
+                        InkCard(modifier = Modifier.width(250.dp).padding(top = InkSpacing.xs)) {
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(checked = index in selected, onCheckedChange = { checked ->
+                                        selected = if (checked) selected + index else selected - index
+                                    })
+                                    Text(option.title, style = MaterialTheme.typography.titleSmall)
+                                }
+                                Text(option.premise, style = MaterialTheme.typography.bodySmall)
+                                if (option.strengths.isNotBlank()) Text("Strengths: ${option.strengths}",
+                                    style = MaterialTheme.typography.bodySmall)
+                                if (option.risks.isNotBlank()) Text("Risks: ${option.risks}",
+                                    style = MaterialTheme.typography.bodySmall)
+                                if (option.nextStep.isNotBlank()) Text("Next: ${option.nextStep}",
+                                    style = MaterialTheme.typography.bodySmall)
+                                TextButton(onClick = { onSaveAlternative(option) }) { Text("Save to Ideas") }
+                            }
+                        }
+                    }
+                }
+                TextButton(enabled = selected.size >= 2,
+                    onClick = { onCombine(selected.sorted().map { message.alternatives[it] }) }) {
+                    Text("Combine selected")
+                }
+            } else if (message.text.isNotBlank()) {
                 // Selectable so any span can be copied, not just whole messages.
                 SelectionContainer {
                     Text(
@@ -464,6 +563,15 @@ private fun BrainstormMessageRow(
                     modifier = Modifier.padding(top = InkSpacing.xxs),
                 )
             }
+            if (!streaming && message.text.isNotBlank()) {
+                Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                    if (message.alternatives.isEmpty()) TextButton(onClick = onSaveMessage) { Text("Save idea") }
+                    TextButton(onClick = onExplore) { Text("Explore") }
+                    TextButton(onClick = onDevelop) { Text("Develop") }
+                    TextButton(onClick = onChallenge) { Text("Challenge") }
+                    TextButton(onClick = onUseAsPrompt) { Text("Use as prompt") }
+                }
+            }
         }
     }
 }
@@ -477,8 +585,11 @@ private fun BrainstormThreadsRail(
     onCreate: () -> Unit,
     onCreateSub: (String) -> Unit,
     onDelete: (String) -> Unit,
+    onRename: (String) -> Unit,
+    onPin: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var search by rememberSaveable { mutableStateOf("") }
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -494,8 +605,12 @@ private fun BrainstormThreadsRail(
             Text("Chats", style = MaterialTheme.typography.titleSmall)
             TextButton(onClick = onCreate) { Text("+ Add") }
         }
+        OutlinedTextField(value = search, onValueChange = { search = it },
+            label = { Text("Find chat") }, singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = InkSpacing.xs))
         LazyColumn(modifier = Modifier.weight(1f)) {
-            items(threads, key = { it.id }) { thread ->
+            items(threads.filter { search.isBlank() || it.name.contains(search, ignoreCase = true) },
+                key = { it.id }) { thread ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -519,7 +634,7 @@ private fun BrainstormThreadsRail(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        (if (thread.depth > 0) "└ " else "") + thread.name,
+                        (if (thread.pinned) "★ " else "") + (if (thread.depth > 0) "└ " else "") + thread.name,
                         style = if (thread.depth > 0) {
                             MaterialTheme.typography.bodyMedium
                         } else {
@@ -546,12 +661,19 @@ private fun BrainstormThreadsRail(
                                 .padding(horizontal = 5.dp),
                         )
                     }
-                    // Tap the backspace glyph to delete the chat (with confirmation).
-                    InkClearIconButton(
-                        onClick = { onDelete(thread.id) },
-                        contentDescription = "Delete chat",
-                        modifier = Modifier.width(22.dp),
-                    )
+                    var menuOpen by remember { mutableStateOf(false) }
+                    TextButton(onClick = { menuOpen = true }) { Text("⋯") }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(text = { Text("Rename") }, onClick = {
+                            onRename(thread.id); menuOpen = false
+                        })
+                        DropdownMenuItem(text = { Text(if (thread.pinned) "Unpin" else "Pin") }, onClick = {
+                            onPin(thread.id); menuOpen = false
+                        })
+                        DropdownMenuItem(text = { Text("Delete") }, onClick = {
+                            onDelete(thread.id); menuOpen = false
+                        })
+                    }
                 }
             }
             alwaysScrollEndSpacer()

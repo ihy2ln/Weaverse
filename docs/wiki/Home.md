@@ -9,6 +9,7 @@ campaigns, WeaverSocial, manga/comic projects, and shared notes.
 - [Navigation and Shelves](Navigation-and-Shelves.md)
 - [Appearance](Appearance.md)
 - [Codex and Notes](Codex-and-Notes.md)
+- [Brainstorm and Ideas](Brainstorm-and-Ideas.md)
 - [Novel and Reader](Novel-and-Reader.md)
 - [RPG, WeaverSocial, and Manga Studio](RPG-WeaverSocial-and-Manga-Studio.md)
 - [Manga Studio guide](Manga-Studio.md)
@@ -22,7 +23,7 @@ The canonical single-page copy is [`docs/GUIDE.md`](../GUIDE.md).
 
 ![Prompt Template controls](images/prompt-template-v1.3.26-layout.svg)
 
-## Five mode homes
+## Mode homes
 
 | Main mode | Opens at | Purpose |
 |---|---|---|
@@ -30,7 +31,7 @@ The canonical single-page copy is [`docs/GUIDE.md`](../GUIDE.md).
 | RPG | Campaign | Choose or create campaigns |
 | WeaverSocial | Home | Social overview, focused feed, work servers, and character conversations |
 | Manga Studio | Library | Browse manga/comic covers |
-| Notes | Board | Open shared notes |
+| Brainstorm/Notes | Brainstorm | Explore ideas in chat, organize chosen cards, and edit shared notes |
 
 Everything except AI generation works offline. AI uses an OpenRouter key from
 Settings. Export important work before uninstalling or clearing app data.

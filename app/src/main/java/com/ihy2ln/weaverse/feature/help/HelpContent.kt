@@ -440,19 +440,38 @@ object HelpContent {
         HelpSection(
             id = "brainstorm",
             title = "Brainstorm/Notes",
-            summary = "Chat with the AI to brainstorm and research",
+            summary = "Explore creative directions and keep the ideas you choose",
             entries = listOf(
                 HelpEntry(
                     "What it is",
-                    "A NovelCrafter-style AI chat for ideas and information — not talking " +
-                        "to bots. Ask about plots, worldbuilding, research, names, structure. " +
-                        "The old notes board still lives in every mode's Notes rail tab.",
+                    "Brainstorm is a creative workshop for plots, worldbuilding, names, " +
+                        "structure and honest feedback. Its AI remembers recent turns and " +
+                        "uses the Codex entries you include. The separate Notes board is still available.",
                 ),
                 HelpEntry(
                     "Threads",
-                    "Chats are app-wide and shared across every book and mode. + Add starts " +
-                        "a new thread; the backspace beside a thread deletes it after a " +
-                        "confirmation.",
+                    "Chats are app-wide. + Add starts a thread; + on a main thread adds " +
+                        "a sub-thread. Search the rail to find a chat, or use its ⋯ menu " +
+                        "to rename, pin or delete it. Deleting asks for confirmation.",
+                ),
+                HelpEntry(
+                    "Explore alternatives",
+                    "Write an idea and tap Explore alternatives for three distinct directions. " +
+                        "Compare their premise, strengths, risks and next step side by side. " +
+                        "Select two or more to Combine, or save only the options you want. " +
+                        "Develop and Challenge work on a draft or an individual message.",
+                ),
+                HelpEntry(
+                    "Ideas board",
+                    "Saved ideas move through Inbox, Exploring, Keep and Archived. Edit, pin, " +
+                        "search or link a card to a book or campaign. Source opens its chat. " +
+                        "Send to copies an idea into Notes, a chosen Codex category, a new " +
+                        "Novel Plan scene outline, or a beat in an existing scene.",
+                ),
+                HelpEntry(
+                    "Image attachments",
+                    "The + button stages up to four images; remove an image before sending " +
+                        "if needed. Choose a vision model so the AI can actually see them.",
                 ),
                 HelpEntry(
                     "! commands",

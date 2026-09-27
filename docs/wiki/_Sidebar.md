@@ -5,6 +5,7 @@
 - [Navigation and Shelves](Navigation-and-Shelves)
 - [Appearance](Appearance)
 - [Codex and Notes](Codex-and-Notes)
+- [Brainstorm and Ideas](Brainstorm-and-Ideas)
 - [Novel and Reader](Novel-and-Reader)
 - [RPG, WeaverSocial, and Manga Studio](RPG-WeaverSocial-and-Manga-Studio)
 - [Manga Studio guide](Manga-Studio)
