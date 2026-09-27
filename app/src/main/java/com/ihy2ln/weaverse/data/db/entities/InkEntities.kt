@@ -417,6 +417,8 @@ data class SocialPostEntity(
     val bookId: String? = null,
     val pinned: Boolean = false,
     val createdAt: Long,
+    /** Content labels the author gave it (sexual, violence, politics…), comma-separated, for filters. */
+    val contentTags: String = "",
 )
 
 /** One member of a Chatting room's cast — seeded with the room, or pulled in later by an @mention. */

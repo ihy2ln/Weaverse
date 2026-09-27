@@ -86,7 +86,7 @@ import com.ihy2ln.weaverse.data.db.entities.RpgCampaignSaveEntity
         RpRoomMemberEntity::class,
         com.ihy2ln.weaverse.data.db.entities.SocialPostEntity::class,
     ],
-    version = 30,
+    version = 31,
     exportSchema = true,
 )
 @TypeConverters(InkTypeConverters::class)
@@ -118,6 +118,11 @@ abstract class WeaverseDatabase : RoomDatabase() {
             if (!exists) execSQL("ALTER TABLE `$table` ADD COLUMN `$column` $definition")
         }
 
+        val MIGRATION_30_31 = object : Migration(30, 31) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.addColumnIfMissing("social_posts", "contentTags", "TEXT NOT NULL DEFAULT ''")
+            }
+        }
         val MIGRATION_29_30 = object : Migration(29, 30) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.addColumnIfMissing("rp_messages", "reactionsJson", "TEXT NOT NULL DEFAULT '{}'")
@@ -460,6 +465,7 @@ abstract class WeaverseDatabase : RoomDatabase() {
             MIGRATION_27_28,
             MIGRATION_28_29,
             MIGRATION_29_30,
+            MIGRATION_30_31,
         )
     }
 }

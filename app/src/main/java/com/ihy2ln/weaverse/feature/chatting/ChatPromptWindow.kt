@@ -17,6 +17,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.MaterialTheme
@@ -173,6 +174,20 @@ fun ChatPromptWindow(
                 maxLines = messageLines,
                 modifier = Modifier.weight(1f),
             )
+            // Search the web (memes, GIFs, pictures) or the Pictures library and send them.
+            IconButton(
+                onClick = viewModel::requestWebPick,
+                enabled = !state.isStreaming,
+                modifier = Modifier
+                    .size(34.dp)
+                    .semantics { contentDescription = "Search pictures and GIFs" },
+            ) {
+                Icon(
+                    Icons.Filled.ImageSearch,
+                    contentDescription = null,
+                    tint = tokens.primaryText,
+                )
+            }
             Button(
                 onClick = { if (state.isStreaming) viewModel.cancelGeneration() else viewModel.send() },
                 enabled = state.isStreaming || canSend,
@@ -196,6 +211,8 @@ fun ChatPromptWindow(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 PromptDockChip("Attach image", enabled = !state.isStreaming, onClick = viewModel::requestMediaPick)
+                PromptDockChip("GIF", enabled = !state.isStreaming, onClick = viewModel::requestGifPick)
+                PromptDockChip("Search pictures", enabled = !state.isStreaming, onClick = viewModel::requestWebPick)
                 PromptDockChip(
                     label = "Emoji",
                     enabled = !state.isStreaming,

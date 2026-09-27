@@ -1,8 +1,5 @@
 package com.ihy2ln.weaverse.feature.chatting
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -131,15 +128,9 @@ fun DiscordChatScreen(
     val startDictate = rememberSpeechToText { spoken ->
         viewModel.onInputChange(mergeSpokenText(viewModel.currentInput(), spoken))
     }
-    val mediaPicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickMultipleVisualMedia(),
-    ) { uris ->
-        if (uris.isNotEmpty()) viewModel.attachMedia(uris)
-    }
+    var mediaPicker by remember { mutableStateOf<com.ihy2ln.weaverse.feature.chatting.media.PickerStart?>(null) }
     LaunchedEffect(state.mediaPickRequestId) {
-        if (state.mediaPickRequestId > 0L) {
-            mediaPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
-        }
+        if (state.mediaPickRequestId > 0L) mediaPicker = state.mediaPickStart
     }
     LaunchedEffect(state.selectedRoomId) { sidePanel = SidePanel.None }
 
@@ -358,6 +349,24 @@ fun DiscordChatScreen(
             dismissButton = {
                 TextButton(onClick = { channelDialogOpen = false }) { Text("Cancel") }
             },
+        )
+    }
+    mediaPicker?.let { start ->
+        com.ihy2ln.weaverse.feature.chatting.media.PicturePickerSheet(
+            limit = com.ihy2ln.weaverse.feature.chatting.media.MAX_ATTACHMENTS,
+            start = start,
+            onDismiss = { mediaPicker = null },
+            onPicked = { picked ->
+                mediaPicker = null
+                when (picked) {
+                    is com.ihy2ln.weaverse.feature.chatting.media.PickedMedia.FromDevice -> viewModel.attachMedia(picked.uris)
+                    is com.ihy2ln.weaverse.feature.chatting.media.PickedMedia.FromLibrary -> viewModel.attachLibraryMedia(picked.mediaIds)
+                }
+            },
+            surface = colors.sidebar,
+            text = colors.text,
+            muted = colors.muted,
+            accent = colors.blurple,
         )
     }
     pendingDeleteRoomId?.let { roomId ->

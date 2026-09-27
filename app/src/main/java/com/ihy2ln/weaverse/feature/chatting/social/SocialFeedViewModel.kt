@@ -14,6 +14,11 @@ import com.ihy2ln.weaverse.data.db.entities.SocialPostEntity
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
 import com.ihy2ln.weaverse.feature.chatting.ChatCastResolver
 import com.ihy2ln.weaverse.feature.chatting.ChatRoomSeeder
+import com.ihy2ln.weaverse.feature.chatting.media.CharacterMediaFetcher
+import com.ihy2ln.weaverse.feature.chatting.media.MAX_ATTACHMENTS
+import com.ihy2ln.weaverse.feature.chatting.media.MediaTag
+import com.ihy2ln.weaverse.feature.chatting.media.MediaTags
+import com.ihy2ln.weaverse.feature.chatting.media.SocialContentPolicy
 import com.ihy2ln.weaverse.feature.chatting.matchNamedCharacters
 import com.ihy2ln.weaverse.feature.chatting.ParsedLine
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -60,7 +65,10 @@ data class SocialPostUi(
     val isYou: Boolean,
     val verified: Boolean,
     val text: String,
+    /** First picture, for single-image spots like story cards. */
     val imagePath: String?,
+    /** Every picture or GIF on the post, in order (up to four shown). */
+    val imagePaths: List<String> = listOfNotNull(imagePath),
     val createdAt: Long,
     val parentId: String?,
     val likeCount: Int,
@@ -72,6 +80,8 @@ data class SocialPostUi(
     val bookmarked: Boolean,
     /** Facebook: the most-used reactions, most first, for the stacked icons. */
     val topReactions: List<FbReaction>,
+    /** Content labels the author gave the post (sexual, politics…). */
+    val labels: Set<ContentLabel> = emptySet(),
     val feeling: String,
     val repostOf: SocialPostUi?,
 )
@@ -87,6 +97,10 @@ data class SocialPersonUi(
     val verified: Boolean,
     val isFollowing: Boolean,
     val joinedAt: Long,
+    val blockedByYou: Boolean = false,
+    val mutedByYou: Boolean = false,
+    /** This person blocked the writer. */
+    val blockedYou: Boolean = false,
 )
 
 data class SocialNotificationUi(
@@ -113,9 +127,13 @@ data class SocialUiState(
     val generating: Boolean = false,
     val status: String = "",
     val error: String = "",
-    val pendingImagePath: String? = null,
+    /** Pictures and GIFs attached to the next post or reply. */
+    val pendingImagePaths: List<String> = emptyList(),
     val mediaPickRequestId: Long = 0,
     val castLoaded: Boolean = false,
+    val safety: SocialSafety = SocialSafety(),
+    /** One-off message such as "Mara blocked you", shown as a snackbar. */
+    val notice: String = "",
 ) {
     val youHandle: String get() = handleFor(personaName)
     val followingIds: Set<String> get() = people.filter { it.isFollowing }.map { it.characterId }.toSet()
@@ -136,6 +154,8 @@ class SocialFeedViewModel @Inject constructor(
     private val castResolver: ChatCastResolver,
     private val roomSeeder: ChatRoomSeeder,
     private val mediaRepository: MediaRepository,
+    private val characterMedia: CharacterMediaFetcher,
+    private val relations: SocialRelations,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SocialUiState())
@@ -143,8 +163,11 @@ class SocialFeedViewModel @Inject constructor(
 
     private var platform = ""
     private var cast: List<RpCharacterEntity> = emptyList()
-    private var pendingMedia: MediaEntity? = null
+    private var pendingMedia: List<MediaEntity> = emptyList()
+    /** The Pictures library, for characters who post photos of themselves. */
+    private var library: List<MediaEntity> = emptyList()
     private var entities: Map<String, SocialPostEntity> = emptyMap()
+    private var safety: SocialSafety = SocialSafety()
 
     fun bind(platformId: String = PLATFORM_WEAVERSOCIAL) {
         if (platform == platformId) return
@@ -157,24 +180,29 @@ class SocialFeedViewModel @Inject constructor(
             }
             cast = castResolver.allChatContacts()
             _uiState.update { it.copy(castLoaded = true) }
-            combine(db.socialDao().observeAllPosts(), allFollows()) { posts, follows ->
-                posts to follows
-            }.collect { (posts, follows) -> publish(posts, follows) }
+            combine(db.socialDao().observeAllPosts(), allFollows(), relations.safety) { posts, follows, safety ->
+                Triple(posts, follows, safety)
+            }.collect { (posts, follows, safety) -> publish(posts, follows, safety) }
         }
     }
 
     // ---------------------------------------------------------------- rendering
 
-    private suspend fun publish(posts: List<SocialPostEntity>, follows: Set<String>) {
+    private suspend fun publish(posts: List<SocialPostEntity>, follows: Set<String>, safety: SocialSafety) {
         entities = posts.associateBy { it.id }
+        this.safety = safety
         val replyCounts = posts.filter { it.parentId != null }.groupingBy { it.parentId!! }.eachCount()
         val quoteCounts = posts.filter { it.repostOfId != null }.groupingBy { it.repostOfId!! }.eachCount()
         val shallow = posts.associate { it.id to it.toUi(replyCounts, quoteCounts, null) }
         val full = posts.associate { post ->
             post.id to post.toUi(replyCounts, quoteCounts, post.repostOfId?.let { shallow[it] })
         }
-        val top = posts.filter { it.parentId == null }.mapNotNull { full[it.id] }
-        val replies = posts.filter { it.parentId != null }
+        // Blocks, mutes, muted words, "not interested" and label filters; the writer's own
+        // posts always show.
+        fun visible(post: SocialPostEntity): Boolean = post.authorCharacterId == null ||
+            !safety.hides(post.authorCharacterId, post.id, post.text, SocialTags.labelsOf(post.contentTags))
+        val top = posts.filter { it.parentId == null && visible(it) }.mapNotNull { full[it.id] }
+        val replies = posts.filter { it.parentId != null && visible(it) }
             .sortedBy { it.createdAt }
             .groupBy { it.parentId!! }
             .mapValues { (_, list) -> list.mapNotNull { full[it.id] } }
@@ -189,8 +217,11 @@ class SocialFeedViewModel @Inject constructor(
                 followers = 80 + seed % 48_000,
                 following = 20 + (seed / 7) % 900,
                 verified = seed % 3 == 0,
-                isFollowing = character.id in follows,
+                isFollowing = character.id in follows && character.id !in safety.blocked,
                 joinedAt = character.createdAt,
+                blockedByYou = character.id in safety.blocked,
+                mutedByYou = character.id in safety.muted,
+                blockedYou = character.id in safety.blockedBy,
             )
         }
         _uiState.update {
@@ -199,7 +230,8 @@ class SocialFeedViewModel @Inject constructor(
                 repliesByParent = replies,
                 allById = full,
                 people = people,
-                notifications = buildNotifications(posts, follows),
+                notifications = buildNotifications(posts.filter { visible(it) }, follows),
+                safety = safety,
                 trends = buildTrends(posts),
             )
         }
@@ -215,7 +247,7 @@ class SocialFeedViewModel @Inject constructor(
         val name = if (isYou) _uiState.value.personaName else authorName
         val reactions = decodeCounts(reactionsJson).toMutableMap()
         if (userReaction.isNotBlank()) reactions[userReaction] = (reactions[userReaction] ?: 0) + 1
-        val image = mediaId?.let { id ->
+        val images = mediaIdsOf(mediaId).mapNotNull { id ->
             mediaRepository.getById(id)?.let { mediaRepository.resolveFile(it).absolutePath }
         }
         val seed = name.hashCode().absoluteValue
@@ -229,7 +261,8 @@ class SocialFeedViewModel @Inject constructor(
             verified = !isYou && seed % 3 == 0,
             // Older posts were saved before markdown was unwrapped on the way in.
             text = text.replace(Regex("\\*{1,2}([^*\\n]+)\\*{1,2}"), "$1"),
-            imagePath = image,
+            imagePath = images.firstOrNull(),
+            imagePaths = images,
             createdAt = createdAt,
             parentId = parentId,
             likeCount = likeCount + (if (userReaction.isNotBlank()) 1 else 0),
@@ -243,6 +276,7 @@ class SocialFeedViewModel @Inject constructor(
                 .mapNotNull { FbReaction.of(it.key) }.take(3),
             feeling = feeling,
             repostOf = repostOf,
+            labels = SocialTags.labelsOf(contentTags),
         )
     }
 
@@ -332,21 +366,46 @@ class SocialFeedViewModel @Inject constructor(
         _uiState.update { it.copy(mediaPickRequestId = it.mediaPickRequestId + 1) }
     }
 
-    fun attachImage(uri: android.net.Uri) {
+    /** Pictures or GIFs picked on the device, imported into app storage and attached. */
+    fun attachFromDevice(uris: List<android.net.Uri>) {
         viewModelScope.launch {
-            val media = runCatching { mediaRepository.importFromUris(listOf(uri)) }.getOrNull()?.firstOrNull()
-            if (media == null) {
+            val imported = runCatching { mediaRepository.importFromUris(uris.take(room())) }.getOrNull().orEmpty()
+            if (imported.isEmpty()) {
                 _uiState.update { it.copy(error = "Could not attach that picture.") }
                 return@launch
             }
-            pendingMedia = media
-            _uiState.update { it.copy(pendingImagePath = mediaRepository.resolveFile(media).absolutePath) }
+            addPending(imported)
         }
     }
 
+    /** Pictures or GIFs picked from the Pictures library. */
+    fun attachFromLibrary(mediaIds: List<String>) {
+        viewModelScope.launch {
+            addPending(mediaIds.take(room()).mapNotNull { mediaRepository.getById(it) })
+        }
+    }
+
+    fun removeAttachment(index: Int) {
+        pendingMedia = pendingMedia.filterIndexed { i, _ -> i != index }
+        publishPending()
+    }
+
     fun clearImage() {
-        pendingMedia = null
-        _uiState.update { it.copy(pendingImagePath = null) }
+        pendingMedia = emptyList()
+        publishPending()
+    }
+
+    private fun room(): Int = (MAX_ATTACHMENTS - pendingMedia.size).coerceAtLeast(0)
+
+    private fun addPending(media: List<MediaEntity>) {
+        pendingMedia = (pendingMedia + media).distinctBy { it.id }.take(MAX_ATTACHMENTS)
+        publishPending()
+    }
+
+    private fun publishPending() {
+        _uiState.update { state ->
+            state.copy(pendingImagePaths = pendingMedia.map { mediaRepository.resolveFile(it).absolutePath })
+        }
     }
 
     fun dismissError() {
@@ -357,7 +416,7 @@ class SocialFeedViewModel @Inject constructor(
     fun post(text: String, feeling: String = "", quoteOf: String? = null) {
         val clean = text.trim()
         val media = pendingMedia
-        if (clean.isBlank() && media == null && quoteOf == null) return
+        if (clean.isBlank() && media.isEmpty() && quoteOf == null) return
         viewModelScope.launch {
             val now = System.currentTimeMillis()
             val post = SocialPostEntity(
@@ -366,7 +425,7 @@ class SocialFeedViewModel @Inject constructor(
                 authorCharacterId = null,
                 authorName = _uiState.value.personaName,
                 text = clean,
-                mediaId = media?.id,
+                mediaId = joinMediaIds(media.map { it.id }),
                 repostOfId = quoteOf,
                 viewCount = Random.nextInt(12, 240),
                 feeling = feeling,
@@ -381,9 +440,15 @@ class SocialFeedViewModel @Inject constructor(
     /** The writer replies to [parentId] (a top-level post); its author answers back. */
     fun reply(parentId: String, text: String, replyingTo: SocialPostUi? = null) {
         val clean = text.trim()
-        if (clean.isBlank()) return
+        val media = pendingMedia
+        if (clean.isBlank() && media.isEmpty()) return
         viewModelScope.launch {
             val parent = db.socialDao().getPost(parentId) ?: return@launch
+            val targetCharacterId = replyingTo?.authorCharacterId ?: parent.authorCharacterId
+            if (safety.cantInteract(targetCharacterId)) {
+                _uiState.update { it.copy(notice = blockNotice(targetCharacterId!!)) }
+                return@launch
+            }
             val body = if (replyingTo != null && !replyingTo.isYou && replyingTo.id != parentId) {
                 "@${replyingTo.handle} $clean"
             } else {
@@ -395,11 +460,13 @@ class SocialFeedViewModel @Inject constructor(
                 authorCharacterId = null,
                 authorName = _uiState.value.personaName,
                 text = body,
+                mediaId = joinMediaIds(media.map { it.id }),
                 parentId = parentId,
                 viewCount = Random.nextInt(5, 60),
                 createdAt = System.currentTimeMillis(),
             )
             db.socialDao().upsert(reply)
+            clearImage()
             val answerer = replyingTo?.authorCharacterId?.let { id -> cast.firstOrNull { it.id == id } }
                 ?: parent.authorCharacterId?.let { id -> cast.firstOrNull { it.id == id } }
             generateThreadReply(parent, body, answerer)
@@ -446,6 +513,10 @@ class SocialFeedViewModel @Inject constructor(
     ) { a, b, c -> a + b + c }
 
     fun toggleFollow(characterId: String) {
+        if (safety.cantInteract(characterId)) {
+            _uiState.update { it.copy(notice = blockNotice(characterId)) }
+            return
+        }
         viewModelScope.launch {
             if (characterId in allFollows().first()) {
                 (LEGACY_PLATFORMS + PLATFORM_WEAVERSOCIAL).forEach { key ->
@@ -457,6 +528,61 @@ class SocialFeedViewModel @Inject constructor(
                 settings.setSocialFollows(PLATFORM_WEAVERSOCIAL, set + characterId)
             }
         }
+    }
+
+    // ------------------------------------------------------------ safety
+
+    fun block(characterId: String, blocked: Boolean) {
+        viewModelScope.launch { relations.setBlocked(characterId, blocked) }
+    }
+
+    fun mute(characterId: String, muted: Boolean) {
+        viewModelScope.launch { relations.setMuted(characterId, muted) }
+    }
+
+    /** "Not interested in this post". */
+    fun hidePost(postId: String) {
+        viewModelScope.launch { relations.hidePost(postId) }
+    }
+
+    fun restoreHiddenPosts() {
+        viewModelScope.launch { relations.clearHiddenPosts() }
+    }
+
+    fun addMutedWord(word: String) {
+        viewModelScope.launch { relations.addMutedWord(word) }
+    }
+
+    fun removeMutedWord(word: String) {
+        viewModelScope.launch { relations.removeMutedWord(word) }
+    }
+
+    fun setLabelHidden(label: ContentLabel, hidden: Boolean) {
+        viewModelScope.launch { relations.setLabelHidden(label, hidden) }
+    }
+
+    fun setWarnSensitive(on: Boolean) {
+        viewModelScope.launch { relations.setWarnSensitive(on) }
+    }
+
+    /** Author's override: lift a character's block on the writer. */
+    fun liftBlockOnYou(characterId: String) {
+        viewModelScope.launch { relations.setBlockedBy(characterId, false) }
+    }
+
+    fun dismissNotice() {
+        _uiState.update { it.copy(notice = "") }
+    }
+
+    private fun nameOf(characterId: String): String = cast.firstOrNull { it.id == characterId }?.name ?: "They"
+
+    private fun blockNotice(characterId: String): String =
+        if (characterId in safety.blockedBy) "${nameOf(characterId)} blocked you." else "You blocked ${nameOf(characterId)}. Unblock them first."
+
+    /** A character decided to block the writer mid-reply. */
+    private suspend fun blockedByCharacter(characterId: String) {
+        relations.setBlockedBy(characterId, true)
+        _uiState.update { it.copy(notice = "${nameOf(characterId)} blocked you.") }
     }
 
     // --------------------------------------------------------------- generation
@@ -479,14 +605,24 @@ class SocialFeedViewModel @Inject constructor(
             }
             val user = "Write ${posters.size} new posts, one from each of: " +
                 posters.joinToString(", ") { it.name } + "."
-            val raw = complete(system, user, maxTokens = 900) ?: return@launch
+            val raw = complete(system, user, maxTokens = 3_000) ?: return@launch
             val lines = parseSocialLines(raw, cast)
             val base = System.currentTimeMillis()
+            library = runCatching { mediaRepository.observeAll().first() }.getOrDefault(emptyList())
+                .filter { it.type == "image" }
             lines.forEachIndexed { index, line ->
                 val author = line.character ?: return@forEachIndexed
-                val (feeling, body) = splitFeeling(line.text)
-                if (body.isBlank()) return@forEachIndexed
-                db.socialDao().upsert(generatedPost(author, body, feeling, base - (lines.size - index) * 97_000L, parentId = null))
+                val (feeling, tagged) = splitFeeling(line.text)
+                val social = SocialTags.parse(tagged)
+                val (body, tags) = MediaTags.extract(social.text)
+                if (body.isBlank() && tags.isEmpty()) return@forEachIndexed
+                // A post that asked for a meme gets that; otherwise now and then one of their own photos.
+                val photo = if (tags.isEmpty() && Random.nextFloat() < PHOTO_POST_CHANCE) pictureOf(author) else null
+                saveWithMedia(
+                    generatedPost(author, body, feeling, base - (lines.size - index) * 97_000L, parentId = null)
+                        .copy(mediaId = photo?.id, contentTags = SocialTags.store(social.labels)),
+                    tags,
+                )
             }
             finish()
         }
@@ -496,30 +632,40 @@ class SocialFeedViewModel @Inject constructor(
         if (!ensureReady()) return
         val named = matchNamedCharacters(post.text, cast) +
             cast.filter { post.text.contains("@" + handleFor(it.name), ignoreCase = true) }
-        val repliers = (named + pickCast(3, prefer = _uiState.value.followingIds)).distinctBy { it.id }.take(4)
+        val repliers = (named.filterNot { it.id in safety.unseen } + pickCast(3, prefer = _uiState.value.followingIds))
+            .distinctBy { it.id }.take(4)
         val quoted = post.repostOfId?.let { entities[it] }
         val system = buildList {
             add(platformVoice())
             add("These people are replying to a post by ${_uiState.value.personaName} (the writer). Stay true to each card:")
+            add(SocialTags.BLOCK_PROMPT)
             repliers.forEach { add(cardFor(it)) }
             add(outputRules(reply = true))
         }
         val user = buildString {
             append("${_uiState.value.personaName} posted: \"${post.text}\"")
             if (post.feeling.isNotBlank()) append(" (feeling ${post.feeling})")
-            if (post.mediaId != null) append(" [with a photo]")
+            mediaIdsOf(post.mediaId).size.takeIf { it > 0 }?.let { n ->
+                append(if (n == 1) " [with a photo]" else " [with $n photos]")
+            }
             quoted?.let { append("\nThey were sharing ${it.authorName}'s post: \"${it.text.take(200)}\"") }
             append("\nWrite ${repliers.size.coerceIn(1, 4)} replies, ")
             append("one per person, from: ${repliers.joinToString(", ") { it.name }}.")
         }
-        val raw = complete(system, user, maxTokens = 600) ?: return
+        val raw = complete(system, user, maxTokens = 2_000) ?: return
         val base = System.currentTimeMillis()
         val lines = parseSocialLines(raw, cast)
         lines.forEachIndexed { index, line ->
             val author = line.character ?: return@forEachIndexed
-            val (_, body) = splitFeeling(line.text)
-            if (body.isBlank()) return@forEachIndexed
-            db.socialDao().upsert(generatedPost(author, body, "", base + (index + 1) * 41_000L, parentId = post.id, small = true))
+            val social = SocialTags.parse(splitFeeling(line.text).second)
+            val (body, tags) = MediaTags.extract(social.text)
+            if (social.blocksWriter) blockedByCharacter(author.id)
+            if (body.isBlank() && tags.isEmpty()) return@forEachIndexed
+            saveWithMedia(
+                generatedPost(author, body, "", base + (index + 1) * 41_000L, parentId = post.id, small = true)
+                    .copy(contentTags = SocialTags.store(social.labels)),
+                tags,
+            )
         }
         // Everyone else who saw it leaves a like or reaction.
         db.socialDao().getPost(post.id)?.let { fresh ->
@@ -545,22 +691,43 @@ class SocialFeedViewModel @Inject constructor(
         val system = listOf(
             platformVoice(),
             "You are replying as ${speaker.name}:",
+            SocialTags.BLOCK_PROMPT,
             cardFor(speaker),
             outputRules(reply = true),
         )
         val user = "Original post by ${parent.authorName}: \"${parent.text.take(300)}\"\n" +
             "Thread so far:\n$thread\n\n${_uiState.value.personaName} just wrote: \"$userText\"\n" +
             "Write ${speaker.name}'s reply."
-        val raw = complete(system, user, maxTokens = 300) ?: return
+        val raw = complete(system, user, maxTokens = 1_200) ?: return
         val line = parseSocialLines(raw, listOf(speaker)).firstOrNull()
             ?: com.ihy2ln.weaverse.feature.chatting.ParsedLine(speaker, speaker.name, raw.substringAfter(':').trim())
-        val body = splitFeeling(line.text).second
-        if (body.isNotBlank()) {
-            db.socialDao().upsert(
-                generatedPost(speaker, body, "", System.currentTimeMillis() + 30_000L, parentId = parent.id, small = true),
+        val social = SocialTags.parse(splitFeeling(line.text).second)
+        val (body, tags) = MediaTags.extract(social.text)
+        if (body.isNotBlank() || tags.isNotEmpty()) {
+            saveWithMedia(
+                generatedPost(speaker, body, "", System.currentTimeMillis() + 30_000L, parentId = parent.id, small = true)
+                    .copy(contentTags = SocialTags.store(social.labels)),
+                tags,
             )
         }
+        if (social.blocksWriter) blockedByCharacter(speaker.id)
         finish()
+    }
+
+    /**
+     * Saves a character's post straight away, then fetches the memes or GIFs it asked for
+     * and attaches them when they arrive, so text never waits on a download.
+     */
+    private suspend fun saveWithMedia(post: SocialPostEntity, tags: List<MediaTag>) {
+        db.socialDao().upsert(post)
+        if (tags.isEmpty()) return
+        viewModelScope.launch {
+            val found = tags.mapNotNull { characterMedia.fetch(it) }
+            if (found.isEmpty()) return@launch
+            val fresh = db.socialDao().getPost(post.id) ?: return@launch
+            val ids = (mediaIdsOf(fresh.mediaId) + found.map { it.id }).distinct().take(MAX_ATTACHMENTS)
+            db.socialDao().upsert(fresh.copy(mediaId = joinMediaIds(ids)))
+        }
     }
 
     private suspend fun ensureReady(): Boolean {
@@ -608,7 +775,22 @@ class SocialFeedViewModel @Inject constructor(
                     error = err.message?.takeIf { m -> m.isNotBlank() } ?: "Couldn't load posts — check your model and API key.",
                 )
             }
-        }.getOrNull()?.takeIf { it.isNotBlank() }
+        }.getOrNull()?.let { text ->
+            // Reasoning models can spend the whole budget thinking and return nothing; the
+            // spinner must still stop, and the writer should know why nothing appeared.
+            if (text.isBlank()) {
+                _uiState.update {
+                    it.copy(
+                        generating = false,
+                        status = "",
+                        error = "The model returned no text (it may have spent its budget thinking). Try again, or pick a different model.",
+                    )
+                }
+                null
+            } else {
+                text
+            }
+        }
 
     private fun platformVoice(): String =
         "You write posts for WeaverSocial, one social network shared by fictional people from many " +
@@ -618,13 +800,15 @@ class SocialFeedViewModel @Inject constructor(
             "questions to friends (now and then a longer, warmer post); and Discord's in-jokes and " +
             "community chatter about the groups and places people belong to. Everyone stays true to " +
             "their own world. A post may start with [feeling X] (for example [feeling blessed]) when the " +
-            "person would set a feeling. Replies are one or two lines. Emoji where the person would use them."
+            "person would set a feeling. Replies are one or two lines. Emoji where the person would use them.\n\n" +
+            MediaTags.PROMPT + "\n\n" + SocialTags.LABEL_PROMPT + "\n\n" + SocialContentPolicy.prompt()
 
     private fun outputRules(reply: Boolean = false): String = buildString {
         appendLine("Output format, no exceptions:")
         appendLine("- One ${if (reply) "reply" else "post"} per line: \"Name: text\" and nothing else.")
         appendLine("- First person, in each person's own voice, about their own world and life.")
         appendLine("- No narration, no asterisk actions, no markdown, no quotation marks around the text.")
+        appendLine("- A [gif: …], [meme: …] or [pic: …] tag, a [cw: …] label and [block] may end a line; they are read, not shown.")
         append("- Never write for ${_uiState.value.personaName}.")
     }
 
@@ -640,9 +824,24 @@ class SocialFeedViewModel @Inject constructor(
 
     private fun pickCast(count: Int, prefer: Set<String> = emptySet()): List<RpCharacterEntity> {
         if (cast.isEmpty() || count <= 0) return emptyList()
-        val preferred = cast.filter { it.id in prefer }.shuffled()
-        val rest = cast.filterNot { it.id in prefer }.shuffled()
+        // Blocked, muted and blocked-you people don't turn up in the writer's feed.
+        val pool = cast.filterNot { it.id in safety.unseen }
+        val preferred = pool.filter { it.id in prefer }.shuffled()
+        val rest = pool.filterNot { it.id in prefer }.shuffled()
         return (preferred + rest).take(count)
+    }
+
+    /**
+     * A picture from the library that names this person in its title, tags or category,
+     * so a character only ever posts pictures that are actually of them or theirs.
+     */
+    private fun pictureOf(character: RpCharacterEntity): MediaEntity? {
+        val full = character.name.trim().lowercase()
+        val first = full.split(' ').firstOrNull().orEmpty().takeIf { it.length >= 3 }
+        return library.filter { media ->
+            val hay = listOf(media.displayName, media.tags, media.category).joinToString(" ").lowercase()
+            hay.contains(full) || (first != null && Regex("\\b" + Regex.escape(first) + "\\b").containsMatchIn(hay))
+        }.randomOrNull()
     }
 
     private fun splitFeeling(text: String): Pair<String, String> {
@@ -700,6 +899,8 @@ class SocialFeedViewModel @Inject constructor(
         private const val CARD_CHARS = 420
         private const val BIO_CHARS = 160
         const val POST_CHARS = 500
+        /** How often a character's post comes with one of their pictures, when they have any. */
+        private const val PHOTO_POST_CHANCE = 0.35f
     }
 }
 
@@ -751,6 +952,12 @@ internal fun parseSocialLines(raw: String, cast: List<RpCharacterEntity>): List<
     flush()
     return out
 }
+
+/** Several pictures share the one `mediaId` column, comma-separated, so no schema change is needed. */
+internal fun mediaIdsOf(mediaId: String?): List<String> =
+    mediaId.orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }
+
+internal fun joinMediaIds(ids: List<String>): String? = ids.takeIf { it.isNotEmpty() }?.joinToString(",")
 
 /** "2m", "3h", "Sep 24" — Twitter's compact timestamps. */
 fun compactAge(createdAt: Long, now: Long = System.currentTimeMillis()): String {

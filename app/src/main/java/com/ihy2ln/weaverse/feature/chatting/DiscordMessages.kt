@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -151,6 +152,7 @@ fun DiscordMessageList(
     var deleteTarget by remember { mutableStateOf<DiscordMessageUi?>(null) }
     var reactionPickerFor by remember { mutableStateOf<String?>(null) }
     var revealedSpoilers by remember(roomId) { mutableStateOf(setOf<String>()) }
+    var viewing by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
     val lastIndex = rows.size + (if (state.isStreaming) 1 else 0)
 
     fun jumpTo(messageId: String) {
@@ -180,11 +182,16 @@ fun DiscordMessageList(
             listState.scrollToItem(if (newIndex > 0) newIndex else lastIndex)
         }
     }
+    var lastSeenId by remember(roomId) { mutableStateOf(state.messages.lastOrNull()?.id) }
     LaunchedEffect(roomId, state.messages, state.isStreaming) {
         if (roomId == null) return@LaunchedEffect
         val totalItems = listState.layoutInfo.totalItemsCount
         val atBottom = (listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0) >= totalItems - 3
-        if (viewModel.scrollFor(roomId) == null || atBottom) {
+        // Something the writer just sent always comes into view, wherever they were scrolled.
+        val newest = state.messages.lastOrNull()
+        val justSent = newest != null && newest.isUser && newest.id != lastSeenId
+        lastSeenId = newest?.id
+        if (viewModel.scrollFor(roomId) == null || atBottom || justSent) {
             listState.scrollToItem((totalItems - 1).coerceAtLeast(0))
         }
     }
@@ -221,6 +228,7 @@ fun DiscordMessageList(
                         onToggleReaction = { emoji -> viewModel.toggleReaction(row.message.id, emoji) },
                         onAddReaction = { reactionPickerFor = row.message.id },
                         onJumpToReply = { id -> jumpTo(id) },
+                        onOpenMedia = { i -> viewing = row.message.mediaPaths to i },
                         onOpenProfile = {
                             onOpenProfile(
                                 row.message.authorCharacterId,
@@ -293,6 +301,9 @@ fun DiscordMessageList(
                 reactionPickerFor = null
             }
         }
+    }
+    viewing?.let { (paths, index) ->
+        com.ihy2ln.weaverse.feature.chatting.media.MediaViewer(paths = paths, start = index, onClose = { viewing = null })
     }
     editTarget?.let { target ->
         var text by remember(target.id) { mutableStateOf(target.text) }
@@ -457,6 +468,7 @@ private fun MessageRow(
     onAddReaction: () -> Unit,
     onJumpToReply: (String) -> Unit,
     onOpenProfile: () -> Unit,
+    onOpenMedia: (Int) -> Unit,
 ) {
     val colors = discordColors()
     val background = when {
@@ -531,15 +543,13 @@ private fun MessageRow(
                     if (message.text.isNotBlank()) {
                         MessageBody(message.text, message.edited, spoilersRevealed)
                     }
-                    message.mediaPaths.take(4).forEach { path ->
-                        coil3.compose.AsyncImage(
-                            model = java.io.File(path),
-                            contentDescription = "Attached image",
-                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                            modifier = Modifier
-                                .padding(top = 6.dp)
-                                .size(width = 260.dp, height = 170.dp)
-                                .clip(RoundedCornerShape(8.dp)),
+                    if (message.mediaPaths.isNotEmpty()) {
+                        com.ihy2ln.weaverse.feature.chatting.media.MediaGrid(
+                            paths = message.mediaPaths,
+                            onOpen = { i -> onOpenMedia(i) },
+                            modifier = Modifier.padding(top = 6.dp).widthIn(max = 320.dp),
+                            height = if (message.mediaPaths.size == 1) 200.dp else 220.dp,
+                            corner = 8.dp,
                         )
                     }
                     if (message.hasMedia && message.mediaPaths.isEmpty()) {

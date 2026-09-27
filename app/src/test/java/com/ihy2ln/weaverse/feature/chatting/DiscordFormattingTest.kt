@@ -1,5 +1,6 @@
 package com.ihy2ln.weaverse.feature.chatting
 
+import com.ihy2ln.weaverse.feature.chatting.social.ContentLabel
 import com.ihy2ln.weaverse.feature.chatting.social.compactCount
 import com.ihy2ln.weaverse.feature.chatting.social.handleFor
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -66,5 +67,96 @@ class DiscordFormattingTest {
         val lines = com.ihy2ln.weaverse.feature.chatting.social.parseSocialLines(raw, cast)
         assertEquals(listOf("a", "b"), lines.map { it.character?.id })
         assertEquals("Quiet tonight.\nStill quiet.\nNobody: ignored", lines[1].text)
+    }
+
+    @Test
+    fun `several pictures share one media id column`() {
+        val joined = com.ihy2ln.weaverse.feature.chatting.social.joinMediaIds(listOf("a", "b", "c"))
+        assertEquals("a,b,c", joined)
+        assertEquals(listOf("a", "b", "c"), com.ihy2ln.weaverse.feature.chatting.social.mediaIdsOf(joined))
+        assertEquals(listOf("solo"), com.ihy2ln.weaverse.feature.chatting.social.mediaIdsOf("solo"))
+        assertEquals(emptyList<String>(), com.ihy2ln.weaverse.feature.chatting.social.mediaIdsOf(null))
+        assertEquals(null, com.ihy2ln.weaverse.feature.chatting.social.joinMediaIds(emptyList()))
+        assertTrue(com.ihy2ln.weaverse.feature.chatting.media.isGifPath("/x/y/Z.GIF"))
+    }
+
+    @Test
+    fun `character media tags are pulled out of the text`() {
+        val (text, tags) = com.ihy2ln.weaverse.feature.chatting.media.MediaTags.extract(
+            "Monday again. [gif: facepalm] and [Meme: this is fine dog] [pic: sunset]",
+        )
+        assertEquals("Monday again. and", text)
+        assertEquals(2, tags.size)
+        assertEquals(com.ihy2ln.weaverse.feature.chatting.media.WebSearchKind.Gifs, tags[0].kind)
+        assertEquals("facepalm", tags[0].query)
+        assertEquals(com.ihy2ln.weaverse.feature.chatting.media.WebSearchKind.Memes, tags[1].kind)
+        assertEquals(
+            "Brb",
+            com.ihy2ln.weaverse.feature.chatting.media.MediaTags.hideWhileStreaming("Brb [gif: running a"),
+        )
+    }
+
+    @Test
+    fun `social openness follows the app age rating`() {
+        val policy = com.ihy2ln.weaverse.feature.chatting.media.SocialContentPolicy
+        val before = com.ihy2ln.weaverse.ai.prompt.PromptAddOns.ageRating
+        try {
+            com.ihy2ln.weaverse.ai.prompt.PromptAddOns.ageRating = com.ihy2ln.weaverse.ai.prompt.PromptAgeRating.Pg13
+            assertFalse(policy.open)
+            assertFalse(policy.explicit)
+            com.ihy2ln.weaverse.ai.prompt.PromptAddOns.ageRating = com.ihy2ln.weaverse.ai.prompt.PromptAgeRating.R
+            assertTrue(policy.open)
+            assertFalse(policy.explicit)
+            com.ihy2ln.weaverse.ai.prompt.PromptAddOns.ageRating = com.ihy2ln.weaverse.ai.prompt.PromptAgeRating.X
+            assertTrue(policy.explicit)
+            // The legal limits are always stated, however open the rating.
+            assertTrue(policy.prompt().contains("under 18"))
+        } finally {
+            com.ihy2ln.weaverse.ai.prompt.PromptAddOns.ageRating = before
+        }
+    }
+
+    @Test
+    fun `labels and blocks are read from a character's text`() {
+        val tags = com.ihy2ln.weaverse.feature.chatting.social.SocialTags
+        val parsed = tags.parse("Vote them all out. [cw: politics, offensive] [block]")
+        assertEquals("Vote them all out.", parsed.text)
+        assertTrue(parsed.blocksWriter)
+        assertEquals(
+            setOf(
+                com.ihy2ln.weaverse.feature.chatting.social.ContentLabel.Politics,
+                com.ihy2ln.weaverse.feature.chatting.social.ContentLabel.Offensive,
+            ),
+            parsed.labels,
+        )
+        assertFalse(tags.parse("Just a normal day").blocksWriter)
+    }
+
+    @Test
+    fun `filters hide blocked, muted, labelled and muted-word posts only`() {
+        val safety = com.ihy2ln.weaverse.feature.chatting.social.SocialSafety(
+            blocked = setOf("b"),
+            muted = setOf("m"),
+            blockedBy = setOf("x"),
+            hiddenPosts = setOf("p9"),
+            mutedWords = setOf("Spoiler"),
+            hiddenLabels = setOf(ContentLabel.Politics),
+        )
+        assertTrue(safety.hides("b", "p1", "hi", emptySet()))
+        assertTrue(safety.hides("m", "p1", "hi", emptySet()))
+        assertTrue(safety.hides("x", "p1", "hi", emptySet()))
+        assertTrue(safety.hides("a", "p9", "hi", emptySet()))
+        assertTrue(safety.hides("a", "p1", "big SPOILER ahead", emptySet()))
+        assertTrue(safety.hides("a", "p1", "hi", setOf(ContentLabel.Politics)))
+        assertFalse(safety.hides("a", "p1", "hi", setOf(ContentLabel.Sexual)))
+        assertTrue(safety.cantInteract("x"))
+        assertFalse(safety.cantInteract("m"))
+        // Nothing is filtered by default.
+        assertFalse(com.ihy2ln.weaverse.feature.chatting.social.SocialSafety().hides("a", "p", "anything", ContentLabel.entries.toSet()))
+    }
+
+    @Test
+    fun `unknown age rating falls back to X`() {
+        assertEquals(com.ihy2ln.weaverse.ai.prompt.PromptAgeRating.X, com.ihy2ln.weaverse.ai.prompt.PromptAgeRating.fromId("nonsense"))
     }
 }

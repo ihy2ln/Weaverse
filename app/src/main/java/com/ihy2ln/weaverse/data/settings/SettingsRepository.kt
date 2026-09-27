@@ -403,6 +403,24 @@ class SettingsRepository @Inject constructor(
         context.dataStore.edit { it[stringPreferencesKey("social_follows_$platform")] = ids.joinToString(",") }
     }
 
+    /**
+     * A named set of strings for WeaverSocial's blocks, mutes, muted words and filters.
+     * Separated by a control character, so muted phrases may contain commas.
+     */
+    fun socialSet(key: String): kotlinx.coroutines.flow.Flow<Set<String>> =
+        context.dataStore.data.map { prefs ->
+            prefs[stringPreferencesKey("social_set_$key")].orEmpty()
+                .split('\u001F').filter { it.isNotBlank() }.toSet()
+        }
+
+    suspend fun setSocialSet(key: String, values: Set<String>) {
+        context.dataStore.edit {
+            val clean = values.map { v -> v.replace('\u001F', ' ').trim() }.filter { v -> v.isNotBlank() }
+            if (clean.isEmpty()) it.remove(stringPreferencesKey("social_set_$key"))
+            else it[stringPreferencesKey("social_set_$key")] = clean.joinToString("\u001F")
+        }
+    }
+
     /** The unsent draft left in a Chatting room, so it survives an app restart. */
     suspend fun chatDraft(roomId: String): String =
         context.dataStore.data.map { it[stringPreferencesKey("chat_draft_$roomId")].orEmpty() }.first()

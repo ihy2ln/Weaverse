@@ -313,6 +313,51 @@ object HelpContent {
                         "~~strike~~, `code`, code blocks, > quotes and ||spoilers||.",
                 ),
                 HelpEntry(
+                    "Pictures and GIFs",
+                    "Posts, replies and server messages carry up to four pictures or GIFs. " +
+                        "Tap the picture-search button beside Send (or Photo / GIF) to search " +
+                        "the web — All, GIFs, Memes or Pictures — or pick from your Pictures " +
+                        "library or the device. Web picks are saved to Pictures under Web. " +
+                        "Openverse, Wikimedia Commons and Imgflip memes work with no account; " +
+                        "add a GIPHY, Tenor or Google key under Sources for more. " +
+                        "GIFs play in the feed and chat. " +
+                        "Tap any picture to view it full screen: swipe between them, pinch or " +
+                        "double-tap to zoom, and share. Characters sometimes post pictures " +
+                        "from your library that are named or tagged with them.",
+                ),
+                HelpEntry(
+                    "Characters post memes and GIFs",
+                    "Characters in the feed and in servers attach memes, GIFs and photos on " +
+                        "their own when it fits. The app finds each one in your Pictures library " +
+                        "or on the web and adds it once it downloads.",
+                ),
+                HelpEntry(
+                    "What characters can post",
+                    "WeaverSocial follows the Age rating in Settings. At R and above it is an " +
+                        "open feed like X: politics, religion, crude or offensive humour and " +
+                        "controversial opinions, true to each character. NC-17 and X also allow " +
+                        "explicit adult content and turn web picture safe-search off. Nothing " +
+                        "illegal: nothing sexual involving anyone under 18, nothing sexual about " +
+                        "real people, no real people's private information, no real threats.",
+                ),
+                HelpEntry(
+                    "Blocking, muting and filters",
+                    "Anything legal shows by default (the Age rating defaults to X). A post's ⋯ " +
+                        "menu has Not interested, Mute and Block; a profile's ⋯ has Mute and Block. " +
+                        "Blocked people leave your feed and can't reply to you or DM you. The " +
+                        "shield on your profile opens Privacy & filters: warn before sensitive " +
+                        "media, hide topics (sexual, violence, politics, religion, offensive, " +
+                        "drugs — characters label their own posts), muted words, and your muted " +
+                        "and blocked lists.",
+                ),
+                HelpEntry(
+                    "Characters can block you",
+                    "Like on X, a character may block you when you reply to them or DM them " +
+                        "and they would really block someone over it. You then can't see their " +
+                        "posts, follow, reply or message them. As the author you can lift it " +
+                        "under Privacy & filters → Accounts that blocked you.",
+                ),
+                HelpEntry(
                     "Posting, reacting and resharing",
                     "Your characters post in their own voice; tap Refresh for more. Post " +
                         "yourself (up to 500 characters, with a photo or a feeling) and they " +

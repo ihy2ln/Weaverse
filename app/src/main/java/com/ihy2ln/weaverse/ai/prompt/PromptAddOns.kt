@@ -51,7 +51,8 @@ enum class PromptAgeRating(
     ;
 
     companion object {
-        fun fromId(id: String?): PromptAgeRating = entries.firstOrNull { it.id == id } ?: Pg13
+        /** Unknown or missing ratings fall back to X: the app's default is anything legal goes. */
+        fun fromId(id: String?): PromptAgeRating = entries.firstOrNull { it.id == id } ?: X
     }
 }
 

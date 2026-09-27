@@ -173,6 +173,9 @@ data class DiscordChatUiState(
     val writingModels: List<ModelInfo> = emptyList(),
     /** >0 asks the screen to open the media picker (+ button in the dock). */
     val mediaPickRequestId: Long = 0,
+    /** Which tab the last pick request opens the picker on. */
+    val mediaPickStart: com.ihy2ln.weaverse.feature.chatting.media.PickerStart =
+        com.ihy2ln.weaverse.feature.chatting.media.PickerStart.Library,
     /** Shows when the + button has staged media for the next message. */
     val hasPendingMedia: Boolean = false,
     /** Cast seated in the selected room, for the member strip and @mention autocomplete. */
@@ -224,6 +227,8 @@ class DiscordChatViewModel @Inject constructor(
     private val castResolver: ChatCastResolver,
     private val modelCache: OpenRouterModelCache,
     private val mediaRepository: com.ihy2ln.weaverse.core.media.MediaRepository,
+    private val characterMedia: com.ihy2ln.weaverse.feature.chatting.media.CharacterMediaFetcher,
+    private val relations: com.ihy2ln.weaverse.feature.chatting.social.SocialRelations,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DiscordChatUiState())
@@ -242,6 +247,8 @@ class DiscordChatViewModel @Inject constructor(
     private var pendingMedia: List<com.ihy2ln.weaverse.data.db.entities.MediaEntity> = emptyList()
 
     private val draftsByRoom = mutableMapOf<String, String>()
+    /** Latest WeaverSocial blocks, kept current so a DM send can be refused immediately. */
+    private var safetyCache = com.ihy2ln.weaverse.feature.chatting.social.SocialSafety()
     private val messageCacheByRoom = mutableMapOf<String, List<DiscordMessageUi>>()
     private val scrollByRoom = mutableMapOf<String, Pair<Int, Int>>()
 
@@ -249,6 +256,7 @@ class DiscordChatViewModel @Inject constructor(
     private val dateFormat = SimpleDateFormat("MMMM d, yyyy", Locale.getDefault())
 
     init {
+        viewModelScope.launch { relations.safety.collect { safetyCache = it } }
         viewModelScope.launch {
             combine(
                 db.bookDao().observeAll(),
@@ -550,7 +558,24 @@ class DiscordChatViewModel @Inject constructor(
 
     /** + dock button: attach pictures/videos to the next message. */
     fun requestMediaPick() {
-        _uiState.update { it.copy(mediaPickRequestId = it.mediaPickRequestId + 1) }
+        _uiState.update { it.copy(mediaPickRequestId = it.mediaPickRequestId + 1, mediaPickStart = com.ihy2ln.weaverse.feature.chatting.media.PickerStart.Library) }
+    }
+
+    fun requestGifPick() {
+        _uiState.update { it.copy(mediaPickRequestId = it.mediaPickRequestId + 1, mediaPickStart = com.ihy2ln.weaverse.feature.chatting.media.PickerStart.Gifs) }
+    }
+
+    /** Prompt window's search button: opens the picker on web search. */
+    fun requestWebPick() {
+        _uiState.update { it.copy(mediaPickRequestId = it.mediaPickRequestId + 1, mediaPickStart = com.ihy2ln.weaverse.feature.chatting.media.PickerStart.Web) }
+    }
+
+    /** Pictures or GIFs chosen from the Pictures library, posted the same way as device picks. */
+    fun attachLibraryMedia(mediaIds: List<String>) {
+        viewModelScope.launch {
+            val media = mediaIds.mapNotNull { mediaRepository.getById(it) }
+            if (media.isNotEmpty()) postMedia(media)
+        }
     }
 
     fun attachMedia(uris: List<android.net.Uri>) {
@@ -568,10 +593,16 @@ class DiscordChatViewModel @Inject constructor(
             }
             val media = imported.getOrDefault(emptyList())
             if (media.isEmpty()) return@launch
+            postMedia(media)
+        }
+    }
+
+    private suspend fun postMedia(media: List<com.ihy2ln.weaverse.data.db.entities.MediaEntity>) {
+        run {
             pendingMedia = pendingMedia + media
             _uiState.update { it.copy(hasPendingMedia = true, errorMessage = "") }
             // Post the picture straight away; waiting for text made it look like nothing attached.
-            val room = boundRoom ?: return@launch
+            val room = boundRoom ?: return
             val now = System.currentTimeMillis()
             db.roleplayDao().upsertMessage(
                 RpMessageEntity(
@@ -715,6 +746,7 @@ class DiscordChatViewModel @Inject constructor(
         if (state.selectedRoomId == null || state.isStreaming) return
         if (state.input.isBlank() && pendingMedia.isEmpty()) return
         val room = boundRoom ?: return
+        if (dmBlocked(room)) return
         val userText = state.input.trim()
         val media = pendingMedia
         val replyTarget = state.replyingTo
@@ -804,6 +836,7 @@ class DiscordChatViewModel @Inject constructor(
         val state = _uiState.value
         if (state.isStreaming || state.selectedRoomId == null) return
         val room = boundRoom ?: return
+        if (dmBlocked(room)) return
         generateJob?.cancel()
         generateJob = viewModelScope.launch {
             val modelRef = activeModelRef()
@@ -831,6 +864,7 @@ class DiscordChatViewModel @Inject constructor(
     fun continueConversation() {
         if (_uiState.value.isStreaming || _uiState.value.selectedRoomId == null) return
         val room = boundRoom ?: return
+        if (dmBlocked(room)) return
         generateJob?.cancel()
         generateJob = viewModelScope.launch {
             val modelRef = activeModelRef()
@@ -931,7 +965,9 @@ class DiscordChatViewModel @Inject constructor(
                 when (chunk) {
                     is AIChunk.Delta -> {
                         builder.append(chunk.text)
-                        _uiState.update { it.copy(streamingText = builder.toString().trim()) }
+                        _uiState.update {
+                            it.copy(streamingText = com.ihy2ln.weaverse.feature.chatting.media.MediaTags.hideWhileStreaming(builder.toString().trim()))
+                        }
                     }
                     is AIChunk.Usage -> {
                         promptTokens = chunk.promptTokens
@@ -993,9 +1029,20 @@ class DiscordChatViewModel @Inject constructor(
         val lines = parseSpeakerLines(replyText, speakerPool)
         val replyBase = System.currentTimeMillis()
         lines.forEachIndexed { index, line ->
+            // A character's [gif: …] / [meme: …] / [pic: …] becomes a picture, fetched below.
+            // [cw: …] labels are for the feed's filters; in chat they are just dropped. A DM
+            // partner can end a line with [block], as on any real app.
+            val social = com.ihy2ln.weaverse.feature.chatting.social.SocialTags.parse(line.text)
+            if (social.blocksWriter && room.roomKind == ROOM_KIND_DM && room.characterId != null) {
+                blockedInDm(room, room.characterId)
+            }
+            val (lineText, mediaTags) = com.ihy2ln.weaverse.feature.chatting.media.MediaTags.extract(social.text, max = 1)
+            if (lineText.isBlank() && mediaTags.isEmpty()) return@forEachIndexed
+            val messageId = "rpm-${replyBase + index}"
+            if (mediaTags.isNotEmpty()) attachCharacterMedia(messageId, mediaTags)
             db.roleplayDao().upsertMessage(
                 RpMessageEntity(
-                    id = "rpm-${replyBase + index}",
+                    id = messageId,
                     chatId = room.id,
                     swipeGroupId = "sw-$now",
                     swipeIndex = 0,
@@ -1013,7 +1060,7 @@ class DiscordChatViewModel @Inject constructor(
                             (bookTitle.isNotBlank() && raw.contains(bookTitle, ignoreCase = true))
                         if (narratorish) fallbackSpeaker?.name.orEmpty() else raw
                     },
-                    contentJson = Document.fromPlainText(line.text).toJson(),
+                    contentJson = Document.fromPlainText(lineText).toJson(),
                     createdAt = replyBase + index * MULTI_SPEAKER_STAGGER_MS,
                     displayMode = "messenger",
                     promptTokens = if (index == 0) promptTokens else 0,
@@ -1038,6 +1085,78 @@ class DiscordChatViewModel @Inject constructor(
                     db.roleplayDao().upsertMessage(target.copy(reactionsJson = encodeReactions(counts)))
                 }
         }
+    }
+
+    /**
+     * Fetches the memes or GIFs a character's message asked for and adds them to that
+     * message once they arrive, so the text shows immediately.
+     */
+    private fun attachCharacterMedia(
+        messageId: String,
+        tags: List<com.ihy2ln.weaverse.feature.chatting.media.MediaTag>,
+    ) {
+        viewModelScope.launch {
+            val found = tags.mapNotNull { characterMedia.fetch(it) }
+            if (found.isEmpty()) return@launch
+            // The message is written right after this is launched; wait for it briefly.
+            var msg = db.roleplayDao().getRpMessage(messageId)
+            var tries = 0
+            while (msg == null && tries++ < 20) {
+                kotlinx.coroutines.delay(150)
+                msg = db.roleplayDao().getRpMessage(messageId)
+            }
+            msg ?: return@launch
+            val doc = documentFromJson(msg.contentJson)
+            val blocks = doc.blocks + found.map { media ->
+                com.ihy2ln.weaverse.core.text.MediaBlock(
+                    id = "mb-${UUID.randomUUID()}",
+                    mediaId = media.id,
+                    kind = com.ihy2ln.weaverse.core.media.MediaRepository.kindForType(media.type),
+                )
+            }
+            db.roleplayDao().upsertMessage(msg.copy(contentJson = doc.copy(blocks = blocks).toJson()))
+        }
+    }
+
+    /**
+     * DMs follow WeaverSocial blocks both ways: nothing can be sent to someone the writer
+     * blocked, or to someone who blocked the writer.
+     */
+    private fun isDmBlocked(room: RpChatEntity): String? {
+        if (room.roomKind != ROOM_KIND_DM) return null
+        val id = room.characterId ?: return null
+        val safety = safetyCache
+        val name = charactersById[id]?.name ?: room.title
+        return when (id) {
+            in safety.blockedBy -> "$name blocked you. You can't message them."
+            in safety.blocked -> "You blocked $name. Unblock them in WeaverSocial to message them."
+            else -> null
+        }
+    }
+
+    private fun dmBlocked(room: RpChatEntity): Boolean {
+        val reason = isDmBlocked(room) ?: return false
+        _uiState.update { it.copy(errorMessage = reason) }
+        return true
+    }
+
+    private suspend fun blockedInDm(room: RpChatEntity, characterId: String) {
+        relations.setBlockedBy(characterId, true)
+        val name = charactersById[characterId]?.name ?: room.title
+        db.roleplayDao().upsertMessage(
+            RpMessageEntity(
+                id = "rpm-${UUID.randomUUID()}",
+                chatId = room.id,
+                swipeGroupId = "sw-${UUID.randomUUID()}",
+                swipeIndex = 0,
+                isActiveSwipe = true,
+                role = "system",
+                contentJson = Document.fromPlainText("$name blocked you.").toJson(),
+                createdAt = System.currentTimeMillis() + 5_000,
+                displayMode = "messenger",
+            ),
+        )
+        _uiState.update { it.copy(errorMessage = "$name blocked you. You can't message them.") }
     }
 
     // ------------------------------------------------------ message actions
@@ -1647,12 +1766,17 @@ class DiscordChatViewModel @Inject constructor(
             roomCharacter != null -> roomCharacter.name
             else -> members.firstOrNull()?.name.orEmpty()
         }
+        // Memes and GIFs people can drop in, and how open the chat is (the app's Age rating).
+        blocks += com.ihy2ln.weaverse.feature.chatting.media.MediaTags.PROMPT
+        blocks += com.ihy2ln.weaverse.feature.chatting.media.SocialContentPolicy.prompt()
+        if (room.roomKind == ROOM_KIND_DM) blocks += com.ihy2ln.weaverse.feature.chatting.social.SocialTags.BLOCK_PROMPT
         blocks += buildString {
             appendLine("Output format, no exceptions:")
             appendLine("- Every line is \"Name: what they type\" and nothing else.")
             if (firstSpeaker.isNotBlank()) appendLine("- The first line starts with \"$firstSpeaker:\".")
             appendLine("- No asterisks, no *actions*, no markdown, no bold, no narration.")
             appendLine("- Emoji are fine and in character; they are typed, not narrated.")
+            appendLine("- A line may end with one [gif: …], [meme: …] or [pic: …] tag; it becomes the picture.")
             appendLine("- No describing anyone's body, face, clothing, or movements.")
             append("- Never write a line for the user.")
         }

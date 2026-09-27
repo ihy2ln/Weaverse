@@ -76,6 +76,10 @@ import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.Block
+import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material.icons.outlined.VolumeOff
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -85,6 +89,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -119,6 +125,16 @@ import com.ihy2ln.weaverse.feature.chatting.DiscordRoomUi
 import com.ihy2ln.weaverse.feature.chatting.DiscordStatus
 import com.ihy2ln.weaverse.feature.chatting.ROOM_KIND_CHANNEL
 import com.ihy2ln.weaverse.feature.chatting.presenceFor
+import com.ihy2ln.weaverse.feature.chatting.media.AttachmentStrip
+import com.ihy2ln.weaverse.feature.chatting.media.ChatImage
+import com.ihy2ln.weaverse.feature.chatting.media.MAX_ATTACHMENTS
+import com.ihy2ln.weaverse.feature.chatting.media.MediaGrid
+import com.ihy2ln.weaverse.feature.chatting.media.MediaViewer
+import com.ihy2ln.weaverse.feature.chatting.media.PickedMedia
+import com.ihy2ln.weaverse.feature.chatting.media.PickerStart
+import com.ihy2ln.weaverse.feature.chatting.media.PicturePickerSheet
+import androidx.compose.material.icons.filled.Gif
+import androidx.compose.material.icons.filled.ImageSearch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -217,12 +233,12 @@ fun WeaverSocialScreen(
     BackHandler(composer) { closeComposer() }
     BackHandler(storyIndex != null) { storyIndex = null }
 
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) viewModel.attachImage(uri)
-    }
+    // null = closed; otherwise the tab the picker opens on.
+    var pickerGifs by remember { mutableStateOf<PickerStart?>(null) }
     LaunchedEffect(state.mediaPickRequestId) {
-        if (state.mediaPickRequestId > 0) picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+        if (state.mediaPickRequestId > 0) pickerGifs = PickerStart.Library
     }
+    var viewing by remember { mutableStateOf<Triple<List<String>, Int, String>?>(null) }
     LaunchedEffect(state.castLoaded) {
         if (state.castLoaded && state.posts.isEmpty()) viewModel.refreshFeed(5)
     }
@@ -250,11 +266,19 @@ fun WeaverSocialScreen(
         onDelete = viewModel::delete,
         onMessage = message,
         onFollow = viewModel::toggleFollow,
+        onBlock = viewModel::block,
+        onMute = viewModel::mute,
+        onNotInterested = viewModel::hidePost,
+        onOpenSafety = { push("safety") },
     )
     val stories = state.posts.filter { !it.isYou && it.repostOf == null }.distinctBy { it.authorCharacterId }.take(12)
     val unreadRooms = servers.recentConversations.filter { it.unread > 0 }
     val serverUnread = servers.serverUnread.values.sum() + servers.dmUnread
 
+    CompositionLocalProvider(
+        LocalOpenMedia provides { paths, index, caption -> viewing = Triple(paths, index, caption) },
+        LocalPickMedia provides { start -> pickerGifs = start },
+    ) {
     Box(Modifier.fillMaxSize().background(c.bg)) {
         val imeOpen = WindowInsets.isImeVisible
         Column(Modifier.fillMaxSize().then(if (tab == WsTab.Servers) Modifier else Modifier.imePadding())) {
@@ -282,6 +306,14 @@ fun WeaverSocialScreen(
                         actions = actions,
                         onBack = { stack = stack.dropLast(1) },
                         onReply = { parent, text, to -> viewModel.reply(parent, text, to) },
+                        onRemoveAttachment = viewModel::removeAttachment,
+                    )
+                    top == "safety" -> SafetyScreen(
+                        state = state,
+                        c = c,
+                        viewModel = viewModel,
+                        onBack = { stack = stack.dropLast(1) },
+                        onOpenProfile = { push("profile:$it") },
                     )
                     top?.startsWith("profile:") == true -> Profile(
                         who = top.removePrefix("profile:"),
@@ -298,7 +330,8 @@ fun WeaverSocialScreen(
                         activeRooms = servers.recentConversations.take(10),
                         actions = actions,
                         onCompose = { composer = true },
-                        onPhoto = { composer = true; viewModel.requestImagePick() },
+                        onPhoto = { composer = true; pickerGifs = PickerStart.Library },
+                        onGif = { composer = true; pickerGifs = PickerStart.Gifs },
                         onStory = { storyIndex = it },
                         onRefresh = { viewModel.refreshFeed() },
                         onRoom = openRoom,
@@ -331,6 +364,25 @@ fun WeaverSocialScreen(
                     )
                 }
                 if (tab != WsTab.Servers) {
+                    if (state.notice.isNotBlank()) {
+                        LaunchedEffect(state.notice) {
+                            kotlinx.coroutines.delay(3_500)
+                            viewModel.dismissNotice()
+                        }
+                        Text(
+                            state.notice,
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(start = 16.dp, end = 16.dp, bottom = 84.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(c.red.copy(alpha = 0.92f))
+                                .clickable { viewModel.dismissNotice() }
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                        )
+                    }
                     if (state.generating) {
                         LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter), color = c.accent, trackColor = Color.Transparent)
                     }
@@ -377,8 +429,7 @@ fun WeaverSocialScreen(
                 state = state,
                 c = c,
                 quote = quoteId?.let { state.allById[it] },
-                onPickImage = viewModel::requestImagePick,
-                onClearImage = viewModel::clearImage,
+                onRemoveAttachment = viewModel::removeAttachment,
                 onCancel = closeComposer,
                 onPost = { text, feeling ->
                     viewModel.post(text, feeling, quoteOf = quoteId)
@@ -396,7 +447,35 @@ fun WeaverSocialScreen(
             )
         }
     }
+    }
+    pickerGifs?.let { start ->
+        PicturePickerSheet(
+            limit = (MAX_ATTACHMENTS - state.pendingImagePaths.size).coerceAtLeast(1),
+            start = start,
+            onDismiss = { pickerGifs = null },
+            onPicked = { picked ->
+                pickerGifs = null
+                when (picked) {
+                    is PickedMedia.FromDevice -> viewModel.attachFromDevice(picked.uris)
+                    is PickedMedia.FromLibrary -> viewModel.attachFromLibrary(picked.mediaIds)
+                }
+            },
+            surface = c.surface,
+            text = c.text,
+            muted = c.muted,
+            accent = c.accent,
+        )
+    }
+    viewing?.let { (paths, index, caption) ->
+        MediaViewer(paths = paths, start = index, caption = caption, onClose = { viewing = null })
+    }
 }
+
+/** Opens the full-screen viewer; provided once by [WeaverSocialScreen] for every card. */
+private val LocalOpenMedia = staticCompositionLocalOf<(List<String>, Int, String) -> Unit> { { _, _, _ -> } }
+
+/** Opens the picture picker on the given tab. */
+private val LocalPickMedia = staticCompositionLocalOf<(PickerStart) -> Unit> { { } }
 
 private class WsActions(
     val onOpenPost: (String) -> Unit,
@@ -408,6 +487,10 @@ private class WsActions(
     val onDelete: (String) -> Unit,
     val onMessage: (String?) -> Unit,
     val onFollow: (String) -> Unit,
+    val onBlock: (String, Boolean) -> Unit,
+    val onMute: (String, Boolean) -> Unit,
+    val onNotInterested: (String) -> Unit,
+    val onOpenSafety: () -> Unit,
 )
 
 // ------------------------------------------------------------------ chrome
@@ -546,6 +629,7 @@ private fun HomeFeed(
     actions: WsActions,
     onCompose: () -> Unit,
     onPhoto: () -> Unit,
+    onGif: () -> Unit,
     onStory: (Int) -> Unit,
     onRefresh: () -> Unit,
     onRoom: (DiscordRoomUi) -> Unit,
@@ -598,6 +682,7 @@ private fun HomeFeed(
                 }
                 Row(Modifier.padding(start = 50.dp, top = 8.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ComposerChip(Icons.Outlined.Image, "Photo", c.green, c, onPhoto)
+                    ComposerChip(Icons.Filled.Gif, "GIF", c.accent, c, onGif)
                     ComposerChip(Icons.Outlined.EmojiEmotions, "Feeling", c.idle, c, onCompose)
                     ComposerChip(Icons.Outlined.Refresh, "Refresh", c.blue, c, onRefresh)
                 }
@@ -641,7 +726,7 @@ private fun HomeFeed(
                             .clickable { onStory(index) },
                     ) {
                         if (story.imagePath != null) {
-                            coil3.compose.AsyncImage(model = java.io.File(story.imagePath), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                            ChatImage(story.imagePath, Modifier.fillMaxSize(), showGifBadge = false)
                         } else {
                             Text(story.text, color = Color.White, fontSize = 10.sp, maxLines = 5, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, modifier = Modifier.align(Alignment.Center).padding(8.dp))
                         }
@@ -753,6 +838,10 @@ private fun LazyListScope.postItems(posts: List<SocialPostUi>, state: SocialUiSt
 @Composable
 private fun PostCard(post: SocialPostUi, state: SocialUiState, c: WsColors, actions: WsActions, inDetail: Boolean = false) {
     var menu by remember { mutableStateOf(false) }
+    var confirmBlock by remember { mutableStateOf(false) }
+    if (confirmBlock && post.authorCharacterId != null) {
+        BlockDialog(post.authorName, post.handle, onConfirm = { confirmBlock = false; actions.onBlock(post.authorCharacterId, true) }, onDismiss = { confirmBlock = false })
+    }
     Column(
         Modifier
             .fillMaxWidth()
@@ -792,12 +881,29 @@ private fun PostCard(post: SocialPostUi, state: SocialUiState, c: WsColors, acti
                             if (post.isYou) {
                                 DropdownMenuItem(text = { Text("Delete", color = c.red) }, onClick = { menu = false; actions.onDelete(post.id) })
                             } else {
+                                DropdownMenuItem(
+                                    text = { Text("Not interested in this post") },
+                                    leadingIcon = { Icon(Icons.Outlined.VisibilityOff, null) },
+                                    onClick = { menu = false; actions.onNotInterested(post.id) },
+                                )
                                 DropdownMenuItem(text = { Text("View profile") }, onClick = { menu = false; actions.onOpenProfile(post.authorCharacterId) })
                                 DropdownMenuItem(
                                     text = { Text("Message ${post.authorName}") },
                                     leadingIcon = { Icon(Icons.Outlined.MailOutline, null) },
                                     onClick = { menu = false; actions.onMessage(post.authorCharacterId) },
                                 )
+                                post.authorCharacterId?.let { id ->
+                                    DropdownMenuItem(
+                                        text = { Text("Mute @${post.handle}") },
+                                        leadingIcon = { Icon(Icons.Outlined.VolumeOff, null) },
+                                        onClick = { menu = false; actions.onMute(id, true) },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Block @${post.handle}", color = c.red) },
+                                        leadingIcon = { Icon(Icons.Outlined.Block, null, tint = c.red) },
+                                        onClick = { menu = false; confirmBlock = true },
+                                    )
+                                }
                             }
                         }
                     }
@@ -811,7 +917,7 @@ private fun PostCard(post: SocialPostUi, state: SocialUiState, c: WsColors, acti
                     }
                 }
                 if (post.text.isNotBlank()) {
-                    val big = post.text.length < 70 && post.imagePath == null && post.repostOf == null && post.parentId == null
+                    val big = post.text.length < 70 && post.imagePaths.isEmpty() && post.repostOf == null && post.parentId == null
                     Text(
                         linkified(post.text, c.blue),
                         fontSize = if (big) 19.sp else 15.sp,
@@ -822,7 +928,7 @@ private fun PostCard(post: SocialPostUi, state: SocialUiState, c: WsColors, acti
                         modifier = Modifier.padding(top = 2.dp),
                     )
                 }
-                post.imagePath?.let { PostImage(it, c) }
+                SensitiveGate(post, state.safety.warnSensitive, c) { PostMedia(post, c) }
                 post.repostOf?.let { QuotedPost(it, c) { actions.onOpenPost(it.id) } }
                 if (post.likeCount > 0 || post.replyCount > 0 || post.repostCount > 0) {
                     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -974,13 +1080,67 @@ private fun BarAction(icon: ImageVector, count: Int, tint: Color, hot: Color, on
     }
 }
 
+/**
+ * X's sensitive-media warning: when the writer turned it on, sexual or violent posts show
+ * their pictures behind a cover until tapped.
+ */
 @Composable
-private fun PostImage(path: String, c: WsColors) {
-    coil3.compose.AsyncImage(
-        model = java.io.File(path),
-        contentDescription = "Photo",
-        contentScale = ContentScale.Crop,
-        modifier = Modifier.padding(top = 8.dp).fillMaxWidth().height(230.dp).clip(RoundedCornerShape(16.dp)).border(1.dp, c.border, RoundedCornerShape(16.dp)),
+private fun SensitiveGate(post: SocialPostUi, warn: Boolean, c: WsColors, content: @Composable () -> Unit) {
+    if (post.imagePaths.isEmpty()) return
+    val sensitive = warn && post.labels.any { it in ContentLabel.SENSITIVE }
+    var revealed by remember(post.id) { mutableStateOf(false) }
+    if (!sensitive || revealed) {
+        content()
+        return
+    }
+    Column(
+        Modifier
+            .padding(top = 8.dp)
+            .fillMaxWidth()
+            .height(170.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(c.raised)
+            .clickable { revealed = true },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(Icons.Outlined.VisibilityOff, null, tint = c.muted, modifier = Modifier.size(28.dp))
+        Text("Sensitive content", color = c.text, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+        Text(
+            post.labels.filter { it in ContentLabel.SENSITIVE }.joinToString(" · ") { it.label },
+            color = c.muted,
+            fontSize = 12.sp,
+        )
+        Text("Show", color = c.accent, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp))
+    }
+}
+
+@Composable
+private fun BlockDialog(name: String, handle: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Block @$handle?") },
+        text = {
+            Text(
+                "$name won't show in your feed, can't reply to your posts or message you, and you'll " +
+                    "stop following them. You can unblock any time under Privacy & filters.",
+            )
+        },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = onConfirm) { Text("Block") } },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/** The post's pictures and GIFs in a Twitter-style grid; tap opens the viewer. */
+@Composable
+private fun PostMedia(post: SocialPostUi, c: WsColors, height: androidx.compose.ui.unit.Dp = 230.dp) {
+    val open = LocalOpenMedia.current
+    MediaGrid(
+        paths = post.imagePaths,
+        onOpen = { i -> open(post.imagePaths, i, post.text) },
+        modifier = Modifier.padding(top = 8.dp),
+        height = height,
+        border = c.border,
     )
 }
 
@@ -996,7 +1156,7 @@ private fun QuotedPost(post: SocialPostUi, c: WsColors, onClick: () -> Unit) {
             if (post.verified) Icon(Icons.Filled.Verified, null, tint = c.accent, modifier = Modifier.size(14.dp))
             Text(" @${post.handle} · ${compactAge(post.createdAt)}", fontSize = 13.sp, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        post.imagePath?.let { PostImage(it, c) }
+        PostMedia(post, c, height = 160.dp)
         Text(linkified(post.text, c.blue), fontSize = 14.sp, color = c.text, maxLines = 6, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
     }
 }
@@ -1013,7 +1173,7 @@ private fun ReplyBubble(reply: SocialPostUi, c: WsColors, actions: WsActions, on
             Box {
                 Column(Modifier.clip(RoundedCornerShape(16.dp)).background(c.bubble).padding(horizontal = 12.dp, vertical = 7.dp)) {
                     Text(reply.authorName, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = c.text)
-                    Text(linkified(reply.text, c.blue, bold = true), fontSize = 14.sp, color = c.text)
+                    if (reply.text.isNotBlank()) Text(linkified(reply.text, c.blue, bold = true), fontSize = 14.sp, color = c.text)
                 }
                 if (reply.likeCount > 0) {
                     Row(
@@ -1025,6 +1185,7 @@ private fun ReplyBubble(reply: SocialPostUi, c: WsColors, actions: WsActions, on
                     }
                 }
             }
+            if (reply.imagePaths.isNotEmpty()) PostMedia(reply, c, height = 150.dp)
             Row(Modifier.padding(start = 12.dp, top = 3.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text(compactAge(reply.createdAt), fontSize = 12.sp, color = c.muted)
                 Text(
@@ -1066,6 +1227,7 @@ private fun PostDetail(
     actions: WsActions,
     onBack: () -> Unit,
     onReply: (String, String, SocialPostUi?) -> Unit,
+    onRemoveAttachment: (Int) -> Unit,
 ) {
     val post = state.allById[postId]
     var draft by rememberSaveable(postId) { mutableStateOf("") }
@@ -1114,9 +1276,47 @@ private fun PostDetail(
                 Icon(Icons.Filled.Close, "Cancel", tint = c.muted, modifier = Modifier.size(16.dp).clickable { replyTo = null })
             }
         }
+        AttachmentStrip(
+            paths = state.pendingImagePaths,
+            onRemove = onRemoveAttachment,
+            modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp),
+        )
+        val pick = LocalPickMedia.current
+        val blockedTargetId = replyTo?.authorCharacterId ?: post.authorCharacterId
+        if (state.safety.cantInteract(blockedTargetId)) {
+            Text(
+                if (blockedTargetId in state.safety.blockedBy) {
+                    "@${replyTo?.handle ?: post.handle} blocked you. You can't reply to them."
+                } else {
+                    "You blocked @${replyTo?.handle ?: post.handle}. Unblock them to reply."
+                },
+                color = c.muted,
+                fontSize = 14.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+            )
+            return@Column
+        }
         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             SocialAvatar(state.personaName, avatarColorHexFor(state.personaName, null), 32.dp)
-            Spacer(Modifier.width(8.dp))
+            Icon(
+                Icons.Outlined.Image,
+                "Add picture",
+                tint = c.green,
+                modifier = Modifier.size(36.dp).clip(CircleShape).clickable { pick(PickerStart.Library) }.padding(7.dp),
+            )
+            Icon(
+                Icons.Filled.Gif,
+                "Add GIF",
+                tint = c.accent,
+                modifier = Modifier.size(36.dp).clip(CircleShape).clickable { pick(PickerStart.Gifs) }.padding(5.dp),
+            )
+            Icon(
+                Icons.Filled.ImageSearch,
+                "Search pictures and GIFs",
+                tint = c.blue,
+                modifier = Modifier.size(36.dp).clip(CircleShape).clickable { pick(PickerStart.Web) }.padding(7.dp),
+            )
             BasicTextField(
                 value = draft,
                 onValueChange = { if (it.length <= SocialFeedViewModel.POST_CHARS) draft = it },
@@ -1129,7 +1329,7 @@ private fun PostDetail(
                 },
             )
             Spacer(Modifier.width(6.dp))
-            Pill("Reply", c, enabled = draft.isNotBlank()) {
+            Pill("Reply", c, enabled = draft.isNotBlank() || state.pendingImagePaths.isNotEmpty()) {
                 onReply(post.id, draft, replyTo)
                 draft = ""
                 replyTo = null
@@ -1160,8 +1360,7 @@ private fun Composer(
     state: SocialUiState,
     c: WsColors,
     quote: SocialPostUi?,
-    onPickImage: () -> Unit,
-    onClearImage: () -> Unit,
+    onRemoveAttachment: (Int) -> Unit,
     onCancel: () -> Unit,
     onPost: (String, String) -> Unit,
 ) {
@@ -1173,7 +1372,7 @@ private fun Composer(
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Cancel", fontSize = 16.sp, color = c.text, modifier = Modifier.clickable(onClick = onCancel).padding(4.dp))
             Spacer(Modifier.weight(1f))
-            Pill("Post", c, enabled = text.isNotBlank() || state.pendingImagePath != null || quote != null) { onPost(text, feeling) }
+            Pill("Post", c, enabled = text.isNotBlank() || state.pendingImagePaths.isNotEmpty() || quote != null) { onPost(text, feeling) }
         }
         Row(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp)) {
             PresenceAvatar(state.personaName, avatarColorHexFor(state.personaName, null), 42.dp, c, DiscordStatus.Online)
@@ -1199,7 +1398,7 @@ private fun Composer(
                 BasicTextField(
                     value = text,
                     onValueChange = { if (it.length <= limit) text = it },
-                    textStyle = TextStyle(color = c.text, fontSize = if (text.length < 70 && state.pendingImagePath == null) 21.sp else 16.sp),
+                    textStyle = TextStyle(color = c.text, fontSize = if (text.length < 70 && state.pendingImagePaths.isEmpty()) 21.sp else 16.sp),
                     cursorBrush = SolidColor(c.accent),
                     modifier = Modifier.fillMaxWidth().padding(top = 12.dp).heightIn(min = 90.dp),
                     decorationBox = { inner ->
@@ -1207,16 +1406,15 @@ private fun Composer(
                         inner()
                     },
                 )
-                state.pendingImagePath?.let { path ->
-                    Box {
-                        PostImage(path, c)
-                        Icon(
-                            Icons.Filled.Close,
-                            "Remove photo",
-                            tint = Color.White,
-                            modifier = Modifier.padding(14.dp).size(28.dp).clip(CircleShape).background(Color(0xBF000000)).clickable(onClick = onClearImage).padding(4.dp),
-                        )
-                    }
+                if (state.pendingImagePaths.isNotEmpty()) {
+                    val open = LocalOpenMedia.current
+                    MediaGrid(
+                        paths = state.pendingImagePaths,
+                        onOpen = { i -> open(state.pendingImagePaths, i, "") },
+                        modifier = Modifier.padding(top = 8.dp),
+                        border = c.border,
+                    )
+                    AttachmentStrip(state.pendingImagePaths, onRemoveAttachment, Modifier.padding(top = 6.dp))
                 }
                 quote?.let { QuotedPost(it, c) {} }
             }
@@ -1239,7 +1437,14 @@ private fun Composer(
         }
         Hairline(c)
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onPickImage) { Icon(Icons.Outlined.Image, "Add photo", tint = c.green) }
+            val pick = LocalPickMedia.current
+            val full = state.pendingImagePaths.size >= MAX_ATTACHMENTS
+            IconButton(onClick = { pick(PickerStart.Library) }, enabled = !full) { Icon(Icons.Outlined.Image, "Add photo", tint = if (full) c.muted else c.green) }
+            IconButton(onClick = { pick(PickerStart.Gifs) }, enabled = !full) { Icon(Icons.Filled.Gif, "Add GIF", tint = if (full) c.muted else c.accent, modifier = Modifier.size(30.dp)) }
+            IconButton(onClick = { pick(PickerStart.Web) }, enabled = !full) { Icon(Icons.Filled.ImageSearch, "Search pictures and GIFs", tint = if (full) c.muted else c.blue) }
+            if (state.pendingImagePaths.isNotEmpty()) {
+                Text("${state.pendingImagePaths.size}/$MAX_ATTACHMENTS", fontSize = 12.sp, color = c.muted)
+            }
             IconButton(onClick = { feelingsOpen = !feelingsOpen }) { Icon(Icons.Outlined.EmojiEmotions, "Feeling", tint = c.idle) }
             Spacer(Modifier.weight(1f))
             Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(end = 8.dp)) {
@@ -1590,12 +1795,16 @@ private fun Profile(
     val tint = parseHexColor(color, c.accent)
     val status = if (isYou) DiscordStatus.Online else discordStatusFor(name)
     val all = state.allById.values
-    val theirs = all.filter { if (isYou) it.isYou else it.authorCharacterId == who }.sortedByDescending { it.createdAt }
+    var viewAnyway by rememberSaveable(who) { mutableStateOf(false) }
+    var confirmBlock by remember { mutableStateOf(false) }
+    // Someone who blocked you can't be seen; someone you blocked can, if you choose to.
+    val hidden = !isYou && person != null && (person.blockedYou || (person.blockedByYou && !viewAnyway))
+    val theirs = if (hidden) emptyList() else all.filter { if (isYou) it.isYou else it.authorCharacterId == who }.sortedByDescending { it.createdAt }
     var tab by rememberSaveable(who) { mutableStateOf(0) }
     val shown = when (tab) {
         0 -> theirs.filter { it.parentId == null }
         1 -> theirs.filter { it.parentId != null }
-        2 -> theirs.filter { it.imagePath != null }
+        2 -> theirs.filter { it.imagePaths.isNotEmpty() }
         else -> if (isYou) all.filter { it.bookmarked }.sortedByDescending { it.createdAt } else all.filter { it.userReaction.isNotBlank() && it.authorCharacterId == who }
     }
     val friends = state.people.filter { it.isFollowing }
@@ -1614,15 +1823,56 @@ private fun Profile(
                 }
                 Row(Modifier.align(Alignment.BottomEnd).padding(end = 14.dp, bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (isYou) {
+                        Icon(
+                            Icons.Outlined.Shield,
+                            "Privacy & filters",
+                            tint = c.text,
+                            modifier = Modifier.size(36.dp).clip(CircleShape).border(1.dp, c.border, CircleShape).clickable(onClick = actions.onOpenSafety).padding(7.dp),
+                        )
                         Pill("New post", c, onClick = onCompose)
                     } else if (person != null) {
-                        Icon(
-                            Icons.Outlined.MailOutline,
-                            "Message",
-                            tint = c.text,
-                            modifier = Modifier.size(36.dp).clip(CircleShape).border(1.dp, c.border, CircleShape).clickable { actions.onMessage(person.characterId) }.padding(7.dp),
-                        )
-                        FollowButton(person.isFollowing, c) { actions.onFollow(person.characterId) }
+                        var menu by remember { mutableStateOf(false) }
+                        Box {
+                            Icon(
+                                Icons.Filled.MoreHoriz,
+                                "More",
+                                tint = c.text,
+                                modifier = Modifier.size(36.dp).clip(CircleShape).border(1.dp, c.border, CircleShape).clickable { menu = true }.padding(7.dp),
+                            )
+                            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text(if (person.mutedByYou) "Unmute @${person.handle}" else "Mute @${person.handle}") },
+                                    leadingIcon = { Icon(Icons.Outlined.VolumeOff, null) },
+                                    onClick = { menu = false; actions.onMute(person.characterId, !person.mutedByYou) },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(if (person.blockedByYou) "Unblock @${person.handle}" else "Block @${person.handle}", color = c.red) },
+                                    leadingIcon = { Icon(Icons.Outlined.Block, null, tint = c.red) },
+                                    onClick = {
+                                        menu = false
+                                        if (person.blockedByYou) actions.onBlock(person.characterId, false) else confirmBlock = true
+                                    },
+                                )
+                            }
+                        }
+                        if (!person.blockedYou && !person.blockedByYou) {
+                            Icon(
+                                Icons.Outlined.MailOutline,
+                                "Message",
+                                tint = c.text,
+                                modifier = Modifier.size(36.dp).clip(CircleShape).border(1.dp, c.border, CircleShape).clickable { actions.onMessage(person.characterId) }.padding(7.dp),
+                            )
+                            FollowButton(person.isFollowing, c) { actions.onFollow(person.characterId) }
+                        } else if (person.blockedByYou) {
+                            Text(
+                                "Blocked",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                modifier = Modifier.clip(RoundedCornerShape(50)).background(c.red).clickable { actions.onBlock(person.characterId, false) }
+                                    .padding(horizontal = 14.dp, vertical = 7.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -1683,6 +1933,23 @@ private fun Profile(
                     }
                 }
             }
+            if (confirmBlock && person != null) {
+                BlockDialog(person.name, person.handle, onConfirm = { confirmBlock = false; actions.onBlock(person.characterId, true) }, onDismiss = { confirmBlock = false })
+            }
+            if (person?.blockedYou == true) {
+                BlockBanner(
+                    title = "@${person.handle} blocked you",
+                    body = "You can't follow or message @${person.handle}, see their posts, or reply to them.",
+                    c = c,
+                )
+            } else if (person?.blockedByYou == true) {
+                BlockBanner(
+                    title = "@${person.handle} is blocked",
+                    body = "They can't reply to you or message you.",
+                    c = c,
+                    action = if (viewAnyway) null else ("View posts" to { viewAnyway = true }),
+                )
+            }
             Row(Modifier.fillMaxWidth().height(46.dp)) {
                 listOf("Posts", "Replies", "Media", if (isYou) "Saved" else "Liked").forEachIndexed { index, label ->
                     val selected = tab == index
@@ -1697,7 +1964,11 @@ private fun Profile(
         if (shown.isEmpty()) {
             item(key = "empty") {
                 Text(
-                    if (isYou) "Nothing here yet — tap New post." else "@$handle hasn't posted here yet.",
+                    when {
+                        isYou -> "Nothing here yet — tap New post."
+                        hidden -> "Posts aren't available."
+                        else -> "@$handle hasn't posted here yet."
+                    },
                     color = c.muted,
                     modifier = Modifier.fillMaxWidth().padding(24.dp),
                     textAlign = TextAlign.Center,
@@ -1720,4 +1991,239 @@ private fun Stat(value: Int, label: String, c: WsColors) {
         fontSize = 14.sp,
         color = c.muted,
     )
+}
+
+// ------------------------------------------------------------ privacy & filters
+
+@Composable
+private fun BlockBanner(title: String, body: String, c: WsColors, action: Pair<String, () -> Unit>? = null) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(c.red.copy(alpha = 0.12f))
+            .border(1.dp, c.red.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.Block, null, tint = c.red, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(title, color = c.text, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+        }
+        Text(body, color = c.muted, fontSize = 13.sp)
+        action?.let { (label, onClick) ->
+            Text(label, color = c.accent, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.clickable(onClick = onClick).padding(top = 4.dp))
+        }
+    }
+}
+
+/**
+ * X's "Privacy and safety" for WeaverSocial: what shows in the feed (topic filters, muted
+ * words, sensitive media), and who is muted, blocked, or has blocked the writer.
+ * Nothing is filtered until the writer turns it on.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SafetyScreen(
+    state: SocialUiState,
+    c: WsColors,
+    viewModel: SocialFeedViewModel,
+    onBack: () -> Unit,
+    onOpenProfile: (String) -> Unit,
+) {
+    val safety = state.safety
+    var word by rememberSaveable { mutableStateOf("") }
+    val byId = state.people.associateBy { it.characterId }
+    LazyColumn(Modifier.fillMaxSize().background(c.surface), contentPadding = PaddingValues(bottom = 40.dp)) {
+        item(key = "top") {
+            TopBar("Privacy & filters", c, onBack, subtitle = "Everything shows until you filter it")
+        }
+        item(key = "content-title") { SectionTitle("Content you see", c) }
+        item(key = "sensitive") {
+            SwitchRow(
+                title = "Warn before sensitive media",
+                body = "Cover pictures on sexual or violent posts until you tap them.",
+                checked = safety.warnSensitive,
+                c = c,
+            ) { viewModel.setWarnSensitive(it) }
+        }
+        item(key = "topics-title") {
+            Text(
+                "Hide topics",
+                color = c.text,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                modifier = Modifier.padding(start = 16.dp, top = 12.dp),
+            )
+            Text(
+                "Posts labelled with a hidden topic leave your feed, replies and alerts.",
+                color = c.muted,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+        }
+        items(ContentLabel.entries.size, key = { "label-" + ContentLabel.entries[it].id }) { i ->
+            val label = ContentLabel.entries[i]
+            SwitchRow(
+                title = "Hide ${label.label.lowercase()}",
+                body = null,
+                checked = label in safety.hiddenLabels,
+                c = c,
+            ) { viewModel.setLabelHidden(label, it) }
+        }
+        item(key = "words-title") { SectionTitle("Muted words", c) }
+        item(key = "words-add") {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                BasicTextField(
+                    value = word,
+                    onValueChange = { word = it },
+                    singleLine = true,
+                    textStyle = TextStyle(color = c.text, fontSize = 15.sp),
+                    cursorBrush = SolidColor(c.accent),
+                    modifier = Modifier.weight(1f).clip(RoundedCornerShape(50)).background(c.raised).padding(horizontal = 14.dp, vertical = 10.dp),
+                    decorationBox = { inner ->
+                        if (word.isEmpty()) Text("Word, phrase or #hashtag", color = c.muted, fontSize = 15.sp)
+                        inner()
+                    },
+                )
+                Spacer(Modifier.width(8.dp))
+                Pill("Mute", c, enabled = word.isNotBlank()) {
+                    viewModel.addMutedWord(word)
+                    word = ""
+                }
+            }
+        }
+        item(key = "words-list") {
+            if (safety.mutedWords.isEmpty()) {
+                Text("No muted words.", color = c.muted, fontSize = 13.sp, modifier = Modifier.padding(16.dp))
+            } else {
+                androidx.compose.foundation.layout.FlowRow(
+                    Modifier.fillMaxWidth().padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    safety.mutedWords.sorted().forEach { w ->
+                        Row(
+                            Modifier.clip(RoundedCornerShape(50)).background(c.raised).padding(start = 12.dp, end = 6.dp, top = 5.dp, bottom = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(w, color = c.text, fontSize = 13.sp)
+                            Icon(
+                                Icons.Filled.Close,
+                                "Unmute $w",
+                                tint = c.muted,
+                                modifier = Modifier.padding(start = 4.dp).size(18.dp).clip(CircleShape).clickable { viewModel.removeMutedWord(w) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        if (safety.hiddenPosts.isNotEmpty()) {
+            item(key = "hidden-posts") {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("${safety.hiddenPosts.size} posts marked Not interested", color = c.text, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    Text("Show them again", color = c.accent, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.clickable { viewModel.restoreHiddenPosts() })
+                }
+            }
+        }
+        accountSection(
+            key = "muted",
+            title = "Muted accounts",
+            empty = "You haven't muted anyone.",
+            ids = safety.muted,
+            byId = byId,
+            c = c,
+            actionLabel = "Unmute",
+            onAction = { viewModel.mute(it, false) },
+            onOpen = onOpenProfile,
+        )
+        accountSection(
+            key = "blocked",
+            title = "Blocked accounts",
+            empty = "You haven't blocked anyone.",
+            ids = safety.blocked,
+            byId = byId,
+            c = c,
+            actionLabel = "Unblock",
+            onAction = { viewModel.block(it, false) },
+            onOpen = onOpenProfile,
+        )
+        accountSection(
+            key = "blocked-by",
+            title = "Accounts that blocked you",
+            empty = "Nobody has blocked you.",
+            ids = safety.blockedBy,
+            byId = byId,
+            c = c,
+            actionLabel = "Lift (author)",
+            onAction = { viewModel.liftBlockOnYou(it) },
+            onOpen = onOpenProfile,
+            note = "Characters block you in character. As the author you can lift a block here.",
+        )
+    }
+}
+
+private fun LazyListScope.accountSection(
+    key: String,
+    title: String,
+    empty: String,
+    ids: Set<String>,
+    byId: Map<String, SocialPersonUi>,
+    c: WsColors,
+    actionLabel: String,
+    onAction: (String) -> Unit,
+    onOpen: (String) -> Unit,
+    note: String? = null,
+) {
+    item(key = "$key-title") {
+        SectionTitle(title, c)
+        if (note != null) Text(note, color = c.muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 16.dp))
+        if (ids.isEmpty()) Text(empty, color = c.muted, fontSize = 13.sp, modifier = Modifier.padding(16.dp))
+    }
+    items(ids.toList(), key = { "$key-$it" }) { id ->
+        val person = byId[id]
+        Row(
+            Modifier.fillMaxWidth().clickable { onOpen(id) }.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SocialAvatar(person?.name ?: "?", person?.colorHex ?: "#888888", 40.dp)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(person?.name ?: "Removed character", color = c.text, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (person != null) Text("@${person.handle}", color = c.muted, fontSize = 13.sp)
+            }
+            Text(
+                actionLabel,
+                color = c.text,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+                modifier = Modifier.clip(RoundedCornerShape(50)).border(1.dp, c.border, RoundedCornerShape(50)).clickable { onAction(id) }
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SwitchRow(title: String, body: String?, checked: Boolean, c: WsColors, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable { onChange(!checked) }.padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = c.text, fontSize = 15.sp)
+            if (body != null) Text(body, color = c.muted, fontSize = 13.sp)
+        }
+        androidx.compose.material3.Switch(
+            checked = checked,
+            onCheckedChange = onChange,
+            colors = androidx.compose.material3.SwitchDefaults.colors(checkedTrackColor = c.accent),
+        )
+    }
 }

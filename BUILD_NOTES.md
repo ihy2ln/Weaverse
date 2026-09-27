@@ -3,6 +3,26 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.54 - WeaverSocial privacy, filters and blocks
+
+- APK: `Beta.Test.Build/weaverse-v1.4.54.apk`, SHA-256
+  `10b58359cd1351e9eb2d651e2c1fdf4d24ca7f1155709c9ea90955122cf69ff1`, debug-key signed
+  with the same certificate as 1.4.47-1.4.53. Local build only.
+- Database 30 -> 31 adds `social_posts.contentTags`; the migration adds the column with an
+  empty default so existing posts and replies remain intact.
+- WeaverSocial filters are opt-in: block and mute accounts, hide posts marked Not interested,
+  mute words and phrases, hide six author-labelled topics, and warn before sensitive media.
+  The shield on the profile opens Privacy & filters.
+- Blocks remove a character's posts and replies from the writer's feeds, stop following them,
+  and prevent replies and DMs. Characters can block the writer in character; their posts,
+  follow actions, replies and DMs are then hidden or refused. The author can lift those blocks.
+- Age rating defaults to X for missing or unknown values. Character posts carry `[cw: ...]`
+  labels that are stripped from visible text and used by the topic filters.
+- The shared media picker supports device, library and web-search sources for social posts
+  and server messages; characters can add searched memes, GIFs or pictures when appropriate.
+- Verified with `:app:testDebugUnitTest` (563 tests, no failures) and the signed release
+  build. MuMu migration and feed-blocking checks were completed during implementation.
+
 ## v1.4.53 - WeaverSocial: one social app
 
 - APK: `Beta.Test.Build/weaverse-v1.4.53.apk`, SHA-256
