@@ -91,71 +91,70 @@ object SocialContentPolicy {
 class CharacterMediaFetcher @Inject constructor(
     private val db: WeaverseDatabase,
     private val web: WebPictureSearch,
+    private val reuse: SocialMediaReuse,
 ) {
-    suspend fun fetch(tag: MediaTag, adultAllowed: Boolean = SocialContentPolicy.explicit, usedUrls: Set<String> = emptySet()): MediaEntity? {
-        fromLibrary(tag, adultAllowed)?.let { return it }
+    suspend fun fetch(tag: MediaTag, adultAllowed: Boolean = SocialContentPolicy.explicit, usedUrls: Set<String> = emptySet(), postText: String? = null): MediaEntity? {
+        fromLibrary(tag, adultAllowed, postText != null)?.let {
+            if (postText == null || reuse.claimExisting(it)) return it
+        }
         val results = runCatching { web.search(tag.query, tag.kind, adultAllowed).results }.getOrDefault(emptyList())
             .filter { tag.kind != WebSearchKind.Gifs || it.isGif }
             .ifEmpty { runCatching { web.search(tag.query, WebSearchKind.All, adultAllowed).results }.getOrDefault(emptyList())
                 .filter { tag.kind != WebSearchKind.Gifs || it.isGif } }
             .filterNot { it.fullUrl in usedUrls || it.pageUrl in usedUrls }
-        for (pick in results.take(TOP_RESULTS).shuffled()) {
-            runCatching { web.download(pick, tag.query) }.getOrNull()?.let { return it }
-        }
-        val broad = when {
-            tag.kind == WebSearchKind.Gifs -> when {
-                tag.query.contains(Regex("game|gaming|esport", RegexOption.IGNORE_CASE)) -> "gaming"
-                tag.query.contains(Regex("animal|cat|dog|pet", RegexOption.IGNORE_CASE)) -> "animal"
-                else -> "reaction"
-            }
-            tag.query.contains("adult", true) && adultAllowed -> "adult nude photography"
-            tag.query.contains("game", true) -> "video game screenshot"
-            tag.query.contains("market", true) || tag.query.contains("invest", true) -> "stock market chart"
-            tag.query.contains("animal", true) || tag.query.contains("pet", true) -> "pet animal photo"
-            tag.query.contains("travel", true) || tag.query.contains("vacation", true) -> "travel destination"
-            else -> tag.query.split(' ').take(3).joinToString(" ")
-        }
-        if (broad != tag.query) {
-            runCatching { web.search(broad, if (tag.kind == WebSearchKind.Gifs) WebSearchKind.Gifs else WebSearchKind.Pictures, adultAllowed).results }
-                .getOrDefault(emptyList()).filter { tag.kind != WebSearchKind.Gifs || it.isGif }
-                .filterNot { it.fullUrl in usedUrls || it.pageUrl in usedUrls }
-                .take(TOP_RESULTS).forEach { pick ->
-                    runCatching { web.download(pick, broad) }.getOrNull()?.let { return it }
-                }
-        }
-        if (tag.kind == WebSearchKind.Gifs) {
-            for (query in listOf("reaction", "gaming", "cat")) {
-                if (query == broad) continue
-                val animated = runCatching { web.search(query, WebSearchKind.Gifs, adultAllowed).results }
-                    .getOrDefault(emptyList()).filter { it.isGif && it.fullUrl !in usedUrls && it.pageUrl !in usedUrls }
-                for (pick in animated.take(5)) {
-                    runCatching { web.download(pick, query) }.getOrNull()?.let { return it }
-                }
-            }
+        val ranked = if (postText == null) results else results
+            .map { it to SocialMediaMatch.score(it, tag.query, postText) }
+            .filter { it.second > 0 }.sortedByDescending { it.second }.map { it.first }
+        for (pick in ranked.take(if (postText == null) TOP_RESULTS else 24)) {
+            val media = downloadCandidate(pick, tag.query, postText != null)
+            if (media != null) return media
         }
         return null
     }
 
     /** An indexed public item for an attributed bot reshare. A page URL is required. */
-    suspend fun fetchPublic(tag: MediaTag, adultAllowed: Boolean, usedUrls: Set<String>): Pair<MediaEntity, WebPicture>? {
+    suspend fun fetchPublic(tag: MediaTag, adultAllowed: Boolean, usedUrls: Set<String>, postText: String = tag.query): Pair<MediaEntity, WebPicture>? {
         val indexed = runCatching { web.publicPreviews(tag.query, adultAllowed).results }.getOrDefault(emptyList())
         val results = (indexed + runCatching { web.search(tag.query, tag.kind, adultAllowed).results }.getOrDefault(emptyList()))
             .distinctBy { it.fullUrl }
             .filter { tag.kind != WebSearchKind.Gifs || it.isGif }
             .filter { it.pageUrl.startsWith("https://") && it.fullUrl !in usedUrls && it.pageUrl !in usedUrls }
+            .map { it to SocialMediaMatch.score(it, tag.query, postText) }
+            .filter { it.second > 0 }.sortedByDescending { it.second }.map { it.first }
         for (pick in results.take(24)) {
-            runCatching { web.download(pick, tag.query) }.getOrNull()?.let { return it to pick }
+            downloadCandidate(pick, tag.query, true)?.let { return it to pick }
         }
         return null
     }
 
-    private suspend fun fromLibrary(tag: MediaTag, adultAllowed: Boolean): MediaEntity? {
+    private suspend fun downloadCandidate(pick: WebPicture, query: String, social: Boolean): MediaEntity? {
+        if (social && !reuse.reserve(pick)) return null
+        var acceptedBytes: ByteArray? = null
+        val saved = runCatching { web.download(pick, query) { bytes ->
+            val allowed = !social || reuse.accept(bytes)
+            if (allowed && social) acceptedBytes = bytes
+            allowed
+        } }.getOrNull()
+        if (saved == null && social) {
+            acceptedBytes?.let { reuse.releaseBytes(it) }
+            reuse.release(pick)
+        }
+        return saved
+    }
+
+    suspend fun claimLocalForSocial(media: MediaEntity): Boolean = reuse.claimExisting(media)
+
+    private suspend fun fromLibrary(tag: MediaTag, adultAllowed: Boolean, social: Boolean): MediaEntity? {
         val words = tag.query.lowercase().split(Regex("\\s+")).filter { it.length > 2 }
         if (words.isEmpty()) return null
+        val recentIds = if (social) db.socialDao().observeAllPosts().first().take(150)
+            .flatMap { it.mediaId.orEmpty().split(',') }.toSet() else emptySet()
         return db.mediaDao().observeAll().first()
             .filter { it.type == "image" }
             .filter { adultAllowed || "source_adult" !in it.tags }
             .filter { tag.kind != WebSearchKind.Gifs || it.mimeType.contains("gif") }
+            .filter { !social || it.sourceSite.isBlank() }
+            .filter { it.id !in recentIds }
             .filter { media ->
                 val hay = listOf(media.displayName, media.tags).joinToString(" ").lowercase()
                 words.all { hay.contains(it) }

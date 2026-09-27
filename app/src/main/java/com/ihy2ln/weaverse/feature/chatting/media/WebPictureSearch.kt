@@ -41,6 +41,8 @@ data class WebPicture(
     val adult: Boolean = false,
     /** Video results use a public thumbnail and open their attributed watch page. */
     val videoPreview: Boolean = false,
+    /** Provider supplied caption, description, or generation prompt. Never the search query. */
+    val description: String = "",
 )
 
 /** What the search is for. */
@@ -154,7 +156,7 @@ class WebPictureSearch @Inject constructor(
                 false, "Brave video", page, o["video"].obj().str("creator")
                     ?: o["video"].obj().str("publisher").orEmpty(),
                 adult = ADULT_PREVIEW_SITES.any { page.contains(it, true) },
-                videoPreview = true)
+                videoPreview = true, description = o.str("description").orEmpty())
         }
     }
 
@@ -228,6 +230,7 @@ class WebPictureSearch @Inject constructor(
                 fullUrl = full, isGif = gif, source = "Brave",
                 pageUrl = page, credit = o.str("source").orEmpty(),
                 adult = ADULT_PREVIEW_SITES.any { page.contains(it, true) },
+                description = o.str("description").orEmpty(),
             )
         }
     }
@@ -267,16 +270,15 @@ class WebPictureSearch @Inject constructor(
             val creator = o.str("username").orEmpty()
             val page = "$base/images/$id"
             WebPicture(
-                id = "cv-$id", title = q.take(100).ifBlank { "AI artwork" },
+                id = "cv-$id", title = prompt.take(100).ifBlank { "Civitai artwork" },
                 thumbUrl = full, fullUrl = full, isGif = false, source = "Civitai",
                 pageUrl = page, credit = creator.takeIf { it.isNotBlank() }?.let { "@$it on Civitai" } ?: "Civitai creator",
                 adult = (level and 24) != 0,
+                description = prompt.take(1500),
             ) to score
         }.sortedByDescending { it.second }
         val relevant = candidates.filter { it.second > 0 }
-        return (if (relevant.isNotEmpty()) relevant else if (wantsAdult)
-            candidates.filter { it.first.adult } else candidates.take(5))
-            .take(20).map { it.first }
+        return relevant.take(20).map { it.first }
     }
 
     private fun openverse(q: String, gifs: Boolean, adultAllowed: Boolean): List<WebPicture> {
@@ -302,6 +304,7 @@ class WebPictureSearch @Inject constructor(
                 pageUrl = o.str("foreign_landing_url").orEmpty(),
                 credit = listOfNotNull(o.str("creator"), o.str("license")?.uppercase()?.let { "CC $it" }).joinToString(" · "),
                 adult = o.str("mature") == "true",
+                description = o.str("description").orEmpty(),
             )
         }
     }
@@ -455,6 +458,7 @@ class WebPictureSearch @Inject constructor(
                 source = "Google",
                 pageUrl = image.str("contextLink").orEmpty(),
                 credit = o.str("displayLink").orEmpty(),
+                description = o.str("snippet").orEmpty(),
             )
         }
     }
@@ -465,7 +469,7 @@ class WebPictureSearch @Inject constructor(
      * Downloads a picked result into the Pictures library (category "Web", tagged with its
      * source and the search words) so it can be attached and reused offline.
      */
-    suspend fun download(picture: WebPicture, query: String): MediaEntity = withContext(Dispatchers.IO) {
+    suspend fun download(picture: WebPicture, query: String, acceptBytes: suspend (ByteArray) -> Boolean = { true }): MediaEntity = withContext(Dispatchers.IO) {
         val request = Request.Builder().url(picture.fullUrl).header("User-Agent", USER_AGENT).build()
         http.newCall(request).execute().use { response ->
             require(response.isSuccessful) { "Download failed (${response.code})" }
@@ -482,6 +486,7 @@ class WebPictureSearch @Inject constructor(
                 else -> ""
             }
             require(signature.isNotBlank()) { "The result was not a supported image." }
+            require(acceptBytes(bytes)) { "This image repeats recent media." }
             val mime = signature
             val ext = when {
                 mime.contains("gif") -> "gif"
@@ -494,11 +499,13 @@ class WebPictureSearch @Inject constructor(
             val saved = media.copy(
                 displayName = picture.title.ifBlank { query.ifBlank { picture.source } }.take(120),
                 category = "Web",
-                tags = listOf(picture.source, query, if (picture.isGif) "gif" else "", if (picture.adult) "source_adult" else "", picture.credit, picture.pageUrl)
+                tags = listOf(picture.source, query, if (picture.isGif) "gif" else "", if (picture.adult) "source_adult" else "", picture.credit, picture.pageUrl, "origin_url=${picture.fullUrl}")
                     .filter { it.isNotBlank() }.joinToString(", "),
                 sourceUrl = picture.pageUrl,
                 sourceSite = picture.source,
                 sourceCredit = picture.credit,
+                checksum = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+                    .joinToString("") { "%02x".format(it) },
             )
             db.mediaDao().upsert(saved)
             saved

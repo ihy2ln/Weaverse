@@ -492,7 +492,18 @@ object WikiContent {
                 ## Characters' memes and what they post
 
                 Characters attach memes, GIFs and photos on their own —
-                found in your Pictures library or on the web. How open the
+                found in your Pictures library or on the web. New writing
+                is shaped by recent posts: a repeated draft gets one
+                rewrite attempt, then is skipped if it still echoes an older
+                post or reply. Characters can revisit a favorite topic with
+                a new detail or event. Automatic pictures and GIFs must match
+                actual source titles, descriptions or generation metadata;
+                search words alone do not count as proof. Recent image URLs,
+                checksums and visual likeness are checked before attaching.
+                If no media fits, the new post remains text-only and shows a
+                short status. Refresh does not change older saved posts.
+
+                How open the
                 feed is follows the **Age rating** in Settings: from **R**
                 it is an open feed like X (politics, religion, crude or
                 offensive humour, controversial opinions), and **NC-17 / X**

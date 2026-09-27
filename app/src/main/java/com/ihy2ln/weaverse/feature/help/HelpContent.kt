@@ -333,8 +333,11 @@ object HelpContent {
                     "Characters in the feed and in servers attach memes, GIFs and photos on " +
                         "their own when it fits. Social posts favor pictures and GIFs across adult " +
                         "life, games, investing, animals, travel, sports and daily routines. " +
-                        "The app looks in your Pictures library and public image sources. A " +
-                        "failed search shows a media status instead of silently disappearing.",
+                        "New posts and replies are checked against recent writing; a repeated draft " +
+                        "gets one rewrite attempt and is skipped if it still repeats. Pictures and GIFs " +
+                        "need a match in the source's real title or description, and recent images are " +
+                        "checked for visual duplicates. If nothing fits, the post stays text-only and " +
+                        "a short media status appears. Refresh never alters older saved posts.",
                 ),
                 HelpEntry(
                     "What characters can post",
