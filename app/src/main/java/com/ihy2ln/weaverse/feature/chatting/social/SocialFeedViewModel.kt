@@ -170,6 +170,7 @@ class SocialFeedViewModel @Inject constructor(
     private var entities: Map<String, SocialPostEntity> = emptyMap()
     private var safety: SocialSafety = SocialSafety()
     private val mediaFetchInFlight = mutableSetOf<String>()
+    private var nextTopicDirection = Random.nextInt(SOCIAL_TOPIC_DIRECTIONS.size)
 
     fun bind(platformId: String = PLATFORM_WEAVERSOCIAL) {
         if (platform == platformId) return
@@ -596,19 +597,26 @@ class SocialFeedViewModel @Inject constructor(
             if (!ensureReady()) return@launch
             enrichRecentPostsWithoutMedia(count.coerceAtMost(6))
             val posters = pickCast(count.coerceAtMost(cast.size), prefer = _uiState.value.followingIds)
+            val topicDirections = List(posters.size) {
+                SOCIAL_TOPIC_DIRECTIONS[(nextTopicDirection++).mod(SOCIAL_TOPIC_DIRECTIONS.size)]
+            }
             val recent = entities.values.filter { it.parentId == null }
                 .sortedByDescending { it.createdAt }.take(8)
                 .joinToString("\n") { "${it.authorName}: ${it.text.take(160)}" }
             val system = buildList {
                 add(platformVoice())
-                add("This is a busy, visual social network. Roughly three out of four posts should end with one relevant [pic: …], [meme: …] or [gif: …] search tag; use reaction GIFs and memes often, and use topical photos or illustrations for news, politics, travel, art and daily life. Some posts can be text-only. In a batch of four or more, include at least one substantive political take rooted in that person's world and label it [cw: politics]. Never search for explicit sexual imagery, sexual images of real people, or anyone under 18. For sexual posts use only non-explicit adult fashion/editorial imagery, and label them [cw: sexual].")
-                add("The people posting (stay true to each):")
-                posters.forEach { add(cardFor(it)) }
+                add("Make WeaverSocial feel like a busy real-world feed, with the chosen age rating applied to every post. Across posts, strongly favor mature adult life and relationships, video games, investing and markets, animals and pets, vacations and travel, and ordinary day-to-day life. Keep all characters and any adult situations clearly 18+. Let characters have opinions and disagree naturally; don't flatten politics or other topics into generic neutrality. Roughly three out of four posts should include one relevant [pic: …], [meme: …] or [gif: …] search tag, with topical images and GIFs mixed through the feed. In a batch of four or more, include at least one substantive political take rooted in that person's world and label it [cw: politics]. Never search for explicit sexual imagery, sexual images of real people, or anyone under 18. For sexual posts use only non-explicit adult fashion/editorial imagery, and label them [cw: sexual].")
+                add("The people posting (stay true to each). Give each person their assigned direction as a natural part of their own life; it is a topic nudge, not a forced ad or a change to their personality:")
+                posters.forEachIndexed { index, character ->
+                    add(cardFor(character))
+                    add("Post direction for ${character.name}: ${topicDirections[index]}.")
+                }
                 if (recent.isNotBlank()) add("Already on the timeline (do not repeat; people may react to these):\n$recent")
                 add(outputRules())
             }
             val user = "Write ${posters.size} new posts, one from each of: " +
-                posters.joinToString(", ") { it.name } + "."
+                posters.joinToString(", ") { it.name } +
+                ". Follow each assigned direction, vary the formats and viewpoints, and make image/GIF queries specific to the scene or subject in the post."
             val raw = complete(system, user, maxTokens = 3_000) ?: return@launch
             val lines = parseSocialLines(raw, cast)
             val base = System.currentTimeMillis()
@@ -894,6 +902,12 @@ class SocialFeedViewModel @Inject constructor(
         val kindAndPrefix = when {
             political -> WebSearchKind.Pictures to "political editorial illustration"
             ContentLabel.Sexual in labels -> WebSearchKind.Pictures to "adult fashion editorial portrait"
+            GAMING_TERMS.containsMatchIn(text) -> WebSearchKind.Pictures to "video game gaming screenshot"
+            INVESTMENT_TERMS.containsMatchIn(text) -> WebSearchKind.Pictures to "investing stock market finance chart"
+            ANIMAL_TERMS.containsMatchIn(text) -> WebSearchKind.Pictures to "animal pet wildlife photo"
+            TRAVEL_TERMS.containsMatchIn(text) -> WebSearchKind.Pictures to "vacation travel destination photo"
+            ADULT_LIFE_TERMS.containsMatchIn(text) -> WebSearchKind.Pictures to "adult dating nightlife fashion editorial"
+            DAILY_LIFE_TERMS.containsMatchIn(text) -> WebSearchKind.Pictures to "everyday lifestyle candid photo"
             else -> when (Random.nextInt(100)) {
                 in 0..27 -> WebSearchKind.Gifs to "reaction GIF"
                 in 28..47 -> WebSearchKind.Memes to "meme"
@@ -964,6 +978,27 @@ class SocialFeedViewModel @Inject constructor(
         /** Applied when the model did not provide its own media query. */
         private const val AUTO_MEDIA_POST_CHANCE = 0.88f
         private const val AUTO_REPLY_MEDIA_CHANCE = 0.28f
+        /** Weighted, rotating prompts keep the feed's requested interests recurring across refreshes. */
+        private val SOCIAL_TOPIC_DIRECTIONS = listOf(
+            "Mature adult relationships, dating, nightlife, or frank grown-up humor; stay within the selected age rating.",
+            "Video games, gaming culture, a current session, a favorite game, or a lively gaming opinion.",
+            "Investing, markets, personal finance, or a character's considered take on money and risk.",
+            "Pets, animals, wildlife, or a funny or tender animal encounter.",
+            "A vacation, travel plan, memorable destination, or a discovery from the road.",
+            "An ordinary day-to-day moment, routine, meal, errand, hobby, or small personal win.",
+            "Video games, esports, hardware, game releases, or a memorable in-game moment.",
+            "Mature adult life and relationships, including dating, attraction, or nightlife; stay within the selected age rating.",
+            "A market move, investing decision, budgeting lesson, or finance conversation.",
+            "An animal, pet, wildlife sighting, or animal-care moment.",
+            "Travel, vacation photos, a local getaway, or a place worth visiting.",
+            "Everyday life: friends, family, work, food, hobbies, or a candid slice of the day.",
+        )
+        private val GAMING_TERMS = Regex("\\b(game|games|gaming|gamer|esports|xbox|playstation|nintendo|steam|console|pc build)\\b", RegexOption.IGNORE_CASE)
+        private val INVESTMENT_TERMS = Regex("\\b(invest|investing|investment|stocks?|shares|market|portfolio|crypto|bitcoin|finance|budget|trading)\\b", RegexOption.IGNORE_CASE)
+        private val ANIMAL_TERMS = Regex("\\b(animal|animals|pet|pets|dog|dogs|cat|cats|puppy|kitten|wildlife|horse|bird|birds)\\b", RegexOption.IGNORE_CASE)
+        private val TRAVEL_TERMS = Regex("\\b(vacation|travel|trip|traveling|travelling|hotel|beach|flight|destination|tourism|roadtrip)\\b", RegexOption.IGNORE_CASE)
+        private val ADULT_LIFE_TERMS = Regex("\\b(dating|date night|nightlife|romance|relationship|relationships|attraction|adult humor|flirting)\\b", RegexOption.IGNORE_CASE)
+        private val DAILY_LIFE_TERMS = Regex("\\b(day|today|morning|dinner|lunch|breakfast|work|errand|routine|friends|family|hobby|weekend)\\b", RegexOption.IGNORE_CASE)
         private val POLITICAL_TERMS = Regex(
             "\\b(election|government|parliament|president|congress|policy|politic|lawmakers?|legislation|" +
                 "vote|voting|campaign|protest|democracy|rights|war|climate|economy|taxes|union)\\w*\\b",
