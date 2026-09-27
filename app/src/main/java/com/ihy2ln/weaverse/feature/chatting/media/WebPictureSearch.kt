@@ -53,6 +53,8 @@ enum class WebSource(val label: String, val keyIds: List<String>) {
     Openverse("Openverse", emptyList()),
     Commons("Wikimedia Commons", emptyList()),
     Imgflip("Imgflip memes", emptyList()),
+    Mastodon("Mastodon", emptyList()),
+    Lemmy("Lemmy", emptyList()),
     Giphy("GIPHY", listOf(KEY_GIPHY)),
     Tenor("Tenor", listOf(KEY_TENOR)),
     Google("Google Images", listOf(KEY_GOOGLE, KEY_GOOGLE_CX)),
@@ -199,10 +201,11 @@ class WebPictureSearch @Inject constructor(
     data class SearchOutcome(val results: List<WebPicture>, val failedSources: List<String>, val searchedSources: List<String>)
 
     private fun sourcesFor(kind: WebSearchKind): List<WebSource> = when (kind) {
-        WebSearchKind.Gifs -> listOf(WebSource.Gelbooru, WebSource.Danbooru, WebSource.Brave, WebSource.Giphy, WebSource.Tenor, WebSource.Openverse, WebSource.Commons, WebSource.Google)
+        // Mastodon and Lemmy need no key, so GIFs turn up even before GIPHY or Tenor is set up.
+        WebSearchKind.Gifs -> listOf(WebSource.Gelbooru, WebSource.Danbooru, WebSource.Brave, WebSource.Giphy, WebSource.Tenor, WebSource.Mastodon, WebSource.Lemmy, WebSource.Openverse, WebSource.Google)
         // Reddit is not a source: it refuses API calls without a signed-in app.
-        WebSearchKind.Memes -> listOf(WebSource.Brave, WebSource.Imgflip, WebSource.Giphy, WebSource.Openverse, WebSource.Google)
-        WebSearchKind.Pictures -> listOf(WebSource.Civitai, WebSource.Gelbooru, WebSource.Danbooru, WebSource.Brave, WebSource.Openverse, WebSource.Commons, WebSource.Google)
+        WebSearchKind.Memes -> listOf(WebSource.Brave, WebSource.Imgflip, WebSource.Giphy, WebSource.Lemmy, WebSource.Openverse, WebSource.Google)
+        WebSearchKind.Pictures -> listOf(WebSource.Civitai, WebSource.Gelbooru, WebSource.Danbooru, WebSource.Brave, WebSource.Mastodon, WebSource.Lemmy, WebSource.Openverse, WebSource.Commons, WebSource.Google)
         WebSearchKind.All -> WebSource.entries
     }
 
@@ -212,6 +215,8 @@ class WebPictureSearch @Inject constructor(
             WebSource.Openverse -> openverse(if (kind == WebSearchKind.Memes) "$q meme".trim() else q, gifs, adultAllowed)
             WebSource.Commons -> commons(q, gifs)
             WebSource.Imgflip -> imgflip(q)
+            WebSource.Mastodon -> mastodon(q, gifs, adultAllowed)
+            WebSource.Lemmy -> lemmy(if (kind == WebSearchKind.Memes) "$q meme".trim() else q, gifs, adultAllowed)
             WebSource.Giphy -> giphy(q)
             WebSource.Tenor -> tenor(q, adultAllowed)
             WebSource.Google -> google(if (kind == WebSearchKind.Memes) "$q meme".trim() else q, gifs, adultAllowed)
@@ -450,6 +455,90 @@ class WebPictureSearch @Inject constructor(
         }
     }
 
+    /**
+     * Media posted under a matching hashtag on public Mastodon servers. Their GIFs are
+     * "gifv" loops (silent MP4), which the feed plays like a GIF. No account needed.
+     */
+    private fun mastodon(q: String, gifs: Boolean, adultAllowed: Boolean): List<WebPicture> {
+        val tags = q.lowercase().split(Regex("[^a-z0-9]+"))
+            .filter { it.length >= 3 && it !in STOP_WORDS && it !in CIVITAI_GENERIC_WORDS }
+            .distinct().take(2)
+        if (tags.isEmpty()) return emptyList()
+        return tags.flatMap { tag ->
+            MASTODON_SERVERS.take(2).flatMap { server ->
+                runCatching { getJson("https://$server/api/v1/timelines/tag/$tag?only_media=true&limit=40").arr() }
+                    .getOrDefault(JsonArray(emptyList()))
+            }
+        }.flatMap { status -> mastodonMedia(status.obj(), gifs, adultAllowed) }.distinctBy { it.fullUrl }
+    }
+
+    /** The pictures and GIF loops on one Mastodon status, credited to its author. */
+    fun mastodonMedia(status: JsonObject, gifs: Boolean, adultAllowed: Boolean): List<WebPicture> {
+        val sensitive = status.str("sensitive") == "true"
+        if (sensitive && !adultAllowed) return emptyList()
+        val page = status.str("url")?.takeIf { it.startsWith("https://") } ?: return emptyList()
+        val account = status["account"].obj()
+        val text = htmlToText(status.str("content").orEmpty())
+        val tags = status["tags"].arr().mapNotNull { it.obj().str("name") }.joinToString(" ")
+        return status["media_attachments"].arr().mapNotNull { item ->
+            val m = item.obj()
+            val type = m.str("type").orEmpty()
+            val loop = type == "gifv"
+            if (gifs && !loop) return@mapNotNull null
+            if (type != "image" && !loop) return@mapNotNull null
+            val full = m.str("url")?.takeIf { it.startsWith("https://") } ?: return@mapNotNull null
+            WebPicture(
+                id = "md-" + (m.str("id") ?: full.hashCode().toString()),
+                title = listOf(m.str("description").orEmpty(), tags).filter { it.isNotBlank() }.joinToString(" · ").take(160)
+                    .ifBlank { text.take(120) },
+                thumbUrl = m.str("preview_url") ?: full,
+                fullUrl = full, isGif = loop, source = "Mastodon",
+                pageUrl = page,
+                credit = "@" + (account.str("acct") ?: "someone") + " on Mastodon",
+                adult = sensitive,
+                description = listOf(text, tags, m.str("description").orEmpty()).joinToString(" ").take(1200),
+            )
+        }
+    }
+
+    /** Link posts on Lemmy (a Reddit-like network) whose link is a picture or GIF. */
+    private fun lemmy(q: String, gifs: Boolean, adultAllowed: Boolean): List<WebPicture> {
+        if (q.isBlank()) return emptyList()
+        val url = "https://lemmy.world/api/v3/search".toHttpUrl().newBuilder()
+            .addQueryParameter("q", q.split(' ').take(4).joinToString(" "))
+            .addQueryParameter("type_", "Posts").addQueryParameter("sort", "TopAll")
+            .addQueryParameter("limit", "40").build()
+        return getJson(url.toString()).obj()["posts"].arr().mapNotNull { lemmyPicture(it.obj(), gifs, adultAllowed) }
+    }
+
+    /** The picture or GIF a Lemmy link post points at, or null when it links a web page. */
+    fun lemmyPicture(view: JsonObject, gifs: Boolean, adultAllowed: Boolean): WebPicture? {
+        val post = view["post"].obj()
+        val nsfw = post.str("nsfw") == "true" || view["community"].obj().str("nsfw") == "true"
+        if (nsfw && !adultAllowed) return null
+        val link = post.str("url")?.takeIf { it.startsWith("https://") } ?: return null
+        val file = link.substringBefore('?')
+        val full = when {
+            // Imgur's .gifv is a web page; the same name with .mp4 is the loop itself.
+            file.endsWith(".gifv", true) && "imgur.com" in file -> file.dropLast(5) + ".mp4"
+            Regex("\\.(gif|mp4|jpe?g|png|webp)$", RegexOption.IGNORE_CASE).containsMatchIn(file) -> link
+            else -> return null
+        }
+        val loop = Regex("\\.(gif|mp4)$", RegexOption.IGNORE_CASE).containsMatchIn(full.substringBefore('?'))
+        if (gifs && !loop) return null
+        val title = post.str("name").orEmpty()
+        return WebPicture(
+            id = "lm-" + (post.str("id") ?: full.hashCode().toString()),
+            title = title.take(160),
+            thumbUrl = post.str("thumbnail_url") ?: full,
+            fullUrl = full, isGif = loop, source = "Lemmy",
+            pageUrl = post.str("ap_id")?.takeIf { it.startsWith("https://") } ?: link,
+            credit = "c/" + (view["community"].obj().str("name") ?: "lemmy"),
+            adult = nsfw,
+            description = (title + " " + post.str("body").orEmpty()).take(1200),
+        )
+    }
+
     /** Imgflip's popular meme templates, filtered by the query words locally. */
     private fun imgflip(q: String): List<WebPicture> {
         val all = imgflipCache ?: getJson("https://api.imgflip.com/get_memes").obj()["data"].obj()["memes"].arr()
@@ -591,6 +680,8 @@ class WebPictureSearch @Inject constructor(
                 bytes.size >= 4 && bytes[0] == 0x89.toByte() && bytes[1] == 0x50.toByte() && bytes[2] == 0x4E.toByte() && bytes[3] == 0x47.toByte() -> "image/png"
                 bytes.size >= 3 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte() && bytes[2] == 0xFF.toByte() -> "image/jpeg"
                 bytes.size >= 12 && String(bytes, 0, 4, Charsets.US_ASCII) == "RIFF" && String(bytes, 8, 4, Charsets.US_ASCII) == "WEBP" -> "image/webp"
+                // Looping GIF videos ("gifv"), only when the result was offered as a GIF.
+                picture.isGif && bytes.size >= 12 && String(bytes, 4, 4, Charsets.US_ASCII) == "ftyp" -> "video/mp4"
                 else -> ""
             }
             require(signature.isNotBlank()) { "The result was not a supported image." }
@@ -600,6 +691,7 @@ class WebPictureSearch @Inject constructor(
                 mime.contains("gif") -> "gif"
                 mime.contains("png") -> "png"
                 mime.contains("webp") -> "webp"
+                mime.contains("mp4") -> "mp4"
                 else -> "jpg"
             }
             val id = UUID.randomUUID().toString()
@@ -607,7 +699,7 @@ class WebPictureSearch @Inject constructor(
             val saved = media.copy(
                 displayName = picture.title.ifBlank { query.ifBlank { picture.source } }.take(120),
                 category = "Web",
-                tags = listOf(picture.source, query, if (picture.isGif) "gif" else "", if (picture.adult) "source_adult" else "", picture.credit, picture.pageUrl, "origin_url=${picture.fullUrl}")
+                tags = listOf(picture.source, query, if (picture.isGif) "gif" else "", if (mime.startsWith("video/")) "gifv" else "", if (picture.adult) "source_adult" else "", picture.credit, picture.pageUrl, "origin_url=${picture.fullUrl}")
                     .filter { it.isNotBlank() }.joinToString(", "),
                 sourceUrl = picture.pageUrl,
                 sourceSite = picture.source,
@@ -622,7 +714,11 @@ class WebPictureSearch @Inject constructor(
 
     // ------------------------------------------------------------ helpers
 
-    private fun getJson(url: String): JsonElement {
+    fun htmlToText(html: String): String = html.replace(Regex("<br\\s*/?>|</p>"), "\n")
+        .replace(Regex("<[^>]+>"), "").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+        .replace("&quot;", "\"").replace("&#39;", "'").trim()
+
+    fun getJson(url: String): JsonElement {
         val request = Request.Builder().url(url).header("User-Agent", USER_AGENT).header("Accept", "application/json").build()
         http.newCall(request).execute().use { response ->
             require(response.isSuccessful) { "HTTP ${response.code}" }
@@ -630,14 +726,15 @@ class WebPictureSearch @Inject constructor(
         }
     }
 
-    private fun JsonElement?.obj(): JsonObject = this as? JsonObject ?: JsonObject(emptyMap())
-    private fun JsonElement?.arr(): JsonArray = this as? JsonArray ?: JsonArray(emptyList())
-    private fun JsonObject.str(key: String): String? =
+    fun JsonElement?.obj(): JsonObject = this as? JsonObject ?: JsonObject(emptyMap())
+    fun JsonElement?.arr(): JsonArray = this as? JsonArray ?: JsonArray(emptyList())
+    fun JsonObject.str(key: String): String? =
         (this[key] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
 
     companion object {
         private val previewRotation = java.util.concurrent.atomic.AtomicInteger()
         private val ADULT_PREVIEW_SITES = listOf("onlyfans.com", "fansly.com", "patreon.com", "pornhub.com", "xvideos.com", "xhamster.com", "xnxx.com", "redgifs.com", "sex.com", "rule34.xxx", "gelbooru.com", "danbooru.donmai.us", "civitai.red")
+        val MASTODON_SERVERS = listOf("mastodon.social", "mstdn.social", "mastodon.world")
         private val GENERAL_PREVIEW_SITES = listOf("youtube.com", "twitch.tv", "x.com", "civitai.com")
         /** Wikimedia refuses images to clients without a descriptive agent like this one. */
         const val USER_AGENT = "android:com.ihy2ln.weaverse:v1 (Weaverse picture search)"

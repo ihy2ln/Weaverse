@@ -20,6 +20,7 @@ import com.ihy2ln.weaverse.feature.chatting.media.MediaTag
 import com.ihy2ln.weaverse.feature.chatting.media.MediaTags
 import com.ihy2ln.weaverse.feature.chatting.media.SocialContentPolicy
 import com.ihy2ln.weaverse.feature.chatting.media.WebSearchKind
+import com.ihy2ln.weaverse.feature.chatting.media.WebPicture
 import com.ihy2ln.weaverse.feature.chatting.media.WebPictureSearch
 import com.ihy2ln.weaverse.feature.chatting.media.KEY_BRAVE
 import com.ihy2ln.weaverse.feature.chatting.media.KEY_CIVITAI
@@ -158,6 +159,10 @@ data class SocialUiState(
     val civitaiStatus: String = "",
     val gelbooruStatus: String = "",
     val addedCreatorIds: Set<String> = emptySet(),
+    /** The finished post is the prompt for its picture or GIF (search words and AI image). */
+    val mediaFromPost: Boolean = true,
+    /** Made-up people reshare real posts from Mastodon, Bluesky, Lemmy and Hacker News. */
+    val webPosts: Boolean = true,
 ) {
     val youHandle: String get() = handleFor(personaName)
     val followingIds: Set<String> get() = people.filter { it.isFollowing }.map { it.characterId }.toSet()
@@ -182,6 +187,7 @@ class SocialFeedViewModel @Inject constructor(
     private val relations: SocialRelations,
     private val webPictures: WebPictureSearch,
     private val imageGenerator: SocialImageGenerator,
+    private val realWeb: RealWebFeed,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SocialUiState())
@@ -207,6 +213,12 @@ class SocialFeedViewModel @Inject constructor(
                 settings.socialString("image_model")) { endpoint, workflow, model -> Triple(endpoint, workflow, model) }
                 .collect { (endpoint, workflow, model) ->
                     _uiState.update { it.copy(comfyEndpoint = endpoint, comfyWorkflow = workflow, imageModelRef = model) }
+                }
+        }
+        viewModelScope.launch {
+            combine(settings.socialString("media_mode"), settings.socialString("web_posts")) { mode, web -> mode to web }
+                .collect { (mode, web) ->
+                    _uiState.update { it.copy(mediaFromPost = mode != "tags", webPosts = web != "off") }
                 }
         }
         viewModelScope.launch {
@@ -247,7 +259,8 @@ class SocialFeedViewModel @Inject constructor(
             .sortedBy { it.createdAt }
             .groupBy { it.parentId!! }
             .mapValues { (_, list) -> list.mapNotNull { full[it.id] } }
-        val people = cast.map { character ->
+        val npcAuthors = posts.mapNotNull { it.authorCharacterId }.filter(SocialNpcs::isNpc).toSet()
+        val people = (cast + SocialNpcs.characters.filter { it.id in npcAuthors }).map { character ->
             val seed = character.name.hashCode().absoluteValue
             SocialPersonUi(
                 characterId = character.id,
@@ -283,7 +296,7 @@ class SocialFeedViewModel @Inject constructor(
         quoteCounts: Map<String, Int>,
         repostOf: SocialPostUi?,
     ): SocialPostUi {
-        val character = authorCharacterId?.let { id -> cast.firstOrNull { it.id == id } }
+        val character = authorCharacterId?.let(::personById)
         val isYou = authorCharacterId == null
         val name = if (isYou) _uiState.value.personaName else authorName
         val reactions = decodeCounts(reactionsJson).toMutableMap()
@@ -515,8 +528,8 @@ class SocialFeedViewModel @Inject constructor(
             )
             db.socialDao().upsert(reply)
             clearImage()
-            val answerer = replyingTo?.authorCharacterId?.let { id -> cast.firstOrNull { it.id == id } }
-                ?: parent.authorCharacterId?.let { id -> cast.firstOrNull { it.id == id } }
+            val answerer = replyingTo?.authorCharacterId?.let(::personById)
+                ?: parent.authorCharacterId?.let(::personById)
             generateThreadReply(parent, body, answerer)
         }
     }
@@ -630,6 +643,14 @@ class SocialFeedViewModel @Inject constructor(
     fun tenorKey(): String = webPictures.key(KEY_TENOR)
     fun setTenorKey(value: String) = webPictures.setKey(KEY_TENOR, value)
 
+    fun setMediaFromPost(on: Boolean) {
+        viewModelScope.launch { settings.setSocialString("media_mode", if (on) "" else "tags") }
+    }
+
+    fun setWebPosts(on: Boolean) {
+        viewModelScope.launch { settings.setSocialString("web_posts", if (on) "" else "off") }
+    }
+
     fun saveMediaSettings(endpoint: String, workflow: String, imageModel: String) {
         viewModelScope.launch {
             settings.setSocialString("comfy_endpoint", endpoint)
@@ -684,7 +705,11 @@ class SocialFeedViewModel @Inject constructor(
         _uiState.update { it.copy(mediaNotice = "") }
     }
 
-    private fun nameOf(characterId: String): String = cast.firstOrNull { it.id == characterId }?.name ?: "They"
+    private fun nameOf(characterId: String): String = personById(characterId)?.name ?: "They"
+
+    /** A cast member, or one of the made-up everyday people. */
+    private fun personById(id: String): RpCharacterEntity? =
+        cast.firstOrNull { it.id == id } ?: SocialNpcs.characters.firstOrNull { it.id == id }
 
     private fun blockNotice(characterId: String): String =
         if (characterId in safety.blockedBy) "${nameOf(characterId)} blocked you." else "You blocked ${nameOf(characterId)}. Unblock them first."
@@ -724,7 +749,10 @@ class SocialFeedViewModel @Inject constructor(
             val formats = listOf("first-person anecdote about a new event", "opinion or hot take with a concrete reason", "short question to followers", "specific update with a number or detail", "reaction to another event or post", "small discovery or recommendation")
             val system = buildList {
                 add(platformVoice())
-                add("Make WeaverSocial feel like a busy social feed. Follow each assigned direction and keep every person in character. Use a specific [pic: …] or [gif: …] tag on nearly every post; include gaming screenshots or GIFs, market charts, pets, travel scenes, everyday photos, sports, cars, technology and fitness as appropriate. Mix GIFs and photos; occasionally suggest two attachments. Let characters disagree and have distinct opinions, including politics when natural. ${if (adultAllowed) "[18+] directions are for clearly adult fictional people and may be sexually explicit. Adult creator and subscription-style teasers are welcome. Label every such post [cw: sexual]. Never depict minors or imply a real person is this fictional character." else "Keep this feed free of sexual content and do not write adult media queries."}")
+                add("Make WeaverSocial feel like a busy social feed. Follow each assigned direction and keep every person in character. " +
+                    (if (mediaFromPost) "Most posts come with a photo or GIF, and the post text itself is used to find or create it: say plainly in the post what the picture or clip shows (the subject, place or moment — \"look at this storm rolling over the harbor\", \"my cat mid-zoomies\"). Gaming clips, market charts, pets, travel scenes, everyday photos, sports, cars, technology and fitness all work. "
+                    else "Use a specific [pic: …] or [gif: …] tag on nearly every post; include gaming screenshots or GIFs, market charts, pets, travel scenes, everyday photos, sports, cars, technology and fitness as appropriate. Mix GIFs and photos; occasionally suggest two attachments. ") +
+                    "Let characters disagree and have distinct opinions, including politics when natural. ${if (adultAllowed) "[18+] directions are for clearly adult fictional people and may be sexually explicit. Adult creator and subscription-style teasers are welcome. Label every such post [cw: sexual]. Never depict minors or imply a real person is this fictional character." else "Keep this feed free of sexual content and do not write adult media queries."}")
                 add("The people posting (stay true to each). Give each person their assigned direction as a natural part of their own life; it is a topic nudge, not a forced ad or a change to their personality:")
                 posters.forEachIndexed { index, character ->
                     add(cardFor(character))
@@ -737,7 +765,8 @@ class SocialFeedViewModel @Inject constructor(
             }
             val user = "Write ${posters.size} new posts, one from each of: " +
                 posters.joinToString(", ") { it.name } +
-                ". Follow each assigned direction, vary the formats and viewpoints, and make image/GIF queries specific to the scene or subject in the post."
+                ". Follow each assigned direction, vary the formats and viewpoints, and " +
+                (if (mediaFromPost) "make each post name what its picture or GIF shows." else "make image/GIF queries specific to the scene or subject in the post.")
             val raw = complete(system, user, maxTokens = 3_000) ?: return@launch
             val lines = parseSocialLines(raw, cast)
             val characterPhotoIndex = lines.indexOfFirst { line ->
@@ -747,6 +776,7 @@ class SocialFeedViewModel @Inject constructor(
             library = runCatching { mediaRepository.observeAll().first() }.getOrDefault(emptyList())
                 .filter { it.type == "image" }
             var gifAssigned = false
+            val planned = mutableListOf<PlannedMedia>()
             lines.forEachIndexed { index, line ->
                 val author = line.character ?: return@forEachIndexed
                 val checked = reviewIfRepeated(line.text, author, history.map { it.text } + batchText) ?: return@forEachIndexed
@@ -774,17 +804,26 @@ class SocialFeedViewModel @Inject constructor(
                         val keywords = appearanceSearchWords(author)
                         if (keywords.isBlank()) tag else tag.copy(query = (tag.query.take(55) + " " + keywords).take(80))
                     } else selected
-                    if (!gifAssigned && index != characterPhotoIndex && withAppearance.isNotEmpty() &&
+                    if (!mediaFromPost && !gifAssigned && index != characterPhotoIndex && withAppearance.isNotEmpty() &&
                         ContentLabel.Sexual !in labels) {
                         gifAssigned = true
                         listOf(withAppearance.first().copy(kind = WebSearchKind.Gifs)) + withAppearance.drop(1)
                     } else withAppearance
                 }
+                val post = generatedPost(author, body, feeling, base - (lines.size - index) * 97_000L, parentId = null)
+                    .copy(mediaId = personalPhoto?.id, contentTags = SocialTags.store(labels))
+                val publicReshare = (index % 4 == 2 || (ContentLabel.Sexual in labels && index != 0)) && personalPhoto == null
+                if (mediaFromPost) {
+                    // Text first; the picture is chosen from the finished post below.
+                    db.socialDao().upsert(post)
+                    if (personalPhoto == null) planned += PlannedMedia(post, author, body, labels, selfPhoto,
+                        characterPhoto = index == characterPhotoIndex, publicReshare = publicReshare)
+                    return@forEachIndexed
+                }
                 saveWithMedia(
-                    generatedPost(author, body, feeling, base - (lines.size - index) * 97_000L, parentId = null)
-                        .copy(mediaId = personalPhoto?.id, contentTags = SocialTags.store(labels)),
+                    post,
                     mediaTags,
-                    publicReshare = (index % 4 == 2 || (ContentLabel.Sexual in labels && index != 0)) && personalPhoto == null,
+                    publicReshare = publicReshare,
                     generatePrompt = if (index == characterPhotoIndex && personalPhoto == null &&
                         !UNDERAGE_TERMS.containsMatchIn(author.description + " " + author.personality)) {
                         "Original social-media photograph of the same fictional adult character. " +
@@ -794,7 +833,201 @@ class SocialFeedViewModel @Inject constructor(
                     } else null,
                 )
             }
+            if (planned.isNotEmpty()) attachPlannedMedia(planned)
+            if (_uiState.value.webPosts) shareWebPosts((count / 2).coerceIn(1, 4))
             finish()
+        }
+    }
+
+    // ---------------------------------------------------- post-as-prompt media
+
+    private class PlannedMedia(
+        val post: SocialPostEntity,
+        val author: RpCharacterEntity,
+        val body: String,
+        val labels: Set<ContentLabel>,
+        val selfPhoto: Boolean,
+        val characterPhoto: Boolean,
+        val publicReshare: Boolean,
+    )
+
+    /** What a post's attachment should be: kind (null = none), search words, and a scene for an image model. */
+    private data class MediaPlan(val kind: WebSearchKind?, val query: String, val scene: String)
+
+    /**
+     * Uses each finished post as the prompt for its media: the model reads the post and
+     * names what its picture or GIF shows, which becomes both the web search and the AI
+     * image prompt. The picture follows the words instead of a guess made alongside them.
+     */
+    private suspend fun attachPlannedMedia(planned: List<PlannedMedia>) {
+        _uiState.update { it.copy(status = "Matching pictures to posts…") }
+        val plans = planMediaFromPosts(planned)
+        var generations = if (imageGenerator.isConfigured()) GENERATED_PER_REFRESH else 0
+        planned.forEachIndexed { index, item ->
+            val plan = plans[index]
+            val kind = plan.kind ?: return@forEachIndexed
+            val fresh = db.socialDao().getPost(item.post.id) ?: return@forEachIndexed
+            val adultOnly = UNDERAGE_TERMS.containsMatchIn(item.author.description + " " + item.author.personality)
+            val showsAuthor = item.selfPhoto || item.characterPhoto
+            val prompt = if (kind != WebSearchKind.Gifs && generations > 0 && !adultOnly &&
+                (showsAuthor || !item.publicReshare)) {
+                generations--
+                buildString {
+                    append("Candid social-media photograph. It shows: ${plan.scene}. ")
+                    append("It illustrates this post by ${item.author.name}: \"${item.body.take(300)}\". ")
+                    if (showsAuthor) append("The person in the photo is ${item.author.name}; keep their Codex look — face, skin tone, hair, eyes, build, distinguishing features: ${item.author.description.take(700)}. ")
+                    append(if (safety.adultEnabled) "Everyone shown is clearly 18+. " else "Nonsexual image. ")
+                    append("No text overlays, no real person's likeness.")
+                }
+            } else null
+            // A stranger's face from the web can't stand in for this character's selfie.
+            if (item.selfPhoto && prompt == null) return@forEachIndexed
+            val query = if (ContentLabel.Sexual in item.labels) {
+                (plan.query.take(55) + " " + appearanceSearchWords(item.author)).trim().take(80)
+            } else plan.query
+            saveWithMedia(fresh, listOf(MediaTag(kind, query)),
+                publicReshare = item.publicReshare && prompt == null, generatePrompt = prompt)
+        }
+    }
+
+    private suspend fun planMediaFromPosts(items: List<PlannedMedia>): List<MediaPlan> {
+        val fallback = items.map { item ->
+            automaticMediaTag(item.body, item.labels, 1f)?.let { MediaPlan(it.kind, it.query, item.body) }
+                ?: MediaPlan(null, "", "")
+        }
+        val raw = runCatching {
+            aiGeneration.complete(
+                userMessage = "Posts:\n" + items.withIndex().joinToString("\n") { (i, item) ->
+                    "${i + 1}. ${item.author.name}: ${item.body.replace('\n', ' ').take(400)}" +
+                        if (item.selfPhoto || item.characterPhoto) " [a photo of ${item.author.name} themself]" else ""
+                },
+                assembled = AssembledPrompt(
+                    systemBlocks = listOf(MEDIA_PLANNER_PROMPT + if (safety.adultEnabled)
+                        " Adult posts may get explicit adult search words." else " Keep every search nonsexual."),
+                    messages = emptyList(), usedEntries = emptyList(), tokenBreakdown = emptyList(),
+                ),
+                maxTokens = 1_200,
+                temperature = 0.4,
+            ).text
+        }.getOrNull().orEmpty()
+        val line = Regex("^\\s*(\\d+)\\s*[|.):]\\s*(gif|photo|picture|meme|none)\\s*\\|\\s*([^|]*)\\|?\\s*(.*)$", RegexOption.IGNORE_CASE)
+        val parsed = raw.lines().mapNotNull { line.find(it.trim().removePrefix("- ")) }.associate { m ->
+            val kind = when (m.groupValues[2].lowercase()) {
+                "gif" -> WebSearchKind.Gifs
+                "meme" -> WebSearchKind.Memes
+                "none" -> null
+                else -> WebSearchKind.Pictures
+            }
+            m.groupValues[1].toInt() - 1 to MediaPlan(kind, m.groupValues[3].trim().trim('"').take(80), m.groupValues[4].trim())
+        }
+        return items.indices.map { i ->
+            parsed[i]?.takeIf { it.kind == null || it.query.isNotBlank() }
+                ?.let { it.copy(scene = it.scene.ifBlank { items[i].body }) } ?: fallback[i]
+        }
+    }
+
+    // --------------------------------------------------------- around the web
+
+    /**
+     * Made-up everyday people reshare real public posts — with their picture or GIF and a
+     * link back — then others argue and joke underneath, the way a real timeline fills up.
+     */
+    private suspend fun shareWebPosts(count: Int) {
+        _uiState.update { it.copy(status = "Finding posts around the web…") }
+        val seen = entities.values.map { it.sourceUrl }.filter { it.isNotBlank() }.toSet()
+        val topics = (listOf("memes", "pets", "games") + RealWebFeed.TOPIC_HASHTAGS.keys.shuffled().take(3)).shuffled().take(3)
+        val found = runCatching { realWeb.fetch(topics, safety.adultEnabled, seen) }.getOrDefault(emptyList())
+        // Mostly posts with a picture or GIF, the odd headline.
+        val items = (found.filter { it.media != null }.take(count - 1) + found.filter { it.media == null }.take(1) +
+            found.filter { it.media != null }.drop(count - 1)).take(count)
+        if (items.isEmpty()) return
+        val used = mutableSetOf<String>()
+        val pairs = items.mapNotNull { item ->
+            val pool = SocialNpcs.forTopic(item.topic).filterNot { it.id in safety.unseen || it.id in used }
+                .ifEmpty { SocialNpcs.characters.filterNot { it.id in safety.unseen || it.id in used } }
+            pool.randomOrNull()?.also { used += it.id }?.let { item to it }
+        }
+        if (pairs.isEmpty()) return
+        val system = buildList {
+            add(platformVoice())
+            add("Ordinary people on WeaverSocial are resharing real posts they found elsewhere on the web. " +
+                "Each writes their own short caption: a reaction, joke, opinion or why they're sharing it. " +
+                "Never copy or summarise the original, and never claim they made it. Stay true to each card:")
+            pairs.forEach { add(cardFor(it.second)) }
+            add(outputRules())
+        }
+        val user = "Write one caption per person:\n" + pairs.joinToString("\n") { (item, npc) ->
+            "${npc.name} is sharing this ${item.site} post: \"${item.text.take(300).replace('\n', ' ')}\"" +
+                when { item.media?.isGif == true -> " [with a GIF]"; item.media != null -> " [with a picture]"; else -> "" }
+        }
+        val raw = complete(system, user, maxTokens = 1_500).orEmpty()
+        val captions = parseSocialLines(raw, pairs.map { it.second })
+            .mapNotNull { line -> line.character?.let { it.id to line.text } }.toMap()
+        val base = System.currentTimeMillis()
+        val created = pairs.mapIndexed { index, (item, npc) ->
+            val caption = captions[npc.id]?.let { MediaTags.extract(SocialTags.parse(splitFeeling(it).second).text).first }.orEmpty()
+            generatedPost(npc, caption, "", base - index * 53_000L - 20_000L, parentId = null).copy(
+                originKind = "web_share",
+                sourceUrl = item.url,
+                sourceSite = listOf(item.site, item.credit).filter { it.isNotBlank() }.joinToString(" · "),
+                sourceTitle = item.text,
+                contentTags = SocialTags.store(if (item.adult) setOf(ContentLabel.Sexual) else emptySet()),
+            ).also { post ->
+                db.socialDao().upsert(post)
+                item.media?.let { attachShared(post.id, it, item.text) }
+            }
+        }
+        generateWebReplies(created.shuffled().take(3))
+    }
+
+    private fun attachShared(postId: String, picture: WebPicture, text: String) {
+        if (!mediaFetchInFlight.add(postId)) return
+        _uiState.update { it.copy(loadingMediaIds = it.loadingMediaIds + postId) }
+        viewModelScope.launch {
+            try {
+                val media = characterMedia.downloadShared(picture, text) ?: return@launch
+                val fresh = db.socialDao().getPost(postId) ?: return@launch
+                db.socialDao().upsert(fresh.copy(mediaId = joinMediaIds((mediaIdsOf(fresh.mediaId) + media.id).distinct()),
+                    sourceMediaUrl = picture.fullUrl))
+            } finally {
+                mediaFetchInFlight.remove(postId)
+                _uiState.update { it.copy(loadingMediaIds = it.loadingMediaIds - postId) }
+            }
+        }
+    }
+
+    /** One call writes a couple of replies under each shared post, from the cast and everyday people. */
+    private suspend fun generateWebReplies(posts: List<SocialPostEntity>) {
+        if (posts.isEmpty()) return
+        val pool = (pickCast(3, prefer = _uiState.value.followingIds) +
+            SocialNpcs.characters.filterNot { it.id in safety.unseen }.shuffled().take(4)).distinctBy { it.id }
+        val system = buildList {
+            add(platformVoice())
+            add("People reply under posts on WeaverSocial. Stay true to each card:")
+            pool.forEach { add(cardFor(it)) }
+            add("Output format, no exceptions: one reply per line as \"N | Name: reply\", where N is the post's number. " +
+                "One or two replies per post, from different people and never its own author. Replies agree, argue, joke, " +
+                "add a fact or just react, in one or two lines; a [gif: …] tag may end a reaction. No narration or markdown.")
+        }
+        val user = posts.withIndex().joinToString("\n") { (i, post) ->
+            "${i + 1}. ${post.authorName}: ${post.text.take(200)} (sharing ${post.sourceSite}: \"${post.sourceTitle.take(200).replace('\n', ' ')}\")"
+        }
+        val raw = complete(system, user, maxTokens = 1_500) ?: return
+        val numbered = Regex("^\\s*(\\d+)\\s*[|.)]\\s*(.+)$")
+        raw.lines().forEachIndexed { i, text ->
+            val m = numbered.find(text) ?: return@forEachIndexed
+            val post = posts.getOrNull(m.groupValues[1].toInt() - 1) ?: return@forEachIndexed
+            val line = parseSocialLines(m.groupValues[2], pool).firstOrNull() ?: return@forEachIndexed
+            val author = line.character ?: return@forEachIndexed
+            if (author.id == post.authorCharacterId) return@forEachIndexed
+            val social = SocialTags.parse(splitFeeling(line.text).second)
+            val (body, tags) = MediaTags.extract(social.text)
+            if (body.isBlank() && tags.isEmpty()) return@forEachIndexed
+            saveWithMedia(
+                generatedPost(author, body, "", post.createdAt + (i + 1) * 37_000L, parentId = post.id, small = true)
+                    .copy(contentTags = SocialTags.store(social.labels)),
+                tags,
+            )
         }
     }
 
@@ -802,7 +1035,8 @@ class SocialFeedViewModel @Inject constructor(
         if (!ensureReady()) return
         val named = matchNamedCharacters(post.text, cast) +
             cast.filter { post.text.contains("@" + handleFor(it.name), ignoreCase = true) }
-        val repliers = (named.filterNot { it.id in safety.unseen } + pickCast(3, prefer = _uiState.value.followingIds))
+        val strangers = SocialNpcs.characters.filterNot { it.id in safety.unseen }.shuffled().take(1)
+        val repliers = (named.filterNot { it.id in safety.unseen } + pickCast(2, prefer = _uiState.value.followingIds) + strangers)
             .distinctBy { it.id }.take(4)
         val quoted = post.repostOfId?.let { entities[it] }
         val system = buildList {
@@ -824,7 +1058,7 @@ class SocialFeedViewModel @Inject constructor(
         }
         val raw = complete(system, user, maxTokens = 2_000) ?: return
         val base = System.currentTimeMillis()
-        val lines = parseSocialLines(raw, cast)
+        val lines = parseSocialLines(raw, cast + strangers)
         val replyHistory = db.socialDao().getReplies(post.id).filter { it.authorCharacterId != null }.takeLast(60).map { it.text }.toMutableList()
         lines.forEachIndexed { index, line ->
             val author = line.character ?: return@forEachIndexed
@@ -862,7 +1096,7 @@ class SocialFeedViewModel @Inject constructor(
         if (!ensureReady()) return
         val thread = db.socialDao().getReplies(parent.id).takeLast(10)
             .joinToString("\n") { "${it.authorName}: ${it.text.take(200)}" }
-        val speaker = answerer ?: parent.authorCharacterId?.let { id -> cast.firstOrNull { it.id == id } } ?: pickCast(1).firstOrNull()
+        val speaker = answerer ?: parent.authorCharacterId?.let(::personById) ?: pickCast(1).firstOrNull()
             ?: return
         val system = listOf(
             platformVoice(),
@@ -1047,8 +1281,10 @@ class SocialFeedViewModel @Inject constructor(
             "community chatter about the groups and places people belong to. Everyone stays true to " +
             "their own world. A post may start with [feeling X] (for example [feeling blessed]) when the " +
             "person would set a feeling. Replies are one or two lines. Emoji where the person would use them.\n\n" +
-            "Attach a specific relevant [pic: search words] or [gif: search words] tag to most posts. " +
-            "Up to two tags may be used for a multi-picture post; tags are removed from visible text.\n\n" +
+            (if (mediaFromPost) "Pictures and GIFs are chosen from what the post says, so a post that comes with one " +
+                "names what it shows. Replies may end with a [gif: search words] reaction tag.\n\n"
+            else "Attach a specific relevant [pic: search words] or [gif: search words] tag to most posts. " +
+                "Up to two tags may be used for a multi-picture post; tags are removed from visible text.\n\n") +
             SocialTags.LABEL_PROMPT + "\n\n" +
             if (safety.adultEnabled) "This is an adults-only fictional social feed. Posts may contain nudity and explicit sexuality between clearly adult fictional people; label those posts [cw: sexual]. Never sexualize minors or imply a real public person is a fictional character." else
                 "WeaverSocial 18+ is off: no sexual posts, nudity, adult creator promotions, or sexual media searches. Other topics and candid opinions are welcome."
@@ -1061,6 +1297,8 @@ class SocialFeedViewModel @Inject constructor(
         appendLine("- A [gif: …], [meme: …] or [pic: …] tag, a [cw: …] label and [block] may end a line; they are read, not shown.")
         append("- Never write for ${_uiState.value.personaName}.")
     }
+
+    private val mediaFromPost: Boolean get() = _uiState.value.mediaFromPost
 
     private fun cardFor(character: RpCharacterEntity): String {
         val about = listOf(character.description, character.personality)
@@ -1188,6 +1426,19 @@ class SocialFeedViewModel @Inject constructor(
         /** Applied when the model did not provide its own media query. */
         private const val AUTO_MEDIA_POST_CHANCE = 1f
         private const val AUTO_REPLY_MEDIA_CHANCE = 0.28f
+        /** Original AI pictures per refresh when an image model is set; the rest come from the web. */
+        private const val GENERATED_PER_REFRESH = 2
+        private const val MEDIA_PLANNER_PROMPT =
+            "You choose the picture or GIF for each social media post. The post text is the prompt: " +
+                "the attachment must show exactly what that post is about, never something loosely related.\n" +
+                "Answer with one line per post, nothing else: N | kind | search | scene\n" +
+                "- kind: gif for reactions, feelings, jokes, motion, sports or gameplay moments (about a third of posts); " +
+                "photo for things, places, food, pets, events and people; meme for meme-format jokes; " +
+                "none only when nothing visual fits.\n" +
+                "- search: 2 to 5 concrete English words naming the visible subject, taken from the post " +
+                "(\"golden retriever beach\", \"cat knocking over glass\", \"rainy tokyo street night\"). " +
+                "No fictional names, no filler like photo, image, picture or aesthetic.\n" +
+                "- scene: one sentence describing exactly what the picture shows, for an image generator."
         /** Weighted, rotating prompts keep the feed's requested interests recurring across refreshes. */
         private val SOCIAL_TOPIC_DIRECTIONS = listOf(
             "[18+] An adult creator teaser, candid attraction, or explicit adult-only photo post, true to this character.",

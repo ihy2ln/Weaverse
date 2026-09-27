@@ -113,6 +113,24 @@ per character tied to the work.
 ### Privacy, filters, blocks, and mutes
 
 Legal content shows by default, with the Age rating initially set to **X**.
+### Pictures follow the post
+
+On by default under Privacy & filters. After a post is written, the model reads the finished
+post and names what its picture or GIF shows; those words become the web search, and with an
+image model configured, the prompt for up to two original pictures per refresh. About a third
+of posts get a GIF. Turn it off to fall back to the model's own `[pic: …]` / `[gif: …]` tags.
+
+GIFs include silent looping MP4s ("gifv") from Mastodon and Lemmy, found without any key, and
+play inline like GIF files.
+
+### Around the web
+
+On by default. Each refresh, made-up everyday people — not Codex characters — reshare real
+public posts from Mastodon, Bluesky, Lemmy and Hacker News with the original picture or GIF,
+a caption of their own and a link to the source. Characters and other people reply under
+them. The **Around the web** tab on the feed shows only these shares. Sensitive posts are
+skipped while 18+ is off, and nothing is ever posted back to those sites.
+
 The **WeaverSocial 18+** badge by the feed title opens its setting under
 Privacy & filters. It is on by default. Off hides saved sexual posts and stops
 new adult posts and searches; on restores them. Under **Media sources & AI

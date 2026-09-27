@@ -3,6 +3,29 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.65 - WeaverSocial: post-as-prompt media, GIF loops, around the web
+
+- APK: `Beta.Test.Build/weaverse-v1.4.65.apk`, SHA-256
+  `52ed41e5c0fc8c4f0826552bf2d14d1174bf8e1b29be31d2e6de079ebfa24c13`.
+  Debug-key signed, same certificate as v1.4.59 (`f16db508…51fc05`).
+- Pictures follow the post (default on): posts are written first, then one planner call
+  reads the finished posts and returns `N | kind | search | scene` per post. The search
+  words drive the web lookup; with an image model or ComfyUI set, up to two posts per
+  refresh get an original picture drawn from the scene. The planner picks GIFs for about a
+  third of posts. Off falls back to the model's own `[pic:]`/`[gif:]` tags.
+- GIFs: keyless Mastodon (hashtag timelines, "gifv" MP4 loops) and Lemmy sources in
+  `WebPictureSearch`; MP4 downloads accepted only for GIF results, stored as `video` media
+  tagged `gifv`, and played muted and looping by `ChatImage` via `LoopingVideoBackground`.
+- Around the web (default on): `RealWebFeed` reads Mastodon tag timelines, Bluesky
+  Discover, Lemmy hot and Hacker News front page, all without accounts. `SocialNpcs`
+  (30 made-up everyday people, ids `npc-*`, never in the Codex) reshare them with their own
+  captions (`originKind = "web_share"`, source link and credit), plus one batched reply call
+  from cast and NPCs. NPCs also join replies to the writer's posts. Feed has an
+  "Around the web" tab. Sensitive/NSFW items are skipped while 18+ is off.
+- Not verified on device: MuMu's `/data` was mounted read-only, so installs failed.
+  Compile, unit tests (SocialNpcs, SocialMediaMatch, SocialRepeatGuard, HelpContent) and the
+  live endpoint shapes were checked.
+
 ## v1.4.59 - Brainstorm creative workshop
 
 - APK: `Beta.Test.Build/weaverse-v1.4.59.apk`, SHA-256

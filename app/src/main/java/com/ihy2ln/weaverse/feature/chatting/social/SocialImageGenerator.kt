@@ -38,6 +38,14 @@ class SocialImageGenerator @Inject constructor(
     private val http = client.newBuilder().callTimeout(45, TimeUnit.SECONDS).build()
     private val json = Json { ignoreUnknownKeys = true }
 
+    /** A ComfyUI workflow or an OpenRouter image model is set, so posts can get original pictures. */
+    suspend fun isConfigured(): Boolean {
+        if (settings.socialString("comfy_endpoint").first().isNotBlank() &&
+            settings.socialString("comfy_workflow").first().isNotBlank()) return true
+        return settings.socialString("image_model").first()
+            .ifBlank { settings.preferences.first().mangaImageModelRef }.startsWith("openrouter/")
+    }
+
     suspend fun generate(prompt: String, referenceMediaId: String? = null): MediaEntity? {
         val endpoint = settings.socialString("comfy_endpoint").first()
         val workflow = settings.socialString("comfy_workflow").first()

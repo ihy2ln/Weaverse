@@ -105,7 +105,10 @@ import javax.inject.Inject
 /** How many pictures one post or message carries, like Twitter's four-up grid. */
 const val MAX_ATTACHMENTS = 4
 
-fun isGifPath(path: String): Boolean = path.endsWith(".gif", ignoreCase = true)
+/** GIFs, and the silent looping MP4s ("gifv") that Mastodon, Imgur and others serve GIFs as. */
+fun isGifPath(path: String): Boolean = path.endsWith(".gif", ignoreCase = true) || isLoopVideoPath(path)
+
+fun isLoopVideoPath(path: String): Boolean = path.endsWith(".mp4", ignoreCase = true) || path.endsWith(".webm", ignoreCase = true)
 
 /**
  * A picture from app storage. GIFs play through Android's own animated decoder
@@ -119,7 +122,11 @@ fun ChatImage(
     showGifBadge: Boolean = true,
 ) {
     Box(modifier) {
-        if (isGifPath(path) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        if (isLoopVideoPath(path)) {
+            com.ihy2ln.weaverse.core.ui.components.LoopingVideoBackground(
+                path, Modifier.fillMaxSize(), fitInside = contentScale == ContentScale.Fit || contentScale == ContentScale.Inside,
+            )
+        } else if (isGifPath(path) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             AnimatedGif(File(path), contentScale, Modifier.fillMaxSize())
         } else {
             coil3.compose.AsyncImage(
@@ -345,7 +352,7 @@ private fun sharePicture(context: android.content.Context, path: String) {
         val authority = context.packageName + ".extension-files"
         val uri = androidx.core.content.FileProvider.getUriForFile(context, authority, file)
         val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-            type = if (isGifPath(path)) "image/gif" else "image/*"
+            type = if (isLoopVideoPath(path)) "video/mp4" else if (isGifPath(path)) "image/gif" else "image/*"
             putExtra(android.content.Intent.EXTRA_STREAM, uri)
             addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
@@ -383,7 +390,7 @@ class PictureLibraryViewModel @Inject constructor(
 ) : ViewModel() {
     private val adultAllowedOverride = MutableStateFlow<Boolean?>(null)
     val pictures: StateFlow<List<LibraryPicture>> = combine(mediaRepository.observeAll(), adultAllowedOverride) { all, allowed ->
-            all.filter { it.type == "image" && (allowed != false || "source_adult" !in it.tags) }.map { entity ->
+            all.filter { (it.type == "image" || (it.type == "video" && "gifv" in it.tags)) && (allowed != false || "source_adult" !in it.tags) }.map { entity ->
                 val path = mediaRepository.resolveFile(entity).absolutePath
                 LibraryPicture(
                     id = entity.id,

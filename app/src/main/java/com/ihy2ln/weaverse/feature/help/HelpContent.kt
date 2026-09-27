@@ -340,6 +340,23 @@ object HelpContent {
                         "a short media status appears. Refresh never alters older saved posts.",
                 ),
                 HelpEntry(
+                    "Pictures follow the post",
+                    "On by default in Privacy & filters. Each finished post is the prompt for its " +
+                        "picture or GIF: the writing model reads the post and names what the picture " +
+                        "shows, and that becomes the web search words and, when an image model is set, " +
+                        "the prompt for up to two original pictures per refresh. About a third of " +
+                        "posts get a GIF. Turn it off to let the model tag its own search words instead.",
+                ),
+                HelpEntry(
+                    "Around the web",
+                    "Posts from around the web is on by default in Privacy & filters. Each refresh, " +
+                        "made-up everyday people (not Codex characters) reshare real public posts from " +
+                        "Mastodon, Bluesky, Lemmy and Hacker News with their picture or GIF, a caption " +
+                        "of their own and a link to the original. Your characters and other people " +
+                        "reply underneath. The Around the web tab on the feed shows only these shares. " +
+                        "Sensitive posts are skipped while 18+ is off. Nothing is posted back.",
+                ),
+                HelpEntry(
                     "What characters can post",
                     "WeaverSocial 18+ is on by default; tap its 18+ badge or open Privacy & " +
                         "filters to turn it off. Off hides saved sexual posts and stops new adult " +
@@ -363,9 +380,10 @@ object HelpContent {
                         "prompt text. Fictional accounts can reshare public previews with a " +
                         "source link and creator credit. Video search results show a thumbnail " +
                         "and open the public watch page; images and GIFs play in posts. " +
-                        "Private and paid media is not imported. Only real GIF files play as GIFs; " +
-                        "video pages show attributed preview cards. Keyless GIF search includes " +
-                        "Gelbooru, Danbooru, Openverse and Wikimedia; optional GIPHY and Tenor keys add more. " +
+                        "Private and paid media is not imported. GIF files and silent looping MP4 " +
+                        "GIFs (\"gifv\") play in posts; other video pages show attributed preview cards. " +
+                        "Keyless GIF search includes Mastodon, Lemmy, Gelbooru, Danbooru and Openverse; " +
+                        "optional GIPHY and Tenor keys add more. " +
                         "A fictional character's selfie uses a named library picture or the " +
                         "configured image model and their Codex appearance. A Codex portrait " +
                         "is sent as a reference when the image model supports editing, never a stranger's " +

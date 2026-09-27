@@ -148,6 +148,9 @@ class CharacterMediaFetcher @Inject constructor(
         return saved
     }
 
+    /** Downloads the exact picture or GIF a real shared post carried, skipping repeats. */
+    suspend fun downloadShared(picture: WebPicture, caption: String): MediaEntity? = downloadCandidate(picture, caption.take(80), true)
+
     suspend fun claimLocalForSocial(media: MediaEntity): Boolean = reuse.claimExisting(media)
 
     private suspend fun fromLibrary(tag: MediaTag, adultAllowed: Boolean, social: Boolean): MediaEntity? {

@@ -503,6 +503,22 @@ object WikiContent {
                 If no media fits, the new post remains text-only and shows a
                 short status. Refresh does not change older saved posts.
 
+                **Pictures follow the post** (Privacy & filters, on by
+                default): once a post is written, the model reads it and
+                names what its picture or GIF shows. Those words drive the
+                web search, and with an image model set, up to two original
+                pictures per refresh are drawn from the same description.
+                Roughly a third of posts get a GIF. GIFs include silent
+                looping MP4s ("gifv") from Mastodon and Lemmy, which need no
+                key.
+
+                **Posts from around the web** (on by default): made-up
+                everyday people reshare real public posts from Mastodon,
+                Bluesky, Lemmy and Hacker News, with the original picture or
+                GIF, their own caption and a link back. Your characters and
+                others reply underneath. The feed's **Around the web** tab
+                shows only these. Nothing is posted to those sites.
+
                 With WeaverSocial **18+** on, adult-labeled posts search public
                 Civitai, Gelbooru and Danbooru gallery items without a paid
                 search key. Your configured OpenRouter image model can also

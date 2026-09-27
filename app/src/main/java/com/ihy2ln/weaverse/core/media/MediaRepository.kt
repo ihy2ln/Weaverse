@@ -144,13 +144,14 @@ class MediaRepository @Inject constructor(
         val relativePath = "media/$id.$ext"
         val file = File(context.filesDir, relativePath)
         file.writeBytes(bytes)
+        val video = mimeType.startsWith("video/")
         val entity = MediaEntity(
             id = id,
-            type = "image",
+            type = if (video) "video" else "image",
             relativePath = relativePath,
             mimeType = mimeType,
             byteSize = file.length(),
-            thumbnailPath = relativePath,
+            thumbnailPath = if (video) null else relativePath,
             createdAt = System.currentTimeMillis(),
         )
         db.mediaDao().upsert(entity)

@@ -672,8 +672,13 @@ private fun HomeFeed(
     onSafety: () -> Unit,
     messagesUnread: Int,
 ) {
-    var following by rememberSaveable { mutableStateOf(false) }
-    val posts = if (following) state.posts.filter { it.isYou || it.authorCharacterId in state.followingIds } else state.posts
+    // For you · Following · Around the web (real posts reshared by everyday people).
+    var feed by rememberSaveable { mutableIntStateOf(0) }
+    val posts = when (feed) {
+        1 -> state.posts.filter { it.isYou || it.authorCharacterId in state.followingIds }
+        2 -> state.posts.filter { it.originKind == "web_share" }
+        else -> state.posts
+    }
     val listState = rememberLazyListState()
     var requestedAtPostCount by remember { mutableIntStateOf(-1) }
     LaunchedEffect(listState, posts.size, state.generating) {
@@ -711,9 +716,9 @@ private fun HomeFeed(
                     RoundButton(Icons.Outlined.MailOutline, "Messages", c, badge = messagesUnread, onClick = onMessages)
                 }
                 Row(Modifier.fillMaxWidth().height(44.dp)) {
-                    listOf("For you" to false, "Following" to true).forEach { (label, value) ->
-                        val selected = following == value
-                        Box(Modifier.weight(1f).fillMaxHeight().clickable { following = value }, contentAlignment = Alignment.Center) {
+                    listOf("For you" to 0, "Following" to 1, "Around the web" to 2).forEach { (label, value) ->
+                        val selected = feed == value
+                        Box(Modifier.weight(1f).fillMaxHeight().clickable { feed = value }, contentAlignment = Alignment.Center) {
                             Text(label, fontSize = 15.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium, color = if (selected) c.text else c.muted)
                             if (selected) {
                                 Box(Modifier.align(Alignment.BottomCenter).width(56.dp).height(3.dp).clip(RoundedCornerShape(2.dp)).background(c.brand))
@@ -853,10 +858,15 @@ private fun HomeFeed(
         if (posts.isEmpty() && !state.generating) {
             item(key = "empty") {
                 Column(Modifier.fillMaxWidth().padding(32.dp)) {
-                    Text(if (following) "Nobody you follow has posted" else "Your worlds are quiet", fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, color = c.text)
+                    Text(when (feed) { 1 -> "Nobody you follow has posted"; 2 -> "Nothing from the web yet"; else -> "Your worlds are quiet" },
+                        fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, color = c.text)
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        if (following) "Follow people from Explore to fill this tab." else "Tap Refresh and your characters will start posting.",
+                        when (feed) {
+                            1 -> "Follow people from Explore to fill this tab."
+                            2 -> if (state.webPosts) "Tap Refresh and people will share what they find around the web." else "Turn on Posts from around the web in Privacy & filters."
+                            else -> "Tap Refresh and your characters will start posting."
+                        },
                         color = c.muted,
                         fontSize = 15.sp,
                     )
@@ -1043,10 +1053,16 @@ private fun PostCard(post: SocialPostUi, state: SocialUiState, c: WsColors, acti
                             context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
                                 android.net.Uri.parse(post.sourceUrl)))
                         }.padding(10.dp)) {
-                        Text("${if (post.originKind == "public_video") "▶ Public video preview" else "Public source"} · ${post.sourceSite.ifBlank { "Web" }}", color = c.accent,
+                        val label = when (post.originKind) {
+                            "public_video" -> "▶ Public video preview"
+                            "web_share" -> "↗ Shared from"
+                            else -> "Public source"
+                        }
+                        Text("$label ${if (post.originKind == "web_share") "" else "· "}${post.sourceSite.ifBlank { "Web" }}", color = c.accent,
                             fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         Text(post.sourceTitle.ifBlank { post.sourceUrl }, color = c.text,
-                            fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            fontSize = 13.sp, maxLines = if (post.originKind == "web_share" && inDetail) 12 else if (post.originKind == "web_share") 4 else 2,
+                            overflow = TextOverflow.Ellipsis)
                     }
                 } else {
                     post.mediaCredits.withIndex().filter { it.value.isNotBlank() }.take(1).forEach { (index, credit) ->
@@ -2188,6 +2204,22 @@ private fun SafetyScreen(
                     color = c.muted, fontSize = 12.sp)
                 if (state.mediaNotice.isNotBlank()) Text(state.mediaNotice, color = c.muted, fontSize = 12.sp)
             }
+        }
+        item(key = "media-from-post") {
+            SwitchRow(
+                title = "Pictures follow the post",
+                body = "Each finished post is used as the prompt for its picture or GIF — the search words and any AI image come from what the post says. Off: the model tags its own search words.",
+                checked = state.mediaFromPost,
+                c = c,
+            ) { viewModel.setMediaFromPost(it) }
+        }
+        item(key = "web-posts") {
+            SwitchRow(
+                title = "Posts from around the web",
+                body = "Made-up everyday people reshare real public posts, pictures and GIFs from Mastodon, Bluesky, Lemmy and Hacker News, with a link to the original. Nothing is posted back.",
+                checked = state.webPosts,
+                c = c,
+            ) { viewModel.setWebPosts(it) }
         }
         item(key = "fictional-creators") {
             Column(Modifier.fillMaxWidth().clickable { creatorSettings = true }
