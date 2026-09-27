@@ -8,6 +8,7 @@ import com.ihy2ln.weaverse.core.text.Document
 import com.ihy2ln.weaverse.core.text.toJson
 import com.ihy2ln.weaverse.data.db.entities.ChatMessageEntity
 import com.ihy2ln.weaverse.data.db.entities.ChatThreadEntity
+import com.ihy2ln.weaverse.data.db.entities.SocialPostEntity
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -32,6 +33,32 @@ class MigrationTest {
     @After
     fun tearDown() {
         context.deleteDatabase(dbName)
+    }
+
+    @Test
+    fun upgradeFrom32KeepsSocialPostsAndAddsAttribution() {
+        context.deleteDatabase(dbName)
+        val initial = open()
+        runBlocking {
+            initial.socialDao().upsert(SocialPostEntity(
+                id = "existing-social-post", platform = "weaversocial", authorCharacterId = "author-1",
+                authorName = "Ari", text = "Old post", createdAt = 1234L,
+            ))
+        }
+        initial.close()
+        SQLiteDatabase.openDatabase(context.getDatabasePath(dbName).path, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
+            listOf("originKind", "sourceUrl", "sourceSite", "sourceTitle", "sourceMediaUrl")
+                .forEach { db.execSQL("ALTER TABLE social_posts DROP COLUMN $it") }
+            listOf("sourceUrl", "sourceSite", "sourceCredit")
+                .forEach { db.execSQL("ALTER TABLE media DROP COLUMN $it") }
+            db.version = 32
+        }
+        val upgraded = open()
+        val post = runBlocking { upgraded.socialDao().getPost("existing-social-post") }
+        upgraded.close()
+        assertEquals("Old post", post?.text)
+        assertEquals("fictional", post?.originKind)
+        assertEquals("", post?.sourceUrl)
     }
 
     @Test

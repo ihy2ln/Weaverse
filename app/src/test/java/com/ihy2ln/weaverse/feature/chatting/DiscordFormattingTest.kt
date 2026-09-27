@@ -149,6 +149,8 @@ class DiscordFormattingTest {
         assertTrue(safety.hides("a", "p1", "big SPOILER ahead", emptySet()))
         assertTrue(safety.hides("a", "p1", "hi", setOf(ContentLabel.Politics)))
         assertFalse(safety.hides("a", "p1", "hi", setOf(ContentLabel.Sexual)))
+        assertTrue(safety.copy(adultEnabled = false).hides("a", "p1", "hi", setOf(ContentLabel.Sexual)))
+        assertFalse(safety.copy(adultEnabled = false).hides("a", "p1", "hi", emptySet()))
         assertTrue(safety.cantInteract("x"))
         assertFalse(safety.cantInteract("m"))
         // Nothing is filtered by default.

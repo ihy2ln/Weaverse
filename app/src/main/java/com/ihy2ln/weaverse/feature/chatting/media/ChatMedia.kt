@@ -95,7 +95,8 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -380,9 +381,9 @@ class PictureLibraryViewModel @Inject constructor(
     mediaRepository: MediaRepository,
     private val web: WebPictureSearch,
 ) : ViewModel() {
-    val pictures: StateFlow<List<LibraryPicture>> = mediaRepository.observeAll()
-        .map { all ->
-            all.filter { it.type == "image" }.map { entity ->
+    private val adultAllowedOverride = MutableStateFlow<Boolean?>(null)
+    val pictures: StateFlow<List<LibraryPicture>> = combine(mediaRepository.observeAll(), adultAllowedOverride) { all, allowed ->
+            all.filter { it.type == "image" && (allowed != false || "source_adult" !in it.tags) }.map { entity ->
                 val path = mediaRepository.resolveFile(entity).absolutePath
                 LibraryPicture(
                     id = entity.id,
@@ -398,6 +399,10 @@ class PictureLibraryViewModel @Inject constructor(
     private val _web = kotlinx.coroutines.flow.MutableStateFlow(WebSearchState())
     val webState: StateFlow<WebSearchState> = _web
     private var searchJob: kotlinx.coroutines.Job? = null
+
+    fun setAdultAllowed(allowed: Boolean?) {
+        adultAllowedOverride.value = allowed
+    }
 
     fun setQuery(query: String) {
         _web.value = _web.value.copy(query = query)
@@ -422,7 +427,9 @@ class PictureLibraryViewModel @Inject constructor(
     private suspend fun runSearch() {
         val state = _web.value
         _web.value = state.copy(loading = true, message = "")
-        val outcome = runCatching { web.search(state.query, state.kind) }
+        val outcome = runCatching {
+            web.search(state.query, state.kind, adultAllowedOverride.value ?: SocialContentPolicy.explicit)
+        }
         _web.value = _web.value.copy(
             loading = false,
             searched = true,
@@ -489,6 +496,7 @@ private enum class PickerTab(val label: String) { Web("Search web"), Library("Li
 fun PicturePickerSheet(
     limit: Int,
     start: PickerStart = PickerStart.Library,
+    adultAllowed: Boolean? = null,
     onDismiss: () -> Unit,
     onPicked: (PickedMedia) -> Unit,
     surface: Color,
@@ -507,8 +515,9 @@ fun PicturePickerSheet(
             },
         )
     }
-    androidx.compose.runtime.LaunchedEffect(Unit) {
-        if (start == PickerStart.Gifs) viewModel.setKind(WebSearchKind.Gifs) else if (!web.searched) viewModel.search()
+    androidx.compose.runtime.LaunchedEffect(adultAllowed) {
+        viewModel.setAdultAllowed(adultAllowed)
+        if (start == PickerStart.Gifs) viewModel.setKind(WebSearchKind.Gifs) else viewModel.search()
     }
     var query by rememberSaveable { mutableStateOf("") }
     var selected by rememberSaveable { mutableStateOf(listOf<String>()) }
@@ -814,6 +823,7 @@ private fun SourcesDialog(viewModel: PictureLibraryViewModel, onDismiss: () -> U
     var tenor by remember { mutableStateOf(viewModel.key(KEY_TENOR)) }
     var google by remember { mutableStateOf(viewModel.key(KEY_GOOGLE)) }
     var googleCx by remember { mutableStateOf(viewModel.key(KEY_GOOGLE_CX)) }
+    var brave by remember { mutableStateOf(viewModel.key(KEY_BRAVE)) }
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Picture search sources") },
@@ -833,6 +843,7 @@ private fun SourcesDialog(viewModel: PictureLibraryViewModel, onDismiss: () -> U
                 KeyField("Tenor API key (Google Cloud → Tenor API)", tenor) { tenor = it }
                 KeyField("Google API key (Custom Search JSON API)", google) { google = it }
                 KeyField("Google search engine ID (cx, with image search on)", googleCx) { googleCx = it }
+                KeyField("Brave Image Search API key", brave) { brave = it }
                 Text(
                     "Keys stay on this phone, encrypted. Pictures you add are saved to your " +
                         "Pictures library under Web, tagged with where they came from.",
@@ -846,6 +857,7 @@ private fun SourcesDialog(viewModel: PictureLibraryViewModel, onDismiss: () -> U
                 viewModel.setKey(KEY_TENOR, tenor)
                 viewModel.setKey(KEY_GOOGLE, google)
                 viewModel.setKey(KEY_GOOGLE_CX, googleCx)
+                viewModel.setKey(KEY_BRAVE, brave)
                 onDismiss()
             }) { Text("Save") }
         },

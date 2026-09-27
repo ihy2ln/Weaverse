@@ -21,6 +21,7 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.random.Random
 
 /** One picture or GIF found on the web, before it is downloaded into the library. */
 data class WebPicture(
@@ -36,6 +37,8 @@ data class WebPicture(
     /** Where it came from, kept with the saved picture for credit. */
     val pageUrl: String = "",
     val credit: String = "",
+    /** The source classified this item as adult; keep that label with saved media. */
+    val adult: Boolean = false,
 )
 
 /** What the search is for. */
@@ -49,12 +52,16 @@ enum class WebSource(val label: String, val keyIds: List<String>) {
     Giphy("GIPHY", listOf(KEY_GIPHY)),
     Tenor("Tenor", listOf(KEY_TENOR)),
     Google("Google Images", listOf(KEY_GOOGLE, KEY_GOOGLE_CX)),
+    Brave("Brave Image Search", listOf(KEY_BRAVE)),
+    Civitai("Civitai", emptyList()),
 }
 
 const val KEY_GIPHY = "giphy"
 const val KEY_TENOR = "tenor"
 const val KEY_GOOGLE = "google_cse"
 const val KEY_GOOGLE_CX = "google_cse_cx"
+const val KEY_BRAVE = "brave_image_search"
+const val KEY_CIVITAI = "civitai"
 
 /**
  * Searches picture and GIF sites for the chat pickers. Openverse, Wikimedia Commons and
@@ -84,12 +91,26 @@ class WebPictureSearch @Inject constructor(
 
     fun enabled(source: WebSource): Boolean = source.keyIds.all { key(it).isNotBlank() }
 
+    suspend fun braveStatus(): String = withContext(Dispatchers.IO) {
+        if (!enabled(WebSource.Brave)) return@withContext "Brave key not set"
+        runCatching { "Brave connected · ${brave("cat", false, false).size} preview(s)" }
+            .getOrElse { "Brave unavailable: ${it.message.orEmpty().take(90)}" }
+    }
+
+    suspend fun civitaiStatus(adultAllowed: Boolean): String = withContext(Dispatchers.IO) {
+        runCatching {
+            val query = if (adultAllowed) "nude portrait" else "portrait"
+            "Civitai connected · ${civitai(query, adultAllowed).size} matching preview(s)"
+        }
+            .getOrElse { "Civitai unavailable: ${it.message.orEmpty().take(90)}" }
+    }
+
     /** Results from every enabled source that fits [kind], interleaved so no one site dominates. */
-    suspend fun search(query: String, kind: WebSearchKind): SearchOutcome = coroutineScope {
+    suspend fun search(query: String, kind: WebSearchKind, adultAllowed: Boolean = SocialContentPolicy.explicit): SearchOutcome = coroutineScope {
         val q = query.trim()
         val sources = sourcesFor(kind).filter { enabled(it) }
         val jobs = sources.map { source ->
-            source to async(Dispatchers.IO) { runCatching { fetch(source, q, kind) } }
+            source to async(Dispatchers.IO) { runCatching { fetch(source, q, kind, adultAllowed) } }
         }
         val lists = jobs.map { (source, job) -> source to job.await() }
         val failed = lists.filter { it.second.isFailure }.map { it.first.label }
@@ -104,34 +125,110 @@ class WebPictureSearch @Inject constructor(
     data class SearchOutcome(val results: List<WebPicture>, val failedSources: List<String>, val searchedSources: List<String>)
 
     private fun sourcesFor(kind: WebSearchKind): List<WebSource> = when (kind) {
-        WebSearchKind.Gifs -> listOf(WebSource.Giphy, WebSource.Tenor, WebSource.Openverse, WebSource.Commons, WebSource.Google)
+        WebSearchKind.Gifs -> listOf(WebSource.Brave, WebSource.Giphy, WebSource.Tenor, WebSource.Openverse, WebSource.Commons, WebSource.Google)
         // Reddit is not a source: it refuses API calls without a signed-in app.
-        WebSearchKind.Memes -> listOf(WebSource.Imgflip, WebSource.Giphy, WebSource.Openverse, WebSource.Google)
-        WebSearchKind.Pictures -> listOf(WebSource.Openverse, WebSource.Commons, WebSource.Google)
+        WebSearchKind.Memes -> listOf(WebSource.Brave, WebSource.Imgflip, WebSource.Giphy, WebSource.Openverse, WebSource.Google)
+        WebSearchKind.Pictures -> listOf(WebSource.Civitai, WebSource.Brave, WebSource.Openverse, WebSource.Commons, WebSource.Google)
         WebSearchKind.All -> WebSource.entries
     }
 
-    private fun fetch(source: WebSource, q: String, kind: WebSearchKind): List<WebPicture> {
+    private fun fetch(source: WebSource, q: String, kind: WebSearchKind, adultAllowed: Boolean): List<WebPicture> {
         val gifs = kind == WebSearchKind.Gifs
         return when (source) {
-            WebSource.Openverse -> openverse(if (kind == WebSearchKind.Memes) "$q meme".trim() else q, gifs)
+            WebSource.Openverse -> openverse(if (kind == WebSearchKind.Memes) "$q meme".trim() else q, gifs, adultAllowed)
             WebSource.Commons -> commons(q, gifs)
             WebSource.Imgflip -> imgflip(q)
             WebSource.Giphy -> giphy(q)
-            WebSource.Tenor -> tenor(q)
-            WebSource.Google -> google(if (kind == WebSearchKind.Memes) "$q meme".trim() else q, gifs)
+            WebSource.Tenor -> tenor(q, adultAllowed)
+            WebSource.Google -> google(if (kind == WebSearchKind.Memes) "$q meme".trim() else q, gifs, adultAllowed)
+            WebSource.Brave -> brave(if (kind == WebSearchKind.Memes) "$q meme".trim() else q, gifs, adultAllowed)
+            WebSource.Civitai -> if (gifs || kind == WebSearchKind.Memes) emptyList() else civitai(q, adultAllowed)
         }
     }
 
     // ------------------------------------------------------------ sources
 
-    private fun openverse(q: String, gifs: Boolean): List<WebPicture> {
+    /** Public image-index previews only. Never writes to the indexed sites. */
+    private fun brave(q: String, gifs: Boolean, adultAllowed: Boolean): List<WebPicture> {
+        if (q.isBlank()) return emptyList()
+        val url = "https://api.search.brave.com/res/v1/images/search".toHttpUrl().newBuilder()
+            .addQueryParameter("q", if (gifs) "$q gif" else q)
+            .addQueryParameter("count", "35")
+            .addQueryParameter("safesearch", if (adultAllowed) "off" else "strict")
+            .build()
+        val request = Request.Builder().url(url).header("X-Subscription-Token", key(KEY_BRAVE))
+            .header("Accept", "application/json").build()
+        val root = http.newCall(request).execute().use { response ->
+            require(response.isSuccessful) { "Brave HTTP ${response.code}" }
+            json.parseToJsonElement(response.body?.string().orEmpty()).obj()
+        }
+        return root["results"].arr().mapNotNull { item ->
+            val o = item.obj()
+            val full = o["properties"].obj().str("url") ?: return@mapNotNull null
+            if (!full.startsWith("https://")) return@mapNotNull null
+            val gif = full.substringBefore('?').endsWith(".gif", true)
+            if (gifs && !gif) return@mapNotNull null
+            val page = o.str("url").orEmpty().takeIf { it.startsWith("https://") }.orEmpty()
+            WebPicture(
+                id = "br-" + full.hashCode(), title = o.str("title").orEmpty(),
+                thumbUrl = o["thumbnail"].obj().str("src") ?: full,
+                fullUrl = full, isGif = gif, source = "Brave",
+                pageUrl = page, credit = o.str("source").orEmpty(),
+            )
+        }
+    }
+
+    /** Public Civitai gallery only; generation metadata is used for local relevance ranking. */
+    private fun civitai(q: String, adultAllowed: Boolean): List<WebPicture> {
+        val wantsAdult = adultAllowed && ADULT_QUERY_WORDS.containsMatchIn(q)
+        val base = if (wantsAdult) "https://civitai.red" else "https://civitai.com"
+        val url = "$base/api/v1/images".toHttpUrl().newBuilder()
+            .addQueryParameter("type", "image")
+            .addQueryParameter("sort", "Random")
+            .addQueryParameter("limit", "80")
+            .addQueryParameter("page", Random.nextInt(1, 9).toString())
+            .addQueryParameter("withMeta", "true")
+            // PG through XXX, excluding Civitai's Blocked level. Off allows PG and PG-13 only.
+            .addQueryParameter("browsingLevel", if (wantsAdult) "31" else "3")
+            .build()
+        val request = Request.Builder().url(url).header("User-Agent", USER_AGENT)
+            .header("Accept", "application/json")
+            .apply { key(KEY_CIVITAI).takeIf { it.isNotBlank() }?.let { header("Authorization", "Bearer $it") } }
+            .build()
+        val root = http.newCall(request).execute().use { response ->
+            require(response.isSuccessful) { "Civitai HTTP ${response.code}" }
+            json.parseToJsonElement(response.body?.string().orEmpty()).obj()
+        }
+        val words = q.lowercase().split(Regex("[^a-z0-9]+"))
+            .filter { it.length >= 4 && it !in STOP_WORDS && it !in CIVITAI_GENERIC_WORDS }.distinct()
+        return root["items"].arr().mapNotNull { item ->
+            val o = item.obj()
+            val id = o.str("id") ?: return@mapNotNull null
+            val full = o.str("url")?.takeIf { it.startsWith("https://") } ?: return@mapNotNull null
+            if (o.str("type") != "image") return@mapNotNull null
+            val level = o.str("browsingLevel")?.toIntOrNull() ?: return@mapNotNull null
+            if ((level and 32) != 0 || (!wantsAdult && (level and 24) != 0)) return@mapNotNull null
+            val prompt = o["meta"].obj().str("prompt").orEmpty().lowercase()
+            val score = words.count { prompt.contains(it) }
+            if (words.isNotEmpty() && score == 0) return@mapNotNull null
+            val creator = o.str("username").orEmpty()
+            val page = "$base/images/$id"
+            WebPicture(
+                id = "cv-$id", title = q.take(100).ifBlank { "AI artwork" },
+                thumbUrl = full, fullUrl = full, isGif = false, source = "Civitai",
+                pageUrl = page, credit = creator.takeIf { it.isNotBlank() }?.let { "@$it on Civitai" } ?: "Civitai creator",
+                adult = (level and 24) != 0,
+            ) to score
+        }.sortedByDescending { it.second }.take(20).map { it.first }
+    }
+
+    private fun openverse(q: String, gifs: Boolean, adultAllowed: Boolean): List<WebPicture> {
         if (q.isBlank()) return emptyList()
         val url = "https://api.openverse.org/v1/images/".toHttpUrl().newBuilder()
             .addQueryParameter("q", q)
             // Openverse refuses page sizes above 20 without an account.
             .addQueryParameter("page_size", "20")
-            .addQueryParameter("mature", if (SocialContentPolicy.explicit) "true" else "false")
+            .addQueryParameter("mature", if (adultAllowed) "true" else "false")
             .apply { if (gifs) addQueryParameter("extension", "gif") }
             .build()
         val root = getJson(url.toString()).obj()
@@ -147,6 +244,7 @@ class WebPictureSearch @Inject constructor(
                 source = "Openverse",
                 pageUrl = o.str("foreign_landing_url").orEmpty(),
                 credit = listOfNotNull(o.str("creator"), o.str("license")?.uppercase()?.let { "CC $it" }).joinToString(" · "),
+                adult = o.str("mature") == "true",
             )
         }
     }
@@ -241,7 +339,7 @@ class WebPictureSearch @Inject constructor(
         }
     }
 
-    private fun tenor(q: String): List<WebPicture> {
+    private fun tenor(q: String, adultAllowed: Boolean): List<WebPicture> {
         val key = key(KEY_TENOR)
         val base = if (q.isBlank()) "https://tenor.googleapis.com/v2/featured" else "https://tenor.googleapis.com/v2/search"
         val url = base.toHttpUrl().newBuilder()
@@ -252,7 +350,7 @@ class WebPictureSearch @Inject constructor(
             .addQueryParameter(
                 "contentfilter",
                 when {
-                    SocialContentPolicy.explicit -> "off"
+                    adultAllowed -> "off"
                     SocialContentPolicy.open -> "low"
                     else -> "medium"
                 },
@@ -276,14 +374,14 @@ class WebPictureSearch @Inject constructor(
         }
     }
 
-    private fun google(q: String, gifs: Boolean): List<WebPicture> {
+    private fun google(q: String, gifs: Boolean, adultAllowed: Boolean): List<WebPicture> {
         if (q.isBlank()) return emptyList()
         val url = "https://www.googleapis.com/customsearch/v1".toHttpUrl().newBuilder()
             .addQueryParameter("key", key(KEY_GOOGLE))
             .addQueryParameter("cx", key(KEY_GOOGLE_CX))
             .addQueryParameter("q", q)
             .addQueryParameter("searchType", "image")
-            .addQueryParameter("safe", if (SocialContentPolicy.explicit) "off" else "active")
+            .addQueryParameter("safe", if (adultAllowed) "off" else "active")
             .addQueryParameter("num", "10")
             .apply { if (gifs) addQueryParameter("fileType", "gif") }
             .build()
@@ -319,15 +417,15 @@ class WebPictureSearch @Inject constructor(
             require(length <= MAX_DOWNLOAD_BYTES) { "That file is too large to add." }
             val bytes = body.bytes()
             require(bytes.size <= MAX_DOWNLOAD_BYTES) { "That file is too large to add." }
-            val type = response.header("Content-Type").orEmpty().substringBefore(';').trim()
-            val mime = when {
-                type.startsWith("image/") -> type
-                picture.isGif -> "image/gif"
-                picture.fullUrl.contains(".png", true) -> "image/png"
-                picture.fullUrl.contains(".webp", true) -> "image/webp"
-                else -> "image/jpeg"
+            val signature = when {
+                bytes.size >= 6 && String(bytes, 0, 6, Charsets.US_ASCII).startsWith("GIF8") -> "image/gif"
+                bytes.size >= 4 && bytes[0] == 0x89.toByte() && bytes[1] == 0x50.toByte() && bytes[2] == 0x4E.toByte() && bytes[3] == 0x47.toByte() -> "image/png"
+                bytes.size >= 3 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte() && bytes[2] == 0xFF.toByte() -> "image/jpeg"
+                bytes.size >= 12 && String(bytes, 0, 4, Charsets.US_ASCII) == "RIFF" && String(bytes, 8, 4, Charsets.US_ASCII) == "WEBP" -> "image/webp"
+                else -> ""
             }
-            require(mime.startsWith("image/")) { "That link isn't a picture." }
+            require(signature.isNotBlank()) { "The result was not a supported image." }
+            val mime = signature
             val ext = when {
                 mime.contains("gif") -> "gif"
                 mime.contains("png") -> "png"
@@ -339,8 +437,11 @@ class WebPictureSearch @Inject constructor(
             val saved = media.copy(
                 displayName = picture.title.ifBlank { query.ifBlank { picture.source } }.take(120),
                 category = "Web",
-                tags = listOf(picture.source, query, if (picture.isGif) "gif" else "", picture.credit, picture.pageUrl)
+                tags = listOf(picture.source, query, if (picture.isGif) "gif" else "", if (picture.adult) "source_adult" else "", picture.credit, picture.pageUrl)
                     .filter { it.isNotBlank() }.joinToString(", "),
+                sourceUrl = picture.pageUrl,
+                sourceSite = picture.source,
+                sourceCredit = picture.credit,
             )
             db.mediaDao().upsert(saved)
             saved
@@ -371,5 +472,10 @@ class WebPictureSearch @Inject constructor(
             "but", "from", "they", "have", "has", "its", "into", "out", "who", "what", "when", "meme",
             "gif", "looking", "being", "just", "like", "get", "got",
         )
+        private val CIVITAI_GENERIC_WORDS = setOf(
+            "image", "photo", "picture", "adult", "creator", "clearly", "editorial", "illustration",
+            "candid", "search", "words", "style", "content", "public", "media",
+        )
+        private val ADULT_QUERY_WORDS = Regex("\\b(nude|nudity|porn|xxx|erotic|explicit|sexual|onlyfans|fansly)\\b", RegexOption.IGNORE_CASE)
     }
 }

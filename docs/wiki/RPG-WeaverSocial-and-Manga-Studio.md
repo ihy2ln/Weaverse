@@ -96,9 +96,11 @@ with **For you** and **Following** views. Pull down on either feed to refresh.
 Keep scrolling on Home or Social; when you reach the end, another batch of
 character posts is generated. Tap **Refresh** in the composer row for more at
 any time.
-Character posts are prompted to attach a relevant picture, GIF or meme to
-about half of updates when it fits. A matching picture from your library may
-be used instead; actual attachments depend on media availability.
+Character posts favor pictures and GIFs. Topic directions rotate through adult
+content (about one third when WeaverSocial 18+ is on), gaming, investing,
+animals, travel, sports, cars, tech, fitness and daily life. Public image
+previews can appear as clearly credited bot reshares. Attachments depend on
+reachable sources; failed searches show a media status in the feed.
 
 **Explore** searches people, posts and #tags, and lists servers, trends and
 people to follow. **Alerts** gathers unread server rooms and feed activity.
@@ -111,6 +113,16 @@ per character tied to the work.
 ### Privacy, filters, blocks, and mutes
 
 Legal content shows by default, with the Age rating initially set to **X**.
+The **WeaverSocial 18+** badge by the feed title opens its setting under
+Privacy & filters. It is on by default. Off hides saved sexual posts and stops
+new adult posts and searches; on restores them. Under **Media sources & AI
+images**, Civitai's public image gallery works without a key; an optional encrypted Civitai token uses your account's browsing level. You can also add an encrypted Brave Image Search key, an OpenRouter
+image model, or a ComfyUI URL and API workflow JSON with `__PROMPT__` in the
+positive prompt. Original image generation is capped at one attempt per
+refresh. Public media carries a source link, and no action posts or messages
+to outside platforms.
+Civitai media is credited to its uploader and linked to its image page. Its video gallery can be opened as an outside source; inline posts currently support images and GIFs. Adult results depend on Civitai's account and region settings.
+
 Filters are off until you turn them on. In Privacy & filters, you can warn
 before sensitive images, hide posts labeled sexual, violence, politics,
 religion, offensive, or drugs, mute words, restore posts marked **Not

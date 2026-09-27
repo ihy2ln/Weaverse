@@ -35,6 +35,8 @@ data class SocialSafety(
     val hiddenLabels: Set<ContentLabel> = emptySet(),
     /** Off by default, like X with "display sensitive media" on. */
     val warnSensitive: Boolean = false,
+    /** Private WeaverSocial adult feed switch. An absent preference means enabled. */
+    val adultEnabled: Boolean = true,
 ) {
     /** People whose posts the writer should not see at all. */
     val unseen: Set<String> get() = blocked + muted + blockedBy
@@ -44,6 +46,7 @@ data class SocialSafety(
     /** True when a post should be left out of the writer's feeds. */
     fun hides(authorId: String?, postId: String, text: String, labels: Set<ContentLabel>): Boolean {
         if (postId in hiddenPosts) return true
+        if (!adultEnabled && ContentLabel.Sexual in labels) return true
         if (authorId != null && authorId in unseen) return true
         if (labels.any { it in hiddenLabels }) return true
         val lower = text.lowercase()
@@ -74,6 +77,7 @@ class SocialRelations @Inject constructor(
             mutedWords = words,
             hiddenLabels = labels.mapNotNull { ContentLabel.of(it) }.toSet(),
             warnSensitive = OPTION_WARN_SENSITIVE in options,
+            adultEnabled = OPTION_ADULT_OFF !in options,
         )
     }
 
@@ -107,6 +111,7 @@ class SocialRelations @Inject constructor(
     suspend fun setLabelHidden(label: ContentLabel, hidden: Boolean) = toggle(HIDDEN_LABELS, label.id, hidden)
 
     suspend fun setWarnSensitive(on: Boolean) = toggle(OPTIONS, OPTION_WARN_SENSITIVE, on)
+    suspend fun setAdultEnabled(on: Boolean) = toggle(OPTIONS, OPTION_ADULT_OFF, !on)
 
     private suspend fun toggle(key: String, value: String, present: Boolean) {
         val current = settings.socialSet(key).first()
@@ -123,6 +128,7 @@ class SocialRelations @Inject constructor(
         private const val HIDDEN_LABELS = "hidden_labels"
         private const val OPTIONS = "options"
         private const val OPTION_WARN_SENSITIVE = "warn_sensitive"
+        private const val OPTION_ADULT_OFF = "adult_off"
     }
 }
 

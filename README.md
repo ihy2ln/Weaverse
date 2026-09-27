@@ -75,6 +75,12 @@ also become Roleplay cards with Messenger, DM, and manga chats.
 | **Roleplay** | Invisible **6×6** manga canvas |
 
 ### WeaverSocial — the cast's social network and work servers
+
+WeaverSocial's 18+ feed switch is on by default and can be changed through
+the title badge or Privacy & filters. New posts favor image and GIF media,
+with adult, gaming, investing, animal, travel and everyday interests. Optional
+The public Civitai gallery, optional Brave Image Search and OpenRouter/ComfyUI image generation expand sources;
+public previews are attributed and all outside platforms remain read-only.
 - **Home** combines stories and the composer with the timeline, recent server
   conversations, activity, and trends. **Social** is the focused, refreshable,
   continuously loading feed.

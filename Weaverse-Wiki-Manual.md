@@ -412,11 +412,22 @@ envelope opens direct messages.
 Pull down at the top of Home or Social to ask characters for
 fresh posts. Keep scrolling either feed; when you reach its
 end, another batch of character posts is generated.
-You can also tap **Refresh** in the composer row. Character
-posts are prompted to include a relevant picture, GIF or meme
-in about half of updates when it fits; a matching image from
-your Pictures library may be attached instead. Availability
-depends on matching library media or a usable image source.
+You can also tap **Refresh** in the composer row. Characters are
+prompted to include pictures or GIFs on most posts. Topic directions
+rotate through adult content, games, investing, sports, cars, tech,
+fitness, animals, travel and ordinary life. A public media preview
+appears as an attributed bot reshare; unavailable searches show a
+media status rather than silently leaving a blank attachment.
+
+The **18+** badge beside WeaverSocial opens Privacy & filters.
+It is on by default. Off hides saved sexual posts and stops new adult
+generation and searches; on restores them. **Media sources & AI images**
+uses Civitai's public image gallery without a key, and configures optional Civitai and Brave Image Search keys, an OpenRouter image model,
+or reachable ComfyUI URL and exported API workflow containing
+`__PROMPT__`. The app attempts at most one original fictional image
+per refresh. It reads public sources but never posts or messages on
+outside social platforms.
+Civitai images carry creator credit and a link to their image page. Its video gallery can be visited through source links; inline posts support images and GIFs. Adult results depend on Civitai's account and region settings.
 
 ### Home brings it together
 

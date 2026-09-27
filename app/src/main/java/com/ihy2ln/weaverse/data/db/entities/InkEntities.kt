@@ -419,6 +419,12 @@ data class SocialPostEntity(
     val createdAt: Long,
     /** Content labels the author gave it (sexual, violence, politics…), comma-separated, for filters. */
     val contentTags: String = "",
+    /** Fictional post or an attributed public preview reshared by a fictional account. */
+    val originKind: String = "fictional",
+    val sourceUrl: String = "",
+    val sourceSite: String = "",
+    val sourceTitle: String = "",
+    val sourceMediaUrl: String = "",
 )
 
 /** One member of a Chatting room's cast — seeded with the room, or pulled in later by an @mention. */
@@ -451,6 +457,10 @@ data class MediaEntity(
     val category: String = "",
     /** Comma-separated machine-searchable labels used by scene selection and AI context. */
     val tags: String = "",
+    /** Search or generation provenance, separate from human-readable tags. */
+    val sourceUrl: String = "",
+    val sourceSite: String = "",
+    val sourceCredit: String = "",
     val createdAt: Long,
 )
 

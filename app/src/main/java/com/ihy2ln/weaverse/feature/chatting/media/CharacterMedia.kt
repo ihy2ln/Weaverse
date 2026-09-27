@@ -92,22 +92,54 @@ class CharacterMediaFetcher @Inject constructor(
     private val db: WeaverseDatabase,
     private val web: WebPictureSearch,
 ) {
-    suspend fun fetch(tag: MediaTag): MediaEntity? {
-        fromLibrary(tag)?.let { return it }
-        val results = runCatching { web.search(tag.query, tag.kind).results }.getOrDefault(emptyList())
+    suspend fun fetch(tag: MediaTag, adultAllowed: Boolean = SocialContentPolicy.explicit, usedUrls: Set<String> = emptySet()): MediaEntity? {
+        fromLibrary(tag, adultAllowed)?.let { return it }
+        val results = runCatching { web.search(tag.query, tag.kind, adultAllowed).results }.getOrDefault(emptyList())
             .filter { tag.kind != WebSearchKind.Gifs || it.isGif }
-            .ifEmpty { runCatching { web.search(tag.query, WebSearchKind.All).results }.getOrDefault(emptyList()) }
+            .ifEmpty { runCatching { web.search(tag.query, WebSearchKind.All, adultAllowed).results }.getOrDefault(emptyList()) }
+            .filterNot { it.fullUrl in usedUrls }
         for (pick in results.take(TOP_RESULTS).shuffled()) {
             runCatching { web.download(pick, tag.query) }.getOrNull()?.let { return it }
+        }
+        val broad = when {
+            tag.kind == WebSearchKind.Gifs -> "reaction gif"
+            tag.query.contains("adult", true) && adultAllowed -> "adult nude photography"
+            tag.query.contains("game", true) -> "video game screenshot"
+            tag.query.contains("market", true) || tag.query.contains("invest", true) -> "stock market chart"
+            tag.query.contains("animal", true) || tag.query.contains("pet", true) -> "pet animal photo"
+            tag.query.contains("travel", true) || tag.query.contains("vacation", true) -> "travel destination"
+            else -> tag.query.split(' ').take(3).joinToString(" ")
+        }
+        if (broad != tag.query) {
+            runCatching { web.search(broad, if (tag.kind == WebSearchKind.Gifs) WebSearchKind.Gifs else WebSearchKind.Pictures, adultAllowed).results }
+                .getOrDefault(emptyList()).filterNot { it.fullUrl in usedUrls }
+                .take(TOP_RESULTS).forEach { pick ->
+                    runCatching { web.download(pick, broad) }.getOrNull()?.let { return it }
+                }
         }
         return null
     }
 
-    private suspend fun fromLibrary(tag: MediaTag): MediaEntity? {
+    /** An indexed public item for an attributed bot reshare. A page URL is required. */
+    suspend fun fetchPublic(tag: MediaTag, adultAllowed: Boolean, usedUrls: Set<String>): Pair<MediaEntity, WebPicture>? {
+        val creatorQuery = if (adultAllowed && web.key(KEY_BRAVE).isNotBlank())
+            runCatching { web.search("${tag.query} site:onlyfans.com OR site:patreon.com OR site:x.com", tag.kind, true).results }
+                .getOrDefault(emptyList()) else emptyList()
+        val results = (creatorQuery + runCatching { web.search(tag.query, tag.kind, adultAllowed).results }.getOrDefault(emptyList()))
+            .distinctBy { it.fullUrl }
+            .filter { it.pageUrl.startsWith("https://") && it.fullUrl !in usedUrls && it.pageUrl !in usedUrls }
+        for (pick in results.take(10).shuffled()) {
+            runCatching { web.download(pick, tag.query) }.getOrNull()?.let { return it to pick }
+        }
+        return null
+    }
+
+    private suspend fun fromLibrary(tag: MediaTag, adultAllowed: Boolean): MediaEntity? {
         val words = tag.query.lowercase().split(Regex("\\s+")).filter { it.length > 2 }
         if (words.isEmpty()) return null
         return db.mediaDao().observeAll().first()
             .filter { it.type == "image" }
+            .filter { adultAllowed || "source_adult" !in it.tags }
             .filter { tag.kind != WebSearchKind.Gifs || it.mimeType.contains("gif") }
             .filter { media ->
                 val hay = listOf(media.displayName, media.tags).joinToString(" ").lowercase()
@@ -117,6 +149,6 @@ class CharacterMediaFetcher @Inject constructor(
     }
 
     companion object {
-        private const val TOP_RESULTS = 4
+        private const val TOP_RESULTS = 10
     }
 }

@@ -13,6 +13,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -89,6 +90,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -357,6 +359,7 @@ fun WeaverSocialScreen(
                         onSearch = { tab = WsTab.Explore },
                         onOpenAlerts = { tab = WsTab.Alerts },
                         onMessages = { message(null) },
+                        onSafety = { push("safety") },
                         messagesUnread = servers.dmUnread,
                     )
                     tab == WsTab.Explore -> Explore(
@@ -402,6 +405,13 @@ fun WeaverSocialScreen(
                                 .clickable { viewModel.dismissNotice() }
                                 .padding(horizontal = 14.dp, vertical = 10.dp),
                         )
+                    }
+                    if (state.mediaNotice.isNotBlank()) {
+                        Text(state.mediaNotice, color = c.text, fontSize = 12.sp,
+                            modifier = Modifier.align(Alignment.TopCenter).padding(top = 4.dp, start = 12.dp, end = 12.dp)
+                                .clip(RoundedCornerShape(8.dp)).background(c.raised)
+                                .clickable { viewModel.dismissMediaNotice() }
+                                .padding(horizontal = 10.dp, vertical = 6.dp))
                     }
                     if (state.generating) {
                         LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter), color = c.accent, trackColor = Color.Transparent)
@@ -472,6 +482,7 @@ fun WeaverSocialScreen(
         PicturePickerSheet(
             limit = (MAX_ATTACHMENTS - state.pendingImagePaths.size).coerceAtLeast(1),
             start = start,
+            adultAllowed = state.safety.adultEnabled,
             onDismiss = { pickerGifs = null },
             onPicked = { picked ->
                 pickerGifs = null
@@ -658,6 +669,7 @@ private fun HomeFeed(
     onSearch: () -> Unit,
     onOpenAlerts: () -> Unit,
     onMessages: () -> Unit,
+    onSafety: () -> Unit,
     messagesUnread: Int,
 ) {
     var following by rememberSaveable { mutableStateOf(false) }
@@ -686,8 +698,14 @@ private fun HomeFeed(
         item(key = "header") {
             Column(Modifier.fillMaxWidth().background(c.surface)) {
                 Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 10.dp, top = 10.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.weight(1f)) {
-                        if (overview) Wordmark(c) else Text("Social", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = c.text)
+                    Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                        if (overview) Wordmark(c, size = 21) else Text("Social", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = c.text)
+                        Spacer(Modifier.width(7.dp))
+                        Text("18+", color = if (state.safety.adultEnabled) Color.White else c.muted,
+                            fontSize = 11.sp, fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.clip(RoundedCornerShape(6.dp))
+                                .background(if (state.safety.adultEnabled) c.red else c.raised)
+                                .clickable(onClick = onSafety).padding(horizontal = 5.dp, vertical = 3.dp))
                     }
                     RoundButton(Icons.Filled.Search, "Search", c, onClick = onSearch)
                     RoundButton(Icons.Outlined.MailOutline, "Messages", c, badge = messagesUnread, onClick = onMessages)
@@ -784,6 +802,7 @@ private fun HomeFeed(
             }
             Hairline(c)
         }
+        if (overview) postItems(posts.take(2), state, c, actions)
         if (overview && activeRooms.isNotEmpty()) {
             item(key = "rooms") {
                 Column(Modifier.fillMaxWidth().background(c.surface).padding(vertical = 10.dp)) {
@@ -844,7 +863,7 @@ private fun HomeFeed(
                 }
             }
         }
-        postItems(posts, state, c, actions)
+        postItems(if (overview) posts.drop(2) else posts, state, c, actions)
         if (state.generating) {
             item(key = "loading") {
                 Row(Modifier.fillMaxWidth().background(c.surface).padding(14.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
@@ -916,6 +935,7 @@ private fun LazyListScope.postItems(posts: List<SocialPostUi>, state: SocialUiSt
 
 @Composable
 private fun PostCard(post: SocialPostUi, state: SocialUiState, c: WsColors, actions: WsActions, inDetail: Boolean = false) {
+    val context = LocalContext.current
     var menu by remember { mutableStateOf(false) }
     var confirmBlock by remember { mutableStateOf(false) }
     if (confirmBlock && post.authorCharacterId != null) {
@@ -1008,6 +1028,36 @@ private fun PostCard(post: SocialPostUi, state: SocialUiState, c: WsColors, acti
                     )
                 }
                 SensitiveGate(post, state.safety.warnSensitive, c) { PostMedia(post, c) }
+                if (post.imagePaths.isEmpty() && post.id in state.loadingMediaIds) {
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(12.dp))
+                        .background(c.raised).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(16.dp), color = c.accent, strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Finding a picture or GIF…", color = c.muted, fontSize = 12.sp)
+                    }
+                }
+                if (post.sourceUrl.startsWith("https://")) {
+                    Column(Modifier.fillMaxWidth().padding(top = 6.dp)
+                        .clip(RoundedCornerShape(10.dp)).background(c.raised)
+                        .clickable {
+                            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
+                                android.net.Uri.parse(post.sourceUrl)))
+                        }.padding(10.dp)) {
+                        Text("Public source · ${post.sourceSite.ifBlank { "Web" }}", color = c.accent,
+                            fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(post.sourceTitle.ifBlank { post.sourceUrl }, color = c.text,
+                            fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                } else {
+                    post.mediaCredits.withIndex().filter { it.value.isNotBlank() }.take(1).forEach { (index, credit) ->
+                        val link = post.mediaLinks.getOrNull(index).orEmpty()
+                        Text("Media: $credit", color = c.muted, fontSize = 11.sp,
+                            modifier = Modifier.padding(top = 3.dp).clickable(enabled = link.startsWith("https://")) {
+                                context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
+                                    android.net.Uri.parse(link)))
+                            })
+                    }
+                }
                 post.repostOf?.let { QuotedPost(it, c) { actions.onOpenPost(it.id) } }
                 if (post.likeCount > 0 || post.replyCount > 0 || post.repostCount > 0) {
                     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -2114,12 +2164,30 @@ private fun SafetyScreen(
 ) {
     val safety = state.safety
     var word by rememberSaveable { mutableStateOf("") }
+    var mediaSettings by remember { mutableStateOf(false) }
     val byId = state.people.associateBy { it.characterId }
     LazyColumn(Modifier.fillMaxSize().background(c.surface), contentPadding = PaddingValues(bottom = 40.dp)) {
         item(key = "top") {
             TopBar("Privacy & filters", c, onBack, subtitle = "Everything shows until you filter it")
         }
         item(key = "content-title") { SectionTitle("Content you see", c) }
+        item(key = "adult") {
+            SwitchRow(
+                title = "WeaverSocial 18+",
+                body = "On by default. Include adult posts and search adult media. Turning it off hides saved sexual posts until you turn it back on.",
+                checked = safety.adultEnabled,
+                c = c,
+            ) { viewModel.setAdultEnabled(it) }
+        }
+        item(key = "media-settings") {
+            Column(Modifier.fillMaxWidth().clickable { mediaSettings = true }
+                .padding(horizontal = 16.dp, vertical = 12.dp)) {
+                Text("Media sources & AI images", color = c.accent, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text("Civitai gallery, Brave image key, OpenRouter image model, optional ComfyUI workflow and connection status.",
+                    color = c.muted, fontSize = 12.sp)
+                if (state.mediaNotice.isNotBlank()) Text(state.mediaNotice, color = c.muted, fontSize = 12.sp)
+            }
+        }
         item(key = "sensitive") {
             SwitchRow(
                 title = "Warn before sensitive media",
@@ -2246,6 +2314,71 @@ private fun SafetyScreen(
             note = "Characters block you in character. As the author you can lift a block here.",
         )
     }
+    if (mediaSettings) SocialMediaSettingsDialog(state, viewModel, c) { mediaSettings = false }
+}
+
+@Composable
+private fun SocialMediaSettingsDialog(state: SocialUiState, viewModel: SocialFeedViewModel, c: WsColors, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var brave by remember { mutableStateOf(viewModel.braveKey()) }
+    var civitai by remember { mutableStateOf(viewModel.civitaiKey()) }
+    var endpoint by remember { mutableStateOf(state.comfyEndpoint) }
+    var workflow by remember { mutableStateOf(state.comfyWorkflow) }
+    var imageModel by remember { mutableStateOf(state.imageModelRef) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("WeaverSocial media") },
+        text = {
+            Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Public search is read-only. Civitai gallery needs no key; an optional token uses your account's browsing level. Brave searches indexed pages with adult filtering off when 18+ is enabled.",
+                    fontSize = 12.sp, color = c.muted)
+                OutlinedTextField(civitai, { civitai = it }, label = { Text("Civitai API token (optional)") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
+                Text("Check Civitai · ${state.civitaiStatus.ifBlank { "Not checked" }}", color = c.accent,
+                    fontSize = 13.sp, modifier = Modifier.clickable { viewModel.checkCivitai() })
+                Text("Browse Civitai images", color = c.accent, fontSize = 13.sp,
+                    modifier = Modifier.clickable {
+                        context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse(if (state.safety.adultEnabled) "https://civitai.red/images" else "https://civitai.com/images")))
+                    })
+                Text("Browse Civitai videos", color = c.accent, fontSize = 13.sp,
+                    modifier = Modifier.clickable {
+                        context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse(if (state.safety.adultEnabled) "https://civitai.red/videos" else "https://civitai.com/videos")))
+                    })
+                OutlinedTextField(brave, { brave = it }, label = { Text("Brave Image Search API key") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
+                Text(if (brave.isBlank()) "Brave: key needed" else "Save the key, then check the connection.",
+                    fontSize = 12.sp, color = c.muted)
+                Text("Check Brave · ${state.braveStatus.ifBlank { "Not checked" }}", color = c.accent,
+                    fontSize = 13.sp, modifier = Modifier.clickable { viewModel.checkBrave() })
+                OutlinedTextField(imageModel, { imageModel = it },
+                    label = { Text("OpenRouter image model ref") }, singleLine = true,
+                    placeholder = { Text("openrouter/provider/model") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(endpoint, { endpoint = it }, label = { Text("ComfyUI URL (optional)") },
+                    singleLine = true, placeholder = { Text("http://192.168.1.10:8188") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(workflow, { workflow = it },
+                    label = { Text("ComfyUI API workflow JSON (optional)") },
+                    minLines = 4, modifier = Modifier.fillMaxWidth())
+                Text("Export an API workflow from ComfyUI. Put __PROMPT__ in its positive prompt text and optionally __SEED__ in its seed field. The phone must be able to reach the URL.",
+                    fontSize = 12.sp, color = c.muted)
+                Text("At most one original AI image is attempted per refresh. Search and saved pictures fill the other posts.",
+                    fontSize = 12.sp, color = c.muted)
+                Text("Check saved ComfyUI URL · ${state.comfyStatus.ifBlank { "Not checked" }}", color = c.accent,
+                    fontSize = 13.sp, modifier = Modifier.clickable { viewModel.checkComfy() })
+            }
+        },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = {
+            viewModel.setBraveKey(brave)
+            viewModel.setCivitaiKey(civitai)
+            viewModel.saveMediaSettings(endpoint, workflow, imageModel)
+            onDismiss()
+        }) { Text("Save") } },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 private fun LazyListScope.accountSection(

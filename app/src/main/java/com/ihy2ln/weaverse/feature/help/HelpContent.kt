@@ -321,7 +321,7 @@ object HelpContent {
                         "Tap the picture-search button beside Send (or Photo / GIF) to search " +
                         "the web — All, GIFs, Memes or Pictures — or pick from your Pictures " +
                         "library or the device. Web picks are saved to Pictures under Web. " +
-                        "Openverse, Wikimedia Commons and Imgflip memes work with no account; " +
+                        "Civitai AI art, Openverse, Wikimedia Commons and Imgflip memes work with no account; " +
                         "add a GIPHY, Tenor or Google key under Sources for more. " +
                         "GIFs play in the feed and chat. " +
                         "Tap any picture to view it full screen: swipe between them, pinch or " +
@@ -331,19 +331,32 @@ object HelpContent {
                 HelpEntry(
                     "Characters post memes and GIFs",
                     "Characters in the feed and in servers attach memes, GIFs and photos on " +
-                        "their own when it fits. Social posts are prompted to use a relevant " +
-                        "visual for about half of updates when it suits the character; a matching " +
-                        "library photo may be used instead. The app finds tagged media in your " +
-                        "Pictures library or on the web and adds it once it downloads.",
+                        "their own when it fits. Social posts favor pictures and GIFs across adult " +
+                        "life, games, investing, animals, travel, sports and daily routines. " +
+                        "The app looks in your Pictures library and public image sources. A " +
+                        "failed search shows a media status instead of silently disappearing.",
                 ),
                 HelpEntry(
                     "What characters can post",
-                    "WeaverSocial follows the Age rating in Settings. At R and above it is an " +
-                        "open feed like X: politics, religion, crude or offensive humour and " +
-                        "controversial opinions, true to each character. NC-17 and X also allow " +
-                        "explicit adult content and turn web picture safe-search off. Nothing " +
-                        "illegal: nothing sexual involving anyone under 18, nothing sexual about " +
-                        "real people, no real people's private information, no real threats.",
+                    "WeaverSocial 18+ is on by default; tap its 18+ badge or open Privacy & " +
+                        "filters to turn it off. Off hides saved sexual posts and stops new adult " +
+                        "posts and media searches until you turn it back on. Adult posts refer " +
+                        "to fictional people who are clearly 18+. Public images of real adults " +
+                        "are credited as outside media, never passed off as a character's selfie.",
+                ),
+                HelpEntry(
+                    "Public media and AI images",
+                    "In Privacy & filters, open Media sources & AI images. Civitai's public " +
+                        "image gallery works without a key; an optional token uses your account's " +
+                        "browsing level. An optional Brave Image Search key broadens discovery. " +
+                        "Add an OpenRouter image model or a reachable " +
+                        "ComfyUI URL and exported API workflow for one original fictional " +
+                        "image attempt per refresh. Put __PROMPT__ in the workflow's positive " +
+                        "prompt text. Fictional accounts can reshare public previews with a " +
+                        "source link and creator credit. Civitai's video gallery opens as an " +
+                        "outside source; inline posts support images and GIFs. Adult results " +
+                        "depend on Civitai's account and region settings. WeaverSocial never " +
+                        "posts or messages on outside sites.",
                 ),
                 HelpEntry(
                     "Blocking, muting and filters",

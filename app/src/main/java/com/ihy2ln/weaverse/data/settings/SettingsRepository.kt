@@ -421,6 +421,17 @@ class SettingsRepository @Inject constructor(
         }
     }
 
+    /** WeaverSocial-only media settings, independent of the app-wide age rating. */
+    fun socialString(key: String): Flow<String> =
+        context.dataStore.data.map { it[stringPreferencesKey("social_value_$key")].orEmpty() }
+
+    suspend fun setSocialString(key: String, value: String) {
+        context.dataStore.edit { prefs ->
+            val prefKey = stringPreferencesKey("social_value_$key")
+            if (value.isBlank()) prefs.remove(prefKey) else prefs[prefKey] = value.trim()
+        }
+    }
+
     /** The unsent draft left in a Chatting room, so it survives an app restart. */
     suspend fun chatDraft(roomId: String): String =
         context.dataStore.data.map { it[stringPreferencesKey("chat_draft_$roomId")].orEmpty() }.first()

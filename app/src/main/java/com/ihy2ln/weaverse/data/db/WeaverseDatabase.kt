@@ -89,7 +89,7 @@ import com.ihy2ln.weaverse.data.db.entities.RpgCampaignSaveEntity
         RpRoomMemberEntity::class,
         com.ihy2ln.weaverse.data.db.entities.SocialPostEntity::class,
     ],
-    version = 32,
+    version = 33,
     exportSchema = true,
 )
 @TypeConverters(InkTypeConverters::class)
@@ -120,6 +120,19 @@ abstract class WeaverseDatabase : RoomDatabase() {
                 generateSequence { if (c.moveToNext()) c.getString(nameIndex) else null }.any { it == column }
             }
             if (!exists) execSQL("ALTER TABLE `$table` ADD COLUMN `$column` $definition")
+        }
+
+        val MIGRATION_32_33 = object : Migration(32, 33) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE social_posts ADD COLUMN originKind TEXT NOT NULL DEFAULT 'fictional'")
+                db.execSQL("ALTER TABLE social_posts ADD COLUMN sourceUrl TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE social_posts ADD COLUMN sourceSite TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE social_posts ADD COLUMN sourceTitle TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE social_posts ADD COLUMN sourceMediaUrl TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE media ADD COLUMN sourceUrl TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE media ADD COLUMN sourceSite TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE media ADD COLUMN sourceCredit TEXT NOT NULL DEFAULT ''")
+            }
         }
 
         val MIGRATION_31_32 = object : Migration(31, 32) {
@@ -486,6 +499,7 @@ abstract class WeaverseDatabase : RoomDatabase() {
             MIGRATION_29_30,
             MIGRATION_30_31,
             MIGRATION_31_32,
+            MIGRATION_32_33,
         )
     }
 }

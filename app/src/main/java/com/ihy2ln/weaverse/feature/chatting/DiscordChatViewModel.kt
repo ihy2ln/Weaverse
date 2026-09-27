@@ -1096,7 +1096,7 @@ class DiscordChatViewModel @Inject constructor(
         tags: List<com.ihy2ln.weaverse.feature.chatting.media.MediaTag>,
     ) {
         viewModelScope.launch {
-            val found = tags.mapNotNull { characterMedia.fetch(it) }
+            val found = tags.mapNotNull { characterMedia.fetch(it, adultAllowed = safetyCache.adultEnabled) }
             if (found.isEmpty()) return@launch
             // The message is written right after this is launched; wait for it briefly.
             var msg = db.roleplayDao().getRpMessage(messageId)
@@ -1768,7 +1768,9 @@ class DiscordChatViewModel @Inject constructor(
         }
         // Memes and GIFs people can drop in, and how open the chat is (the app's Age rating).
         blocks += com.ihy2ln.weaverse.feature.chatting.media.MediaTags.PROMPT
-        blocks += com.ihy2ln.weaverse.feature.chatting.media.SocialContentPolicy.prompt()
+        blocks += if (safetyCache.adultEnabled)
+            com.ihy2ln.weaverse.feature.chatting.media.SocialContentPolicy.prompt()
+        else "WeaverSocial 18+ is off: no sexual messages, nudity, adult creator promotions, or sexual media searches."
         if (room.roomKind == ROOM_KIND_DM) blocks += com.ihy2ln.weaverse.feature.chatting.social.SocialTags.BLOCK_PROMPT
         blocks += buildString {
             appendLine("Output format, no exceptions:")
