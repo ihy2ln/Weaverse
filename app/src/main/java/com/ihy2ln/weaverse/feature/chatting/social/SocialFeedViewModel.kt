@@ -19,6 +19,7 @@ import com.ihy2ln.weaverse.feature.chatting.media.MAX_ATTACHMENTS
 import com.ihy2ln.weaverse.feature.chatting.media.MediaTag
 import com.ihy2ln.weaverse.feature.chatting.media.MediaTags
 import com.ihy2ln.weaverse.feature.chatting.media.SocialContentPolicy
+import com.ihy2ln.weaverse.feature.chatting.media.WebSearchKind
 import com.ihy2ln.weaverse.feature.chatting.matchNamedCharacters
 import com.ihy2ln.weaverse.feature.chatting.ParsedLine
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -168,6 +169,7 @@ class SocialFeedViewModel @Inject constructor(
     private var library: List<MediaEntity> = emptyList()
     private var entities: Map<String, SocialPostEntity> = emptyMap()
     private var safety: SocialSafety = SocialSafety()
+    private val mediaFetchInFlight = mutableSetOf<String>()
 
     fun bind(platformId: String = PLATFORM_WEAVERSOCIAL) {
         if (platform == platformId) return
@@ -592,13 +594,14 @@ class SocialFeedViewModel @Inject constructor(
         if (_uiState.value.generating) return
         viewModelScope.launch {
             if (!ensureReady()) return@launch
+            enrichRecentPostsWithoutMedia(count.coerceAtMost(6))
             val posters = pickCast(count.coerceAtMost(cast.size), prefer = _uiState.value.followingIds)
             val recent = entities.values.filter { it.parentId == null }
                 .sortedByDescending { it.createdAt }.take(8)
                 .joinToString("\n") { "${it.authorName}: ${it.text.take(160)}" }
             val system = buildList {
                 add(platformVoice())
-                add("This is a visual social feed. Add a relevant [pic: …], [meme: …] or [gif: …] to about half of these posts when it fits the character and moment; favor visual jokes, reactions and things the character is showing. Do not force a visual onto a serious or personal post.")
+                add("This is a busy, visual social network. Roughly three out of four posts should end with one relevant [pic: …], [meme: …] or [gif: …] search tag; use reaction GIFs and memes often, and use topical photos or illustrations for news, politics, travel, art and daily life. Some posts can be text-only. In a batch of four or more, include at least one substantive political take rooted in that person's world and label it [cw: politics]. Never search for explicit sexual imagery, sexual images of real people, or anyone under 18. For sexual posts use only non-explicit adult fashion/editorial imagery, and label them [cw: sexual].")
                 add("The people posting (stay true to each):")
                 posters.forEach { add(cardFor(it)) }
                 if (recent.isNotBlank()) add("Already on the timeline (do not repeat; people may react to these):\n$recent")
@@ -617,12 +620,18 @@ class SocialFeedViewModel @Inject constructor(
                 val social = SocialTags.parse(tagged)
                 val (body, tags) = MediaTags.extract(social.text)
                 if (body.isBlank() && tags.isEmpty()) return@forEachIndexed
-                // A requested meme/GIF wins; otherwise often use a picture from the author's library.
-                val photo = if (tags.isEmpty() && Random.nextFloat() < PHOTO_POST_CHANCE) pictureOf(author) else null
+                // Prefer a character's own saved picture when available. Otherwise search
+                // the web for a relevant attachment, so media does not depend on the model
+                // remembering to emit a tag or the user having a populated local library.
+                val personalPhoto = if (tags.isEmpty() && Random.nextFloat() < PERSONAL_PHOTO_CHANCE) pictureOf(author) else null
+                val mediaTags = tags.ifEmpty {
+                    if (personalPhoto != null) emptyList()
+                    else listOfNotNull(automaticMediaTag(body, social.labels, AUTO_MEDIA_POST_CHANCE))
+                }
                 saveWithMedia(
                     generatedPost(author, body, feeling, base - (lines.size - index) * 97_000L, parentId = null)
-                        .copy(mediaId = photo?.id, contentTags = SocialTags.store(social.labels)),
-                    tags,
+                        .copy(mediaId = personalPhoto?.id, contentTags = SocialTags.store(social.labels)),
+                    mediaTags,
                 )
             }
             finish()
@@ -662,10 +671,13 @@ class SocialFeedViewModel @Inject constructor(
             val (body, tags) = MediaTags.extract(social.text)
             if (social.blocksWriter) blockedByCharacter(author.id)
             if (body.isBlank() && tags.isEmpty()) return@forEachIndexed
+            val mediaTags = tags.ifEmpty {
+                listOfNotNull(automaticMediaTag(body, social.labels, AUTO_REPLY_MEDIA_CHANCE))
+            }
             saveWithMedia(
                 generatedPost(author, body, "", base + (index + 1) * 41_000L, parentId = post.id, small = true)
                     .copy(contentTags = SocialTags.store(social.labels)),
-                tags,
+                mediaTags,
             )
         }
         // Everyone else who saw it leaves a like or reaction.
@@ -705,10 +717,13 @@ class SocialFeedViewModel @Inject constructor(
         val social = SocialTags.parse(splitFeeling(line.text).second)
         val (body, tags) = MediaTags.extract(social.text)
         if (body.isNotBlank() || tags.isNotEmpty()) {
+            val mediaTags = tags.ifEmpty {
+                listOfNotNull(automaticMediaTag(body, social.labels, AUTO_REPLY_MEDIA_CHANCE))
+            }
             saveWithMedia(
                 generatedPost(speaker, body, "", System.currentTimeMillis() + 30_000L, parentId = parent.id, small = true)
                     .copy(contentTags = SocialTags.store(social.labels)),
-                tags,
+                mediaTags,
             )
         }
         if (social.blocksWriter) blockedByCharacter(speaker.id)
@@ -721,14 +736,33 @@ class SocialFeedViewModel @Inject constructor(
      */
     private suspend fun saveWithMedia(post: SocialPostEntity, tags: List<MediaTag>) {
         db.socialDao().upsert(post)
-        if (tags.isEmpty()) return
+        if (tags.isEmpty() || !mediaFetchInFlight.add(post.id)) return
         viewModelScope.launch {
-            val found = tags.mapNotNull { characterMedia.fetch(it) }
-            if (found.isEmpty()) return@launch
-            val fresh = db.socialDao().getPost(post.id) ?: return@launch
-            val ids = (mediaIdsOf(fresh.mediaId) + found.map { it.id }).distinct().take(MAX_ATTACHMENTS)
-            db.socialDao().upsert(fresh.copy(mediaId = joinMediaIds(ids)))
+            try {
+                val found = tags.mapNotNull { characterMedia.fetch(it) }
+                if (found.isEmpty()) return@launch
+                val fresh = db.socialDao().getPost(post.id) ?: return@launch
+                val ids = (mediaIdsOf(fresh.mediaId) + found.map { it.id }).distinct().take(MAX_ATTACHMENTS)
+                db.socialDao().upsert(fresh.copy(mediaId = joinMediaIds(ids)))
+            } finally {
+                mediaFetchInFlight.remove(post.id)
+            }
         }
+    }
+
+    /** Gradually add relevant media to older text-only posts as the reader scrolls/refreshes. */
+    private suspend fun enrichRecentPostsWithoutMedia(limit: Int) {
+        if (limit <= 0) return
+        val posts = runCatching { db.socialDao().observeAllPosts().first() }.getOrDefault(emptyList())
+        posts.asSequence()
+            .filter { it.parentId == null && it.authorCharacterId != null && mediaIdsOf(it.mediaId).isEmpty() }
+            .filterNot { safety.hides(it.authorCharacterId, it.id, it.text, SocialTags.labelsOf(it.contentTags)) }
+            .take(limit)
+            .forEach { post ->
+                val labels = SocialTags.labelsOf(post.contentTags)
+                val tag = automaticMediaTag(post.text, labels, chance = 1f) ?: return@forEach
+                saveWithMedia(post, listOf(tag))
+            }
     }
 
     private suspend fun ensureReady(): Boolean {
@@ -845,6 +879,31 @@ class SocialFeedViewModel @Inject constructor(
         }.randomOrNull()
     }
 
+    /** Supplies an attachment query when a generated post has no explicit media tag. */
+    private fun automaticMediaTag(text: String, labels: Set<ContentLabel>, chance: Float): MediaTag? {
+        if (text.isBlank() || Random.nextFloat() >= chance) return null
+        val words = text.lowercase()
+            .replace(Regex("https?://\\S+|@[a-z0-9_]+|#[a-z0-9_]+"), " ")
+            .split(Regex("[^\\p{L}\\p{N}]+"))
+            .filter { it.length >= 4 && it !in MEDIA_QUERY_STOP_WORDS }
+            .distinct()
+            .take(6)
+            .joinToString(" ")
+            .take(64)
+        val political = ContentLabel.Politics in labels || POLITICAL_TERMS.containsMatchIn(text)
+        val kindAndPrefix = when {
+            political -> WebSearchKind.Pictures to "political editorial illustration"
+            ContentLabel.Sexual in labels -> WebSearchKind.Pictures to "adult fashion editorial portrait"
+            else -> when (Random.nextInt(100)) {
+                in 0..27 -> WebSearchKind.Gifs to "reaction GIF"
+                in 28..47 -> WebSearchKind.Memes to "meme"
+                else -> WebSearchKind.Pictures to "editorial photo illustration"
+            }
+        }
+        val query = listOf(kindAndPrefix.second, words).filter { it.isNotBlank() }.joinToString(" ")
+        return MediaTag(kindAndPrefix.first, query)
+    }
+
     private fun splitFeeling(text: String): Pair<String, String> {
         val trimmed = text.trim().trim('"')
         val match = Regex("^\\[feeling ([^\\]]{1,30})\\]\\s*", RegexOption.IGNORE_CASE).find(trimmed)
@@ -901,7 +960,21 @@ class SocialFeedViewModel @Inject constructor(
         private const val BIO_CHARS = 160
         const val POST_CHARS = 500
         /** How often a character's post comes with one of their pictures, when they have any. */
-        private const val PHOTO_POST_CHANCE = 0.75f
+        private const val PERSONAL_PHOTO_CHANCE = 0.2f
+        /** Applied when the model did not provide its own media query. */
+        private const val AUTO_MEDIA_POST_CHANCE = 0.88f
+        private const val AUTO_REPLY_MEDIA_CHANCE = 0.28f
+        private val POLITICAL_TERMS = Regex(
+            "\\b(election|government|parliament|president|congress|policy|politic|lawmakers?|legislation|" +
+                "vote|voting|campaign|protest|democracy|rights|war|climate|economy|taxes|union)\\w*\\b",
+            RegexOption.IGNORE_CASE,
+        )
+        private val MEDIA_QUERY_STOP_WORDS = setOf(
+            "about", "after", "again", "also", "been", "being", "could", "from", "have", "here",
+            "just", "more", "most", "much", "over", "said", "some", "than", "that", "their",
+            "them", "then", "there", "these", "they", "this", "those", "very", "what", "when",
+            "where", "which", "while", "will", "with", "would", "your",
+        )
     }
 }
 
