@@ -504,7 +504,9 @@ object WikiContent {
                 short status. Refresh does not change older saved posts.
 
                 With WeaverSocial **18+** on, adult-labeled posts search public
-                Civitai and Gelbooru gallery items. An optional Brave Image
+                Civitai, Gelbooru and Danbooru gallery items without a paid
+                search key. Your configured OpenRouter image model can also
+                make original fictional character images. An optional Brave Image
                 Search key also searches indexed previews from creator pages,
                 adult hubs, aggregators and adult forums. Source links and
                 credits stay on reshares; private and paid media stays on its

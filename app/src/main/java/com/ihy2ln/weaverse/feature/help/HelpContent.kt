@@ -349,9 +349,11 @@ object HelpContent {
                 ),
                 HelpEntry(
                     "Public media and AI images",
-                    "In Privacy & filters, open Media sources & AI images. Civitai and " +
-                        "Gelbooru offer public image galleries; either site may limit access by " +
-                        "account or region. An optional Brave Image & Video Search key finds " +
+                    "In Privacy & filters, open Media sources & AI images. Civitai, " +
+                        "Gelbooru and Danbooru offer public image galleries without a paid " +
+                        "search key; a site may still limit access by account or region. " +
+                        "Your configured OpenRouter image model can create original fictional " +
+                        "character images. An optional Brave Image & Video Search key finds " +
                         "indexed public previews from creator sites (OnlyFans, Fansly, Patreon), " +
                         "adult hubs (including RedGIFs and Pornhub), galleries, aggregators and " +
                         "adult forums. Adult-site searches run only for 18+ posts while 18+ is on. " +
@@ -363,7 +365,7 @@ object HelpContent {
                         "and open the public watch page; images and GIFs play in posts. " +
                         "Private and paid media is not imported. Only real GIF files play as GIFs; " +
                         "video pages show attributed preview cards. Keyless GIF search includes " +
-                        "Gelbooru, Openverse and Wikimedia; optional GIPHY and Tenor keys add more. " +
+                        "Gelbooru, Danbooru, Openverse and Wikimedia; optional GIPHY and Tenor keys add more. " +
                         "A fictional character's selfie uses a named library picture or the " +
                         "configured image model and their Codex appearance. A Codex portrait " +
                         "is sent as a reference when the image model supports editing, never a stranger's " +

@@ -934,7 +934,7 @@ class SocialFeedViewModel @Inject constructor(
                     _uiState.update { it.copy(mediaNotice = if (generatePrompt != null && tags.isEmpty())
                         "No matching character photo was available. Set an image-capable OpenRouter model or ComfyUI workflow in Media sources & AI images."
                     else if (adultTopic && webPictures.key(KEY_BRAVE).isBlank())
-                        "No matching adult media found. Add a Brave Image Search key in Media sources for public creator, hub and forum previews."
+                        "No matching adult media was available from the free public galleries. Try another topic or configure your existing image model in Media sources."
                     else "No media with a clear match was found for this post.") }
                     return@launch
                 }

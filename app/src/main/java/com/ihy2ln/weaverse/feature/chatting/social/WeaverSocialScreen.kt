@@ -2184,7 +2184,7 @@ private fun SafetyScreen(
             Column(Modifier.fillMaxWidth().clickable { mediaSettings = true }
                 .padding(horizontal = 16.dp, vertical = 12.dp)) {
                 Text("Media sources & AI images", color = c.accent, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                Text("Civitai and Gelbooru galleries, Brave adult-site search, OpenRouter image model, optional ComfyUI workflow and connection status.",
+                Text("Free Civitai, Gelbooru and Danbooru galleries; optional Brave search, OpenRouter image model and ComfyUI workflow.",
                     color = c.muted, fontSize = 12.sp)
                 if (state.mediaNotice.isNotBlank()) Text(state.mediaNotice, color = c.muted, fontSize = 12.sp)
             }
@@ -2370,7 +2370,7 @@ private fun SocialMediaSettingsDialog(state: SocialUiState, viewModel: SocialFee
         text = {
             Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Public search is read-only. Civitai and Gelbooru galleries work without a key when their servers allow it. Brave searches indexed creator sites, adult hubs, galleries and forums for 18+ posts. Private or paid posts cannot be imported.",
+                Text("Public search is read-only. Civitai, Gelbooru and Danbooru galleries are tried without a paid search key when their servers allow it. Brave is optional for indexed creator sites, adult hubs and forums. Private or paid posts cannot be imported.",
                     fontSize = 12.sp, color = c.muted)
                 OutlinedTextField(civitai, { civitai = it }, label = { Text("Civitai API token (optional)") },
                     singleLine = true, modifier = Modifier.fillMaxWidth(),
@@ -2401,7 +2401,7 @@ private fun SocialMediaSettingsDialog(state: SocialUiState, viewModel: SocialFee
                     fontSize = 12.sp, color = c.muted)
                 Text("Check Brave · ${state.braveStatus.ifBlank { "Not checked" }}", color = c.accent,
                     fontSize = 13.sp, modifier = Modifier.clickable { viewModel.checkBrave() })
-                Text("Adult GIF searches include public Gelbooru GIFs and indexed adult hubs/forums. Openverse, Wikimedia, GIPHY and Tenor remain available. Only actual GIF files attach to GIF requests; video pages use credited preview cards.",
+                Text("Adult GIF searches include public Gelbooru and Danbooru GIFs. Openverse and Wikimedia are also keyless; Brave, GIPHY and Tenor are optional. Only actual GIF files attach to GIF requests; video pages use credited preview cards.",
                     fontSize = 12.sp, color = c.muted)
                 OutlinedTextField(giphy, { giphy = it }, label = { Text("GIPHY API key (optional)") },
                     singleLine = true, modifier = Modifier.fillMaxWidth(),

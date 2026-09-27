@@ -59,6 +59,7 @@ enum class WebSource(val label: String, val keyIds: List<String>) {
     Brave("Brave Image Search", listOf(KEY_BRAVE)),
     Civitai("Civitai", emptyList()),
     Gelbooru("Gelbooru", emptyList()),
+    Danbooru("Danbooru", emptyList()),
 }
 
 const val KEY_GIPHY = "giphy"
@@ -180,7 +181,8 @@ class WebPictureSearch @Inject constructor(
     suspend fun search(query: String, kind: WebSearchKind, adultAllowed: Boolean = SocialContentPolicy.explicit): SearchOutcome = coroutineScope {
         val q = query.trim()
         val sources = sourcesFor(kind).filter { enabled(it) &&
-            (it != WebSource.Gelbooru || (adultAllowed && ADULT_QUERY_WORDS.containsMatchIn(q))) }
+            (it !in setOf(WebSource.Gelbooru, WebSource.Danbooru) ||
+                (adultAllowed && ADULT_QUERY_WORDS.containsMatchIn(q))) }
         val jobs = sources.map { source ->
             source to async(Dispatchers.IO) { runCatching { fetch(source, q, kind, adultAllowed) } }
         }
@@ -197,10 +199,10 @@ class WebPictureSearch @Inject constructor(
     data class SearchOutcome(val results: List<WebPicture>, val failedSources: List<String>, val searchedSources: List<String>)
 
     private fun sourcesFor(kind: WebSearchKind): List<WebSource> = when (kind) {
-        WebSearchKind.Gifs -> listOf(WebSource.Gelbooru, WebSource.Brave, WebSource.Giphy, WebSource.Tenor, WebSource.Openverse, WebSource.Commons, WebSource.Google)
+        WebSearchKind.Gifs -> listOf(WebSource.Gelbooru, WebSource.Danbooru, WebSource.Brave, WebSource.Giphy, WebSource.Tenor, WebSource.Openverse, WebSource.Commons, WebSource.Google)
         // Reddit is not a source: it refuses API calls without a signed-in app.
         WebSearchKind.Memes -> listOf(WebSource.Brave, WebSource.Imgflip, WebSource.Giphy, WebSource.Openverse, WebSource.Google)
-        WebSearchKind.Pictures -> listOf(WebSource.Civitai, WebSource.Gelbooru, WebSource.Brave, WebSource.Openverse, WebSource.Commons, WebSource.Google)
+        WebSearchKind.Pictures -> listOf(WebSource.Civitai, WebSource.Gelbooru, WebSource.Danbooru, WebSource.Brave, WebSource.Openverse, WebSource.Commons, WebSource.Google)
         WebSearchKind.All -> WebSource.entries
     }
 
@@ -216,6 +218,7 @@ class WebPictureSearch @Inject constructor(
             WebSource.Brave -> brave(if (kind == WebSearchKind.Memes) "$q meme".trim() else q, gifs, adultAllowed)
             WebSource.Civitai -> if (gifs || kind == WebSearchKind.Memes) emptyList() else civitai(q, adultAllowed)
             WebSource.Gelbooru -> if (kind == WebSearchKind.Memes) emptyList() else gelbooru(q, gifs)
+            WebSource.Danbooru -> if (kind == WebSearchKind.Memes) emptyList() else danbooru(q, gifs)
         }
     }
 
@@ -342,6 +345,45 @@ class WebPictureSearch @Inject constructor(
                 thumbUrl = post.str("preview_url") ?: post.str("sample_url") ?: file,
                 fullUrl = file, isGif = gif, source = "Gelbooru",
                 pageUrl = page, credit = post.str("owner")?.let { "@$it on Gelbooru" } ?: "Gelbooru uploader",
+                adult = true, description = tags.replace('_', ' ').take(1200),
+            )
+        }
+    }
+
+    /** Danbooru's public posts JSON; no login or paid search key is required. */
+    private fun danbooru(q: String, gifs: Boolean): List<WebPicture> {
+        val lower = q.lowercase()
+        val subject = listOf(
+            "blonde" to "blonde_hair", "brunette" to "brown_hair", "redhead" to "red_hair",
+            "beach" to "beach", "lingerie" to "lingerie", "cosplay" to "cosplay",
+            "tattoo" to "tattoo", "elf" to "elf", "catgirl" to "cat_girl",
+        ).firstOrNull { Regex("\\b${it.first}\\b").containsMatchIn(lower) }?.second
+            ?: lower.split(Regex("[^a-z0-9]+"))
+                .firstOrNull { it.length >= 4 && it !in STOP_WORDS && it !in CIVITAI_GENERIC_WORDS &&
+                    it !in setOf("nude", "nudity", "porn", "explicit", "sexual", "erotic", "nsfw", "onlyfans", "fansly") }
+            ?: return emptyList()
+        val url = "https://danbooru.donmai.us/posts.json".toHttpUrl().newBuilder()
+            .addQueryParameter("tags", "rating:explicit $subject")
+            .addQueryParameter("limit", "80")
+            .addQueryParameter("random", "true")
+            .build()
+        return getJson(url.toString()).arr().mapNotNull { item ->
+            val post = item.obj()
+            val id = post.str("id") ?: return@mapNotNull null
+            val tags = post.str("tag_string").orEmpty()
+            if (!AdultMediaSources.adultTagsAreEligible(tags)) return@mapNotNull null
+            if (post.str("rating")?.lowercase() !in setOf("e", "explicit")) return@mapNotNull null
+            val file = post.str("file_url")?.takeIf { it.startsWith("https://") } ?: return@mapNotNull null
+            val gif = file.substringBefore('?').endsWith(".gif", true)
+            if (gifs && !gif) return@mapNotNull null
+            if (!gif && !Regex("\\.(jpe?g|png|webp)$", RegexOption.IGNORE_CASE)
+                    .containsMatchIn(file.substringBefore('?'))) return@mapNotNull null
+            WebPicture(
+                id = "dan-$id", title = tags.replace('_', ' ').take(140),
+                thumbUrl = post.str("preview_file_url") ?: post.str("large_file_url") ?: file,
+                fullUrl = file, isGif = gif, source = "Danbooru",
+                pageUrl = "https://danbooru.donmai.us/posts/$id",
+                credit = post.str("uploader_name")?.let { "@$it on Danbooru" } ?: "Danbooru uploader",
                 adult = true, description = tags.replace('_', ' ').take(1200),
             )
         }
