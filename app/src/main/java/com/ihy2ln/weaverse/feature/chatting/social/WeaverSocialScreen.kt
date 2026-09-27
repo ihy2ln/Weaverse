@@ -1043,7 +1043,7 @@ private fun PostCard(post: SocialPostUi, state: SocialUiState, c: WsColors, acti
                             context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
                                 android.net.Uri.parse(post.sourceUrl)))
                         }.padding(10.dp)) {
-                        Text("Public source · ${post.sourceSite.ifBlank { "Web" }}", color = c.accent,
+                        Text("${if (post.originKind == "public_video") "▶ Public video preview" else "Public source"} · ${post.sourceSite.ifBlank { "Web" }}", color = c.accent,
                             fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         Text(post.sourceTitle.ifBlank { post.sourceUrl }, color = c.text,
                             fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -2165,6 +2165,7 @@ private fun SafetyScreen(
     val safety = state.safety
     var word by rememberSaveable { mutableStateOf("") }
     var mediaSettings by remember { mutableStateOf(false) }
+    var creatorSettings by remember { mutableStateOf(false) }
     val byId = state.people.associateBy { it.characterId }
     LazyColumn(Modifier.fillMaxSize().background(c.surface), contentPadding = PaddingValues(bottom = 40.dp)) {
         item(key = "top") {
@@ -2186,6 +2187,14 @@ private fun SafetyScreen(
                 Text("Civitai gallery, Brave image key, OpenRouter image model, optional ComfyUI workflow and connection status.",
                     color = c.muted, fontSize = 12.sp)
                 if (state.mediaNotice.isNotBlank()) Text(state.mediaNotice, color = c.muted, fontSize = 12.sp)
+            }
+        }
+        item(key = "fictional-creators") {
+            Column(Modifier.fillMaxWidth().clickable { creatorSettings = true }
+                .padding(horizontal = 16.dp, vertical = 12.dp)) {
+                Text("Fictional social accounts", color = c.accent, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text("Choose adult creators and everyday voices to add to the shared Characters Codex and social feed.",
+                    color = c.muted, fontSize = 12.sp)
             }
         }
         item(key = "sensitive") {
@@ -2315,6 +2324,32 @@ private fun SafetyScreen(
         )
     }
     if (mediaSettings) SocialMediaSettingsDialog(state, viewModel, c) { mediaSettings = false }
+    if (creatorSettings) SocialCreatorDialog(state, viewModel, c) { creatorSettings = false }
+}
+
+@Composable
+private fun SocialCreatorDialog(state: SocialUiState, viewModel: SocialFeedViewModel, c: WsColors, onDismiss: () -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Fictional social accounts") },
+        text = {
+            Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Add any of these adults to your Codex. They can post, reply, and appear in chats. You can edit their character entries later.",
+                    fontSize = 12.sp, color = c.muted)
+                SocialCreatorTemplates.all.forEach { creator ->
+                    val added = SocialCreatorTemplates.id(creator.slug) in state.addedCreatorIds
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(c.raised)
+                        .clickable(enabled = !added) { viewModel.addFictionalCreator(creator) }.padding(10.dp)) {
+                        Text("${creator.name} · @${handleFor(creator.name)}", color = c.text, fontWeight = FontWeight.Bold)
+                        Text(creator.focus, color = c.accent, fontSize = 12.sp)
+                        Text(if (added) "Added to Codex" else "Tap to add to Codex", color = c.muted, fontSize = 12.sp)
+                    }
+                }
+            }
+        },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Done") } },
+    )
 }
 
 @Composable
@@ -2322,6 +2357,8 @@ private fun SocialMediaSettingsDialog(state: SocialUiState, viewModel: SocialFee
     val context = LocalContext.current
     var brave by remember { mutableStateOf(viewModel.braveKey()) }
     var civitai by remember { mutableStateOf(viewModel.civitaiKey()) }
+    var giphy by remember { mutableStateOf(viewModel.giphyKey()) }
+    var tenor by remember { mutableStateOf(viewModel.tenorKey()) }
     var endpoint by remember { mutableStateOf(state.comfyEndpoint) }
     var workflow by remember { mutableStateOf(state.comfyWorkflow) }
     var imageModel by remember { mutableStateOf(state.imageModelRef) }
@@ -2331,7 +2368,7 @@ private fun SocialMediaSettingsDialog(state: SocialUiState, viewModel: SocialFee
         text = {
             Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Public search is read-only. Civitai gallery needs no key; an optional token uses your account's browsing level. Brave searches indexed pages with adult filtering off when 18+ is enabled.",
+                Text("Public search is read-only. Civitai gallery needs no key; an optional token uses your account's browsing level. Brave searches indexed images and video previews from creator, adult, gaming and social sites when 18+ is enabled. Private or paid posts cannot be imported.",
                     fontSize = 12.sp, color = c.muted)
                 OutlinedTextField(civitai, { civitai = it }, label = { Text("Civitai API token (optional)") },
                     singleLine = true, modifier = Modifier.fillMaxWidth(),
@@ -2348,16 +2385,26 @@ private fun SocialMediaSettingsDialog(state: SocialUiState, viewModel: SocialFee
                         context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
                             android.net.Uri.parse(if (state.safety.adultEnabled) "https://civitai.red/videos" else "https://civitai.com/videos")))
                     })
-                OutlinedTextField(brave, { brave = it }, label = { Text("Brave Image Search API key") },
+                OutlinedTextField(brave, { brave = it }, label = { Text("Brave Image & Video Search API key") },
                     singleLine = true, modifier = Modifier.fillMaxWidth(),
                     visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
                 Text(if (brave.isBlank()) "Brave: key needed" else "Save the key, then check the connection.",
                     fontSize = 12.sp, color = c.muted)
                 Text("Check Brave · ${state.braveStatus.ifBlank { "Not checked" }}", color = c.accent,
                     fontSize = 13.sp, modifier = Modifier.clickable { viewModel.checkBrave() })
+                Text("Animated GIFs use keyless Openverse and Wikimedia results. GIPHY and Tenor keys add larger GIF catalogs. Only actual GIF files attach to GIF requests.",
+                    fontSize = 12.sp, color = c.muted)
+                OutlinedTextField(giphy, { giphy = it }, label = { Text("GIPHY API key (optional)") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
+                OutlinedTextField(tenor, { tenor = it }, label = { Text("Tenor API key (optional)") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
                 OutlinedTextField(imageModel, { imageModel = it },
                     label = { Text("OpenRouter image model ref") }, singleLine = true,
                     placeholder = { Text("openrouter/provider/model") }, modifier = Modifier.fillMaxWidth())
+                Text("Choose an image-output model for original character photos. A model with reference-image editing can also use that character's Codex portrait for likeness; otherwise their written appearance guides the result.",
+                    fontSize = 12.sp, color = c.muted)
                 OutlinedTextField(endpoint, { endpoint = it }, label = { Text("ComfyUI URL (optional)") },
                     singleLine = true, placeholder = { Text("http://192.168.1.10:8188") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(workflow, { workflow = it },
@@ -2374,6 +2421,8 @@ private fun SocialMediaSettingsDialog(state: SocialUiState, viewModel: SocialFee
         confirmButton = { androidx.compose.material3.TextButton(onClick = {
             viewModel.setBraveKey(brave)
             viewModel.setCivitaiKey(civitai)
+            viewModel.setGiphyKey(giphy)
+            viewModel.setTenorKey(tenor)
             viewModel.saveMediaSettings(endpoint, workflow, imageModel)
             onDismiss()
         }) { Text("Save") } },

@@ -429,6 +429,22 @@ per refresh. It reads public sources but never posts or messages on
 outside social platforms.
 Civitai images carry creator credit and a link to their image page. Its video gallery can be visited through source links; inline posts support images and GIFs. Adult results depend on Civitai's account and region settings.
 
+The optional Brave Image & Video Search key also searches indexed public previews
+from creator, adult video, gaming, and social sites. Video results appear with a
+thumbnail and an attributed watch-page link. Only public previews can be used;
+private or paid posts remain on their source site. Open **Privacy & filters →
+Fictional social accounts** to add any of eight adult characters to the shared
+Characters Codex. Their names and posts are fictional; real public media is
+credited as a reshare and is never presented as that character's selfie.
+The optional account entries describe face, hair, skin tone, build, and other
+identifying features. For a character selfie, the app uses a picture named for
+that character or an original image prompted from the Codex description. Set
+an image-capable OpenRouter model or ComfyUI workflow for original photos.
+GIF requests now keep only genuine GIF files and try broader terms if the
+specific query fails; optional GIPHY and Tenor keys are in media settings.
+If the Codex entry has a portrait, compatible OpenRouter image editing models
+receive it as a reference. The written appearance remains the fallback.
+
 ### Home brings it together
 
 Home combines the social timeline with stories, live server

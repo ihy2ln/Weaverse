@@ -67,15 +67,24 @@ class ChatCastResolver @Inject constructor(
 
     /** Finds or creates the character card backing a codex entry, idempotent by a deterministic id. */
     private suspend fun materializeCharacter(entry: CodexEntryEntity): RpCharacterEntity {
+        val codexDescription = documentFromJson(entry.docJson).plainText().take(1200)
+            .ifBlank { entry.plainText.take(1200) }
         val linked = db.roleplayDao().getCharacters().firstOrNull { it.defaultCodexId == entry.id }
-        if (linked != null) return linked
+        if (linked != null) {
+            if (linked.id.startsWith("char-codex-") && (linked.description != codexDescription ||
+                    linked.avatarMediaId != entry.imageMediaId || linked.name != entry.name)) {
+                return linked.copy(name = entry.name, description = codexDescription,
+                    avatarMediaId = entry.imageMediaId).also { db.roleplayDao().upsertCharacter(it) }
+            }
+            return linked
+        }
         val deterministicId = "char-codex-${entry.id}"
         db.roleplayDao().getCharacter(deterministicId)?.let { return it }
         val character = RpCharacterEntity(
             id = deterministicId,
             name = entry.name,
-            description = documentFromJson(entry.docJson).plainText().take(1200)
-                .ifBlank { entry.plainText.take(1200) },
+            avatarMediaId = entry.imageMediaId,
+            description = codexDescription,
             colorHex = entry.colorHex,
             defaultCodexId = entry.id,
             createdAt = System.currentTimeMillis(),

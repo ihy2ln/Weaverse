@@ -1,6 +1,8 @@
 package com.ihy2ln.weaverse.feature.chatting.social
 
+import android.util.Base64
 import com.ihy2ln.weaverse.ai.AiGenerationService
+import com.ihy2ln.weaverse.ai.ImageAttachment
 import com.ihy2ln.weaverse.core.media.MediaRepository
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
 import com.ihy2ln.weaverse.data.db.entities.MediaEntity
@@ -36,7 +38,7 @@ class SocialImageGenerator @Inject constructor(
     private val http = client.newBuilder().callTimeout(45, TimeUnit.SECONDS).build()
     private val json = Json { ignoreUnknownKeys = true }
 
-    suspend fun generate(prompt: String): MediaEntity? {
+    suspend fun generate(prompt: String, referenceMediaId: String? = null): MediaEntity? {
         val endpoint = settings.socialString("comfy_endpoint").first()
         val workflow = settings.socialString("comfy_workflow").first()
         val result = if (endpoint.isNotBlank() && workflow.isNotBlank()) {
@@ -46,7 +48,17 @@ class SocialImageGenerator @Inject constructor(
             val model = settings.socialString("image_model").first()
                 .ifBlank { settings.preferences.first().mangaImageModelRef }
             if (!model.startsWith("openrouter/")) return null
-            runCatching { ai.generateImage(prompt, model) }.getOrNull()?.let { (bytes, mime) -> Triple(bytes, mime, "OpenRouter") }
+            val reference = referenceMediaId?.let { id ->
+                runCatching {
+                    val item = media.getById(id) ?: return@runCatching null
+                    val file = media.resolveFile(item)
+                    if (!file.isFile || file.length() > 8 * 1024 * 1024 || !item.mimeType.startsWith("image/")) null
+                    else ImageAttachment(item.mimeType, Base64.encodeToString(file.readBytes(), Base64.NO_WRAP))
+                }.getOrNull()
+            }
+            runCatching { ai.generateImage(prompt, model, listOfNotNull(reference)) }
+                .recoverCatching { ai.generateImage(prompt, model) }
+                .getOrNull()?.let { (bytes, mime) -> Triple(bytes, mime, "OpenRouter") }
         } ?: return null
         val (bytes, mime, source) = generated
         if (bytes.isEmpty() || bytes.size > 15 * 1024 * 1024 || !mime.startsWith("image/")) return null

@@ -344,6 +344,20 @@ image attempt per refresh; search and library images fill the other posts.
 Public media is attributed and outside platforms receive no posts or messages.
 Civitai images are matched against public generation metadata; its video gallery is available through credited source links, while posts attach supported image and GIF files. Availability of adult results depends on Civitai's account and region settings.
 
+A Brave Image & Video Search key adds rotating site-focused discovery of public
+previews on creator, adult video, gaming, and social sites. Video results show
+a thumbnail and open their credited watch page; private and paid media cannot
+be imported. **Fictional social accounts** in Privacy & filters lets you add
+eight editable adult characters to the shared Characters Codex. They can post
+and chat, while media by real people keeps its source credit.
+Each optional character has physical details in the Codex. Selfie posts use
+named character pictures or an image-capable model prompted with those
+details; they do not borrow a stranger's face. GIF searches retry broader
+terms and keep only animated GIFs. Add optional GIPHY or Tenor keys in the
+same media settings for more GIF results.
+Set a portrait on the Codex entry for a reference image with a compatible
+OpenRouter image editing model; the written appearance guides other models.
+
 From the profile shield, warn before
 sensitive media, filter sexual, violence, politics, religion, offensive, or
 drugs labels, mute words, restore posts marked **Not interested**, and review

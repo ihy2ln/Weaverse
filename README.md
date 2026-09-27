@@ -81,6 +81,17 @@ the title badge or Privacy & filters. New posts favor image and GIF media,
 with adult, gaming, investing, animal, travel and everyday interests. Optional
 The public Civitai gallery, optional Brave Image Search and OpenRouter/ComfyUI image generation expand sources;
 public previews are attributed and all outside platforms remain read-only.
+Privacy & filters also offers eight optional fictional social accounts that become
+editable Characters in the shared Codex. With a Brave Image & Video Search key,
+WeaverSocial rotates through public indexed previews on creator, adult video,
+gaming, and social sites. Video cards show a thumbnail and open their public
+watch page. Private and paid posts are not imported; public media retains credit.
+Selfie posts now use a picture tied to the character's full Codex name or an
+original image prompted with the character's appearance. The feed skips
+unrelated public faces for these posts. GIF requests retain only actual GIFs;
+optional GIPHY and Tenor keys can be set in WeaverSocial media settings.
+A Codex portrait can also guide compatible OpenRouter image editing models;
+the written appearance remains the fallback for models without references.
 - **Home** combines stories and the composer with the timeline, recent server
   conversations, activity, and trends. **Social** is the focused, refreshable,
   continuously loading feed.

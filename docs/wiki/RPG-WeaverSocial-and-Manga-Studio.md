@@ -123,6 +123,19 @@ refresh. Public media carries a source link, and no action posts or messages
 to outside platforms.
 Civitai media is credited to its uploader and linked to its image page. Its video gallery can be opened as an outside source; inline posts currently support images and GIFs. Adult results depend on Civitai's account and region settings.
 
+With a Brave Image & Video Search key, the feed rotates through public
+indexed creator, adult video, gaming, and social previews. Video cards show
+thumbnails linked to attributed watch pages. Private and paid posts remain
+on their source site. Privacy & filters also offers eight fictional adults
+to add to the shared Characters Codex. They can post and chat, and you can
+edit them later. Public media by real people is always credited as a reshare.
+The optional Codex characters include detailed physical descriptions. Their
+selfie posts use named library pictures or original image generation based on
+those details, rather than unrelated public faces. Genuine animated GIFs are
+retried with broader search terms; optional GIPHY and Tenor keys add catalogs.
+A Codex portrait is used as a reference by compatible OpenRouter image editing
+models; the written appearance guides models that only take text prompts.
+
 Filters are off until you turn them on. In Privacy & filters, you can warn
 before sensitive images, hide posts labeled sexual, violence, politics,
 religion, offensive, or drugs, mute words, restore posts marked **Not

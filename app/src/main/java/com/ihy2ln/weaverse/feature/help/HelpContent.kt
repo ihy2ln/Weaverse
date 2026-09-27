@@ -348,15 +348,32 @@ object HelpContent {
                     "Public media and AI images",
                     "In Privacy & filters, open Media sources & AI images. Civitai's public " +
                         "image gallery works without a key; an optional token uses your account's " +
-                        "browsing level. An optional Brave Image Search key broadens discovery. " +
+                        "browsing level. An optional Brave Image & Video Search key discovers " +
+                        "indexed public previews from creator, adult video, gaming and social sites. " +
                         "Add an OpenRouter image model or a reachable " +
                         "ComfyUI URL and exported API workflow for one original fictional " +
                         "image attempt per refresh. Put __PROMPT__ in the workflow's positive " +
                         "prompt text. Fictional accounts can reshare public previews with a " +
-                        "source link and creator credit. Civitai's video gallery opens as an " +
-                        "outside source; inline posts support images and GIFs. Adult results " +
+                        "source link and creator credit. Video search results show a thumbnail " +
+                        "and open the public watch page; images and GIFs play in posts. " +
+                        "Private and paid media is not imported. Keyless GIF search uses " +
+                        "Openverse and Wikimedia; optional GIPHY and Tenor keys add more. " +
+                        "A fictional character's selfie uses a named library picture or the " +
+                        "configured image model and their Codex appearance. A Codex portrait " +
+                        "is sent as a reference when the image model supports editing, never a stranger's " +
+                        "face from web search. Adult results " +
                         "depend on Civitai's account and region settings. WeaverSocial never " +
                         "posts or messages on outside sites.",
+                ),
+                HelpEntry(
+                    "Fictional social accounts",
+                    "Open Privacy & filters > Fictional social accounts to choose from eight " +
+                        "adult creator, gamer, investor, travel, sports and animal accounts. " +
+                        "Each includes body and face details and becomes an editable character " +
+                        "in the shared Codex. They can join " +
+                        "posts and chats. Their names and stories are fictional. Public media " +
+                        "by real people remains credited to its source, never presented as " +
+                        "a picture of a fictional account.",
                 ),
                 HelpEntry(
                     "Blocking, muting and filters",

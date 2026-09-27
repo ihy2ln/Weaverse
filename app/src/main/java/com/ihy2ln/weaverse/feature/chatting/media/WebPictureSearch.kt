@@ -39,6 +39,8 @@ data class WebPicture(
     val credit: String = "",
     /** The source classified this item as adult; keep that label with saved media. */
     val adult: Boolean = false,
+    /** Video results use a public thumbnail and open their attributed watch page. */
+    val videoPreview: Boolean = false,
 )
 
 /** What the search is for. */
@@ -93,8 +95,12 @@ class WebPictureSearch @Inject constructor(
 
     suspend fun braveStatus(): String = withContext(Dispatchers.IO) {
         if (!enabled(WebSource.Brave)) return@withContext "Brave key not set"
-        runCatching { "Brave connected · ${brave("cat", false, false).size} preview(s)" }
-            .getOrElse { "Brave unavailable: ${it.message.orEmpty().take(90)}" }
+        runCatching {
+            val images = brave("cat", false, false).size
+            val videos = runCatching { braveVideos("cat", false).size }
+            if (videos.isSuccess) "Brave connected · $images image(s), ${videos.getOrDefault(0)} video(s)"
+            else "Brave images connected · video search unavailable: ${videos.exceptionOrNull()?.message.orEmpty().take(65)}"
+        }.getOrElse { "Brave unavailable: ${it.message.orEmpty().take(90)}" }
     }
 
     suspend fun civitaiStatus(adultAllowed: Boolean): String = withContext(Dispatchers.IO) {
@@ -103,6 +109,53 @@ class WebPictureSearch @Inject constructor(
             "Civitai connected · ${civitai(query, adultAllowed).size} matching preview(s)"
         }
             .getOrElse { "Civitai unavailable: ${it.message.orEmpty().take(90)}" }
+    }
+
+    /** Public, indexed previews from creator and adult video sites. No account access or scraping. */
+    suspend fun publicPreviews(query: String, adultAllowed: Boolean): SearchOutcome = coroutineScope {
+        if (key(KEY_BRAVE).isBlank()) return@coroutineScope SearchOutcome(emptyList(), emptyList(), emptyList())
+        val sites = if (adultAllowed) ADULT_PREVIEW_SITES else GENERAL_PREVIEW_SITES
+        val offset = previewRotation.getAndIncrement()
+        val selected = (0 until 2).map { sites[(offset + it).mod(sites.size)] }
+        val jobs = selected.flatMap { site ->
+            val q = "site:$site ${query.split(' ').take(5).joinToString(" ")}"
+            val imageJob = "$site images" to async(Dispatchers.IO) { runCatching { brave(q, false, adultAllowed) } }
+            val videoJob = "$site videos" to async(Dispatchers.IO) { runCatching { braveVideos(q, adultAllowed) } }
+            if (offset % 2 == 0) listOf(videoJob, imageJob) else listOf(imageJob, videoJob)
+        }
+        val results = jobs.map { it.first to it.second.await() }
+        val lists = results.map { it.second.getOrDefault(emptyList()).iterator() }
+        val merged = buildList {
+            while (lists.any { it.hasNext() }) lists.forEach { if (it.hasNext()) add(it.next()) }
+        }
+        SearchOutcome(
+            merged.distinctBy { it.pageUrl },
+            results.filter { it.second.isFailure }.map { it.first },
+            results.map { it.first },
+        )
+    }
+
+    private fun braveVideos(q: String, adultAllowed: Boolean): List<WebPicture> {
+        val url = "https://api.search.brave.com/res/v1/videos/search".toHttpUrl().newBuilder()
+            .addQueryParameter("q", q).addQueryParameter("count", "20")
+            .addQueryParameter("safesearch", if (adultAllowed) "off" else "strict").build()
+        val request = Request.Builder().url(url).header("X-Subscription-Token", key(KEY_BRAVE))
+            .header("Accept", "application/json").build()
+        val root = http.newCall(request).execute().use { response ->
+            require(response.isSuccessful) { "Brave video HTTP ${response.code}" }
+            json.parseToJsonElement(response.body?.string().orEmpty()).obj()
+        }
+        return root["results"].arr().mapNotNull { item ->
+            val o = item.obj()
+            val page = o.str("url")?.takeIf { it.startsWith("https://") } ?: return@mapNotNull null
+            val thumb = o["thumbnail"].obj().str("src")?.takeIf { it.startsWith("https://") }
+                ?: return@mapNotNull null
+            WebPicture("bv-${page.hashCode()}", o.str("title").orEmpty(), thumb, thumb,
+                false, "Brave video", page, o["video"].obj().str("creator")
+                    ?: o["video"].obj().str("publisher").orEmpty(),
+                adult = ADULT_PREVIEW_SITES.any { page.contains(it, true) },
+                videoPreview = true)
+        }
     }
 
     /** Results from every enabled source that fits [kind], interleaved so no one site dominates. */
@@ -174,6 +227,7 @@ class WebPictureSearch @Inject constructor(
                 thumbUrl = o["thumbnail"].obj().str("src") ?: full,
                 fullUrl = full, isGif = gif, source = "Brave",
                 pageUrl = page, credit = o.str("source").orEmpty(),
+                adult = ADULT_PREVIEW_SITES.any { page.contains(it, true) },
             )
         }
     }
@@ -201,7 +255,7 @@ class WebPictureSearch @Inject constructor(
         }
         val words = q.lowercase().split(Regex("[^a-z0-9]+"))
             .filter { it.length >= 4 && it !in STOP_WORDS && it !in CIVITAI_GENERIC_WORDS }.distinct()
-        return root["items"].arr().mapNotNull { item ->
+        val candidates = root["items"].arr().mapNotNull { item ->
             val o = item.obj()
             val id = o.str("id") ?: return@mapNotNull null
             val full = o.str("url")?.takeIf { it.startsWith("https://") } ?: return@mapNotNull null
@@ -210,7 +264,6 @@ class WebPictureSearch @Inject constructor(
             if ((level and 32) != 0 || (!wantsAdult && (level and 24) != 0)) return@mapNotNull null
             val prompt = o["meta"].obj().str("prompt").orEmpty().lowercase()
             val score = words.count { prompt.contains(it) }
-            if (words.isNotEmpty() && score == 0) return@mapNotNull null
             val creator = o.str("username").orEmpty()
             val page = "$base/images/$id"
             WebPicture(
@@ -219,7 +272,11 @@ class WebPictureSearch @Inject constructor(
                 pageUrl = page, credit = creator.takeIf { it.isNotBlank() }?.let { "@$it on Civitai" } ?: "Civitai creator",
                 adult = (level and 24) != 0,
             ) to score
-        }.sortedByDescending { it.second }.take(20).map { it.first }
+        }.sortedByDescending { it.second }
+        val relevant = candidates.filter { it.second > 0 }
+        return (if (relevant.isNotEmpty()) relevant else if (wantsAdult)
+            candidates.filter { it.first.adult } else candidates.take(5))
+            .take(20).map { it.first }
     }
 
     private fun openverse(q: String, gifs: Boolean, adultAllowed: Boolean): List<WebPicture> {
@@ -464,6 +521,9 @@ class WebPictureSearch @Inject constructor(
         (this[key] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
 
     companion object {
+        private val previewRotation = java.util.concurrent.atomic.AtomicInteger()
+        private val ADULT_PREVIEW_SITES = listOf("onlyfans.com", "pornhub.com", "redgifs.com", "fansly.com", "patreon.com", "civitai.red")
+        private val GENERAL_PREVIEW_SITES = listOf("youtube.com", "twitch.tv", "x.com", "civitai.com")
         /** Wikimedia refuses images to clients without a descriptive agent like this one. */
         const val USER_AGENT = "android:com.ihy2ln.weaverse:v1 (Weaverse picture search)"
         private const val MAX_DOWNLOAD_BYTES = 15L * 1024 * 1024

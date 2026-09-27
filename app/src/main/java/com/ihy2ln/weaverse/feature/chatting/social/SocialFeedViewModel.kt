@@ -23,6 +23,8 @@ import com.ihy2ln.weaverse.feature.chatting.media.WebSearchKind
 import com.ihy2ln.weaverse.feature.chatting.media.WebPictureSearch
 import com.ihy2ln.weaverse.feature.chatting.media.KEY_BRAVE
 import com.ihy2ln.weaverse.feature.chatting.media.KEY_CIVITAI
+import com.ihy2ln.weaverse.feature.chatting.media.KEY_GIPHY
+import com.ihy2ln.weaverse.feature.chatting.media.KEY_TENOR
 import com.ihy2ln.weaverse.feature.chatting.matchNamedCharacters
 import com.ihy2ln.weaverse.feature.chatting.ParsedLine
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -89,6 +91,7 @@ data class SocialPostUi(
     val sourceUrl: String = "",
     val sourceSite: String = "",
     val sourceTitle: String = "",
+    val originKind: String = "fictional",
     val mediaCredits: List<String> = emptyList(),
     val mediaLinks: List<String> = emptyList(),
     val feeling: String,
@@ -151,6 +154,7 @@ data class SocialUiState(
     val comfyStatus: String = "",
     val braveStatus: String = "",
     val civitaiStatus: String = "",
+    val addedCreatorIds: Set<String> = emptySet(),
 ) {
     val youHandle: String get() = handleFor(personaName)
     val followingIds: Set<String> get() = people.filter { it.isFollowing }.map { it.characterId }.toSet()
@@ -208,7 +212,8 @@ class SocialFeedViewModel @Inject constructor(
                 it.copy(personaName = persona.name.ifBlank { "You" }, personaBio = persona.description)
             }
             cast = castResolver.allChatContacts()
-            _uiState.update { it.copy(castLoaded = true) }
+            val added = db.codexDao().getAllEntries().map { it.id }.filter { it.startsWith("social-creator-") }.toSet()
+            _uiState.update { it.copy(castLoaded = true, addedCreatorIds = added) }
             combine(db.socialDao().observeAllPosts(), allFollows(), relations.safety) { posts, follows, safety ->
                 Triple(posts, follows, safety)
             }.collect { (posts, follows, safety) -> publish(posts, follows, safety) }
@@ -312,6 +317,7 @@ class SocialFeedViewModel @Inject constructor(
             sourceUrl = sourceUrl,
             sourceSite = sourceSite,
             sourceTitle = sourceTitle,
+            originKind = originKind,
             mediaCredits = attached.map { media ->
                 listOf(media.sourceSite, media.sourceCredit).filter { it.isNotBlank() }.distinct().joinToString(" · ")
             },
@@ -612,6 +618,10 @@ class SocialFeedViewModel @Inject constructor(
     fun setBraveKey(value: String) = webPictures.setKey(KEY_BRAVE, value)
     fun civitaiKey(): String = webPictures.key(KEY_CIVITAI)
     fun setCivitaiKey(value: String) = webPictures.setKey(KEY_CIVITAI, value)
+    fun giphyKey(): String = webPictures.key(KEY_GIPHY)
+    fun setGiphyKey(value: String) = webPictures.setKey(KEY_GIPHY, value)
+    fun tenorKey(): String = webPictures.key(KEY_TENOR)
+    fun setTenorKey(value: String) = webPictures.setKey(KEY_TENOR, value)
 
     fun saveMediaSettings(endpoint: String, workflow: String, imageModel: String) {
         viewModelScope.launch {
@@ -633,6 +643,18 @@ class SocialFeedViewModel @Inject constructor(
     fun checkCivitai() {
         viewModelScope.launch {
             _uiState.update { it.copy(civitaiStatus = webPictures.civitaiStatus(safety.adultEnabled)) }
+        }
+    }
+
+    fun addFictionalCreator(template: SocialCreatorTemplate) {
+        viewModelScope.launch {
+            val created = SocialCreatorTemplates.addToCodex(db, template)
+            cast = castResolver.allChatContacts()
+            publish(db.socialDao().observeAllPosts().first(), allFollows().first(), safety)
+            _uiState.update { it.copy(
+                addedCreatorIds = it.addedCreatorIds + SocialCreatorTemplates.id(template.slug),
+                notice = if (created) "${template.name} joined your Codex and social cast." else "${template.name} is already in your Codex.",
+            ) }
         }
     }
 
@@ -666,16 +688,20 @@ class SocialFeedViewModel @Inject constructor(
     fun refreshFeed(count: Int = 4) {
         if (_uiState.value.generating) return
         viewModelScope.launch {
+            cast = castResolver.allChatContacts()
             if (!ensureReady()) return@launch
             val adultAllowed = safety.adultEnabled
             enrichRecentPostsWithoutMedia(count.coerceAtMost(6))
             val posters = pickCast(count.coerceAtMost(cast.size), prefer = _uiState.value.followingIds)
             val topicDirections = List(posters.size) { index ->
                 val direction = SOCIAL_TOPIC_DIRECTIONS[(nextTopicDirection++).mod(SOCIAL_TOPIC_DIRECTIONS.size)]
-                if ((!adultAllowed || UNDERAGE_TERMS.containsMatchIn(
+                val assigned = if ((!adultAllowed || UNDERAGE_TERMS.containsMatchIn(
                     listOf(posters[index].description, posters[index].personality).joinToString(" "))) &&
                     direction.startsWith("[18+]"))
                     "A game, pet, trip, hobby, or ordinary moment from today's life." else direction
+                assigned + if (index % 4 == 2 || (assigned.startsWith("[18+]") && index != 0))
+                    " This is a reaction to or reshare of public media by someone else; do not say it depicts you."
+                else ""
             }
             val recent = entities.values.filter { it.parentId == null }
                 .sortedByDescending { it.createdAt }.take(8)
@@ -696,9 +722,13 @@ class SocialFeedViewModel @Inject constructor(
                 ". Follow each assigned direction, vary the formats and viewpoints, and make image/GIF queries specific to the scene or subject in the post."
             val raw = complete(system, user, maxTokens = 3_000) ?: return@launch
             val lines = parseSocialLines(raw, cast)
+            val characterPhotoIndex = lines.indexOfFirst { line ->
+                SELF_PHOTO_TERMS.containsMatchIn(line.text)
+            }.takeIf { it >= 0 } ?: 0
             val base = System.currentTimeMillis()
             library = runCatching { mediaRepository.observeAll().first() }.getOrDefault(emptyList())
                 .filter { it.type == "image" }
+            var gifAssigned = false
             lines.forEachIndexed { index, line ->
                 val author = line.character ?: return@forEachIndexed
                 val (feeling, tagged) = splitFeeling(line.text)
@@ -711,28 +741,35 @@ class SocialFeedViewModel @Inject constructor(
                 // Prefer a character's own saved picture when available. Otherwise search
                 // the web for a relevant attachment, so media does not depend on the model
                 // remembering to emit a tag or the user having a populated local library.
-                val personalPhoto = if (tags.isEmpty() && Random.nextFloat() < PERSONAL_PHOTO_CHANCE) pictureOf(author) else null
+                val selfPhoto = SELF_PHOTO_TERMS.containsMatchIn(body) || tags.any { SELF_PHOTO_TERMS.containsMatchIn(it.query) }
+                val personalPhoto = if (selfPhoto || (tags.isEmpty() && Random.nextFloat() < PERSONAL_PHOTO_CHANCE))
+                    pictureOf(author) else null
                 val mediaTags = tags.ifEmpty {
                     if (personalPhoto != null) emptyList()
                     else listOfNotNull(automaticMediaTag(body, labels, AUTO_MEDIA_POST_CHANCE))
                 }.let { selected ->
+                    // A public stranger's face cannot stand in for this fictional person's selfie.
+                    if (selfPhoto && personalPhoto == null) return@let emptyList()
                     val withAppearance = if (ContentLabel.Sexual in labels) selected.map { tag ->
                         val keywords = appearanceSearchWords(author)
                         if (keywords.isBlank()) tag else tag.copy(query = (tag.query.take(55) + " " + keywords).take(80))
                     } else selected
-                    if (index % 4 == 1 && withAppearance.isNotEmpty() && ContentLabel.Sexual !in labels)
+                    if (!gifAssigned && index != characterPhotoIndex && withAppearance.isNotEmpty() &&
+                        ContentLabel.Sexual !in labels) {
+                        gifAssigned = true
                         listOf(withAppearance.first().copy(kind = WebSearchKind.Gifs)) + withAppearance.drop(1)
-                    else withAppearance
+                    } else withAppearance
                 }
                 saveWithMedia(
                     generatedPost(author, body, feeling, base - (lines.size - index) * 97_000L, parentId = null)
                         .copy(mediaId = personalPhoto?.id, contentTags = SocialTags.store(labels)),
                     mediaTags,
-                    publicReshare = index % 4 == 2 && personalPhoto == null,
-                    generatePrompt = if (index == 0 && personalPhoto == null &&
+                    publicReshare = (index % 4 == 2 || (ContentLabel.Sexual in labels && index != 0)) && personalPhoto == null,
+                    generatePrompt = if (index == characterPhotoIndex && personalPhoto == null &&
                         !UNDERAGE_TERMS.containsMatchIn(author.description + " " + author.personality)) {
-                        "Original social-media photograph or illustration of a fictional adult character. " +
-                            "Character appearance and context: ${author.description.take(600)}. " +
+                        "Original social-media photograph of the same fictional adult character. " +
+                            "Preserve the Codex identity: face, skin tone, hair, eye color, body build, height, and distinguishing features. " +
+                            "Character appearance and context: ${author.description.take(1000)}. " +
                             "Post: ${body.take(300)}. ${if (adultAllowed) "All people are clearly 18+." else "Nonsexual image."} No real person's likeness, no text overlays."
                     } else null,
                 )
@@ -846,15 +883,18 @@ class SocialFeedViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val adultAllowed = safety.adultEnabled
-                val used = entities.values.map { it.sourceMediaUrl }.filter { it.isNotBlank() }.toSet() + claimedMediaUrls
+                val used = entities.values.flatMap { listOf(it.sourceMediaUrl, it.sourceUrl) }
+                    .filter { it.isNotBlank() }.toSet() + claimedMediaUrls
                 val source = if (publicReshare && tags.isNotEmpty())
                     characterMedia.fetchPublic(tags.first(), adultAllowed, used) else null
                 if (source != null && !claimedMediaUrls.add(source.second.fullUrl)) {
                     _uiState.update { it.copy(mediaNotice = "A media source repeated; trying new posts on the next refresh.") }
                     return@launch
                 }
+                source?.second?.pageUrl?.takeIf { it.isNotBlank() }?.let { claimedMediaUrls.add(it) }
                 val generated = if (source == null && generatePrompt != null)
-                    imageGenerator.generate(generatePrompt) else null
+                    imageGenerator.generate(generatePrompt,
+                        cast.firstOrNull { it.id == post.authorCharacterId }?.avatarMediaId) else null
                 val found = when {
                     source != null -> listOf(source.first)
                     generated != null -> listOf(generated)
@@ -862,7 +902,9 @@ class SocialFeedViewModel @Inject constructor(
                 }
                 found.mapNotNull { it.sourceUrl.takeIf(String::isNotBlank) }.forEach { claimedMediaUrls.add(it) }
                 if (found.isEmpty()) {
-                    _uiState.update { it.copy(mediaNotice = "Some media could not be found. Check the image model, search keys, or network in Privacy & filters.") }
+                    _uiState.update { it.copy(mediaNotice = if (generatePrompt != null && tags.isEmpty())
+                        "No matching character photo was available. Set an image-capable OpenRouter model or ComfyUI workflow in Media sources & AI images."
+                    else "Some media could not be found. Check the image model, GIF/search keys, or network in Privacy & filters.") }
                     return@launch
                 }
                 val fresh = db.socialDao().getPost(post.id) ?: return@launch
@@ -870,7 +912,7 @@ class SocialFeedViewModel @Inject constructor(
                 val hasAdultMedia = found.any { "source_adult" in it.tags }
                 db.socialDao().upsert(fresh.copy(mediaId = joinMediaIds(ids),
                     contentTags = if (hasAdultMedia) SocialTags.store(SocialTags.labelsOf(fresh.contentTags) + ContentLabel.Sexual) else fresh.contentTags,
-                    originKind = if (source != null) "public_reshare" else fresh.originKind,
+                    originKind = if (source?.second?.videoPreview == true) "public_video" else if (source != null) "public_reshare" else fresh.originKind,
                     sourceUrl = source?.second?.pageUrl.orEmpty(), sourceSite = source?.second?.credit.orEmpty().ifBlank { source?.second?.source.orEmpty() },
                     sourceTitle = source?.second?.title.orEmpty(), sourceMediaUrl = source?.second?.fullUrl.orEmpty()))
                 _uiState.update { it.copy(mediaNotice = "") }
@@ -1007,10 +1049,9 @@ class SocialFeedViewModel @Inject constructor(
      */
     private fun pictureOf(character: RpCharacterEntity): MediaEntity? {
         val full = character.name.trim().lowercase()
-        val first = full.split(' ').firstOrNull().orEmpty().takeIf { it.length >= 3 }
         return library.filter { media ->
             val hay = listOf(media.displayName, media.tags, media.category).joinToString(" ").lowercase()
-            hay.contains(full) || (first != null && Regex("\\b" + Regex.escape(first) + "\\b").containsMatchIn(hay))
+            media.sourceUrl.isBlank() && hay.contains(full)
         }.randomOrNull()
     }
 
@@ -1125,6 +1166,7 @@ class SocialFeedViewModel @Inject constructor(
             "Animals, travel, politics, investing, or daily life, whichever this person would actually share today.",
         )
         private val SEXUAL_TERMS = Regex("\\b(nude|nudity|porn|xxx|onlyfans|fansly|nsfw|erotic|sex|sexual)\\b", RegexOption.IGNORE_CASE)
+        private val SELF_PHOTO_TERMS = Regex("\\b(selfie|photo of me|picture of me|here i am|this is me|my outfit|my body|my face|mirror pic|me on vacation|me at the|my vacation photo)\\b", RegexOption.IGNORE_CASE)
         private val UNDERAGE_TERMS = Regex("\\b(?:1[0-7][ -]?year[ -]?old|teenager|underage|minor|child|schoolgirl|schoolboy)\\b", RegexOption.IGNORE_CASE)
         private val APPEARANCE_TERMS = Regex("\\b(?:blonde|brunette|redhead|black hair|brown hair|blue eyes|green eyes|brown eyes|freckles|tattooed|curvy|athletic|muscular|petite|tall|dark skin|fair skin|elf|orc)\\b", RegexOption.IGNORE_CASE)
         private val GAMING_TERMS = Regex("\\b(game|games|gaming|gamer|esports|xbox|playstation|nintendo|steam|console|pc build)\\b", RegexOption.IGNORE_CASE)

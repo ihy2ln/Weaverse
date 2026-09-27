@@ -96,13 +96,18 @@ class CharacterMediaFetcher @Inject constructor(
         fromLibrary(tag, adultAllowed)?.let { return it }
         val results = runCatching { web.search(tag.query, tag.kind, adultAllowed).results }.getOrDefault(emptyList())
             .filter { tag.kind != WebSearchKind.Gifs || it.isGif }
-            .ifEmpty { runCatching { web.search(tag.query, WebSearchKind.All, adultAllowed).results }.getOrDefault(emptyList()) }
-            .filterNot { it.fullUrl in usedUrls }
+            .ifEmpty { runCatching { web.search(tag.query, WebSearchKind.All, adultAllowed).results }.getOrDefault(emptyList())
+                .filter { tag.kind != WebSearchKind.Gifs || it.isGif } }
+            .filterNot { it.fullUrl in usedUrls || it.pageUrl in usedUrls }
         for (pick in results.take(TOP_RESULTS).shuffled()) {
             runCatching { web.download(pick, tag.query) }.getOrNull()?.let { return it }
         }
         val broad = when {
-            tag.kind == WebSearchKind.Gifs -> "reaction gif"
+            tag.kind == WebSearchKind.Gifs -> when {
+                tag.query.contains(Regex("game|gaming|esport", RegexOption.IGNORE_CASE)) -> "gaming"
+                tag.query.contains(Regex("animal|cat|dog|pet", RegexOption.IGNORE_CASE)) -> "animal"
+                else -> "reaction"
+            }
             tag.query.contains("adult", true) && adultAllowed -> "adult nude photography"
             tag.query.contains("game", true) -> "video game screenshot"
             tag.query.contains("market", true) || tag.query.contains("invest", true) -> "stock market chart"
@@ -112,23 +117,33 @@ class CharacterMediaFetcher @Inject constructor(
         }
         if (broad != tag.query) {
             runCatching { web.search(broad, if (tag.kind == WebSearchKind.Gifs) WebSearchKind.Gifs else WebSearchKind.Pictures, adultAllowed).results }
-                .getOrDefault(emptyList()).filterNot { it.fullUrl in usedUrls }
+                .getOrDefault(emptyList()).filter { tag.kind != WebSearchKind.Gifs || it.isGif }
+                .filterNot { it.fullUrl in usedUrls || it.pageUrl in usedUrls }
                 .take(TOP_RESULTS).forEach { pick ->
                     runCatching { web.download(pick, broad) }.getOrNull()?.let { return it }
                 }
+        }
+        if (tag.kind == WebSearchKind.Gifs) {
+            for (query in listOf("reaction", "gaming", "cat")) {
+                if (query == broad) continue
+                val animated = runCatching { web.search(query, WebSearchKind.Gifs, adultAllowed).results }
+                    .getOrDefault(emptyList()).filter { it.isGif && it.fullUrl !in usedUrls && it.pageUrl !in usedUrls }
+                for (pick in animated.take(5)) {
+                    runCatching { web.download(pick, query) }.getOrNull()?.let { return it }
+                }
+            }
         }
         return null
     }
 
     /** An indexed public item for an attributed bot reshare. A page URL is required. */
     suspend fun fetchPublic(tag: MediaTag, adultAllowed: Boolean, usedUrls: Set<String>): Pair<MediaEntity, WebPicture>? {
-        val creatorQuery = if (adultAllowed && web.key(KEY_BRAVE).isNotBlank())
-            runCatching { web.search("${tag.query} site:onlyfans.com OR site:patreon.com OR site:x.com", tag.kind, true).results }
-                .getOrDefault(emptyList()) else emptyList()
-        val results = (creatorQuery + runCatching { web.search(tag.query, tag.kind, adultAllowed).results }.getOrDefault(emptyList()))
+        val indexed = runCatching { web.publicPreviews(tag.query, adultAllowed).results }.getOrDefault(emptyList())
+        val results = (indexed + runCatching { web.search(tag.query, tag.kind, adultAllowed).results }.getOrDefault(emptyList()))
             .distinctBy { it.fullUrl }
+            .filter { tag.kind != WebSearchKind.Gifs || it.isGif }
             .filter { it.pageUrl.startsWith("https://") && it.fullUrl !in usedUrls && it.pageUrl !in usedUrls }
-        for (pick in results.take(10).shuffled()) {
+        for (pick in results.take(24)) {
             runCatching { web.download(pick, tag.query) }.getOrNull()?.let { return it to pick }
         }
         return null
