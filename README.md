@@ -90,15 +90,15 @@ also become Roleplay cards with Messenger, DM, and manga chats.
 - Shared board — same notes in Novel, Roleplay, and Notes mode.
 - Mic speech-to-text.
 
-### Storyboard manga hub
+### Manga Studio
 
 - **Library · Browse · Downloads · Extensions · Projects** in a dark, cover-first interface.
 - Built-in source adapters for MangaDex, Comix, Atsumaru, MangaFire, MangaDot,
   and Rawkuma. Catalog adapters load public Popular/Latest/Search results,
   metadata, chapter links, and page manifests without opening an external browser.
 - Resumable chapter downloads, offline reading, and direct public chapter-URL import.
-  Downloaded media opens in its own full-page Manga Editor (not the blank-panel
-  Storyboard composer), with Original/Edited switching, editable English overlays,
+  Downloaded media opens in its own full-page Manga Editor, with Original/Edited
+  switching, editable English overlays,
   AI/offline panel separation, manual retouching, and page/chapter B&W colorization.
 - Persistent favorites and user-named Library sections. A title can belong to
   several sections without being downloaded.
@@ -167,7 +167,7 @@ JUnit 5 + Turbine (app), a Go launcher for the Windows `.exe` shim.
 - **Latest hard checkpoint:** [docs/CHECKPOINT-v1.4.47-HARD-CHECKPOINT.md](docs/CHECKPOINT-v1.4.47-HARD-CHECKPOINT.md)
 - **Appearance wiki guide:** [docs/wiki/Appearance.md](docs/wiki/Appearance.md)
 - Earlier manga hub checkpoint: [docs/CHECKPOINT-v1.4.9-STORYBOARD-MANGA-HUB.md](docs/CHECKPOINT-v1.4.9-STORYBOARD-MANGA-HUB.md)
-- **Storyboard Manga Hub wiki guide:** [docs/wiki/Storyboard-Manga-Hub.md](docs/wiki/Storyboard-Manga-Hub.md)
+- **Manga Studio guide:** [docs/wiki/Storyboard-Manga-Hub.md](docs/wiki/Storyboard-Manga-Hub.md)
 - **Prompt Templates wiki guide:** [docs/wiki/Prompt-Templates-and-Add-Ons.md](docs/wiki/Prompt-Templates-and-Add-Ons.md)
 - Earlier Codex checkpoint: [docs/CHECKPOINT-v1.3.2-CODEX-NAVIGATION.md](docs/CHECKPOINT-v1.3.2-CODEX-NAVIGATION.md)
 - **RPG Adventure checkpoint:** [docs/CHECKPOINT-v1.3.2-RPG-ADVENTURE.md](docs/CHECKPOINT-v1.3.2-RPG-ADVENTURE.md)

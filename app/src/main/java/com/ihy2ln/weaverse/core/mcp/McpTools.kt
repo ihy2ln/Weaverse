@@ -218,12 +218,12 @@ class McpTools @Inject constructor(
                     }.ifBlank { "No local manga downloads." })
                 }
                 "import_manga_chapter_to_storyboard" -> {
-                    if (!confirmed(args)) return text("This creates Storyboard pages. Repeat with confirm=true after the user approves it.", isErr = true)
+                    if (!confirmed(args)) return text("This creates Manga Studio pages. Repeat with confirm=true after the user approves it.", isErr = true)
                     val chapterId = (args["chapterId"] as? JsonPrimitive)?.content.orEmpty()
                     val chatId = (args["chatId"] as? JsonPrimitive)?.content.orEmpty()
                     if (chapterId.isBlank() || chatId.isBlank()) return text("chapterId and chatId are required.", isErr = true)
                     val count = mangaDownloads.importChapterToStoryboard(chatId, chapterId)
-                    text("Added $count original page(s) to Storyboard chat $chatId. Pages remain editable and can be translated or colored in the app.")
+                    text("Added $count original page(s) to Manga Studio project $chatId. Pages remain editable and can be translated or colored in the app.")
                 }
                 else -> McpCall(error(id, -32602, "Unknown tool: $name"), isError = true)
             }
@@ -277,7 +277,7 @@ class McpTools @Inject constructor(
             tool("queue_manga_download", "Queue a catalog chapter for local download; requires confirm=true", mapOf("chapterId" to "Remote chapter id", "mangaId" to "Remote manga id", "mangaTitle" to "Manga title", "title" to "Chapter title", "sourceId" to "Optional source id", "url" to "Optional public chapter URL", "confirm" to "Must be true after explicit user approval"), required = setOf("chapterId", "mangaId", "confirm")),
             tool("download_manga_web_link", "Queue a public chapter-reader URL the same way Browse → Download from web link does; requires confirm=true", mapOf("url" to "Public chapter URL", "title" to "Optional title override", "confirm" to "Must be true after explicit user approval"), required = setOf("url", "confirm")),
             tool("manga_download_status", "Read local manga download progress", mapOf("chapterId" to "Optional local chapter id"), required = emptySet()),
-            tool("import_manga_chapter_to_storyboard", "Create editable Storyboard pages from a completed local chapter; requires confirm=true", mapOf("chapterId" to "Local chapter id", "chatId" to "Storyboard chat id", "confirm" to "Must be true after explicit user approval"), required = setOf("chapterId", "chatId", "confirm")),
+            tool("import_manga_chapter_to_storyboard", "Create editable Manga Studio pages from a completed local chapter; requires confirm=true", mapOf("chapterId" to "Local chapter id", "chatId" to "Manga Studio project id", "confirm" to "Must be true after explicit user approval"), required = setOf("chapterId", "chatId", "confirm")),
         ),
     )
 

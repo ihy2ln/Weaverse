@@ -535,7 +535,7 @@ class MangaDownloadRepository @Inject constructor(
         chatId: String,
         chapterId: String,
     ): MangaStoryboardImportResult = withContext(Dispatchers.IO) {
-        val chat = db.roleplayDao().getChat(chatId) ?: error("Storyboard chat not found: $chatId")
+        val chat = db.roleplayDao().getChat(chatId) ?: error("Manga Studio project not found: $chatId")
         val chapter = db.mangaDao().getChapter(chapterId) ?: error("Chapter not found: $chapterId")
         if (chapter.status != "completed") error("Chapter is not fully downloaded")
         val media = importChapterPages(chapterId)

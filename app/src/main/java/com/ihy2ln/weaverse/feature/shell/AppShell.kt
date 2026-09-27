@@ -243,7 +243,7 @@ fun AppShell(
                 shellViewModel.createWork(vocabulary, details) { bookId, chatId ->
                     showHome = false
                     val accessMode = when (vocabulary) {
-                        CreateWorkVocabulary.Storyboard -> "Storyboard"
+                        CreateWorkVocabulary.Storyboard -> "Manga Studio"
                         CreateWorkVocabulary.Campaign -> "Roleplay"
                         else -> "Novel"
                     }
@@ -328,7 +328,7 @@ fun AppShell(
     if (storyboardPlusMenu) {
         AlertDialog(
             onDismissRequest = { storyboardPlusMenu = false },
-            title = { Text("Add storyboard") },
+            title = { Text("Manga Studio") },
             text = {
                 Column {
                     Text(
@@ -392,7 +392,7 @@ fun AppShell(
                             .padding(top = InkSpacing.sm),
                     )
                     Text(
-                        "Every page of the file is imported as its own storyboard page, " +
+                        "Every page of the file is imported as its own editable manga page, " +
                             "ready for picture tools and panel separation.",
                         style = MaterialTheme.typography.bodySmall,
                         color = inkTokens().secondaryText,
@@ -1359,7 +1359,7 @@ private fun RoleplayDisplayModeBar(
                 options = listOf(
                     SegmentedOption("messenger", "Messenger"),
                     SegmentedOption("dungeonMaster", "DM"),
-                    SegmentedOption("roleplay", "Storyboard"),
+                    SegmentedOption("roleplay", "Manga Studio"),
                 ),
                 selectedId = displayMode,
                 onSelect = onSelect,

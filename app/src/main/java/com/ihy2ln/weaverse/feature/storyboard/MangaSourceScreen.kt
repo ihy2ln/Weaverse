@@ -964,7 +964,7 @@ fun MangaSourceDialog(
             ) {
                 Text("Extensions", style = MaterialTheme.typography.titleMedium)
                 Text("${viewModel.sourceName} · ${viewModel.sourceDescription}", style = MaterialTheme.typography.bodySmall)
-                Text("Downloads are stored locally first. You choose when to add originals to Storyboard.", style = MaterialTheme.typography.bodySmall)
+                Text("Downloads are stored locally first. You choose when to add originals to Manga Studio.", style = MaterialTheme.typography.bodySmall)
                 Text("Download chapter from link", style = MaterialTheme.typography.titleSmall)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     OutlinedTextField(

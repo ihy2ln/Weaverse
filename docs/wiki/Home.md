@@ -10,13 +10,13 @@ campaigns, character chats, manga/comic storyboards, and shared notes.
 - [Appearance](Appearance.md)
 - [Codex and Notes](Codex-and-Notes.md)
 - [Novel and Reader](Novel-and-Reader.md)
-- [RPG, Chatting, and Storyboard](RPG-Chatting-and-Storyboard.md)
-- [Storyboard Manga Hub](Storyboard-Manga-Hub.md)
+- [RPG, Chatting, and Manga Studio](RPG-Chatting-and-Storyboard.md)
+- [Manga Studio guide](Storyboard-Manga-Hub.md)
 - [Prompts and AI](Prompts-and-AI.md)
 - [Prompt Templates and Add-ons](Prompt-Templates-and-Add-Ons.md)
 - [Backup, Sync, and Troubleshooting](Backup-Sync-and-Troubleshooting.md)
 
-This wiki includes the v1.4.9 Storyboard Manga Hub hard checkpoint.
+This wiki includes the v1.4.9 Manga Studio checkpoint.
 The canonical single-page copy is [`docs/GUIDE.md`](../GUIDE.md).
 
 ![Prompt Template controls](images/prompt-template-v1.3.26-layout.svg)
@@ -28,7 +28,7 @@ The canonical single-page copy is [`docs/GUIDE.md`](../GUIDE.md).
 | Novel | Bookshelf | Choose or create novels |
 | RPG | Campaign | Choose or create campaigns |
 | Chatting | Chats | Return to conversations |
-| Storyboard | Window | Browse manga/comic covers |
+| Manga Studio | Library | Browse manga/comic covers |
 | Notes | Board | Open shared notes |
 
 Everything except AI generation works offline. AI uses an OpenRouter key from

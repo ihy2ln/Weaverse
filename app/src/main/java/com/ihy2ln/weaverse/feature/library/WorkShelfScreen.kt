@@ -83,7 +83,7 @@ enum class WorkShelfKind(val workType: String, val heading: String, val emptyTex
     Novel("novel", "Bookshelf", "No novels yet. Add one to begin writing."),
     Campaign("campaign", "Campaigns", "No campaigns yet. Create one to begin an adventure."),
     TextGame("text_game", "Text Games", "No text-game sessions yet. Create one to enter Adams Haven."),
-    Storyboard("storyboard", "Window", "No storyboards yet. Create one to build your first page."),
+    Storyboard("storyboard", "Manga Studio", "No manga or comic projects yet. Create one to start editing pages."),
 }
 
 /**
@@ -174,7 +174,7 @@ class WorkShelfViewModel @Inject constructor(
                 bookId = null,
                 chatId = chat.id,
                 title = chat.title,
-                subtitle = "Storyboard",
+                subtitle = "Manga Studio",
                 artPath = chat.backgroundMediaId?.let(mediaById::get)
                     ?.let(mediaRepository::resolveFile)
                     ?.takeIf(File::exists)?.absolutePath,
@@ -276,7 +276,7 @@ fun WorkShelfScreen(
                 InkOutlinedButton(
                     label = when (kind) {
                         WorkShelfKind.Novel -> "+ Novel"
-                        WorkShelfKind.Storyboard -> "+ Storyboard"
+                        WorkShelfKind.Storyboard -> "+ Manga project"
                         WorkShelfKind.Campaign -> "+ Campaign"
                         WorkShelfKind.TextGame -> "+ Text Game"
                     },

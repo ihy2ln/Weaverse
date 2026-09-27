@@ -1,4 +1,4 @@
-# RPG, Chatting, and Storyboard
+# RPG, Chatting, and Manga Studio
 
 ## RPG
 
@@ -153,9 +153,9 @@ Replies are written as chat messages: first person, present tense, short. There
 is no narrator — no scene-setting, no third-person description, no asterisk
 stage directions. Emoji are welcome where they suit the character.
 
-## Storyboard
+## Manga Studio
 
-Storyboard opens at Window, a cover-art view of manga and comic projects. Tap
+Manga Studio opens at Library, a cover-art view of manga and comic projects. Tap
 main art or title to enter the canvas. Manga reads right-to-left; Comic reads
 left-to-right.
 

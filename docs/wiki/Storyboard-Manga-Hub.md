@@ -1,8 +1,7 @@
-# Storyboard Manga Hub
+# Manga Studio
 
-The Storyboard Window is a cover-first manga, comic, and manhwa workspace. It
-keeps source discovery, downloads, offline reading, favorites, and editable
-Storyboard projects together inside Weaverse.
+Manga Studio brings source discovery, downloads, offline reading, favorites,
+and editable manga/comic projects together in Weaverse.
 
 ## Main tabs
 
@@ -12,11 +11,11 @@ Storyboard projects together inside Weaverse.
 | Browse | Popular, Latest, Search, series details, and chapters |
 | Downloads | Queue progress, Stop, Retry, and offline Read |
 | Extensions | Built-in source adapters and custom website records |
-| Projects | Storyboard pages, file import, panel editing, translation, and coloring |
+| Projects | Manga Studio pages, file import, panel editing, translation, and coloring |
 
 ## Browse a source
 
-1. Open **Storyboard → Window → Browse**.
+1. Open **Manga Studio → Browse**.
 2. Choose MangaDex, Comix, Atsumaru, MangaFire, MangaDot, or Rawkuma.
 3. Tap **Popular**, **Latest**, or enter a title and tap **Search**.
 4. Tap a cover to load the title, description, and chapter list.
@@ -51,10 +50,10 @@ managed app storage and survives process restarts.
 For another public reader page, paste its URL into **Download from web link**.
 Preview shows the detected ordered page count before you confirm the download.
 
-## Edit in Storyboard
+## Edit in Manga Studio
 
 Downloaded or imported pages remain immutable originals. Add selected pages to
-a Storyboard project to separate panels, translate Japanese/Korean/Chinese text,
+a Manga Studio project to separate panels, translate Japanese/Korean/Chinese text,
 clean source lettering, typeset a translation, color artwork, and export a
 derived page.
 
@@ -78,7 +77,7 @@ Long-press a cover in the Library for that title's categories and **Remove from
 library**. Removing clears every category and deletes its downloaded chapters,
 after a confirmation. **More → Data and storage** reports what downloads and the
 image cache are using and can clear either; **More → Help** opens this wiki at the
-Storyboard page.
+Manga Studio page.
 
 ## Filtering chapters
 

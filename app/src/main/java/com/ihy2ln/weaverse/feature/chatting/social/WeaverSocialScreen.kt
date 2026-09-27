@@ -40,6 +40,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -88,15 +89,19 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -117,6 +122,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.distinctUntilChanged
 import com.ihy2ln.weaverse.core.roleplay.avatarColorHexFor
 import com.ihy2ln.weaverse.core.ui.util.parseHexColor
 import com.ihy2ln.weaverse.feature.chatting.DiscordChatScreen
@@ -182,6 +189,7 @@ private val WsLight = WsColors(
 
 private enum class WsTab(val label: String, val icon: ImageVector, val selected: ImageVector) {
     Home("Home", Icons.Outlined.Home, Icons.Filled.Home),
+    Social("Social", Icons.Outlined.Share, Icons.Filled.Public),
     Servers("Servers", Icons.Outlined.Forum, Icons.Filled.Forum),
     Explore("Explore", Icons.Outlined.Explore, Icons.Filled.Explore),
     Alerts("Alerts", Icons.Outlined.Notifications, Icons.Filled.Notifications),
@@ -323,19 +331,22 @@ fun WeaverSocialScreen(
                         onBack = { stack = stack.dropLast(1) },
                         onCompose = { composer = true },
                     )
-                    tab == WsTab.Home -> HomeFeed(
+                    tab == WsTab.Home || tab == WsTab.Social -> HomeFeed(
                         state = state,
                         c = c,
                         stories = stories,
                         activeRooms = servers.recentConversations.take(10),
+                        overview = tab == WsTab.Home,
                         actions = actions,
                         onCompose = { composer = true },
                         onPhoto = { composer = true; pickerGifs = PickerStart.Library },
                         onGif = { composer = true; pickerGifs = PickerStart.Gifs },
                         onStory = { storyIndex = it },
                         onRefresh = { viewModel.refreshFeed() },
+                        onLoadMore = { viewModel.refreshFeed(6) },
                         onRoom = openRoom,
                         onSearch = { tab = WsTab.Explore },
+                        onOpenAlerts = { tab = WsTab.Alerts },
                         onMessages = { message(null) },
                         messagesUnread = servers.dmUnread,
                     )
@@ -400,7 +411,7 @@ fun WeaverSocialScreen(
                                 .padding(horizontal = 14.dp, vertical = 10.dp),
                         )
                     }
-                    if (stack.isEmpty() && (tab == WsTab.Home || tab == WsTab.You)) {
+                    if (stack.isEmpty() && (tab == WsTab.Home || tab == WsTab.Social || tab == WsTab.You)) {
                         Box(
                             Modifier
                                 .align(Alignment.BottomEnd)
@@ -626,24 +637,49 @@ private fun HomeFeed(
     c: WsColors,
     stories: List<SocialPostUi>,
     activeRooms: List<DiscordRoomUi>,
+    overview: Boolean,
     actions: WsActions,
     onCompose: () -> Unit,
     onPhoto: () -> Unit,
     onGif: () -> Unit,
     onStory: (Int) -> Unit,
     onRefresh: () -> Unit,
+    onLoadMore: () -> Unit,
     onRoom: (DiscordRoomUi) -> Unit,
     onSearch: () -> Unit,
+    onOpenAlerts: () -> Unit,
     onMessages: () -> Unit,
     messagesUnread: Int,
 ) {
     var following by rememberSaveable { mutableStateOf(false) }
     val posts = if (following) state.posts.filter { it.isYou || it.authorCharacterId in state.followingIds } else state.posts
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
+    val listState = rememberLazyListState()
+    var requestedAtPostCount by remember { mutableIntStateOf(-1) }
+    LaunchedEffect(listState, posts.size, state.generating) {
+        snapshotFlow {
+            val layout = listState.layoutInfo
+            layout.totalItemsCount > 0 &&
+                (layout.visibleItemsInfo.lastOrNull()?.index ?: 0) >= layout.totalItemsCount - 3
+        }.distinctUntilChanged().collect { nearEnd ->
+            if (nearEnd && posts.isNotEmpty() && !state.generating && requestedAtPostCount != posts.size) {
+                requestedAtPostCount = posts.size
+                onLoadMore()
+            }
+        }
+    }
+    @OptIn(ExperimentalMaterial3Api::class)
+    PullToRefreshBox(
+        isRefreshing = state.generating,
+        onRefresh = onRefresh,
+        modifier = Modifier.fillMaxSize(),
+    ) {
+    LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 96.dp)) {
         item(key = "header") {
             Column(Modifier.fillMaxWidth().background(c.surface)) {
                 Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 10.dp, top = 10.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.weight(1f)) { Wordmark(c) }
+                    Box(Modifier.weight(1f)) {
+                        if (overview) Wordmark(c) else Text("Social", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = c.text)
+                    }
                     RoundButton(Icons.Filled.Search, "Search", c, onClick = onSearch)
                     RoundButton(Icons.Outlined.MailOutline, "Messages", c, badge = messagesUnread, onClick = onMessages)
                 }
@@ -689,7 +725,7 @@ private fun HomeFeed(
             }
             Hairline(c)
         }
-        item(key = "stories") {
+        if (overview) item(key = "stories") {
             LazyRow(
                 Modifier.fillMaxWidth().background(c.surface).padding(vertical = 10.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp),
@@ -739,10 +775,10 @@ private fun HomeFeed(
             }
             Hairline(c)
         }
-        if (activeRooms.isNotEmpty()) {
+        if (overview && activeRooms.isNotEmpty()) {
             item(key = "rooms") {
                 Column(Modifier.fillMaxWidth().background(c.surface).padding(vertical = 10.dp)) {
-                    Text("Live in your servers", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = c.muted, modifier = Modifier.padding(horizontal = 16.dp))
+                    Text("Your servers & chats", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = c.muted, modifier = Modifier.padding(horizontal = 16.dp))
                     Row(
                         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -753,12 +789,35 @@ private fun HomeFeed(
                 Hairline(c)
             }
         }
-        if (state.generating) {
-            item(key = "loading") {
-                Row(Modifier.fillMaxWidth().background(c.surface).padding(14.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(Modifier.size(18.dp), color = c.accent, strokeWidth = 2.dp)
-                    Spacer(Modifier.width(8.dp))
-                    Text(state.status, color = c.muted, fontSize = 14.sp)
+        if (overview && state.notifications.isNotEmpty()) {
+            item(key = "activity") {
+                Column(Modifier.fillMaxWidth().background(c.surface).clickable(onClick = onOpenAlerts).padding(horizontal = 16.dp, vertical = 12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Latest activity", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = c.text, modifier = Modifier.weight(1f))
+                        Text("See all", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.accent)
+                    }
+                    state.notifications.take(2).forEach { notification ->
+                        Text("${notification.actorName} ${notification.text}", fontSize = 13.sp, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+                    }
+                }
+                Hairline(c)
+            }
+        }
+        if (overview && state.trends.isNotEmpty()) {
+            item(key = "home-trends") {
+                Column(Modifier.fillMaxWidth().background(c.surface).padding(vertical = 10.dp)) {
+                    Row(Modifier.fillMaxWidth().clickable(onClick = onSearch).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Trending in your worlds", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = c.text, modifier = Modifier.weight(1f))
+                        Text("Explore", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.accent)
+                    }
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        state.trends.take(6).forEach { (tag, count) ->
+                            Column(Modifier.clip(RoundedCornerShape(12.dp)).background(c.raised).clickable(onClick = onSearch).padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                Text(tag, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = c.text)
+                                Text("${compactCount(count)} posts", fontSize = 11.sp, color = c.muted)
+                            }
+                        }
+                    }
                 }
                 Hairline(c)
             }
@@ -777,6 +836,17 @@ private fun HomeFeed(
             }
         }
         postItems(posts, state, c, actions)
+        if (state.generating) {
+            item(key = "loading") {
+                Row(Modifier.fillMaxWidth().background(c.surface).padding(14.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(18.dp), color = c.accent, strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text(state.status, color = c.muted, fontSize = 14.sp)
+                }
+                Hairline(c)
+            }
+        }
+    }
     }
 }
 

@@ -1868,7 +1868,7 @@ class RoleplayChatViewModel @Inject constructor(
             runCatching {
                 storyboardPageExporter.export(
                     pageId = page.id,
-                    title = page.title ?: "Storyboard page",
+                    title = page.title ?: "Manga page",
                     templateId = page.templateId,
                     panels = panels,
                 )

@@ -35,7 +35,7 @@ object WikiContent {
                   towns, and illustrated adventure scenes.
                 - [[WeaverSocial]] — WeaverSocial, a social network where your novels and
                   campaigns are servers with channels and character rooms.
-                - [[Storyboard]] — manga and comic page building.
+                - [[Manga Studio]] — manga and comic page building.
                 - [[Brainstorm and Notes]] — chat with the AI to brainstorm and
                   research; plus the classic notes board.
 
@@ -65,7 +65,7 @@ object WikiContent {
 
                 ## 2. Learn the three rows
 
-                Across the top: **modes** (Novel, RPG, Chatting, Storyboard,
+                Across the top: **modes** (Novel, RPG, Chatting, Manga Studio,
                 Brainstorm/Notes), then the current mode's **sub-modes**
                 (Plan, Write, Read…), then **Extra** — Codex, Prompts, Notes,
                 Snippets, Chats, Pictures. See [[Navigation and Shelves]].
@@ -109,7 +109,7 @@ object WikiContent {
 
                 ## The three rows
 
-                1. **Modes** — Novel, RPG, Chatting, Storyboard,
+                1. **Modes** — Novel, RPG, Chatting, Manga Studio,
                    Brainstorm/Notes.
                 2. **Sub-modes** for the current mode — for example Novel:
                    Bookshelf, Plan, Write, Read, Chat, Review.
@@ -125,7 +125,7 @@ object WikiContent {
                 - **Bookshelf** — novels, on the Novel mode.
                 - **Campaign shelf** — campaigns, on RPG mode (Campaign or
                   Adventure).
-                - **Storyboard shelf** — visual series, on Storyboard mode.
+                - **Manga Studio shelf** — manga and comic projects.
 
                 All three are manuscripts underneath — the same library,
                 different doors.
@@ -629,12 +629,12 @@ object WikiContent {
         ),
         Page(
             id = "storyboard",
-            title = "Storyboard",
-            summary = "Manga and comic pages — import, separate, edit, translate",
+            title = "Manga Studio",
+            summary = "Browse, download, edit and translate manga or comic pages",
             markdown = """
-                ## Window, Manga, Comic
+                ## Library, Manga, Comic
 
-                **Window** opens the dedicated manga hub: **Library, Browse,
+                **Library** opens the dedicated manga hub: **Library, Browse,
                 Downloads, Extensions, and Projects**. **Manga** reads
                 right-to-left; **Comic** the other way.
 
@@ -677,7 +677,7 @@ object WikiContent {
                 ## Import generated panel artwork
 
                 Generate artwork outside the Android app with Codex/ImageGen,
-                export it as PNG/JPG/WEBP, then return to Storyboard. Tap an
+                export it as PNG/JPG/WEBP, then return to Manga Studio. Tap an
                 empty layout frame and choose **Import generated panel**. You
                 may select multiple images; they retain picker order and fill
                 the selected slot followed by the next free slots.
@@ -699,10 +699,10 @@ object WikiContent {
 
                 ## Import a whole manga, comic, or webtoon
 
-                When creating a storyboard from the **+ Storyboard** button,
+                When creating a project from the **+ Manga project** button,
                 choose an optional whole comic file. You can also use **Add
                 pages** into the dedicated Manga Editor. Downloaded/imported
-                pages no longer open in the blank six-panel Storyboard composer.
+                pages no longer open in the blank six-panel comic-page composer.
                 Each source page stays full-size and can be viewed as **Original**
                 or **Edited**. Select a page or picture to use its bottom tools:
 
@@ -943,7 +943,7 @@ object WikiContent {
 
                 ## Prompt Collection
 
-                Persisted mode templates (Novel, RPG, Chatting, Storyboard),
+                Persisted mode templates (Novel, RPG, Chatting, Manga Studio),
                 multi-select genre add-ons, age ratings from PG to X, and
                 **Refresh**, which rebuilds a read-only preview of the exact
                 effective system prompt.

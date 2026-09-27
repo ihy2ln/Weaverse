@@ -519,7 +519,7 @@ data class CreateWorkVocabulary(
             textGameSpecific = true,
         )
         val Storyboard = CreateWorkVocabulary(
-            what = "storyboard",
+            what = "manga/comic project",
             titleLabel = "Series title",
             titlePlaceholder = "Untitled Manga",
             genreLabel = "Visual genre",

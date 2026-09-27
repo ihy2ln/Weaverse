@@ -341,7 +341,7 @@ private fun ModeShelf(
         Triple("Novel", "Novel", "Plan, write and review a book"),
         Triple("Roleplay", "RPG", "Run a campaign: adventures, party, lore"),
         Triple("Chatting", "WeaverSocial", "Your cast's social network: feed, servers and DMs"),
-        Triple("Storyboard", "Storyboard", "Build comic and manga pages"),
+        Triple("Storyboard", "Manga Studio", "Edit, translate and color manga or comic pages"),
         Triple("Notes", "Notes", "One shared board across every mode"),
     )
     Column(

@@ -12,7 +12,7 @@
 - [Games](#games) — Adams Haven, the Godot card game, inside Weaverse
 - [Chatting](#chatting) — A Discord-style space for your works
 - [Brainstorm and Notes](#brainstorm-and-notes) — AI brainstorm chat, and the notes board
-- [Storyboard](#storyboard) — Manga and comic pages — import, separate, edit, translate
+- [Manga Studio](#manga-studio) — Manga and comic pages — import, separate, edit, translate
 - [Codex](#codex) — One shared library for every mode
 - [Prompts and AI](#prompts-and-ai) — The dock, the composer, models and keys
 - [Appearance](#appearance) — Profiles, themes and section colors
@@ -36,7 +36,7 @@ Blue links like [Novel and Reader](#novel-and-reader) jump straight to a page.
   towns, and illustrated adventure scenes.
 - [Chatting](#chatting) — a Discord-style space where your novels and
   campaigns are servers with channels and character rooms.
-- [Storyboard](#storyboard) — manga and comic page building.
+- [Manga Studio](#manga-studio) — manga and comic page building.
 - [Brainstorm and Notes](#brainstorm-and-notes) — chat with the AI to brainstorm and
   research; plus the classic notes board.
 
@@ -64,7 +64,7 @@ can be filled in later from Plan or the editor.
 
 ### 2. Learn the three rows
 
-Across the top: **modes** (Novel, RPG, Chatting, Storyboard,
+Across the top: **modes** (Novel, RPG, Chatting, Manga Studio,
 Brainstorm/Notes), then the current mode's **sub-modes**
 (Plan, Write, Read…), then **Extra** — Codex, Prompts, Notes,
 Snippets, Chats, Pictures. See [Navigation and Shelves](#navigation-and-shelves).
@@ -106,7 +106,7 @@ novels underneath.
 
 ### The three rows
 
-1. **Modes** — Novel, RPG, Chatting, Storyboard,
+1. **Modes** — Novel, RPG, Chatting, Manga Studio,
    Brainstorm/Notes.
 2. **Sub-modes** for the current mode — for example Novel:
    Bookshelf, Plan, Write, Read, Chat, Review.
@@ -122,7 +122,7 @@ gallery.
 - **Bookshelf** — novels, on the Novel mode.
 - **Campaign shelf** — campaigns, on RPG mode (Campaign or
   Adventure).
-- **Storyboard shelf** — visual series, on Storyboard mode.
+- **Manga Studio shelf** — visual series, on Manga Studio mode.
 
 All three are manuscripts underneath — the same library,
 different doors.
@@ -534,11 +534,11 @@ prompt dock — you can generate into a note or paste from it.
 
 ---
 
-## Storyboard
+## Manga Studio
 
-### Window, Manga, Comic
+### Library, Manga, Comic
 
-**Window** opens the dedicated manga hub: **Library, Browse,
+**Library** is the cover-art shelf for titles and offline chapters. The top row also has **Browse,
 Downloads, Extensions, and Projects**. **Manga** reads
 right-to-left; **Comic** the other way.
 
@@ -581,7 +581,7 @@ webtoon strip and creates the ordered pages automatically.
 ### Import generated panel artwork
 
 Generate artwork outside the Android app with Codex/ImageGen,
-export it as PNG/JPG/WEBP, then return to Storyboard. Tap an
+export it as PNG/JPG/WEBP, then return to Manga Studio. Tap an
 empty layout frame and choose **Import generated panel**. You
 may select multiple images; they retain picker order and fill
 the selected slot followed by the next free slots.
@@ -603,10 +603,10 @@ and zooms inside the frame and is remembered per panel.
 
 ### Import a whole manga, comic, or webtoon
 
-When creating a storyboard from the **+ Storyboard** button,
+When creating a manga/comic project from the **+ Manga Studio** button,
 choose an optional whole comic file. You can also use **Add
 pages** into the dedicated Manga Editor. Downloaded/imported
-pages no longer open in the blank six-panel Storyboard composer.
+pages no longer open in the blank six-panel Manga Studio composer.
 Each source page stays full-size and can be viewed as **Original**
 or **Edited**. Select a page or picture to use its bottom tools:
 
@@ -843,7 +843,7 @@ Writing keeps the dock's model list current.
 
 ### Prompt Collection
 
-Persisted mode templates (Novel, RPG, Chatting, Storyboard),
+Persisted mode templates (Novel, RPG, Chatting, Manga Studio),
 multi-select genre add-ons, age ratings from PG to X, and
 **Refresh**, which rebuilds a read-only preview of the exact
 effective system prompt.

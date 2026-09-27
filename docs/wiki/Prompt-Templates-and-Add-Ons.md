@@ -6,7 +6,7 @@
 
 The Prompt Collection is Weaverse's editable instruction library. Its TEMPLATE
 card controls the global instruction stack used by Novel, RPG, Chatting,
-Storyboard, and auxiliary generation.
+Manga Studio, and auxiliary generation.
 
 ![v1.3.26 Template controls](images/prompt-template-v1.3.26-layout.svg)
 
@@ -28,7 +28,7 @@ Mode Template appears first because it is the foundation, not an add-on.
 - **RPG** acts as game master, respects rules and state, and protects player
   agency.
 - **Chatting** answers in character inside the immediate exchange.
-- **Storyboard** produces drawable sequential-panel direction.
+- **Manga Studio** produces drawable sequential-panel direction.
 
 Only one mode can be active. The choice persists between app launches. The
 corresponding Prompt Collection folder moves to the top and displays
@@ -74,7 +74,7 @@ When off:
 
 - The global overlay block is omitted.
 - Every `{ECCHI: ...}` wrapper and its contents are removed.
-- Novel/RPG/Chatting/Storyboard base craft instructions remain active.
+- Novel/RPG/Chatting/Manga Studio base craft instructions remain active.
 
 ## Refresh instructions
 

@@ -10,7 +10,7 @@ enum class AppMode(val label: String) {
     Games("Games"),
     /** Shown as WeaverSocial; the constant stays because it is persisted in shell state. */
     Chatting("WeaverSocial"),
-    Storyboard("Storyboard"),
+    Storyboard("Manga Studio"),
     Notes("Brainstorm/Notes"),
 }
 

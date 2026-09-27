@@ -98,7 +98,7 @@ every prompt at once:
   OFF, every `{ECCHI: ...}` layer is stripped with zero residue and prompts
   return to their base craft templates.
 - **MODE TEMPLATE** — choose one base instruction set: Novel prose, RPG game
-  master, in-character Chatting, or visual panel-by-panel Storyboard. The
+  master, in-character Chatting, or visual panel-by-panel Manga Studio. The
   selected template is persisted and sent with every model request.
 - **GENRES** — choose any number of genre chips. Every selected genre is
   combined into one add-on line (default: "Adult male wish fulfilment").
@@ -110,7 +110,7 @@ every prompt at once:
   The editable base prompt remains clean and reusable.
 
 The mode, genres, age rating, and overlay are finalized once at the shared AI
-request boundary, so Novel, RPG, Chatting, Storyboard, and auxiliary generation
+request boundary, so Novel, RPG, Chatting, Manga Studio, and auxiliary generation
 flows cannot omit or duplicate the stack.
 
 Mode sections:
@@ -123,7 +123,7 @@ Mode sections:
   Capture, Loot & Inventory, and Adventure Recap.
 - **Chatting** — Roleplay Reply, Continue Chat (short texting-voice messages),
   and Out of Character Note.
-- **Storyboard** — Storyboard Beat (panel-by-panel direction), Panel Direction,
+- **Manga Studio** — Manga Studio Beat (panel-by-panel direction), Panel Direction,
   and Canvas Summary.
 - **Prompt Components** — editable building blocks (`AdditionalContext`,
   `AdditionalInstructions`, `Chat/DefaultContext`, `Chat/DefaultInstructions`)

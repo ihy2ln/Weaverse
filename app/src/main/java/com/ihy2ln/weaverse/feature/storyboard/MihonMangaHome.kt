@@ -1706,13 +1706,13 @@ private fun MihonMoreScreen(
         item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }
         item { MihonPreferenceRow(Icons.Outlined.Settings, "Settings") { onOpen(MihonMorePage.Settings) } }
         item { MihonPreferenceRow(Icons.Outlined.Language, "Download from web link", "Import a public chapter URL") { onOpen(MihonMorePage.LinkDownload) } }
-        item { MihonPreferenceRow(Icons.Outlined.Folder, "Storyboard projects", "Open work created from manga") { onOpen(MihonMorePage.Projects) } }
+        item { MihonPreferenceRow(Icons.Outlined.Folder, "Manga Studio projects", "Open work created from manga") { onOpen(MihonMorePage.Projects) } }
         item { MihonPreferenceRow(Icons.Outlined.Info, "About") { onOpen(MihonMorePage.About) } }
         item {
             MihonPreferenceRow(
                 Icons.AutoMirrored.Outlined.HelpOutline,
                 "Help",
-                "The built-in wiki, opened at Storyboard",
+                "The built-in wiki, opened at Manga Studio",
             ) { onOpen(MihonMorePage.Help) }
         }
     }
@@ -1738,7 +1738,7 @@ private fun MihonMoreDetail(
         MihonMorePage.About -> "About"
         MihonMorePage.Help -> "Help"
         MihonMorePage.LinkDownload -> "Download from web link"
-        MihonMorePage.Projects -> "Storyboard projects"
+        MihonMorePage.Projects -> "Manga Studio projects"
     }
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
@@ -1953,7 +1953,7 @@ private fun MihonMangaSettings(
             MihonPreferenceRow(
                 Icons.AutoMirrored.Outlined.HelpOutline,
                 "Help",
-                "Open the Storyboard wiki",
+                "Open the Manga Studio guide",
             ) { onOpen(MihonMorePage.Help) }
         }
     }

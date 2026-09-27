@@ -20,7 +20,7 @@ data class HomeItem(
     val bookId: String?, val sessionId: String?,
 ) {
     val key get() = "$mode:$kind:$contentId"
-    val badge get() = when (kind) { "book" -> AppMode.entries.firstOrNull { it.name == mode }?.label ?: mode; "manga" -> "Manga"; "note" -> "Note"; "thread" -> "Brainstorm"; else -> if (mode == "Games") "Game" else if (mode == "Storyboard") "Storyboard" else "Conversation" }
+    val badge get() = when (kind) { "book" -> AppMode.entries.firstOrNull { it.name == mode }?.label ?: mode; "manga" -> "Manga"; "note" -> "Note"; "thread" -> "Brainstorm"; else -> if (mode == "Games") "Game" else if (mode == "Storyboard") "Manga Studio" else "Conversation" }
 }
 
 @Dao

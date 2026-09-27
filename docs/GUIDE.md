@@ -3,7 +3,7 @@
 This guide describes the Android app at the
 `checkpoint-v1.3.2-codex-navigation` checkpoint. Weaverse is an offline-first
 creative workspace with five modes over one shared library: Novel, RPG,
-Chatting, Storyboard, and Notes. AI generation needs OpenRouter; editing,
+Chatting, Manga Studio, and Notes. AI generation needs OpenRouter; editing,
 reading, organizing, and local media continue to work offline.
 
 ## Quick start
@@ -13,7 +13,7 @@ reading, organizing, and local media continue to work offline.
    - **Novel** → **Bookshelf**
    - **RPG** → **Campaign**
    - **Chatting** → **Chats**
-   - **Storyboard** → **Window**
+   - **Manga Studio** → **Library**
    - **Notes** → shared notes board
 3. Create or select a work from its shelf.
 4. Use the second menu for the current mode's work areas.
@@ -27,7 +27,7 @@ portable backup before large changes.
 
 The top chrome has three logical groups:
 
-1. **Mode**: Novel, RPG, Chatting, Storyboard, Notes.
+1. **Mode**: Novel, RPG, Chatting, Manga Studio, Notes.
 2. **Workspace**: destinations belonging to the active mode.
 3. **Extra**: shared tools usable across works and modes.
 
@@ -42,7 +42,7 @@ preferences.
 Home is intentionally small: it launches the five modes. Active work belongs
 on its mode shelf rather than in a duplicate “continue where you left off” area.
 
-Bookshelf, Campaign, and Window share these interactions:
+Bookshelf, Campaign, and Library share these interactions:
 
 - Tap a card to open it.
 - Use the add button to create a novel, campaign, or storyboard.
@@ -319,9 +319,9 @@ from Friends/Contacts. Press and hold a chat for its actions, including select
 or unselect for quick removal; selected chats can be removed together. Opening
 a character for the first time creates a conversation and may seed a greeting.
 
-## Storyboard
+## Manga Studio
 
-Storyboard opens at **Window**, the cover-art shelf for all manga and comic
+Manga Studio opens at **Library**, the cover-art shelf for all manga and comic
 projects. Tap a title or its main art to open its Manga or Comic canvas.
 
 - **Manga** uses right-to-left reading order.
@@ -343,8 +343,8 @@ main art, and page-oriented setup.
 ## Prompt dock and AI
 
 The full prompt dock appears only where generating or entering prose is useful:
-Novel Write and applicable RPG, Chatting, or Storyboard play/creation surfaces.
-It is not shown on Bookshelf, Campaign, Window, reader pages, Notes, Codex, or
+Novel Write and applicable RPG, Chatting, or Manga Studio play/creation surfaces.
+It is not shown on Bookshelf, Campaign, Library, reader pages, Notes, Codex, or
 other management screens.
 
 When expanded, prompt text sits above one compact control row:

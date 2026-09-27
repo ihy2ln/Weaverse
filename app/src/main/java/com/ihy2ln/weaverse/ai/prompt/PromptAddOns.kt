@@ -4,7 +4,7 @@ enum class PromptingMode(val id: String, val label: String) {
     Novel("novel", "NOVEL"),
     Rpg("rpg", "RPG"),
     Chatting("chatting", "CHATTING"),
-    Storyboard("storyboard", "STORYBOARD"),
+    Storyboard("storyboard", "MANGA STUDIO"),
     ;
 
     companion object {

@@ -1003,7 +1003,7 @@ private fun StoryboardCreatorHeader(
     ) {
         InkTextButton(label = "‹ Projects", onClick = onBack, compact = true)
         Column(modifier = Modifier.weight(1f)) {
-            Text("Storyboard creator", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text("Manga page creator", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             Text(
                 "Page $pageNumber of $pageCount",
                 style = MaterialTheme.typography.labelSmall,

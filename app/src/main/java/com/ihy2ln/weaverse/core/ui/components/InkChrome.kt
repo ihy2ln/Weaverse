@@ -243,7 +243,7 @@ fun WorkspaceChrome(
                                     "Novel", "Library", "Read" -> Icons.AutoMirrored.Filled.MenuBook
                                     "RPG", "Games" -> Icons.Default.SportsEsports
                                     "Chatting", "WeaverSocial", "Chat", "Chats", "Brainstorm/Notes", "Brainstorm" -> Icons.Default.ChatBubbleOutline
-                                    "Storyboard", "Pictures" -> Icons.Default.Collections
+                                    "Manga Studio", "Pictures" -> Icons.Default.Collections
                                     "Settings" -> Icons.Default.Settings
                                     else -> Icons.Default.ChevronRight
                                 }

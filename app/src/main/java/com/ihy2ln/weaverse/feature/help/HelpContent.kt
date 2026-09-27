@@ -33,7 +33,7 @@ object HelpContent {
                 ),
                 HelpEntry(
                     "The three rows",
-                    "1) Modes: Novel, RPG, Games, Chatting, Storyboard, Notes. " +
+                    "1) Modes: Novel, RPG, Games, Chatting, Manga Studio, Notes. " +
                         "2) Sub-modes for whichever mode you are in. " +
                         "3) Extra: Codex, Prompts, Notes, Snippets, Chats and Pictures — " +
                         "the tools that do not belong to any one mode.",
@@ -464,13 +464,13 @@ object HelpContent {
         ),
         HelpSection(
             id = "storyboard",
-            title = "Storyboard",
-            summary = "Window · Manga · Comic",
+            title = "Manga Studio",
+            summary = "Browse · download · edit · translate",
             entries = listOf(
                 HelpEntry(
                     "Pages",
                     "Page tabs sit above the canvas. Plus adds a page; long-press a tab " +
-                        "to rename or delete. Window is the cover-art shelf for every storyboard. " +
+                        "to rename or delete. Library is the cover-art shelf for every manga and comic. " +
                         "Manga reads right-to-left, Comic the other way.",
                 ),
                 HelpEntry(
@@ -488,7 +488,7 @@ object HelpContent {
                 ),
                 HelpEntry(
                     "Manga hub and sources",
-                    "Storyboard → Window opens Library, Browse, Downloads, Extensions, and Projects. " +
+                    "Manga Studio opens Library, Browse, Downloads, Extensions, and Projects. " +
                         "Browse selects MangaDex, Comix, Atsumaru, MangaFire, MangaDot, or Rawkuma, " +
                         "then loads Popular, Latest, Search, series metadata, and chapter links inside Weaverse. " +
                         "A source that requires a browser challenge reports the block instead of showing a fake empty library.",

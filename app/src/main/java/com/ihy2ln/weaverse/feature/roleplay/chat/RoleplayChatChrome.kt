@@ -16,6 +16,6 @@ data class RoleplayChatChrome(
 
 fun roleplayModeSubtitle(displayMode: String): String = when (displayMode) {
     "dungeonMaster" -> "DM · text & picture board"
-    "roleplay" -> "Storyboard · comic pages"
+    "roleplay" -> "Manga Studio · comic pages"
     else -> "Messenger"
 }

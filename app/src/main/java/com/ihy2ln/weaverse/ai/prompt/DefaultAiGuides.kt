@@ -293,7 +293,7 @@ object DefaultAiGuides {
         PromptFolderEntity("folder-novel", "Novel", "novel", isSystem = true),
         PromptFolderEntity("folder-rpg", "RPG", "rpg", isSystem = true),
         PromptFolderEntity("folder-chatting", "Chatting", "chatting", isSystem = true),
-        PromptFolderEntity("folder-storyboard", "Storyboard", "storyboard", isSystem = true),
+        PromptFolderEntity("folder-storyboard", "Manga Studio", "storyboard", isSystem = true),
         PromptFolderEntity("folder-components", "Prompt Components", PromptComponentType, isSystem = true),
         PromptFolderEntity("folder-custom", "Custom", "custom", isSystem = false),
     )
@@ -1106,7 +1106,7 @@ object DefaultAiGuides {
         PromptEntity(
             id = "prompt-storyboard-beat",
             folderId = "folder-storyboard",
-            name = "Storyboard Beat",
+            name = "Manga Studio Beat",
             type = "storyboard_beat",
             description = "Direct the beat as visual panels: framing, subject, action, and the emotion each panel sells.",
             instructionsJson = instructionsJson(

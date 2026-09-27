@@ -598,6 +598,7 @@ class SocialFeedViewModel @Inject constructor(
                 .joinToString("\n") { "${it.authorName}: ${it.text.take(160)}" }
             val system = buildList {
                 add(platformVoice())
+                add("This is a visual social feed. Add a relevant [pic: …], [meme: …] or [gif: …] to about half of these posts when it fits the character and moment; favor visual jokes, reactions and things the character is showing. Do not force a visual onto a serious or personal post.")
                 add("The people posting (stay true to each):")
                 posters.forEach { add(cardFor(it)) }
                 if (recent.isNotBlank()) add("Already on the timeline (do not repeat; people may react to these):\n$recent")
@@ -616,7 +617,7 @@ class SocialFeedViewModel @Inject constructor(
                 val social = SocialTags.parse(tagged)
                 val (body, tags) = MediaTags.extract(social.text)
                 if (body.isBlank() && tags.isEmpty()) return@forEachIndexed
-                // A post that asked for a meme gets that; otherwise now and then one of their own photos.
+                // A requested meme/GIF wins; otherwise often use a picture from the author's library.
                 val photo = if (tags.isEmpty() && Random.nextFloat() < PHOTO_POST_CHANCE) pictureOf(author) else null
                 saveWithMedia(
                     generatedPost(author, body, feeling, base - (lines.size - index) * 97_000L, parentId = null)
@@ -900,7 +901,7 @@ class SocialFeedViewModel @Inject constructor(
         private const val BIO_CHARS = 160
         const val POST_CHARS = 500
         /** How often a character's post comes with one of their pictures, when they have any. */
-        private const val PHOTO_POST_CHANCE = 0.35f
+        private const val PHOTO_POST_CHANCE = 0.75f
     }
 }
 
