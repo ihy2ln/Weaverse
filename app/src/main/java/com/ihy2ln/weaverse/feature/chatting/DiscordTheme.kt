@@ -16,6 +16,10 @@ import androidx.compose.ui.text.withStyle
 import com.ihy2ln.weaverse.core.ui.theme.InkThemeTokens
 import com.ihy2ln.weaverse.core.ui.theme.LocalInkTokens
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
+import com.ihy2ln.weaverse.core.ui.theme.LocalGlassClarity
+import com.ihy2ln.weaverse.core.ui.util.resolveSectionColor
+import com.ihy2ln.weaverse.data.settings.AppearanceOverrides
+import com.ihy2ln.weaverse.data.settings.SectionAppearance
 
 /** Discord's own surface colours, in its dark and light themes. */
 data class DiscordColors(
@@ -41,8 +45,9 @@ data class DiscordColors(
     val mentionBg: Color,
     val mentionPill: Color,
     val mentionPillText: Color,
+    val accent: Color = Color(0xFF5865F2),
 ) {
-    val blurple = Color(0xFF5865F2)
+    val blurple = accent
     val green = Color(0xFF23A55A)
     val idle = Color(0xFFF0B232)
     val dnd = Color(0xFFF23F43)
@@ -96,12 +101,39 @@ val LocalDiscordColors = staticCompositionLocalOf { DiscordDark }
 fun discordColors(): DiscordColors = LocalDiscordColors.current
 
 /**
- * Follows the app's light or dark theme with Discord's matching palette, and re-skins
- * the shared ink tokens so the prompt window and dialogs inside it match too.
+ * Adapts the Discord workspace to the active appearance, section overrides and wallpaper,
+ * then re-skins shared ink tokens so dialogs and prompt windows follow the same palette.
  */
 @Composable
-fun DiscordTheme(content: @Composable () -> Unit) {
-    val colors = if (inkTokens().background.luminance() < 0.5f) DiscordDark else DiscordLight
+fun DiscordTheme(
+    appearance: AppearanceOverrides = AppearanceOverrides(),
+    wallpaperVisible: Boolean = false,
+    content: @Composable () -> Unit,
+) {
+    val base = inkTokens()
+    val wallpaperFactor = if (wallpaperVisible) 1f - LocalGlassClarity.current * 0.8f else 1f
+    fun section(value: SectionAppearance, fallback: Color): Color =
+        resolveSectionColor(value, fallback).let { it.copy(alpha = it.alpha * wallpaperFactor) }
+    val colors = DiscordColors(
+        dark = base.background.luminance() < 0.5f,
+        rail = section(appearance.rail, base.background),
+        sidebar = section(appearance.content, base.panel),
+        chat = section(appearance.page, base.background),
+        panel = section(appearance.rail, base.panel),
+        elevated = section(appearance.page, base.page),
+        hover = base.hover,
+        selected = base.hover,
+        text = base.primaryText,
+        muted = base.secondaryText,
+        header = base.primaryText,
+        divider = base.hairline,
+        codeBg = base.background,
+        link = base.activePill,
+        mentionBg = base.activePill.copy(alpha = 0.12f),
+        mentionPill = base.activePill.copy(alpha = 0.3f),
+        mentionPillText = base.activePillLabel,
+        accent = base.activePill,
+    )
     val tokens = InkThemeTokens(
         background = colors.sidebar,
         panel = colors.rail,

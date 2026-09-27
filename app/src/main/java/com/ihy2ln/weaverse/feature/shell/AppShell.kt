@@ -1126,6 +1126,8 @@ fun AppShell(
                                     },
                                     onRoomSelect = { selectedRpChatId = it; if (it != null) shellViewModel.recordAccess("Chatting", "chat", it) },
                                     onOpenFriends = { chatDest = ChattingDestination.Friends.name },
+                                    appearance = prefs.appearance,
+                                    wallpaperVisible = showProfileArt || userBackgroundImage != null || userBackgroundVideo != null,
                                 )
                             }
                             AppMode.Storyboard.name -> {

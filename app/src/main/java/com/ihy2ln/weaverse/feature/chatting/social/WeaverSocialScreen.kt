@@ -109,6 +109,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -125,7 +126,11 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
 import com.ihy2ln.weaverse.core.roleplay.avatarColorHexFor
+import com.ihy2ln.weaverse.core.ui.theme.LocalGlassClarity
+import com.ihy2ln.weaverse.core.ui.theme.inkTokens
+import com.ihy2ln.weaverse.core.ui.util.resolveSectionColor
 import com.ihy2ln.weaverse.core.ui.util.parseHexColor
+import com.ihy2ln.weaverse.data.settings.AppearanceOverrides
 import com.ihy2ln.weaverse.feature.chatting.DiscordChatScreen
 import com.ihy2ln.weaverse.feature.chatting.DiscordChatViewModel
 import com.ihy2ln.weaverse.feature.chatting.DiscordRoomUi
@@ -156,36 +161,36 @@ private data class WsColors(
     val text: Color,
     val muted: Color,
     val bubble: Color,
+    val accent: Color,
+    val blue: Color,
 ) {
-    val accent = Color(0xFF8B6CFF)
-    val blue = Color(0xFF3B9BFF)
     val pink = Color(0xFFF91880)
     val green = Color(0xFF00BA7C)
     val red = Color(0xFFF23F43)
     val idle = Color(0xFFF0B232)
-    val brand = Brush.linearGradient(listOf(Color(0xFF8B6CFF), Color(0xFF3B9BFF)))
+    val brand = Brush.linearGradient(listOf(accent, blue))
 }
 
-private val WsDark = WsColors(
-    dark = true,
-    bg = Color(0xFF0F1015),
-    surface = Color(0xFF17181E),
-    raised = Color(0xFF22232B),
-    border = Color(0xFF2B2D36),
-    text = Color(0xFFECEDF2),
-    muted = Color(0xFF8B8FA3),
-    bubble = Color(0xFF2A2C35),
-)
-private val WsLight = WsColors(
-    dark = false,
-    bg = Color(0xFFF2F3F7),
-    surface = Color(0xFFFFFFFF),
-    raised = Color(0xFFF0F1F6),
-    border = Color(0xFFE3E5EC),
-    text = Color(0xFF14151A),
-    muted = Color(0xFF5E6275),
-    bubble = Color(0xFFF0F2F5),
-)
+@Composable
+private fun rememberWsColors(appearance: AppearanceOverrides, wallpaperVisible: Boolean): WsColors {
+    val tokens = inkTokens()
+    val clarity = LocalGlassClarity.current
+    val wallpaperFactor = if (wallpaperVisible) 1f - clarity * 0.8f else 1f
+    fun section(section: com.ihy2ln.weaverse.data.settings.SectionAppearance, fallback: Color) =
+        resolveSectionColor(section, fallback).let { it.copy(alpha = it.alpha * wallpaperFactor) }
+    return WsColors(
+        dark = tokens.background.luminance() < 0.5f,
+        bg = section(appearance.chrome, tokens.background),
+        surface = section(appearance.content, tokens.panel),
+        raised = section(appearance.page, tokens.page),
+        border = section(appearance.rail, tokens.hairline),
+        text = tokens.primaryText,
+        muted = tokens.secondaryText,
+        bubble = section(appearance.chatBubble, tokens.hover),
+        accent = tokens.activePill,
+        blue = androidx.compose.material3.MaterialTheme.colorScheme.tertiary,
+    )
+}
 
 private enum class WsTab(val label: String, val icon: ImageVector, val selected: ImageVector) {
     Home("Home", Icons.Outlined.Home, Icons.Filled.Home),
@@ -221,13 +226,15 @@ fun WeaverSocialScreen(
     onServerSelect: (String?) -> Unit,
     onRoomSelect: (String?) -> Unit,
     onOpenFriends: () -> Unit,
+    appearance: AppearanceOverrides = AppearanceOverrides(),
+    wallpaperVisible: Boolean = true,
     viewModel: SocialFeedViewModel = hiltViewModel(key = PLATFORM_WEAVERSOCIAL),
     discordViewModel: DiscordChatViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(Unit) { viewModel.bind(PLATFORM_WEAVERSOCIAL) }
     val state by viewModel.uiState.collectAsState()
     val servers by discordViewModel.uiState.collectAsState()
-    val c = if (socialDark()) WsDark else WsLight
+    val c = rememberWsColors(appearance, wallpaperVisible)
     // Opening a conversation from Recents lands on the Servers tab.
     var tab by rememberSaveable { mutableStateOf(if (selectedRoomId != null) WsTab.Servers else WsTab.Home) }
     LaunchedEffect(selectedRoomId) { if (selectedRoomId != null) tab = WsTab.Servers }
@@ -306,6 +313,8 @@ fun WeaverSocialScreen(
                         onRoomSelect = onRoomSelect,
                         onOpenFriends = onOpenFriends,
                         viewModel = discordViewModel,
+                        appearance = appearance,
+                        wallpaperVisible = wallpaperVisible,
                     )
                     top?.startsWith("post:") == true -> PostDetail(
                         postId = top.removePrefix("post:"),

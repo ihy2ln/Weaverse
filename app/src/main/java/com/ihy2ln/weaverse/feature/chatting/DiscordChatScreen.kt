@@ -83,6 +83,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.ihy2ln.weaverse.core.ui.components.mergeSpokenText
 import com.ihy2ln.weaverse.core.ui.components.rememberSpeechToText
 import com.ihy2ln.weaverse.core.ui.util.parseHexColor
+import com.ihy2ln.weaverse.data.settings.AppearanceOverrides
 import com.ihy2ln.weaverse.feature.prompt.PromptModelPickerDialog
 import com.ihy2ln.weaverse.feature.roleplay.friends.CharacterAvatar
 
@@ -98,8 +99,10 @@ fun DiscordChatScreen(
     onServerSelect: (String?) -> Unit,
     onRoomSelect: (String?) -> Unit,
     onOpenFriends: () -> Unit,
+    appearance: AppearanceOverrides = AppearanceOverrides(),
+    wallpaperVisible: Boolean = false,
     viewModel: DiscordChatViewModel = hiltViewModel(),
-) = DiscordTheme {
+ ) = DiscordTheme(appearance = appearance, wallpaperVisible = wallpaperVisible) {
     val state by viewModel.uiState.collectAsState()
     val colors = discordColors()
 
