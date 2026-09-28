@@ -55,6 +55,8 @@ enum class WebSource(val label: String, val keyIds: List<String>) {
     Imgflip("Imgflip memes", emptyList()),
     Mastodon("Mastodon", emptyList()),
     Lemmy("Lemmy", emptyList()),
+    Reddit("Reddit", emptyList()),
+    NineGag("9GAG", emptyList()),
     Giphy("GIPHY", listOf(KEY_GIPHY)),
     Tenor("Tenor", listOf(KEY_TENOR)),
     Google("Google Images", listOf(KEY_GOOGLE, KEY_GOOGLE_CX)),
@@ -202,10 +204,10 @@ class WebPictureSearch @Inject constructor(
 
     private fun sourcesFor(kind: WebSearchKind): List<WebSource> = when (kind) {
         // Mastodon and Lemmy need no key, so GIFs turn up even before GIPHY or Tenor is set up.
-        WebSearchKind.Gifs -> listOf(WebSource.Gelbooru, WebSource.Danbooru, WebSource.Brave, WebSource.Giphy, WebSource.Tenor, WebSource.Mastodon, WebSource.Lemmy, WebSource.Openverse, WebSource.Google)
-        // Reddit is not a source: it refuses API calls without a signed-in app.
-        WebSearchKind.Memes -> listOf(WebSource.Brave, WebSource.Imgflip, WebSource.Giphy, WebSource.Lemmy, WebSource.Openverse, WebSource.Google)
-        WebSearchKind.Pictures -> listOf(WebSource.Civitai, WebSource.Gelbooru, WebSource.Danbooru, WebSource.Brave, WebSource.Mastodon, WebSource.Lemmy, WebSource.Openverse, WebSource.Commons, WebSource.Google)
+        WebSearchKind.Gifs -> listOf(WebSource.Gelbooru, WebSource.Danbooru, WebSource.Brave, WebSource.Giphy, WebSource.Tenor, WebSource.Reddit, WebSource.NineGag, WebSource.Mastodon, WebSource.Lemmy, WebSource.Openverse, WebSource.Google)
+        // Reddit refuses anonymous API calls, so it is read through its public RSS feeds.
+        WebSearchKind.Memes -> listOf(WebSource.Brave, WebSource.Imgflip, WebSource.Giphy, WebSource.Reddit, WebSource.NineGag, WebSource.Lemmy, WebSource.Openverse, WebSource.Google)
+        WebSearchKind.Pictures -> listOf(WebSource.Civitai, WebSource.Gelbooru, WebSource.Danbooru, WebSource.Brave, WebSource.Reddit, WebSource.Mastodon, WebSource.Lemmy, WebSource.Openverse, WebSource.Commons, WebSource.Google)
         WebSearchKind.All -> WebSource.entries
     }
 
@@ -216,6 +218,8 @@ class WebPictureSearch @Inject constructor(
             WebSource.Commons -> commons(q, gifs)
             WebSource.Imgflip -> imgflip(q)
             WebSource.Mastodon -> mastodon(q, gifs, adultAllowed)
+            WebSource.Reddit -> reddit(q, kind)
+            WebSource.NineGag -> nineGag(q, gifs, adultAllowed)
             WebSource.Lemmy -> lemmy(if (kind == WebSearchKind.Memes) "$q meme".trim() else q, gifs, adultAllowed)
             WebSource.Giphy -> giphy(q)
             WebSource.Tenor -> tenor(q, adultAllowed)
@@ -501,6 +505,54 @@ class WebPictureSearch @Inject constructor(
         }
     }
 
+    /** Reddit search within subreddits that fit the kind, through its public RSS. */
+    private fun reddit(q: String, kind: WebSearchKind): List<WebPicture> {
+        if (q.isBlank()) return emptyList()
+        val subs = when (kind) {
+            WebSearchKind.Gifs -> REDDIT_GIF_SUBS
+            WebSearchKind.Memes -> REDDIT_MEME_SUBS
+            else -> REDDIT_PICTURE_SUBS
+        }
+        val sub = subs[redditRotation.getAndIncrement().mod(subs.size)]
+        val url = "https://www.reddit.com/r/$sub/search.rss".toHttpUrl().newBuilder()
+            .addQueryParameter("q", q.split(' ').take(4).joinToString(" "))
+            .addQueryParameter("restrict_sr", "on").addQueryParameter("sort", "relevance").build()
+        return RedditRss.parse(getText(url.toString())).mapNotNull { RedditRss.toPicture(it, kind == WebSearchKind.Gifs) }
+    }
+
+    /** 9GAG's own web feed for a tag: memes, pictures and short silent clips. */
+    private fun nineGag(q: String, gifs: Boolean, adultAllowed: Boolean): List<WebPicture> {
+        val tag = q.lowercase().split(Regex("[^a-z0-9]+"))
+            .firstOrNull { it.length >= 3 && it !in STOP_WORDS && it !in CIVITAI_GENERIC_WORDS } ?: return emptyList()
+        return nineGagPosts("https://9gag.com/v1/tag-posts/tag/$tag/type/hot", gifs, adultAllowed)
+    }
+
+    /** Posts from a 9GAG feed URL; "Animated" posts are MP4 loops that play like GIFs. */
+    fun nineGagPosts(url: String, gifs: Boolean, adultAllowed: Boolean): List<WebPicture> =
+        getJson(url).obj()["data"].obj()["posts"].arr().mapNotNull { item ->
+            val post = item.obj()
+            if (post.str("nsfw") == "1" && !adultAllowed) return@mapNotNull null
+            val images = post["images"].obj()
+            val clip = images["image460sv"].obj()
+            val duration = clip.str("duration")?.toIntOrNull() ?: 0
+            val loop = post.str("type") in setOf("Animated", "Video") && duration in 1..60
+            val full = if (loop) clip.str("url") else images["image700"].obj().str("url")
+            if (full == null || !full.startsWith("https://") || (gifs && !loop)) return@mapNotNull null
+            if (!loop && post.str("type") != "Photo") return@mapNotNull null
+            val tags = post["tags"].arr().mapNotNull { it.obj().str("key") }.joinToString(" ")
+            val title = post.str("title").orEmpty()
+            WebPicture(
+                id = "9g-" + post.str("id").orEmpty(),
+                title = title.take(160),
+                thumbUrl = images["image460"].obj().str("url") ?: full,
+                fullUrl = full, isGif = loop, source = "9GAG",
+                pageUrl = post.str("url")?.replace("http://", "https://").orEmpty(),
+                credit = post["postSection"].obj().str("name")?.let { "$it on 9GAG" } ?: "9GAG",
+                adult = post.str("nsfw") == "1",
+                description = "$title $tags".take(1200),
+            )
+        }
+
     /** Link posts on Lemmy (a Reddit-like network) whose link is a picture or GIF. */
     private fun lemmy(q: String, gifs: Boolean, adultAllowed: Boolean): List<WebPicture> {
         if (q.isBlank()) return emptyList()
@@ -718,6 +770,14 @@ class WebPictureSearch @Inject constructor(
         .replace(Regex("<[^>]+>"), "").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
         .replace("&quot;", "\"").replace("&#39;", "'").trim()
 
+    fun getText(url: String): String {
+        val request = Request.Builder().url(url).header("User-Agent", USER_AGENT).build()
+        http.newCall(request).execute().use { response ->
+            require(response.isSuccessful) { "HTTP ${response.code}" }
+            return response.body?.string().orEmpty()
+        }
+    }
+
     fun getJson(url: String): JsonElement {
         val request = Request.Builder().url(url).header("User-Agent", USER_AGENT).header("Accept", "application/json").build()
         http.newCall(request).execute().use { response ->
@@ -734,6 +794,10 @@ class WebPictureSearch @Inject constructor(
     companion object {
         private val previewRotation = java.util.concurrent.atomic.AtomicInteger()
         private val ADULT_PREVIEW_SITES = listOf("onlyfans.com", "fansly.com", "patreon.com", "pornhub.com", "xvideos.com", "xhamster.com", "xnxx.com", "redgifs.com", "sex.com", "rule34.xxx", "gelbooru.com", "danbooru.donmai.us", "civitai.red")
+        private val redditRotation = java.util.concurrent.atomic.AtomicInteger()
+        private val REDDIT_GIF_SUBS = listOf("reactiongifs", "gifs", "HighQualityGifs", "gif")
+        private val REDDIT_MEME_SUBS = listOf("memes", "funny", "me_irl", "wholesomememes")
+        private val REDDIT_PICTURE_SUBS = listOf("pics", "aww", "itookapicture", "EarthPorn", "FoodPorn")
         val MASTODON_SERVERS = listOf("mastodon.social", "mstdn.social", "mastodon.world")
         private val GENERAL_PREVIEW_SITES = listOf("youtube.com", "twitch.tv", "x.com", "civitai.com")
         /** Wikimedia refuses images to clients without a descriptive agent like this one. */

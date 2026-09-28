@@ -1,5 +1,6 @@
 package com.ihy2ln.weaverse.feature.chatting.social
 
+import com.ihy2ln.weaverse.feature.chatting.media.RedditRss
 import com.ihy2ln.weaverse.feature.chatting.media.WebPicture
 import com.ihy2ln.weaverse.feature.chatting.media.WebPictureSearch
 import kotlinx.coroutines.Dispatchers
@@ -19,7 +20,7 @@ import javax.inject.Singleton
 data class RealWebItem(
     /** Stable key so the same post is never shared twice. */
     val url: String,
-    /** "Mastodon", "Bluesky", "Lemmy", "Hacker News". */
+    /** "Reddit", "9GAG", "Mastodon", "Bluesky", "Lemmy", "Hacker News". */
     val site: String,
     /** "@someone on Mastodon", "c/cats", … */
     val credit: String,
@@ -33,7 +34,8 @@ data class RealWebItem(
 
 /**
  * Pulls real, public posts from social sites that allow reading without an account —
- * Mastodon hashtag timelines, Bluesky's Discover feed, Lemmy's hot posts and Hacker News —
+ * Reddit's subreddit feeds, 9GAG, Mastodon hashtag timelines, Bluesky's Discover feed,
+ * Lemmy's hot posts and Hacker News —
  * so WeaverSocial's made-up people have real things to share, like a real timeline.
  * Nothing is ever posted back to those sites.
  */
@@ -44,7 +46,11 @@ class RealWebFeed @Inject constructor(private val web: WebPictureSearch) {
         val tags = topics.flatMap { TOPIC_HASHTAGS[it].orEmpty().shuffled().take(1).map { tag -> it to tag } }
         val jobs = tags.map { (topic, tag) ->
             async(Dispatchers.IO) { runCatching { mastodon(topic, tag, adultAllowed) }.getOrDefault(emptyList()) }
+        } + topics.take(2).map { topic ->
+            // Reddit rate-limits anonymous readers, so two subreddits per refresh at most.
+            async(Dispatchers.IO) { runCatching { reddit(topic) }.getOrDefault(emptyList()) }
         } + listOf(
+            async(Dispatchers.IO) { runCatching { nineGag(adultAllowed) }.getOrDefault(emptyList()) },
             async(Dispatchers.IO) { runCatching { bluesky(adultAllowed) }.getOrDefault(emptyList()) },
             async(Dispatchers.IO) { runCatching { lemmy(adultAllowed) }.getOrDefault(emptyList()) },
             async(Dispatchers.IO) { runCatching { hackerNews() }.getOrDefault(emptyList()) },
@@ -74,6 +80,30 @@ class RealWebFeed @Inject constructor(private val web: WebPictureSearch) {
                 text.take(TEXT_CHARS), topic, media, sensitive)
         }
     }
+
+    private fun reddit(topic: String): List<RealWebItem> {
+        val sub = TOPIC_SUBREDDITS[topic].orEmpty().ifEmpty { TOPIC_SUBREDDITS.getValue("memes") }.random()
+        return RedditRss.parse(web.getText("https://www.reddit.com/r/$sub/hot/.rss")).mapNotNull { entry ->
+            // Moderator stickies aren't what people share.
+            if (entry.author.equals("AutoModerator", true) || entry.title.isBlank()) return@mapNotNull null
+            RealWebItem(
+                url = entry.url, site = "Reddit",
+                credit = listOf("r/${entry.subreddit.ifBlank { sub }}", entry.author.takeIf { it.isNotBlank() }?.let { "u/$it" })
+                    .filterNotNull().joinToString(" · "),
+                text = (entry.title + entry.selfText.takeIf { it.isNotBlank() }?.let { "\n" + it }.orEmpty()).take(TEXT_CHARS),
+                topic = topic,
+                media = RedditRss.toPicture(entry, gifsOnly = false),
+            )
+        }
+    }
+
+    private fun nineGag(adultAllowed: Boolean): List<RealWebItem> =
+        web.nineGagPosts("https://9gag.com/v1/group-posts/group/default/type/hot", gifs = false, adultAllowed = adultAllowed)
+            .filter { it.pageUrl.startsWith("https://") }
+            .map { picture ->
+                RealWebItem(picture.pageUrl, "9GAG", picture.credit.removeSuffix(" on 9GAG"), picture.title,
+                    guessTopic(picture.description), picture, picture.adult)
+            }
 
     private fun bluesky(adultAllowed: Boolean): List<RealWebItem> {
         val feed = web.getJson(
@@ -178,6 +208,31 @@ class RealWebFeed @Inject constructor(private val web: WebPictureSearch) {
             "money" to listOf("economics", "finance", "stockmarket"),
             "news" to listOf("news", "worldnews"),
             "memes" to listOf("memes", "funny", "humor", "gif"),
+        )
+
+        /** WeaverSocial topics → safe-for-work subreddits that are mostly pictures and GIFs. */
+        val TOPIC_SUBREDDITS = mapOf(
+            "games" to listOf("gaming", "pcmasterrace", "GamePhysics", "Minecraft"),
+            "pets" to listOf("aww", "cats", "dogpictures", "AnimalsBeingDerps", "rarepuppers"),
+            "tech" to listOf("technology", "gadgets", "ProgrammerHumor"),
+            "science" to listOf("interestingasfuck", "Damnthatsinteresting", "oddlysatisfying"),
+            "space" to listOf("spaceporn", "space"),
+            "photography" to listOf("itookapicture", "pics", "EarthPorn"),
+            "outdoors" to listOf("EarthPorn", "hiking", "NatureIsFuckingLit"),
+            "food" to listOf("FoodPorn", "food", "Baking"),
+            "travel" to listOf("travel", "CityPorn", "pics"),
+            "art" to listOf("Art", "PixelArt", "drawing"),
+            "anime" to listOf("anime", "Animemes"),
+            "music" to listOf("Music", "WeAreTheMusicMakers"),
+            "movies" to listOf("movies", "MovieDetails", "PrequelMemes"),
+            "books" to listOf("books", "BookPorn"),
+            "sports" to listOf("sports", "nba", "soccer", "formula1"),
+            "cars" to listOf("cars", "carporn", "Autos"),
+            "fitness" to listOf("GYM", "running", "bodyweightfitness"),
+            "fashion" to listOf("streetwear", "OUTFITS", "malefashion"),
+            "money" to listOf("wallstreetbets", "StockMarket"),
+            "news" to listOf("pics", "UpliftingNews", "worldnews"),
+            "memes" to listOf("memes", "funny", "me_irl", "reactiongifs", "gifs", "wholesomememes"),
         )
 
         private val TOPIC_WORDS = mapOf(

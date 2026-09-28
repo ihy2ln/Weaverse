@@ -3,6 +3,22 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.66 - WeaverSocial: Reddit and 9GAG
+
+- APK: `Beta.Test.Build/weaverse-v1.4.66.apk`, SHA-256
+  `2ee8c7890c3681b3c09392543fce1ef2d532e39ebe156c63eead6f3c37816fac`, same certificate.
+- Reddit is read through its public Atom feeds (`RedditRss`); the JSON API refuses anonymous
+  calls. Around the web pulls hot posts from two topic subreddits per refresh (rate limits),
+  with direct i.redd.it / i.imgur.com pictures and GIFs; v.redd.it videos need an account,
+  so they fall back to Reddit's preview image. Reddit search RSS is also a GIF/meme/picture
+  search source.
+- 9GAG's web feed (hot, and per-tag for search): photos and "Animated" MP4 loops ≤60 s.
+  Unofficial endpoint; failures are skipped like any other source.
+- Around the web shares 2–6 posts per refresh (was 1–4). Brave's adult Reddit site-searches
+  are unchanged, as the writer asked.
+- Not verified on device (MuMu not running). Unit tests: RedditRss, SocialNpcs,
+  SocialMediaMatch, HelpContent.
+
 ## v1.4.65 - WeaverSocial: post-as-prompt media, GIF loops, around the web
 
 - APK: `Beta.Test.Build/weaverse-v1.4.65.apk`, SHA-256

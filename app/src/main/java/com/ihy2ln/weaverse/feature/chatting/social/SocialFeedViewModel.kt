@@ -834,7 +834,7 @@ class SocialFeedViewModel @Inject constructor(
                 )
             }
             if (planned.isNotEmpty()) attachPlannedMedia(planned)
-            if (_uiState.value.webPosts) shareWebPosts((count / 2).coerceIn(1, 4))
+            if (_uiState.value.webPosts) shareWebPosts((count * 3 / 4).coerceIn(2, 6))
             finish()
         }
     }
@@ -950,7 +950,7 @@ class SocialFeedViewModel @Inject constructor(
         if (pairs.isEmpty()) return
         val system = buildList {
             add(platformVoice())
-            add("Ordinary people on WeaverSocial are resharing real posts they found elsewhere on the web. " +
+            add("Ordinary people on WeaverSocial are resharing real posts they found on Reddit, 9GAG, Mastodon, Bluesky and other sites." +
                 "Each writes their own short caption: a reaction, joke, opinion or why they're sharing it. " +
                 "Never copy or summarise the original, and never claim they made it. Stay true to each card:")
             pairs.forEach { add(cardFor(it.second)) }

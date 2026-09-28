@@ -120,13 +120,13 @@ post and names what its picture or GIF shows; those words become the web search,
 image model configured, the prompt for up to two original pictures per refresh. About a third
 of posts get a GIF. Turn it off to fall back to the model's own `[pic: …]` / `[gif: …]` tags.
 
-GIFs include silent looping MP4s ("gifv") from Mastodon and Lemmy, found without any key, and
+GIFs include silent looping MP4s ("gifv") from Reddit, 9GAG, Mastodon and Lemmy, found without any key, and
 play inline like GIF files.
 
 ### Around the web
 
 On by default. Each refresh, made-up everyday people — not Codex characters — reshare real
-public posts from Mastodon, Bluesky, Lemmy and Hacker News with the original picture or GIF,
+public posts from Reddit, 9GAG, Mastodon, Bluesky, Lemmy and Hacker News with the original picture or GIF,
 a caption of their own and a link to the source. Characters and other people reply under
 them. The **Around the web** tab on the feed shows only these shares. Sensitive posts are
 skipped while 18+ is off, and nothing is ever posted back to those sites.

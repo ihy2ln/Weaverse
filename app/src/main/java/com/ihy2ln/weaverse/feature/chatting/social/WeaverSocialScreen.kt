@@ -2216,7 +2216,7 @@ private fun SafetyScreen(
         item(key = "web-posts") {
             SwitchRow(
                 title = "Posts from around the web",
-                body = "Made-up everyday people reshare real public posts, pictures and GIFs from Mastodon, Bluesky, Lemmy and Hacker News, with a link to the original. Nothing is posted back.",
+                body = "Made-up everyday people reshare real public posts, pictures and GIFs from Reddit, 9GAG, Mastodon, Bluesky, Lemmy and Hacker News, with a link to the original. Nothing is posted back.",
                 checked = state.webPosts,
                 c = c,
             ) { viewModel.setWebPosts(it) }

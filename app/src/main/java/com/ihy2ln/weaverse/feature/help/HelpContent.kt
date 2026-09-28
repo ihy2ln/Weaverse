@@ -351,7 +351,7 @@ object HelpContent {
                     "Around the web",
                     "Posts from around the web is on by default in Privacy & filters. Each refresh, " +
                         "made-up everyday people (not Codex characters) reshare real public posts from " +
-                        "Mastodon, Bluesky, Lemmy and Hacker News with their picture or GIF, a caption " +
+                        "Reddit, 9GAG, Mastodon, Bluesky, Lemmy and Hacker News with their picture or GIF, a caption " +
                         "of their own and a link to the original. Your characters and other people " +
                         "reply underneath. The Around the web tab on the feed shows only these shares. " +
                         "Sensitive posts are skipped while 18+ is off. Nothing is posted back.",
@@ -382,7 +382,7 @@ object HelpContent {
                         "and open the public watch page; images and GIFs play in posts. " +
                         "Private and paid media is not imported. GIF files and silent looping MP4 " +
                         "GIFs (\"gifv\") play in posts; other video pages show attributed preview cards. " +
-                        "Keyless GIF search includes Mastodon, Lemmy, Gelbooru, Danbooru and Openverse; " +
+                        "Keyless GIF search includes Reddit, 9GAG, Mastodon, Lemmy, Gelbooru, Danbooru and Openverse; " +
                         "optional GIPHY and Tenor keys add more. " +
                         "A fictional character's selfie uses a named library picture or the " +
                         "configured image model and their Codex appearance. A Codex portrait " +
