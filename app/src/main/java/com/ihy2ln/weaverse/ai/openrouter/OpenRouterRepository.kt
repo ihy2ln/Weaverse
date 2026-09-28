@@ -60,6 +60,13 @@ class OpenRouterRepository @Inject constructor(
             throw error
         }
     }
+    /** Catalog tags (including `ratio:W:H`) of one reference-editing image model. */
+    suspend fun imageEditingModelTags(modelId: String): List<String> {
+        val model = normalizeModelId(modelId)
+        val cached = _imageEditingModels.value.takeIf { it.isNotEmpty() } ?: fetchImageEditingModels()
+        return cached.firstOrNull { it.id == model }?.tags.orEmpty()
+    }
+
     private val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
@@ -299,18 +306,23 @@ class OpenRouterRepository @Inject constructor(
         modelId: String,
         prompt: String,
         imageAttachments: List<com.ihy2ln.weaverse.ai.ImageAttachment> = emptyList(),
+        aspectRatio: String? = null,
     ): Pair<ByteArray, String> =
         withContext(Dispatchers.IO) {
             val key = requireKey()
             val model = normalizeModelId(modelId)
-            var aspectRatio: String? = null
+            var ratio: String? = null
             if (imageAttachments.isNotEmpty()) {
                 val candidates = fetchImageEditingModels()
                 val selected = candidates.firstOrNull { it.id == model } ?: throw AIError.BadRequest(
                     "This model is not currently listed for reference-image editing. Refresh the editor model list and choose another model.")
-                if ("ratio:auto" in selected.tags) aspectRatio = "auto"
+                ratio = when {
+                    aspectRatio != null && "ratio:$aspectRatio" in selected.tags -> aspectRatio
+                    "ratio:auto" in selected.tags -> "auto"
+                    else -> null
+                }
             }
-            val bodyJson = OpenRouterImageApi.request(model, prompt, imageAttachments, aspectRatio)
+            val bodyJson = OpenRouterImageApi.request(model, prompt, imageAttachments, ratio)
             val httpRequest = authorizedRequest("$baseUrl/images", key)
                 .post(bodyJson.toRequestBody(JSON_MEDIA))
                 .build()

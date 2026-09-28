@@ -4644,15 +4644,27 @@ class RoleplayChatViewModel @Inject constructor(
     private suspend fun colorizeMangaImage(path: String, modelRef: String): Pair<ByteArray, String> {
         val prefs = settings.preferences.first()
         val quality = _uiState.value.mangaAiQuality
-        if (prefs.mangaPreserveLineArt) com.ihy2ln.weaverse.core.media.MangaColorTransfer.validateSource(path)
-        val attachment = PanelAi.imageAttachmentFor(path, maxDim = quality.colorMaxDim)
+        val source = ImageOps.loadBitmap(path, maxDim = quality.colorMaxDim)
             ?: error("Could not read the source image.")
+        // Pad to a shape the model offers, so the answer maps back onto this page's ink.
+        val plan = com.ihy2ln.weaverse.core.media.MangaAspectFit.plan(
+            source.width, source.height, aiGeneration.imageModelTags(modelRef))
+        val attachment = try {
+            val canvas = com.ihy2ln.weaverse.core.media.MangaAspectFit.pad(source, plan)
+            try {
+                PanelAi.imageAttachmentFor(canvas, maxDim = Int.MAX_VALUE)
+            } finally {
+                if (canvas !== source) canvas.recycle()
+            }
+        } finally {
+            source.recycle()
+        } ?: error("Could not read the source image.")
         val prompt = com.ihy2ln.weaverse.core.media.MangaColorPolicy.prompt(prefs.mangaColorStyleGuide)
-        var generated = aiGeneration.generateImage(
-            prompt = prompt,
-            modelRef = modelRef,
-            imageAttachments = listOf(attachment),
+        suspend fun generate(text: String) = com.ihy2ln.weaverse.core.media.MangaAspectFit.unpad(
+            retryTransientAi { aiGeneration.generateImage(text, modelRef, listOf(attachment), plan.ratio) },
+            plan,
         )
+        var generated = generate(prompt)
         // Slow: a Vision review of the result, and one redo that names what to fix.
         if (quality == MangaAiQuality.Slow) {
             val reviewer = visionModelRef()
@@ -4667,18 +4679,41 @@ class RoleplayChatViewModel @Inject constructor(
             }
             if (!problems.isNullOrEmpty()) {
                 generated = runCatching {
-                    aiGeneration.generateImage(
-                        prompt = prompt + "\nA previous attempt had these problems; fix every one:\n" +
-                            problems.take(12).joinToString("\n") { "- $it" },
-                        modelRef = modelRef,
-                        imageAttachments = listOf(attachment),
-                    )
+                    generate(prompt + "\nA previous attempt had these problems; fix every one:\n" +
+                        problems.take(12).joinToString("\n") { "- $it" })
                 }.getOrDefault(generated)
             }
         }
         return if (prefs.mangaPreserveLineArt) {
             com.ihy2ln.weaverse.core.media.MangaColorTransfer.preserveDrawing(path, generated.first) to "image/png"
         } else generated
+    }
+
+    /**
+     * A rate limit, dropped connection or provider hiccup on one page used to drop that page
+     * from a chapter run. Those are retried with a short wait; real refusals are not.
+     */
+    private suspend fun <T> retryTransientAi(attempts: Int = 3, block: suspend () -> T): T {
+        var attempt = 0
+        while (true) {
+            try {
+                return block()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: com.ihy2ln.weaverse.ai.AIError) {
+                attempt++
+                val wait = when (failure) {
+                    is com.ihy2ln.weaverse.ai.AIError.RateLimited -> (failure.retryAfterSeconds ?: 8L).coerceIn(2L, 45L) * 1000L
+                    is com.ihy2ln.weaverse.ai.AIError.ProviderDown,
+                    is com.ihy2ln.weaverse.ai.AIError.NoNetwork -> 4000L * attempt
+                    is com.ihy2ln.weaverse.ai.AIError.HttpFailure ->
+                        if (failure.statusCode == 408 || failure.statusCode >= 500) 4000L * attempt else throw failure
+                    else -> throw failure
+                }
+                if (attempt >= attempts) throw failure
+                kotlinx.coroutines.delay(wait)
+            }
+        }
     }
 
     fun refreshEditorModels() {
@@ -5092,6 +5127,7 @@ class RoleplayChatViewModel @Inject constructor(
             var rejectedPages = 0
             var alreadyEnglish = 0
             var failedPages = 0
+            var colorFailedPages = 0
             try {
                 val selection = mangaEditTargets(pageIds)
                 val targets = selection.items
@@ -5173,9 +5209,21 @@ class RoleplayChatViewModel @Inject constructor(
                             )
                         }
                     }
-                    if (combinedImageModel != null) {
+                    val colorResult = if (combinedImageModel == null) null else {
                         stage("Colorizing before translation")
-                        val (bytes, mime) = colorizeMangaImage(target.path, combinedImageModel)
+                        try {
+                            colorizeMangaImage(target.path, combinedImageModel)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (failure: Exception) {
+                            // The page is still translated in black and white rather than dropped.
+                            colorFailedPages++
+                            android.util.Log.w("MangaTranslation", "Colorizing page ${index + 1} failed; translating it uncolored", failure)
+                            null
+                        }
+                    }
+                    if (colorResult != null) {
+                        val (bytes, mime) = colorResult
                         val media = mediaRepository.importFromBytes(bytes,
                             "manga-color-translate-${UUID.randomUUID()}.${if (mime == "image/png") "png" else "jpg"}", mime)
                         val blocks = workingBlocks.getValue(target.message.id)
@@ -5191,7 +5239,8 @@ class RoleplayChatViewModel @Inject constructor(
                     }
                     stage("Reading")
                     val quality = _uiState.value.mangaAiQuality
-                    val detected = (PanelAi.readText(aiGeneration, modelRef, target.path, "English", maxDim = quality.readMaxDim)
+                    val detected = (retryTransientAi { PanelAi.readText(aiGeneration, modelRef, target.path, "English", maxDim = quality.readMaxDim) }
+                        ?: retryTransientAi { PanelAi.readText(aiGeneration, modelRef, target.path, "English", maxDim = quality.readMaxDim) }
                         ?: error("Vision returned no usable response for this page"))
                         .filter { it.translation.isNotBlank() || it.original.isNotBlank() }
                     // Lettering already printed in English is left exactly as the artist drew it.
@@ -5318,7 +5367,8 @@ class RoleplayChatViewModel @Inject constructor(
                             translatedRegions = translatedRegions,
                             rejectedPages = rejectedPages,
                             alreadyEnglish = alreadyEnglish,
-                        ) + if (failedPages > 0) " $failedPages page(s) failed; the rest of the chapter was processed." else "",
+                        ) + (if (failedPages > 0) " $failedPages page(s) failed; the rest of the chapter was processed." else "") +
+                            if (colorFailedPages > 0) " $colorFailedPages page(s) could not be colorized and were translated in black and white." else "",
                     )
                 }
             } catch (cancelled: CancellationException) {

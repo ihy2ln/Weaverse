@@ -127,6 +127,7 @@ class AiGenerationService @Inject constructor(
         prompt: String,
         modelRef: String?,
         imageAttachments: List<ImageAttachment> = emptyList(),
+        aspectRatio: String? = null,
     ): Pair<ByteArray, String> {
         val model = resolveModelRef(modelRef)
         if (!model.startsWith("openrouter/")) {
@@ -142,7 +143,16 @@ class AiGenerationService @Inject constructor(
             modelId = model.removePrefix("openrouter/"),
             prompt = prompt,
             imageAttachments = imageAttachments,
+            aspectRatio = aspectRatio,
         )
+    }
+
+    /** Catalog tags of an OpenRouter image-editing model; empty when unknown. */
+    suspend fun imageModelTags(modelRef: String?): List<String> {
+        val model = resolveModelRef(modelRef)
+        if (!model.startsWith("openrouter/")) return emptyList()
+        return runCatching { openRouterRepository.imageEditingModelTags(model.removePrefix("openrouter/")) }
+            .getOrDefault(emptyList())
     }
 
     fun hasApiKey(modelRef: String? = null): Boolean {

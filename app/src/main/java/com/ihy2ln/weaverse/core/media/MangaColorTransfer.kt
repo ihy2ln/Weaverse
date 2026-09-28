@@ -3,26 +3,33 @@ package com.ihy2ln.weaverse.core.media
 import android.graphics.BitmapFactory
 
 object MangaColorTransfer {
-    fun validateSource(path: String) {
+    private const val MAX_PIXELS = 8_000_000L
+
+    /**
+     * Large scans used to be refused outright, which dropped them from chapter runs. They are
+     * now decoded at the largest power-of-two reduction that fits the memory budget.
+     */
+    private fun sampleFor(path: String): Int {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(path, bounds)
-        require(bounds.outWidth > 0 && bounds.outHeight > 0 &&
-            bounds.outWidth.toLong() * bounds.outHeight <= 8_000_000) {
-            "Preserve drawing supports source pages up to 8 megapixels. Resize or split this page first; nothing was replaced."
-        }
+        require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Could not read the original page." }
+        var sample = 1
+        while (bounds.outWidth.toLong() * bounds.outHeight / sample / sample > MAX_PIXELS) sample *= 2
+        return sample
     }
 
     fun preserveDrawing(path: String, generated: ByteArray): ByteArray {
-        validateSource(path)
-        val source = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inMutable = true })
-            ?: error("Could not read the original page.")
+        val source = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply {
+            inMutable = true
+            inSampleSize = sampleFor(path)
+        }) ?: error("Could not read the original page.")
         try {
             val generatedBounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeByteArray(generated, 0, generated.size, generatedBounds)
             require(generatedBounds.outWidth > 0 && generatedBounds.outHeight > 0) { "The provider returned an unreadable image." }
             val sourceRatio = source.width.toDouble() / source.height
             val outputRatio = generatedBounds.outWidth.toDouble() / generatedBounds.outHeight
-            require(kotlin.math.abs(sourceRatio / outputRatio - 1) < .015) {
+            require(kotlin.math.abs(sourceRatio / outputRatio - 1) < .04) {
                 "The model changed the page's aspect ratio. Its output was rejected to protect the drawing."
             }
             var sample = 1

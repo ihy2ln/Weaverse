@@ -748,7 +748,42 @@ internal fun isMostlyGrayscaleArgb(pixels: IntArray): Boolean {
         val minChannel = minOf(red, green, blue)
         if (maxChannel - minChannel <= 14) grayscale++
     }
-    return opaque > 0 && grayscale.toFloat() / opaque >= 0.94f
+    if (opaque == 0) return false
+    if (grayscale.toFloat() / opaque >= 0.94f) return true
+    return isTintedMonochromeArgb(pixels)
+}
+
+/**
+ * Yellowed or sepia scans are black-and-white art on tinted paper. Every tinted pixel shares
+ * one hue, so they read as colour to a plain chroma test and were skipped as "already color".
+ * Real colour art spreads across many hues.
+ */
+internal fun isTintedMonochromeArgb(pixels: IntArray): Boolean {
+    val bins = IntArray(12)
+    var chromatic = 0
+    pixels.forEach { pixel ->
+        if ((pixel ushr 24 and 0xff) < 24) return@forEach
+        val r = pixel ushr 16 and 0xff
+        val g = pixel ushr 8 and 0xff
+        val b = pixel and 0xff
+        val max = maxOf(r, g, b)
+        val min = minOf(r, g, b)
+        val spread = max - min
+        if (spread <= 14) return@forEach
+        // Vivid pixels are painted colour, never paper tint.
+        if (spread > 90) return false
+        chromatic++
+        val hue = when (max) {
+            r -> ((g - b).toFloat() / spread).let { if (it < 0) it + 6f else it }
+            g -> (b - r).toFloat() / spread + 2f
+            else -> (r - g).toFloat() / spread + 4f
+        } * 60f
+        bins[(hue / 30f).toInt().coerceIn(0, 11)]++
+    }
+    if (chromatic == 0) return true
+    val best = bins.indices.maxBy { bins[it] }
+    val dominant = bins[best] + bins[(best + 1) % 12] + bins[(best + 11) % 12]
+    return dominant.toFloat() / chromatic >= 0.95f
 }
 
 /** Pure counterpart used by JVM tests and the bitmap wrapper above. */

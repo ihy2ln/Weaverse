@@ -135,9 +135,10 @@ object PanelAi {
         instruction: String,
         path: String,
         maxDim: Int = 1100,
+        maxTokens: Int = 2048,
     ): String? {
         val attachment = imageAttachmentFor(path, maxDim) ?: return null
-        return ask(ai, modelRef, instruction, attachment)
+        return ask(ai, modelRef, instruction, attachment, maxTokens)
     }
 
     private suspend fun ask(
@@ -145,6 +146,7 @@ object PanelAi {
         modelRef: String,
         instruction: String,
         attachment: ImageAttachment,
+        maxTokens: Int = 2048,
     ): String? {
         val result = ai.complete(
             userMessage = instruction,
@@ -158,7 +160,7 @@ object PanelAi {
                 tokenBreakdown = emptyList(),
             ),
             modelRef = modelRef,
-            maxTokens = 2048,
+            maxTokens = maxTokens,
             temperature = 0.1,
             imageAttachments = listOf(attachment),
         )
@@ -167,11 +169,16 @@ object PanelAi {
         return text
     }
 
-    private fun extractJsonArray(raw: String): String? {
+    internal fun extractJsonArray(raw: String): String? {
         val start = raw.indexOf('[')
+        if (start < 0) return null
         val end = raw.lastIndexOf(']')
-        if (start < 0 || end <= start) return null
-        return raw.substring(start, end + 1)
+        if (end > start) return raw.substring(start, end + 1)
+        // A dense page can run the answer past its token limit. Keep every region that
+        // arrived whole instead of losing the page.
+        val lastObject = raw.lastIndexOf('}')
+        if (lastObject <= start) return null
+        return raw.substring(start, lastObject + 1) + "]"
     }
 
     /**
@@ -265,6 +272,7 @@ object PanelAi {
                 "Use an empty original when a region is decorative. Do not merge separate bubbles or place the " +
                 "box around a blank area merely to make the translated text fit.",
             maxDim = maxDim,
+            maxTokens = 8192,
         ) ?: return null
         return parseTranslatedRegions(raw)
     }
