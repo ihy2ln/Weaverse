@@ -504,6 +504,16 @@ class MangaSourceViewModel @Inject constructor(
         local.value = local.value.copy(linkPreview = null, status = "Preview cancelled.")
     }
 
+    fun importMihonBackup(uri: android.net.Uri?) {
+        if (uri == null) return
+        viewModelScope.launch {
+            local.value = local.value.copy(busy = true, status = "Importing Mihon / Tachiyomi library…")
+            runCatching { repository.importMihonBackup(uri) }
+                .onSuccess { result -> local.value = local.value.copy(busy = false, status = result.statusMessage()) }
+                .onFailure { local.value = local.value.copy(busy = false, status = "Mihon import failed: ${it.message ?: "unreadable backup"}") }
+        }
+    }
+
     fun importLocalFiles(uris: List<android.net.Uri>) {
         if (uris.isEmpty()) return
         viewModelScope.launch {
@@ -953,6 +963,9 @@ fun MangaSourceDialog(
     val localPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         viewModel.importLocalFiles(uris)
     }
+    val mihonPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        viewModel.importMihonBackup(uri)
+    }
     val visibleDownloads = if (showAllDownloads) state.downloads else state.downloads.take(4)
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -985,6 +998,9 @@ fun MangaSourceDialog(
                 }
                 TextButton(onClick = { localPicker.launch(arrayOf("*/*")) }, enabled = !state.busy) {
                     Text("Import manga / comic / webtoon file into library")
+                }
+                TextButton(onClick = { mihonPicker.launch(arrayOf("*/*")) }, enabled = !state.busy) {
+                    Text("Import Mihon / Tachiyomi backup (.tachibk)")
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     OutlinedTextField(

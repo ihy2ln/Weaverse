@@ -92,6 +92,7 @@ class BackupManager @Inject constructor(
             shmFile = File(dbFile.path + "-shm"),
             mediaDir = File(context.filesDir, "media"),
             datastoreDir = File(context.filesDir, "datastore"),
+            mangaDir = File(context.filesDir, "manga"),
         )
         val manifest = json.encodeToString(
             BackupManifest(exportedAt = timestamp, version = 2, platforms = listOf("mobile", "pc")),
@@ -141,6 +142,12 @@ class BackupManager @Inject constructor(
                     BackupArchives.mediaRelativePath(name) != null -> {
                         val relative = BackupArchives.mediaRelativePath(name)!!
                         val outFile = File(File(context.filesDir, "media"), relative)
+                        outFile.parentFile?.mkdirs()
+                        FileOutputStream(outFile).use { zip.copyTo(it) }
+                    }
+                    BackupArchives.mangaRelativePath(name) != null -> {
+                        val relative = BackupArchives.mangaRelativePath(name)!!
+                        val outFile = File(File(context.filesDir, "manga"), relative)
                         outFile.parentFile?.mkdirs()
                         FileOutputStream(outFile).use { zip.copyTo(it) }
                     }

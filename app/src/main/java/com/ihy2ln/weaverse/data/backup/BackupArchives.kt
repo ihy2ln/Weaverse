@@ -13,6 +13,8 @@ object BackupArchives {
     const val MOBILE_SHM = "weaverse.db-shm"
     const val MOBILE_MEDIA = "media/"
     const val MOBILE_SETTINGS = "settings/"
+    /** Downloaded chapter pages (files/manga); without them restored chapters had no pictures. */
+    const val MOBILE_MANGA = "manga/"
     const val PC_DB = "data/weaverse.db"
     const val PC_MEDIA = "data/media/"
     const val MANIFEST = "manifest.json"
@@ -50,6 +52,11 @@ Do not unzip only the inner files onto the desktop — keep the data/ folder nam
         else -> null
     }
 
+    fun mangaRelativePath(entryName: String): String? {
+        if (!entryName.startsWith(MOBILE_MANGA) || entryName.endsWith("/")) return null
+        return entryName.removePrefix(MOBILE_MANGA).takeUnless { it.split('/').any { part -> part == ".." } }
+    }
+
     fun settingsRelativePath(entryName: String): String? {
         if (!entryName.startsWith(MOBILE_SETTINGS) || entryName.endsWith("/")) return null
         return entryName.removePrefix(MOBILE_SETTINGS)
@@ -67,6 +74,7 @@ Do not unzip only the inner files onto the desktop — keep the data/ folder nam
             zip.putFileIfExists(MOBILE_SHM, sources.shmFile)
             zip.putTree(MOBILE_MEDIA, sources.mediaDir)
             zip.putTree(MOBILE_SETTINGS, sources.datastoreDir)
+            zip.putTree(MOBILE_MANGA, sources.mangaDir)
             zip.putBytes(MANIFEST, manifestJson.toByteArray())
         }
     }
@@ -93,6 +101,7 @@ data class BackupSources(
     val shmFile: File? = null,
     val mediaDir: File? = null,
     val datastoreDir: File? = null,
+    val mangaDir: File? = null,
 )
 
 data class BackupExportResult(

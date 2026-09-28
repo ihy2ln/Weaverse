@@ -121,6 +121,100 @@ class MangaDownloadRepository @Inject constructor(
         dao.deleteSeries(savedSeriesId)
     }
 
+    data class MihonImportResult(
+        val series: Int,
+        val chapters: Int,
+        val categories: Int,
+        val missingSources: List<String>,
+    ) {
+        fun statusMessage(): String = buildString {
+            append("Imported $series title(s), $chapters chapter(s) and $categories categor${if (categories == 1) "y" else "ies"} from the Mihon backup.")
+            if (missingSources.isNotEmpty()) {
+                append(" Install these extensions to browse and download them: ")
+                append(missingSources.take(8).joinToString())
+                if (missingSources.size > 8) append(" and ${missingSources.size - 8} more")
+                append(".")
+            }
+        }
+    }
+
+    /**
+     * Imports a Mihon / Tachiyomi library backup (`.tachibk` or `.proto.gz`): library titles,
+     * their categories, chapter lists, and read / bookmark / last-page state. Weaverse keys
+     * extension titles exactly as Mihon does (source id + URL), so imported titles open through
+     * the same installed extension. Existing Weaverse reading state is never cleared.
+     */
+    suspend fun importMihonBackup(uri: android.net.Uri): MihonImportResult = withContext(Dispatchers.IO) {
+        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            ?: error("Could not open the backup file.")
+        val backup = MihonBackup.parse(bytes)
+        val now = System.currentTimeMillis()
+        ensureDefaultFavoriteCategory()
+        val categoryIds = backup.categories.associate { category ->
+            val clean = category.name.trim().ifBlank { "Mihon" }
+            val id = "favorite-category-${sha256(clean.lowercase().toByteArray()).take(20)}"
+            db.mangaDao().insertFavoriteCategory(
+                MangaFavoriteCategoryEntity(id, clean, sortOrder = category.order.toInt(), createdAt = now),
+            )
+            category.order to id
+        }
+        val sourceNames = backup.sources.associate { it.id to it.name }
+        var series = 0
+        var chapters = 0
+        backup.manga.filter { it.favorite && it.url.isNotBlank() }.forEach { manga ->
+            val sourceId = "ext:${manga.source}"
+            saveSeriesMetadata(
+                MangaSearchResult(
+                    sourceId = sourceId,
+                    remoteId = manga.url,
+                    title = manga.title,
+                    description = manga.description,
+                    coverUrl = manga.thumbnailUrl.ifBlank { null },
+                    tags = manga.genres.flatMap { it.split(',') }.map(String::trim).filter(String::isNotBlank),
+                    authors = listOf(manga.author).filter(String::isNotBlank),
+                    artists = listOf(manga.artist).filter(String::isNotBlank),
+                    status = MihonBackup.statusLabel(manga.status),
+                ),
+            )
+            val seriesKey = seriesId(sourceId, manga.url)
+            val added = manga.dateAdded.takeIf { it > 0 } ?: now
+            val targets = manga.categories.mapNotNull(categoryIds::get).ifEmpty { listOf("favorites") }
+            targets.forEach { db.mangaDao().upsertFavorite(MangaFavoriteEntity(seriesKey, it, added)) }
+            val lastRead = manga.history.associate { it.url to it.lastRead }
+            db.withTransaction {
+                manga.chapters.filter { it.url.isNotBlank() }.forEach { chapter ->
+                    val saved = addDiscoveredChapter(
+                        MangaChapter(
+                            sourceId = sourceId,
+                            remoteId = chapter.url,
+                            mangaId = manga.url,
+                            mangaTitle = manga.title,
+                            title = chapter.name,
+                            chapterNumber = chapter.chapterNumber.takeIf { it >= 0 }?.toString().orEmpty(),
+                            dateUpload = chapter.dateUpload,
+                            scanlator = chapter.scanlator,
+                        ),
+                    )
+                    db.mangaDao().upsertChapter(
+                        saved.copy(
+                            read = saved.read || chapter.read,
+                            bookmarked = saved.bookmarked || chapter.bookmark,
+                            lastPageRead = maxOf(saved.lastPageRead, chapter.lastPageRead.toInt()),
+                            lastReadAt = maxOf(saved.lastReadAt, lastRead[chapter.url] ?: 0L),
+                        ),
+                    )
+                    chapters++
+                }
+            }
+            series++
+        }
+        val missing = backup.manga.filter { it.favorite }.map { it.source }.distinct()
+            .filter { registry.get("ext:$it") == null }
+            .map { sourceNames[it] ?: "source $it" }
+            .sorted()
+        MihonImportResult(series, chapters, backup.categories.size, missing)
+    }
+
     suspend fun ensureDefaultFavoriteCategory() {
         if (db.mangaDao().favoriteCategoryCount() == 0) {
             db.mangaDao().insertFavoriteCategory(
