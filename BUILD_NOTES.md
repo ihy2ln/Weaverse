@@ -3,6 +3,19 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.67 - Manga Studio: whole chapters, Mihon import, chapter backups
+
+- Chapter colorize/translate no longer drops pages: pages are padded to the image
+  model's nearest aspect ratio and cropped back; scans over 8 MP are downsampled instead
+  of refused; sepia scans count as black-and-white; transient AI errors are retried;
+  Vision reads get 8192 tokens and keep regions from truncated answers; Colorize +
+  Translate still translates a page whose colorize failed.
+- New "Import Mihon / Tachiyomi backup (.tachibk)" in the manga source screen.
+- Weaverse backups now include downloaded chapter pages (files/manga).
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.4.67.apk`, SHA-256
+  `1c1838e13e07bd82e556f3c11fbd79f06263d35177a793cd63a48480afe84b08`, debug-key signed
+  (same certificate `f16db508…51fc05`).
+
 ## v1.4.66 - WeaverSocial: Reddit and 9GAG
 
 - APK: `Beta.Test.Build/weaverse-v1.4.66.apk`, SHA-256
