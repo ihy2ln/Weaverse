@@ -57,13 +57,18 @@ import com.ihy2ln.weaverse.feature.prompt.PromptEntryBus
 import com.ihy2ln.weaverse.feature.prompt.PromptEntryKind
 import com.ihy2ln.weaverse.feature.shell.WorkspaceHistory
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
@@ -174,6 +179,12 @@ class WriteViewModel @Inject constructor(
 
     private var loadedScene: SceneEntity? = null
     private var sceneJob: Job? = null
+    private var applySceneJob: Job? = null
+    /** Latest edited document not yet written to Room (saves are debounced). */
+    private var pendingSaveDoc: Document? = null
+    private var saveJob: Job? = null
+    /** docJson of this editor's most recent write — Room echoes it back and it must not replace newer typing. */
+    private var lastWrittenDocJson: String? = null
     private var generationJob: Job? = null
     private var applyingHistory = false
     /** Snapshot taken at the start of a typing burst; flushed before discrete edits. */
@@ -235,7 +246,9 @@ class WriteViewModel @Inject constructor(
             if (jumpKind == "SceneBeat") startSceneBeatFromPlan()
             return
         }
+        flushPendingSaveNow()
         sceneJob?.cancel()
+        lastWrittenDocJson = null
         if (typingBaseline != null) {
             typingBaseline = null
             workspaceHistory.removePendingUndo()
@@ -328,10 +341,18 @@ class WriteViewModel @Inject constructor(
     }
 
     private fun applyScene(scene: SceneEntity) {
+        val sameScene = _uiState.value.sceneId == scene.id && _uiState.value.blocks.isNotEmpty()
         loadedScene = scene
-        val doc = documentFromJson(scene.docJson)
-        val blocks = doc.blocks.ifEmpty { listOf(Paragraph("new-p", listOf(Span("")))) }
-        viewModelScope.launch {
+        if (sameScene && (pendingSaveDoc != null || scene.docJson == lastWrittenDocJson)) {
+            // Our own save echoing back (or an older one while newer edits are queued): the editor
+            // already shows this text, and re-applying it would clobber keystrokes typed since.
+            if (_uiState.value.sceneTitle != scene.title) _uiState.update { it.copy(sceneTitle = scene.title) }
+            return
+        }
+        applySceneJob?.cancel()
+        applySceneJob = viewModelScope.launch {
+            val doc = withContext(Dispatchers.Default) { documentFromJson(scene.docJson) }
+            val blocks = doc.blocks.ifEmpty { listOf(Paragraph("new-p", listOf(Span("")))) }
             val paths = mutableMapOf<String, String>()
             val mediaIds = buildList {
                 blocks.forEach { block ->
@@ -347,6 +368,8 @@ class WriteViewModel @Inject constructor(
                     paths[id] = mediaRepository.resolveFile(media).absolutePath
                 }
             }
+            // The user started typing while this was loading — keep their edit.
+            if (sameScene && pendingSaveDoc != null) return@launch
             _uiState.update {
                 it.copy(
                     sceneId = scene.id,
@@ -775,10 +798,10 @@ class WriteViewModel @Inject constructor(
             return
         }
         viewModelScope.launch {
-            val categories = db.codexDao().getCategories(bookId)
+            val categories = db.codexDao().getAllCategories()
             val category = categories.firstOrNull()
                 ?: run {
-                    _uiState.update { it.copy(statusMessage = "No Codex categories in this book") }
+                    _uiState.update { it.copy(statusMessage = "No Codex categories yet") }
                     return@launch
                 }
             val name = text.lineSequence().first().trim().take(48).ifBlank { "New entry" }
@@ -988,7 +1011,7 @@ class WriteViewModel @Inject constructor(
             }
             val sceneText = Document(_uiState.value.blocks).plainText()
             val scene = loadedScene
-            val entries = db.codexDao().observeEntries(bookId).first()
+            val entries = db.codexDao().getAllEntries()
             val assembled = contextBuilder.build(
                 entries,
                 ContextBuildRequest(
@@ -1128,7 +1151,7 @@ class WriteViewModel @Inject constructor(
                 return@launch
             }
             _uiState.update { it.copy(isSummarizing = true, statusMessage = "Summarizing…") }
-            val entries = db.codexDao().observeEntries(bookId).first()
+            val entries = db.codexDao().getAllEntries()
             val assembled = contextBuilder.build(
                 entries,
                 ContextBuildRequest(scanText = sceneText, userMessage = ""),
@@ -1153,9 +1176,12 @@ class WriteViewModel @Inject constructor(
                 )
             }.onSuccess { result ->
                 val summary = result.text.trim()
-                val updated = scene.copy(summary = summary, updatedAt = System.currentTimeMillis())
+                // Write pending edits first and re-read, so the summary save can't revert newer text.
+                flushPendingSave()
+                val fresh = manuscriptRepository.getScene(scene.id) ?: scene
+                val updated = fresh.copy(summary = summary, updatedAt = System.currentTimeMillis())
                 manuscriptRepository.saveScene(updated)
-                loadedScene = updated
+                if (loadedScene?.id == updated.id) loadedScene = updated
                 _uiState.update { it.copy(isSummarizing = false, statusMessage = "Scene summarized") }
             }.onFailure { err ->
                 _uiState.update {
@@ -1472,6 +1498,15 @@ class WriteViewModel @Inject constructor(
     }
 
     private suspend fun restoreSceneBlocks(sceneId: String, blocks: List<Block>) {
+        if (loadedScene?.id == sceneId) {
+            // The restore replaces whatever edit is still queued for this scene.
+            saveJob?.cancel()
+            pendingSaveDoc = null
+            // Force the restored text through applyScene even if it matches our last write (redo).
+            lastWrittenDocJson = null
+        } else {
+            flushPendingSaveNow()
+        }
         applyingHistory = true
         try {
             val doc = Document(blocks)
@@ -1491,15 +1526,11 @@ class WriteViewModel @Inject constructor(
 
     private fun updateBlocks(recordHistory: Boolean = false, mutator: (MutableList<Block>) -> Unit) {
         if (recordHistory) flushTypingHistory()
-        var before: List<Block> = emptyList()
-        var after: List<Block> = emptyList()
+        val before = _uiState.value.blocks
+        val blocks = before.toMutableList()
+        mutator(blocks)
+        val doc = Document(blocks)
         _uiState.update { state ->
-            before = state.blocks.toList()
-            val blocks = state.blocks.toMutableList()
-            mutator(blocks)
-            after = blocks.toList()
-            val doc = Document(blocks)
-            persistScene(doc)
             state.copy(
                 blocks = blocks,
                 wordCount = doc.wordCount(),
@@ -1507,7 +1538,8 @@ class WriteViewModel @Inject constructor(
                 canRedo = workspaceHistory.state.value.canRedo,
             )
         }
-        if (recordHistory) recordDocumentEdit(before, after)
+        persistScene(doc)
+        if (recordHistory) recordDocumentEdit(before, blocks.toList())
         _uiState.update {
             it.copy(
                 canUndo = workspaceHistory.state.value.canUndo,
@@ -1520,26 +1552,58 @@ class WriteViewModel @Inject constructor(
         updateBlocks(recordHistory, mutator)
     }
 
+    /**
+     * Queues [doc] for saving. Typing bursts collapse into one write after [SAVE_DEBOUNCE_MS]
+     * instead of serializing and writing the whole scene on every keystroke.
+     */
     private fun persistScene(doc: Document) {
-        viewModelScope.launch {
-            val base = loadedScene ?: return@launch
-            manuscriptRepository.saveScene(
-                base.copy(
-                    docJson = doc.toJson(),
-                    plainText = doc.plainText(),
-                    wordCount = doc.wordCount(),
-                    updatedAt = System.currentTimeMillis(),
-                ),
-            )
+        pendingSaveDoc = doc
+        saveJob?.cancel()
+        saveJob = viewModelScope.launch {
+            delay(SAVE_DEBOUNCE_MS)
+            flushPendingSave()
         }
     }
 
+    private suspend fun flushPendingSave() {
+        val doc = pendingSaveDoc ?: return
+        val base = loadedScene ?: return
+        val updated = withContext(Dispatchers.Default) { base.withDocument(doc) }
+        lastWrittenDocJson = updated.docJson
+        manuscriptRepository.saveScene(updated)
+        if (pendingSaveDoc === doc) pendingSaveDoc = null
+    }
+
+    /** Writes any queued edit immediately, on a scope that outlives this ViewModel / scene. */
+    private fun flushPendingSaveNow() {
+        val doc = pendingSaveDoc ?: return
+        val base = loadedScene ?: return
+        saveJob?.cancel()
+        pendingSaveDoc = null
+        persistScope.launch { manuscriptRepository.saveScene(base.withDocument(doc)) }
+    }
+
+    private fun SceneEntity.withDocument(doc: Document): SceneEntity = copy(
+        docJson = doc.toJson(),
+        plainText = doc.plainText(),
+        wordCount = doc.wordCount(),
+        updatedAt = System.currentTimeMillis(),
+    )
+
     override fun onCleared() {
+        flushPendingSaveNow()
         if (typingBaseline != null) {
             typingBaseline = null
             workspaceHistory.removePendingUndo()
         }
         unregisterHistoryFlush()
         super.onCleared()
+    }
+
+    private companion object {
+        const val SAVE_DEBOUNCE_MS = 300L
+
+        /** Survives ViewModel clearing so the last queued edit still reaches the database. */
+        val persistScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     }
 }

@@ -3,7 +3,7 @@ package com.ihy2ln.weaverse.feature.search
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
-import com.ihy2ln.weaverse.data.repo.BookRepository
+import com.ihy2ln.weaverse.feature.notes.NotesViewModel
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -40,7 +40,6 @@ data class GlobalSearchUiState(
 class GlobalSearchViewModel @Inject constructor(
     private val db: WeaverseDatabase,
     private val settings: SettingsRepository,
-    private val bookRepository: BookRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(GlobalSearchUiState())
     val uiState: StateFlow<GlobalSearchUiState> = _uiState.asStateFlow()
@@ -56,22 +55,20 @@ class GlobalSearchViewModel @Inject constructor(
                 return@launch
             }
             val bookId = settings.preferences.first().selectedBookId
-            val chapterId = bookRepository.primaryChapterId(bookId)
             val q = query.lowercase()
             val results = mutableListOf<SearchResult>()
-            if (chapterId != null) {
-                db.manuscriptDao().observeScenes(chapterId).first().forEach { scene ->
-                    if (scene.title.lowercase().contains(q) || scene.plainText.lowercase().contains(q)) {
-                        results += SearchResult(scene.id, SearchResultType.Scene, scene.title, scene.plainText.take(120))
-                    }
+            db.manuscriptDao().getScenesForBook(bookId).forEach { scene ->
+                if (scene.title.contains(q, ignoreCase = true) || scene.plainText.contains(q, ignoreCase = true)) {
+                    results += SearchResult(scene.id, SearchResultType.Scene, scene.title, scene.plainText.take(120))
                 }
             }
-            db.codexDao().observeEntries(bookId).first().forEach { entry ->
-                if (entry.name.lowercase().contains(q) || entry.plainText.lowercase().contains(q)) {
+            db.codexDao().getAllEntries().forEach { entry ->
+                if (entry.name.contains(q, ignoreCase = true) || entry.plainText.contains(q, ignoreCase = true)) {
                     results += SearchResult(entry.id, SearchResultType.Codex, entry.name, entry.plainText.take(120))
                 }
             }
-            db.snippetDao().observe(bookId).first().forEach { snippet ->
+            val snippets = db.snippetDao().get(bookId) + db.snippetDao().getByCategory(NotesViewModel.CATEGORY)
+            snippets.distinctBy { it.id }.forEach { snippet ->
                 if (snippet.title.lowercase().contains(q) || snippet.body.lowercase().contains(q)) {
                     results += SearchResult(snippet.id, SearchResultType.Snippet, snippet.title, snippet.body.take(120))
                 }

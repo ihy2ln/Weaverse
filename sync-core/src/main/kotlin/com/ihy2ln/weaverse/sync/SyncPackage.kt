@@ -10,6 +10,16 @@ import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
 object SyncPackage {
+    /**
+     * Resolves [entryName] under [root], or null when it would escape [root]
+     * (zip-slip: `../` segments or absolute paths in an untrusted archive).
+     */
+    fun safeChild(root: File, entryName: String): File? {
+        val base = root.canonicalFile
+        val target = File(base, entryName).canonicalFile
+        return target.takeIf { it.path.startsWith(base.path + File.separator) }
+    }
+
     private val json = Json {
         prettyPrint = true
         ignoreUnknownKeys = true
@@ -96,8 +106,8 @@ object SyncPackage {
         ZipInputStream(FileInputStream(zipFile)).use { zip ->
             var entry = zip.nextEntry
             while (entry != null) {
-                if (!entry.isDirectory) {
-                    val out = File(workDir, entry.name)
+                val out = safeChild(workDir, entry.name)
+                if (!entry.isDirectory && out != null) {
                     out.parentFile?.mkdirs()
                     FileOutputStream(out).use { zip.copyTo(it) }
                 }

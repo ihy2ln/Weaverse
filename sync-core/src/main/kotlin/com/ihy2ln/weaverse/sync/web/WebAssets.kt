@@ -434,10 +434,20 @@ fun webAppJs(): String = """
   (async () => {
     try {
       const status = await (await fetch('/api/status')).json();
+      // pairPin is only sent to the host's own browser; LAN browsers must enter it.
       const password = status.pairPin || '';
-      el('passwordBox').textContent = password || '—';
+      el('passwordBox').textContent = password || '••••••';
       el('statusChip').textContent = 'Web hub · live sync';
-      if (password) await unlock(password);
+      if (password) {
+        await unlock(password);
+      } else {
+        let ok = !!state.token && (await api('/api/library')).ok;
+        while (!ok) {
+          const typed = window.prompt('Enter the 6-digit sync password shown on the host device');
+          if (typed === null) break;
+          ok = await unlock(typed.trim());
+        }
+      }
       await loadWorkspace();
       showTab('plan');
     } catch (e) {

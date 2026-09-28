@@ -57,7 +57,7 @@ import com.ihy2ln.weaverse.data.db.entities.SnippetEntity
         AiProfileEntity::class,
     ],
     version = 5,
-    exportSchema = false,
+    exportSchema = true,
 )
 @TypeConverters(InkTypeConverters::class)
 abstract class WeaverseDatabase : RoomDatabase() {

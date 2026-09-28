@@ -217,8 +217,11 @@ class RoleplayChatViewModel @Inject constructor(
     private suspend fun publishMessages() {
         val active = rawMessages.filter { it.isActiveSwipe }
         val panels = mutableListOf<RpMediaRef>()
+        val swipeCounts = rawMessages.groupingBy { it.swipeGroupId to it.role }.eachCount()
+        val mediaCache = mutableMapOf<String, com.ihy2ln.weaverse.data.db.entities.MediaEntity?>()
+        suspend fun media(id: String) = mediaCache.getOrPut(id) { mediaRepository.getById(id) }
         val ui = active.map { m ->
-            val groupCount = rawMessages.count { it.swipeGroupId == m.swipeGroupId && it.role == m.role }
+            val groupCount = swipeCounts[m.swipeGroupId to m.role] ?: 1
             val doc = documentFromJson(m.contentJson)
             val paths = mutableListOf<String>()
             val blockIds = mutableListOf<String>()
@@ -249,7 +252,7 @@ class RoleplayChatViewModel @Inject constructor(
                             )
                             return@forEach
                         }
-                        val entity = mediaRepository.getById(block.mediaId)
+                        val entity = media(block.mediaId)
                         val path = entity?.let { mediaRepository.resolveFile(it).absolutePath }
                         if (path != null) {
                             val audio = entity.type == "audio" || block.kind == MediaKind.Audio
@@ -277,7 +280,7 @@ class RoleplayChatViewModel @Inject constructor(
                     }
                     is MediaStackBlock -> {
                         val resolved = block.mediaIds.mapNotNull { id ->
-                            mediaRepository.getById(id)?.let { mediaRepository.resolveFile(it).absolutePath }
+                            media(id)?.let { mediaRepository.resolveFile(it).absolutePath }
                         }
                         if (resolved.isNotEmpty()) {
                             val idx = block.currentIndex.coerceIn(0, resolved.lastIndex)
@@ -859,24 +862,24 @@ class RoleplayChatViewModel @Inject constructor(
                 createdAt = now,
                 displayMode = mode,
             )
-            db.roleplayDao().upsertMessage(userMessage)
-            boundChat?.let { chat ->
-                if (chat.presetId != state.presetId) {
-                    val updated = chat.copy(presetId = state.presetId, updatedAt = now)
-                    db.roleplayDao().upsertChat(updated)
-                    boundChat = updated
-                }
-            }
-            _uiState.update {
-                it.copy(input = "", isStreaming = true, streamingText = "", errorMessage = "")
-            }
-            // History is already mode-filtered via observeMessages(chatId, displayMode).
+            // Prior turns, captured before the new user message can show up in rawMessages —
+            // it is sent separately as the final user turn and must not be duplicated.
             val history = rawMessages
                 .filter { it.isActiveSwipe && it.displayMode == mode }
                 .map { msg ->
                     val role = if (msg.role == "user") "user" else "assistant"
                     role to documentFromJson(msg.contentJson).plainText()
                 }
+            db.roleplayDao().upsertMessage(userMessage)
+            boundChat?.let { chat ->
+                // Bump updatedAt so the chat list (ordered by it) reflects recent activity.
+                val updated = chat.copy(presetId = state.presetId, updatedAt = now)
+                db.roleplayDao().upsertChat(updated)
+                boundChat = updated
+            }
+            _uiState.update {
+                it.copy(input = "", isStreaming = true, streamingText = "", errorMessage = "")
+            }
             val builder = StringBuilder()
             var usageText = ""
             runCatching {

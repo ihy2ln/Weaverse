@@ -24,12 +24,14 @@ import com.ihy2ln.weaverse.data.settings.SettingsRepository
 import com.ihy2ln.weaverse.feature.shell.WorkspaceHistory
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.UUID
 import javax.inject.Inject
 
 data class ChatMessageUi(
@@ -75,7 +77,7 @@ class WorkshopChatViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(WorkshopChatUiState())
     val uiState: StateFlow<WorkshopChatUiState> = _uiState.asStateFlow()
     private var observeJob: Job? = null
-    private var assembledPrompt: com.ihy2ln.weaverse.ai.context.AssembledPrompt? = null
+    private var refreshJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -124,7 +126,7 @@ class WorkshopChatViewModel @Inject constructor(
 
     fun openCodexPicker() {
         viewModelScope.launch {
-            val entries = db.codexDao().observeEntries(bookId).first()
+            val entries = db.codexDao().getAllEntries()
             _uiState.update {
                 it.copy(
                     showCodexPicker = true,
@@ -187,8 +189,12 @@ class WorkshopChatViewModel @Inject constructor(
             }
             val now = System.currentTimeMillis()
             val userText = state.input
+            // Prior turns, captured before the new user message lands in the observed list.
+            val history = state.messages
+                .filter { it.plainText.isNotBlank() }
+                .map { (if (it.role == "user") "user" else "assistant") to it.plainText }
             val userMessage = ChatMessageEntity(
-                id = "msg-$now",
+                id = "msg-${UUID.randomUUID()}",
                 threadId = state.threadId,
                 role = "user",
                 contentJson = Document.fromPlainText(userText).toJson(),
@@ -196,12 +202,14 @@ class WorkshopChatViewModel @Inject constructor(
             )
             db.workshopChatDao().upsertMessage(userMessage)
             _uiState.update { it.copy(input = "", isStreaming = true, streamingText = "", errorMessage = "") }
+            refreshJob?.cancel()
+            val prompt = buildPrompt(userText).copy(messages = history)
             val builder = StringBuilder()
             var usageText = ""
             runCatching {
                 aiGeneration.stream(
                     userMessage = userText,
-                    assembled = assembledPrompt,
+                    assembled = prompt,
                     modelRef = state.modelRef,
                 ).collect { chunk ->
                     when (chunk) {
@@ -235,7 +243,7 @@ class WorkshopChatViewModel @Inject constructor(
                 return@launch
             }
             val assistantMessage = ChatMessageEntity(
-                id = "msg-${now + 1}",
+                id = "msg-${UUID.randomUUID()}",
                 threadId = state.threadId,
                 role = "assistant",
                 contentJson = Document.fromPlainText(builder.toString()).toJson(),
@@ -254,49 +262,60 @@ class WorkshopChatViewModel @Inject constructor(
     }
 
     private fun refreshContext(input: String) {
-        viewModelScope.launch {
-            val entries = db.codexDao().getAllEntries()
-            val book = db.bookDao().getById(bookId)
-            val series = book?.seriesId?.let { id -> db.seriesDao().observeById(id).first() }
-            val assembled = contextBuilder.build(
-                entries,
-                ContextBuildRequest(
-                    scanText = input + " WAHM WAHB WAHO WAH-MEN GR GKOM WAH",
-                    userMessage = input,
-                    manualIncludeIds = manualIncludeIds,
-                    manualExcludeIds = excludedEntryIds,
-                ),
-            )
-            val renderCtx = PromptRenderContext(
-                novelTense = book?.tense?.ifBlank { "past tense" } ?: "past tense",
-                novelTitle = book?.title.orEmpty(),
-                seriesTitle = series?.title.orEmpty(),
-                seriesDescription = listOfNotNull(
-                    series?.description?.takeIf { it.isNotBlank() },
-                    series?.premise?.takeIf { it.isNotBlank() },
-                ).joinToString("\n"),
-                message = input,
-                componentBlocks = PromptComponents.build(promptRepository, assembled.codexBlock, book),
-            )
-            val workshop = promptRepository.observeByType("workshop_chat").first()
-                .let { prompts -> prompts.firstOrNull { it.isDefault } ?: prompts.firstOrNull() }
-            val workshopSystemText = PromptRenderer.render(workshop, renderCtx).systemText
-            val withWorkshop = AssembledPrompt(
-                systemBlocks = listOfNotNull(workshopSystemText.takeIf { it.isNotBlank() }),
-                messages = assembled.messages,
-                usedEntries = assembled.usedEntries,
-                tokenBreakdown = assembled.tokenBreakdown,
-                droppedEntryIds = assembled.droppedEntryIds,
-            )
-            assembledPrompt = withWorkshop
-            val chips = withWorkshop.usedEntries.filter { it.entryId !in excludedEntryIds }
+        refreshJob?.cancel()
+        refreshJob = viewModelScope.launch {
+            delay(CONTEXT_REFRESH_DEBOUNCE_MS)
+            val prompt = buildPrompt(input)
+            val chips = prompt.usedEntries.filter { it.entryId !in excludedEntryIds }
             _uiState.update {
                 it.copy(
                     contextChips = chips,
-                    previewPrompt = withWorkshop.systemBlocks.joinToString("\n\n"),
+                    previewPrompt = prompt.systemBlocks.joinToString("\n\n"),
                 )
             }
         }
+    }
+
+    /** Workshop system prompt + the Codex entries the input mentions (or that were picked by hand). */
+    private suspend fun buildPrompt(input: String): AssembledPrompt {
+        val entries = db.codexDao().getAllEntries()
+        val book = db.bookDao().getById(bookId)
+        val series = book?.seriesId?.let { id -> db.seriesDao().observeById(id).first() }
+        val assembled = contextBuilder.build(
+            entries,
+            ContextBuildRequest(
+                scanText = input,
+                userMessage = input,
+                manualIncludeIds = manualIncludeIds,
+                manualExcludeIds = excludedEntryIds,
+            ),
+        )
+        val renderCtx = PromptRenderContext(
+            novelTense = book?.tense?.ifBlank { "past tense" } ?: "past tense",
+            novelTitle = book?.title.orEmpty(),
+            seriesTitle = series?.title.orEmpty(),
+            seriesDescription = listOfNotNull(
+                series?.description?.takeIf { it.isNotBlank() },
+                series?.premise?.takeIf { it.isNotBlank() },
+            ).joinToString("\n"),
+            message = input,
+            componentBlocks = PromptComponents.build(promptRepository, assembled.codexBlock, book),
+        )
+        val workshop = promptRepository.observeByType("workshop_chat").first()
+            .let { prompts -> prompts.firstOrNull { it.isDefault } ?: prompts.firstOrNull() }
+        val workshopSystemText = PromptRenderer.render(workshop, renderCtx).systemText
+        // The workshop prompt may not {include("Weaverse/Codex")}; the chips promise the entries are sent.
+        val codexBlock = assembled.codexBlock.takeIf { it.isNotBlank() && it !in workshopSystemText }
+        return AssembledPrompt(
+            systemBlocks = listOfNotNull(
+                workshopSystemText.takeIf { it.isNotBlank() },
+                codexBlock?.let { "Codex:\n$it" },
+            ),
+            messages = emptyList(),
+            usedEntries = assembled.usedEntries,
+            tokenBreakdown = assembled.tokenBreakdown,
+            droppedEntryIds = assembled.droppedEntryIds,
+        )
     }
 
     private fun formatError(err: Throwable): String = when (err) {
@@ -304,4 +323,8 @@ class WorkshopChatViewModel @Inject constructor(
         is AIError -> err.message
         else -> err.message ?: err.toString()
     }.orEmpty()
+
+    private companion object {
+        const val CONTEXT_REFRESH_DEBOUNCE_MS = 200L
+    }
 }

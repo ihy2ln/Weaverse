@@ -3,6 +3,7 @@ package com.ihy2ln.weaverse.di
 import android.content.Context
 import androidx.room.Room
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
+import com.ihy2ln.weaverse.data.db.WeaverseMigrations
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -17,6 +18,7 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): WeaverseDatabase =
         Room.databaseBuilder(context, WeaverseDatabase::class.java, "weaverse.db")
-            .fallbackToDestructiveMigration()
+            .addMigrations(*WeaverseMigrations.ALL)
+            .fallbackToDestructiveMigrationFrom(*WeaverseMigrations.DESTRUCTIVE_FROM)
             .build()
 }

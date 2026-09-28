@@ -10,6 +10,7 @@ import com.ihy2ln.weaverse.core.text.toJson
 import com.ihy2ln.weaverse.core.text.wordCount
 import com.ihy2ln.weaverse.core.ui.theme.CodexCategoryColors
 import com.ihy2ln.weaverse.core.ui.theme.toHexString
+import androidx.room.withTransaction
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
 import com.ihy2ln.weaverse.data.db.entities.ActEntity
 import com.ihy2ln.weaverse.data.db.entities.BookEntity
@@ -49,10 +50,12 @@ class SeriesRepository @Inject constructor(
     suspend fun updateSeries(entity: SeriesEntity) = db.seriesDao().upsert(entity)
 
     suspend fun deleteSeries(id: String) {
-        db.bookDao().observeBySeries(id).first().forEach { book ->
-            db.bookDao().upsert(book.copy(seriesId = null, updatedAt = System.currentTimeMillis()))
+        db.withTransaction {
+            db.bookDao().observeBySeries(id).first().forEach { book ->
+                db.bookDao().upsert(book.copy(seriesId = null, updatedAt = System.currentTimeMillis()))
+            }
+            db.seriesDao().deleteById(id)
         }
-        db.seriesDao().deleteById(id)
     }
 }
 
@@ -84,36 +87,25 @@ class BookRepository @Inject constructor(
             createdAt = now,
             updatedAt = now,
         )
-        db.bookDao().upsert(book)
-        db.manuscriptDao().upsertAct(ActEntity(actId, bookId, "Act I", 0))
-        db.manuscriptDao().upsertChapter(ChapterEntity(chapterId, actId, "Chapter 1", 0))
-        val doc = Document(listOf(Paragraph("p-$sceneId", listOf(Span("")))))
-        db.manuscriptDao().upsertScene(
-            SceneEntity(
-                id = sceneId,
-                chapterId = chapterId,
-                title = "Scene 1",
-                sortOrder = 0,
-                docJson = doc.toJson(),
-                plainText = doc.plainText(),
-                wordCount = doc.wordCount(),
-                createdAt = now,
-                updatedAt = now,
-            ),
-        )
-        defaultCategoryNames.forEachIndexed { index, name ->
-            db.codexDao().upsertCategory(
-                CodexCategoryEntity(
-                    id = "cat-$bookId-$index",
-                    scopeType = "book",
-                    scopeId = bookId,
-                    name = name,
-                    colorHex = CodexCategoryColors[index % CodexCategoryColors.size].toHexString(),
-                    sortOrder = index,
-                    isSystem = index < 6,
-                    isBuiltIn = true,
+        db.withTransaction {
+            db.bookDao().upsert(book)
+            db.manuscriptDao().upsertAct(ActEntity(actId, bookId, "Act I", 0))
+            db.manuscriptDao().upsertChapter(ChapterEntity(chapterId, actId, "Chapter 1", 0))
+            val doc = Document(listOf(Paragraph("p-$sceneId", listOf(Span("")))))
+            db.manuscriptDao().upsertScene(
+                SceneEntity(
+                    id = sceneId,
+                    chapterId = chapterId,
+                    title = "Scene 1",
+                    sortOrder = 0,
+                    docJson = doc.toJson(),
+                    plainText = doc.plainText(),
+                    wordCount = doc.wordCount(),
+                    createdAt = now,
+                    updatedAt = now,
                 ),
             )
+            ensureDefaultCategories()
         }
         return book
     }
@@ -126,10 +118,42 @@ class BookRepository @Inject constructor(
         db.bookDao().upsert(book.copy(seriesId = seriesId, updatedAt = System.currentTimeMillis()))
     }
 
+    /**
+     * The Codex is one shared library ([CodexScopes]); make sure its default categories
+     * exist there instead of creating a per-book copy that later has to be merged.
+     */
+    private suspend fun ensureDefaultCategories() {
+        val existing = db.codexDao().getAllCategories().map { it.name.trim().lowercase() }.toSet()
+        defaultCategoryNames.forEachIndexed { index, name ->
+            if (name.lowercase() in existing) return@forEachIndexed
+            db.codexDao().upsertCategory(
+                CodexCategoryEntity(
+                    id = "cat-${UUID.randomUUID()}",
+                    scopeType = CodexScopes.TYPE,
+                    scopeId = CodexScopes.ID,
+                    name = name,
+                    colorHex = CodexCategoryColors[index % CodexCategoryColors.size].toHexString(),
+                    sortOrder = index,
+                    isSystem = index < 6,
+                    isBuiltIn = true,
+                ),
+            )
+        }
+    }
+
+    /** Deletes the book and everything that only belongs to it (manuscript tree, workshop threads). */
     suspend fun deleteBook(bookId: String) {
-        db.codexDao().deleteEntriesForScope(bookId)
-        db.codexDao().deleteCategoriesForScope(bookId)
-        db.bookDao().deleteById(bookId)
+        db.withTransaction {
+            db.manuscriptDao().deleteScenesForBook(bookId)
+            db.manuscriptDao().deleteChaptersForBook(bookId)
+            db.manuscriptDao().deleteActsForBook(bookId)
+            db.workshopChatDao().deleteMessagesForScope(bookId)
+            db.workshopChatDao().deleteThreadsForScope(bookId)
+            // Legacy per-book codex rows; the shared Codex library is left alone.
+            db.codexDao().deleteEntriesForScope(bookId)
+            db.codexDao().deleteCategoriesForScope(bookId)
+            db.bookDao().deleteById(bookId)
+        }
     }
 
     suspend fun firstSceneId(bookId: String): String? {
@@ -166,8 +190,10 @@ class ManuscriptRepository @Inject constructor(
     suspend fun deleteScene(sceneId: String) = db.manuscriptDao().deleteScene(sceneId)
 
     suspend fun deleteChapter(chapterId: String) {
-        db.manuscriptDao().getScenes(chapterId).forEach { db.manuscriptDao().deleteScene(it.id) }
-        db.manuscriptDao().deleteChapter(chapterId)
+        db.withTransaction {
+            db.manuscriptDao().deleteScenesInChapter(chapterId)
+            db.manuscriptDao().deleteChapter(chapterId)
+        }
     }
 
     suspend fun ensureAct(bookId: String): ActEntity {
@@ -250,9 +276,19 @@ class CodexRepository @Inject constructor(
      * all see the same characters, locations, and lore.
      */
     suspend fun ensureGlobalAndMigrate() {
+        db.withTransaction { migrateToGlobal() }
+    }
+
+    private suspend fun migrateToGlobal() {
         val categories = db.codexDao().getAllCategories()
         val entries = db.codexDao().getAllEntries()
         if (categories.isEmpty() && entries.isEmpty()) return
+        // Already folded: skip the rewrite pass entirely.
+        if (categories.all { it.scopeId == CodexScopes.ID } && entries.all { it.scopeId == CodexScopes.ID } &&
+            categories.groupBy { it.name.trim().lowercase() }.all { it.value.size == 1 }
+        ) {
+            return
+        }
         val remap = linkedMapOf<String, String>()
         categories.groupBy { it.name.trim().lowercase() }.forEach { (_, group) ->
             val keep = group.firstOrNull { it.scopeId == CodexScopes.ID } ?: group.first()

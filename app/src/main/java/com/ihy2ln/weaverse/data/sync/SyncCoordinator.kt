@@ -38,6 +38,7 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.call
@@ -104,6 +105,7 @@ class SyncCoordinator @Inject constructor(
     private val deviceId = SyncAuth.newDeviceId()
     private val pairPin = SyncAuth.newPairPin()
     private val sessions = ConcurrentHashMap.newKeySet<String>()
+    private val pairThrottle = SyncAuth.PairThrottle()
 
     private val _state = MutableStateFlow(
         SyncUiSnapshot(
@@ -162,7 +164,8 @@ class SyncCoordinator @Inject constructor(
                             appVersion = BuildConfig.VERSION_NAME,
                             hostMode = "android",
                             port = port,
-                            pairPin = pairPin,
+                            // Only the host's own browser may read the password; LAN clients must type it.
+                            pairPin = pairPin.takeIf { SyncAuth.isLoopback(call.request.local.remoteAddress) },
                             hasLibrary = true,
                             webUrl = localWebUrl(port),
                             lanHint = ipv4Address(),
@@ -171,17 +174,23 @@ class SyncCoordinator @Inject constructor(
                 }
                 post("/api/pair") {
                     val body = call.receive<SyncPairRequest>()
+                    if (pairThrottle.isLocked()) {
+                        call.respond(SyncPairResponse(false, message = "Too many attempts — wait a minute"))
+                        return@post
+                    }
                     if (!SyncAuth.constantTimeEquals(body.pin, pairPin)) {
+                        pairThrottle.recordFailure()
                         call.respond(SyncPairResponse(false, message = "Invalid password"))
                         return@post
                     }
+                    pairThrottle.recordSuccess()
                     val token = SyncAuth.newSessionToken()
                     sessions.add(token)
                     call.respond(SyncPairResponse(true, token = token, message = "Paired"))
                 }
                 get("/api/library") {
                     if (!authorized(call.request.headers["X-Weaverse-Token"])) {
-                        call.respond(LibrarySummary())
+                        call.respond(HttpStatusCode.Unauthorized, LibrarySummary())
                         return@get
                     }
                     call.respond(librarySummary())
@@ -224,6 +233,10 @@ class SyncCoordinator @Inject constructor(
                 }
                 get("/api/media/{id}") {
                     val id = call.parameters["id"].orEmpty()
+                    if (!SyncAuth.isSafeId(id)) {
+                        call.respond(mapOf("ok" to false))
+                        return@get
+                    }
                     val piece = ImportArt.pieces.firstOrNull { it.id == id }
                     val file = File(context.filesDir, "media/$id.jpg").takeIf { it.exists() }
                         ?: File(context.filesDir, "media/$id.png").takeIf { it.exists() }
@@ -240,8 +253,9 @@ class SyncCoordinator @Inject constructor(
                         return@post
                     }
                     val incoming = File(syncDir, "import-${System.currentTimeMillis()}.zip")
-                    call.receiveChannel().copyTo(incoming.outputStream())
+                    incoming.outputStream().use { call.receiveChannel().copyTo(it) }
                     val bytes = incoming.readBytes()
+                    incoming.delete()
                     if (!NovelcrafterZipParser.looksLikeNovelcrafterZipBytes(bytes)) {
                         call.respond(
                             ImportZipResult(
@@ -283,7 +297,7 @@ class SyncCoordinator @Inject constructor(
                         return@post
                     }
                     val incoming = File(syncDir, "incoming-${System.currentTimeMillis()}.zip")
-                    call.receiveChannel().copyTo(incoming.outputStream())
+                    incoming.outputStream().use { call.receiveChannel().copyTo(it) }
                     restorePackage(incoming)
                     call.respond(SyncPushResult(true, "Applied on Android host — restart app to reload DB"))
                 }
@@ -416,8 +430,8 @@ class SyncCoordinator @Inject constructor(
 
     private fun authorized(token: String?): Boolean {
         if (token.isNullOrBlank()) return false
-        if (sessions.contains(token)) return true
-        return SyncAuth.constantTimeEquals(token, pairPin)
+        // Session tokens only — accepting the raw PIN here would let callers skip the pairing throttle.
+        return sessions.contains(token)
     }
 
     private fun buildLocalPackage(): File {

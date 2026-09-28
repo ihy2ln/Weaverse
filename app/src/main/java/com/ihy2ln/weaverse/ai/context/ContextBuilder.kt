@@ -56,19 +56,16 @@ class ContextBuilder {
             ContextChip(it.id, it.name, it.colorHex, autoDetected = it.id !in request.manualIncludeIds)
         }
 
-        val codexBlock = merged.joinToString("\n\n") { "[[${it.name}]]\n${it.plainText}" }
-        val systemBlocks = listOfNotNull(
-            "You are a creative writing assistant.",
-            codexBlock.takeIf { it.isNotBlank() },
-        )
-
+        // Fit entries into the budget first, then build the codex text from only what fit —
+        // otherwise "dropped" entries would still be sent and the budget would do nothing.
+        val baseline = "You are a creative writing assistant."
         val budget = request.maxContextTokens - request.reserveResponseTokens
-        var used = systemBlocks.sumOf { estimateTokens(it) }
+        var used = estimateTokens(baseline)
         val included = mutableListOf<CodexEntryEntity>()
         val dropped = mutableListOf<String>()
 
         merged.forEach { entry ->
-            val cost = estimateTokens(entry.plainText)
+            val cost = estimateTokens(codexSection(entry))
             if (used + cost <= budget) {
                 included.add(entry)
                 used += cost
@@ -76,6 +73,12 @@ class ContextBuilder {
                 dropped.add(entry.id)
             }
         }
+
+        val codexBlock = included.joinToString("\n\n", transform = ::codexSection)
+        val systemBlocks = listOfNotNull(
+            baseline,
+            codexBlock.takeIf { it.isNotBlank() },
+        )
 
         return AssembledPrompt(
             systemBlocks = systemBlocks,
@@ -97,6 +100,8 @@ class ContextBuilder {
             if (entry.caseSensitiveMatching) term in scanText else term.lowercase() in scanLower
         }
     }
+
+    private fun codexSection(entry: CodexEntryEntity): String = "[[${entry.name}]]\n${entry.plainText}"
 
     private fun estimateTokens(text: String): Int = (text.length / 4).coerceAtLeast(1)
 }

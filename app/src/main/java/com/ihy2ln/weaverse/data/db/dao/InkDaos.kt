@@ -86,6 +86,16 @@ interface ManuscriptDao {
     @Query("SELECT * FROM scenes WHERE chapterId = :chapterId ORDER BY sortOrder")
     suspend fun getScenes(chapterId: String): List<SceneEntity>
 
+    /** Every scene in a book, in manuscript order (act → chapter → scene). */
+    @Query(
+        "SELECT s.* FROM scenes s " +
+            "JOIN chapters c ON s.chapterId = c.id " +
+            "JOIN acts a ON c.actId = a.id " +
+            "WHERE a.bookId = :bookId " +
+            "ORDER BY a.sortOrder, c.sortOrder, s.sortOrder",
+    )
+    suspend fun getScenesForBook(bookId: String): List<SceneEntity>
+
     @Query("SELECT * FROM scenes WHERE id = :id LIMIT 1")
     fun observeScene(id: String): Flow<SceneEntity?>
 
@@ -106,6 +116,21 @@ interface ManuscriptDao {
 
     @Query("DELETE FROM chapters WHERE id = :id")
     suspend fun deleteChapter(id: String)
+
+    @Query("DELETE FROM scenes WHERE chapterId = :chapterId")
+    suspend fun deleteScenesInChapter(chapterId: String)
+
+    @Query(
+        "DELETE FROM scenes WHERE chapterId IN " +
+            "(SELECT c.id FROM chapters c JOIN acts a ON c.actId = a.id WHERE a.bookId = :bookId)",
+    )
+    suspend fun deleteScenesForBook(bookId: String)
+
+    @Query("DELETE FROM chapters WHERE actId IN (SELECT id FROM acts WHERE bookId = :bookId)")
+    suspend fun deleteChaptersForBook(bookId: String)
+
+    @Query("DELETE FROM acts WHERE bookId = :bookId")
+    suspend fun deleteActsForBook(bookId: String)
 }
 
 @Dao
@@ -259,6 +284,12 @@ interface WorkshopChatDao {
 
     @Query("DELETE FROM chat_messages WHERE id = :id")
     suspend fun deleteMessage(id: String)
+
+    @Query("DELETE FROM chat_messages WHERE threadId IN (SELECT id FROM chat_threads WHERE scopeId = :scopeId)")
+    suspend fun deleteMessagesForScope(scopeId: String)
+
+    @Query("DELETE FROM chat_threads WHERE scopeId = :scopeId")
+    suspend fun deleteThreadsForScope(scopeId: String)
 }
 
 @Dao

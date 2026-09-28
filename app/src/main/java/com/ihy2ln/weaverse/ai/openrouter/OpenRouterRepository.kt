@@ -9,6 +9,7 @@ import com.ihy2ln.weaverse.ai.ModelInfo
 import com.ihy2ln.weaverse.data.settings.SecureKeyStore
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
@@ -127,6 +128,9 @@ class OpenRouterRepository @Inject constructor(
         WeaverseAiLog.i("POST ${httpRequest.url} Authorization=Bearer *** Content-Type=application/json HTTP-Referer=$HTTP_REFERER X-Title=$X_TITLE")
 
         val call = streamingClient.newCall(httpRequest)
+        // readLine() blocks between SSE lines; cancelling the call is what unblocks it when the
+        // user stops generation (ensureActive alone only fires once the next line arrives).
+        val cancelOnStop = currentCoroutineContext()[Job]?.invokeOnCompletion { call.cancel() }
         try {
             currentCoroutineContext().ensureActive()
             val response = call.execute()
@@ -181,10 +185,14 @@ class OpenRouterRepository @Inject constructor(
             throw e
         } catch (e: IOException) {
             call.cancel()
+            // An IOException from a call we cancelled ourselves is a stop, not a network failure.
+            currentCoroutineContext().ensureActive()
             throw AIError.NoNetwork(e)
         } catch (e: Exception) {
             call.cancel()
             throw OpenRouterErrorMapper.fromThrowable(e)
+        } finally {
+            cancelOnStop?.dispose()
         }
     }.flowOn(Dispatchers.IO)
 

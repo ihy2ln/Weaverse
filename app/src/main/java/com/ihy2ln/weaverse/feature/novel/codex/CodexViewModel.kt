@@ -45,10 +45,11 @@ class CodexViewModel @Inject constructor(
                 codexRepository.observeAllEntries(),
                 collapsed,
             ) { categories, entries, collapsedIds ->
+                val byCategory = entries.groupBy { it.categoryId }
                 val grouped = categories.map { cat ->
                     CodexCategoryGroup(
                         category = cat,
-                        entries = entries.filter { it.categoryId == cat.id },
+                        entries = byCategory[cat.id].orEmpty(),
                         expanded = cat.id !in collapsedIds,
                     )
                 }

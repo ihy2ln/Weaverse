@@ -49,6 +49,7 @@ class SyncHttpServer(
     private val config: DesktopConfig,
 ) {
     private val sessions = ConcurrentHashMap.newKeySet<String>()
+    private val pairThrottle = SyncAuth.PairThrottle()
     private val lastSyncAt = AtomicReference<Long?>(null)
     private var engine: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
 
@@ -110,7 +111,8 @@ class SyncHttpServer(
                         appVersion = config.appVersion,
                         hostMode = "desktop",
                         port = config.port,
-                        pairPin = config.pairPin,
+                        // Only the host's own browser may read the password; LAN clients must type it.
+                        pairPin = config.pairPin.takeIf { SyncAuth.isLoopback(call.request.local.remoteAddress) },
                         lastSyncAt = lastSyncAt.get(),
                         hasLibrary = DesktopPaths.dbFile(dataDir).exists() ||
                             DesktopPaths.latestSyncZip(dataDir).exists(),
@@ -123,13 +125,22 @@ class SyncHttpServer(
             }
             post("/api/pair") {
                 val body = call.receive<SyncPairRequest>()
+                if (pairThrottle.isLocked()) {
+                    call.respond(
+                        HttpStatusCode.TooManyRequests,
+                        SyncPairResponse(ok = false, message = "Too many attempts — wait a minute"),
+                    )
+                    return@post
+                }
                 if (!SyncAuth.constantTimeEquals(body.pin, config.pairPin)) {
+                    pairThrottle.recordFailure()
                     call.respond(
                         HttpStatusCode.Unauthorized,
                         SyncPairResponse(ok = false, message = "Invalid password"),
                     )
                     return@post
                 }
+                pairThrottle.recordSuccess()
                 val token = SyncAuth.newSessionToken()
                 sessions.add(token)
                 call.respond(SyncPairResponse(ok = true, token = token, message = "Paired"))
@@ -248,7 +259,7 @@ class SyncHttpServer(
                 }
                 val incoming = File(dataDir, "incoming/import-${System.currentTimeMillis()}.zip")
                 incoming.parentFile?.mkdirs()
-                call.receiveChannel().copyTo(incoming.outputStream())
+                incoming.outputStream().use { call.receiveChannel().copyTo(it) }
                 if (!incoming.exists() || incoming.length() < 32) {
                     call.respond(ImportZipResult(false, "Empty ZIP"))
                     return@post
@@ -293,7 +304,7 @@ class SyncHttpServer(
                 }
                 val incoming = File(dataDir, "incoming/push-${System.currentTimeMillis()}.zip")
                 incoming.parentFile?.mkdirs()
-                call.receiveChannel().copyTo(incoming.outputStream())
+                incoming.outputStream().use { call.receiveChannel().copyTo(it) }
                 if (!incoming.exists() || incoming.length() < 32) {
                     call.respond(SyncPushResult(false, "Empty package"))
                     return@post
@@ -330,8 +341,8 @@ class SyncHttpServer(
 
     private fun authorized(token: String?): Boolean {
         if (token.isNullOrBlank()) return false
-        if (sessions.contains(token)) return true
-        return SyncAuth.constantTimeEquals(token, config.pairPin)
+        // Session tokens only — accepting the raw PIN here would let callers skip the pairing throttle.
+        return sessions.contains(token)
     }
 
     private fun ensureLatestZip() {

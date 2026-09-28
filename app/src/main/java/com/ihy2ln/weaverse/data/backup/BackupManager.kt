@@ -7,6 +7,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import com.ihy2ln.weaverse.sync.SyncPackage
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -81,15 +82,19 @@ class BackupManager @Inject constructor(
                     }
                     BackupArchives.mediaRelativePath(name) != null -> {
                         val relative = BackupArchives.mediaRelativePath(name)!!
-                        val outFile = File(File(context.filesDir, "media"), relative)
-                        outFile.parentFile?.mkdirs()
-                        FileOutputStream(outFile).use { zip.copyTo(it) }
+                        val outFile = SyncPackage.safeChild(File(context.filesDir, "media"), relative)
+                        if (outFile != null) {
+                            outFile.parentFile?.mkdirs()
+                            FileOutputStream(outFile).use { zip.copyTo(it) }
+                        }
                     }
                     BackupArchives.settingsRelativePath(name) != null -> {
                         val relative = BackupArchives.settingsRelativePath(name)!!
-                        val outFile = File(File(context.filesDir, "datastore"), relative)
-                        outFile.parentFile?.mkdirs()
-                        FileOutputStream(outFile).use { zip.copyTo(it) }
+                        val outFile = SyncPackage.safeChild(File(context.filesDir, "datastore"), relative)
+                        if (outFile != null) {
+                            outFile.parentFile?.mkdirs()
+                            FileOutputStream(outFile).use { zip.copyTo(it) }
+                        }
                     }
                 }
                 zip.closeEntry()
