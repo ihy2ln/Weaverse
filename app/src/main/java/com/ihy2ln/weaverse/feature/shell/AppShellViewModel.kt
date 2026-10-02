@@ -46,6 +46,8 @@ data class ShellBookInfo(
     val series: SeriesEntity? = null,
     val backgroundPath: String? = null,
     val backgroundVideoPath: String? = null,
+    /** Pictures and videos picked as mode backgrounds, by media id. */
+    val backdropFiles: Map<String, BackdropFile> = emptyMap(),
 )
 
 @HiltViewModel
@@ -536,7 +538,15 @@ class AppShellViewModel @Inject constructor(
         val bgPath = bgEntity?.let { mediaRepository.resolveFile(it).takeIf(File::exists)?.absolutePath }
         val bg = bgPath.takeIf { bgEntity?.type == "image" }
         val bgVideo = bgPath.takeIf { bgEntity?.type == "video" }
-        ShellBookInfo(book = book, series = series, backgroundPath = bg, backgroundVideoPath = bgVideo)
+        val wanted = prefs.modeBackdrops.values.flatten()
+            .filter { it.startsWith(com.ihy2ln.weaverse.data.settings.ModeBackdrops.MEDIA) }
+            .map { it.removePrefix(com.ihy2ln.weaverse.data.settings.ModeBackdrops.MEDIA) }
+            .toSet()
+        val backdropFiles = media.filter { it.id in wanted }.mapNotNull { entity ->
+            val file = mediaRepository.resolveFile(entity).takeIf(File::exists) ?: return@mapNotNull null
+            entity.id to BackdropFile(file.absolutePath, video = entity.type == "video")
+        }.toMap()
+        ShellBookInfo(book = book, series = series, backgroundPath = bg, backgroundVideoPath = bgVideo, backdropFiles = backdropFiles)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ShellBookInfo())
 
     fun setRailWidthDp(width: Float) {

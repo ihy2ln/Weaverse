@@ -221,6 +221,7 @@ class RoleplayChatViewModel @Inject constructor(
     private val codexQuickAdd: com.ihy2ln.weaverse.feature.novel.codex.CodexQuickAdd,
     private val startSlots: com.ihy2ln.weaverse.core.story.StartSlotStore,
     private val mangaAiRunner: MangaAiBackgroundRunner,
+    private val mangaCopySaver: com.ihy2ln.weaverse.core.media.MangaCopySaver,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(RoleplayChatUiState())
     val uiState: StateFlow<RoleplayChatUiState> = _uiState.asStateFlow()
@@ -5165,6 +5166,7 @@ class RoleplayChatViewModel @Inject constructor(
         mangaEditJob = mangaAiRunner.start(_uiState.value.chatId, "Translating to English", uiState, work = launch@{
             var completed = 0
             var translatedPanels = 0
+            var savedCopies = 0
             var retriedPanels = 0
             var translatedRegions = 0
             var rejectedPages = 0
@@ -5391,6 +5393,9 @@ class RoleplayChatViewModel @Inject constructor(
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
                         persistMessageBlocks(target.message, blocks)
                     }
+                    (blocks[blockIndex] as? MediaBlock)?.let { finished ->
+                        if (saveMangaCopy(mediaRepository.resolveFile(entity).absolutePath, finished.overlays, "english")) savedCopies++
+                    }
                     clearPageReview(
                         target,
                         targets.filter { it.block.pageId == target.block.pageId }
@@ -5411,7 +5416,8 @@ class RoleplayChatViewModel @Inject constructor(
                             rejectedPages = rejectedPages,
                             alreadyEnglish = alreadyEnglish,
                         ) + (if (failedPages > 0) " $failedPages page(s) failed; the rest of the chapter was processed." else "") +
-                            if (colorFailedPages > 0) " $colorFailedPages page(s) could not be colorized and were translated in black and white." else "",
+                            (if (colorFailedPages > 0) " $colorFailedPages page(s) could not be colorized and were translated in black and white." else "") +
+                            savedCopiesNote(savedCopies),
                     )
                 }
             } catch (cancelled: CancellationException) {
@@ -5516,6 +5522,7 @@ class RoleplayChatViewModel @Inject constructor(
         mangaEditJob = mangaAiRunner.start(_uiState.value.chatId, "Colorizing black-and-white art", uiState, work = launch@{
             var completed = 0
             var colorized = 0
+            var savedCopies = 0
             var alreadyColor = 0
             var failedPages = 0
             try {
@@ -5590,6 +5597,7 @@ class RoleplayChatViewModel @Inject constructor(
                             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
                                 persistMessageBlocks(target.message, blocks)
                             }
+                            if (saveMangaCopy(mediaRepository.resolveFile(entity).absolutePath, current.overlays, "color")) savedCopies++
                             colorized++
                         } else {
                             alreadyColor++
@@ -5603,8 +5611,8 @@ class RoleplayChatViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         storyboardStatus = "AI-colorized $colorized black-and-white picture(s); $alreadyColor already contained color. " +
-                            if (failedPages > 0) "$failedPages page(s) failed; the rest of the chapter was processed. Original files remain unchanged."
-                            else "Original files remain unchanged.",
+                            (if (failedPages > 0) "$failedPages page(s) failed; the rest of the chapter was processed. Original files remain unchanged."
+                            else "Original files remain unchanged.") + savedCopiesNote(savedCopies),
                     )
                 }
             } catch (cancelled: CancellationException) {
@@ -6060,6 +6068,11 @@ class RoleplayChatViewModel @Inject constructor(
                 }
                 persistMessageBlocks(current, blocks)
             }
+            val copied = current != null && saveMangaCopy(
+                savedPath,
+                safePending.orEmpty().mapIndexed { layerIndex, region -> region.toEditableOverlay(layerIndex) },
+                "edit",
+            )
             if (current != null) {
                 val savedBlock = documentFromJson(current.contentJson).blocks
                     .filterIsInstance<MediaBlock>().firstOrNull { it.id == editor.blockId }
@@ -6073,7 +6086,7 @@ class RoleplayChatViewModel @Inject constructor(
                 it.copy(
                     imageEditor = null,
                     storyboardStatus = "Saved a new version with ${safePending.orEmpty().size} text layer(s). " +
-                        "The original page is unchanged — use Original / Edited to compare.",
+                        "The original page is unchanged — use Original / Edited to compare." + savedCopiesNote(if (copied) 1 else 0),
                 )
             }
         }
@@ -6861,6 +6874,21 @@ class RoleplayChatViewModel @Inject constructor(
             }
             persistMessageBlocks(message, blocks)
         }
+    }
+
+    /**
+     * Every finished manga edit, translation or coloring also lands in the gallery
+     * (Pictures/Weaverse/<title>) with its English baked in, so nothing has to be exported by hand.
+     */
+    private suspend fun saveMangaCopy(path: String, overlays: List<com.ihy2ln.weaverse.core.text.TextOverlay>, kind: String): Boolean {
+        val title = boundChat?.title?.takeIf { it.isNotBlank() } ?: "Manga"
+        return mangaCopySaver.save(path, overlays, title, kind) != null
+    }
+
+    private fun savedCopiesNote(count: Int): String {
+        if (count <= 0) return ""
+        val title = boundChat?.title?.takeIf { it.isNotBlank() } ?: "Manga"
+        return " ${if (count == 1) "A copy was" else "$count copies were"} saved to Pictures/Weaverse/$title."
     }
 
     private suspend fun persistMessageBlocks(

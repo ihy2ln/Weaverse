@@ -3,6 +3,41 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.85 - Mode backgrounds, focus videos, Manga Studio reads and edits online
+
+- Every mode sits on a backdrop the way Home does (`feature/shell/ModeBackdrop.kt`, drawn once
+  in `AppShell`). Three levels: Splash (Home), Hero (a mode's first page: Novel bookshelf, RPG
+  campaigns, Games, the browser's New Tab Page, Manga library, Brain chat) and Quiet (anything
+  further in: blurred on Android 12+, dimmed, videos paused, the glass wash back on). The
+  Crossfade content area is transparent unless the user picked a content color.
+- Several backgrounds per mode: Settings → Appearance → Mode backgrounds
+  (`ModeBackgroundsSettings.kt`) takes Weaverse art, focus videos, the wallpaper, or pictures
+  and videos from the phone (imported into the media library as `media:<id>`). Stored as JSON in
+  `mode_backdrops` (`ModeBackdrops.kt`); `backdrop_slideshow` rotates a mode's first page every
+  30 s. Each visit moves to the next. Nothing chosen = the old behavior (Home splash setting,
+  the user's own background, else the mode's key art).
+- Six focus videos in `assets/videos/ambient/` (rain, ocean, forest, space, snow, aurora):
+  720x1280, 24 fps, 20 s seamless loops, ~13.5 MB together, with 360x640 posters. Made by
+  `tools/render_ambient_videos.py` (Pillow + numpy + ffmpeg); every motion is periodic in the
+  loop length so the cut does not show.
+- `LoopingVideoBackground` now renders into a `TextureView` (center-crop matrix) so a video
+  backdrop can be blurred and faded like a picture.
+- Manga Studio online: tapping a chapter in a title's list reads it online
+  (`MangaSourceViewModel.readChapter`); the hub keeps online chapters in `MangaChapterReader`
+  instead of opening the download dialog. Its Edit / Translate / Color buttons now work online:
+  `editOnline` calls `MangaDownloadRepository.prepareForEditing` (page manifest, then
+  `downloadChapter` in-process) and opens the studio on the same page with that action's sheet
+  ready. Paid AI jobs still wait for Run, as before.
+- Auto-save: `MangaCopySaver` writes every finished edit, translation and coloring to
+  `Pictures/Weaverse/<title>/` through MediaStore (app Pictures folder before Android 10), with
+  the English layers flattened. The status line says where copies went.
+- Tested on the Games AVD: backdrops on every mode (hero vs quiet), picker, rain video; read a
+  MangaDex chapter online, Translate from page 2 opened the studio on 2/20 with Translate · Page
+  selected; a manual edit saved its copy to the gallery. AI runs not exercised (no API key).
+  637 unit tests pass (2 new in `ModeBackdropsTest`).
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.4.85.apk`, SHA-256
+  `ed05e7c1090ab4265f26c7df30874bcfb6db5fa8b3f8b3ee4ca1e1c9a1425baf`.
+
 ## v1.4.84 - Servers: your own servers, Discord parity, codex as server knowledge
 
 - DB v35 (`MIGRATION_34_35`): new `chat_servers` table (`ChatServerEntity`: description, color,

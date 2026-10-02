@@ -89,64 +89,6 @@ import kotlinx.coroutines.delay
 import java.util.Calendar
 
 /**
- * The splash behind Home: the chosen key art, full bleed and drifting slowly, washed in the
- * profile so the tabs at the top and the rows below stay legible. [model] overrides the
- * art (the user's own background picture); a null [brand] draws the scrim alone over the
- * shell wallpaper.
- */
-@Composable
-fun HomeSplashBackdrop(brand: ModeBrand?, modifier: Modifier = Modifier, model: Any? = null) {
-    val background = inkTokens().background
-    val light = background.luminance() > 0.5f
-    Box(modifier) {
-        if (brand != null) {
-            val drift = rememberInfiniteTransition(label = "splashDrift")
-            val zoom by drift.animateFloat(
-                initialValue = 1.02f,
-                targetValue = 1.1f,
-                animationSpec = infiniteRepeatable(tween(32_000, easing = LinearEasing), RepeatMode.Reverse),
-                label = "splashZoom",
-            )
-            ModeArtImage(
-                brand = brand,
-                model = model,
-                fade = 1f,
-                alignment = Alignment.TopCenter,
-                modifier = Modifier.fillMaxSize().graphicsLayer {
-                    scaleX = zoom
-                    scaleY = zoom
-                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0.2f)
-                },
-            )
-        }
-        // Readable top for the status bar and tabs, open middle for the art, solid bottom
-        // under the rows, the way a streaming app fades its billboard into the page.
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.verticalGradient(
-                    0f to background.copy(alpha = if (light) 0.82f else 0.78f),
-                    0.09f to background.copy(alpha = if (light) 0.5f else 0.42f),
-                    0.2f to background.copy(alpha = if (light) 0.18f else 0.06f),
-                    0.3f to background.copy(alpha = if (light) 0.3f else 0.22f),
-                    0.5f to background.copy(alpha = if (light) 0.8f else 0.72f),
-                    0.72f to background.copy(alpha = 0.95f),
-                    1f to background,
-                ),
-            ),
-        )
-        // A left-side shade under the title block, like a billboard's text side.
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.horizontalGradient(
-                    0f to background.copy(alpha = if (light) 0.45f else 0.5f),
-                    0.65f to background.copy(alpha = 0f),
-                ),
-            ),
-        )
-    }
-}
-
-/**
  * Home: a title screen over the splash, then the modes as a streaming app's poster row, then
  * a "Continue in …" row per mode from the recent history. Everything is drawn from the
  * active profile's tokens, type and corners.

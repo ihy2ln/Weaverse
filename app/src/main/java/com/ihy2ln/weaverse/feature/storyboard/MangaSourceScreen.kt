@@ -119,6 +119,10 @@ data class MangaSourceUiState(
     val readerPagePaths: List<String> = emptyList(),
     val readerPageIndex: Int = 0,
     val readerOnline: Boolean = false,
+    /** An online chapter's pages are being fetched so the studio can edit them. */
+    val preparingEdit: Boolean = false,
+    /** Ready to open in the studio: set once an online chapter's pages are on the phone. */
+    val pendingEdit: MangaEditRequest? = null,
     val busy: Boolean = false,
     /** Pull-to-refresh on the title's info page is reloading details and chapters. */
     val refreshingDetails: Boolean = false,
@@ -890,6 +894,41 @@ class MangaSourceViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Edit, Translate or Color pressed while reading online: the pages are fetched in the
+     * background, then the studio opens on the same page with that action ready.
+     */
+    fun editOnline(action: MangaReaderAction, pageIndex: Int) {
+        val chapter = local.value.readerChapter ?: return
+        if (local.value.preparingEdit) return
+        viewModelScope.launch {
+            local.value = local.value.copy(preparingEdit = true, status = "Getting pages ready for the studio…")
+            runCatching { repository.prepareForEditing(chapter) }
+                .onSuccess {
+                    local.value = local.value.copy(
+                        preparingEdit = false,
+                        status = "",
+                        pendingEdit = MangaEditRequest(chapter.id, pageIndex, action),
+                    )
+                }
+                .onFailure {
+                    if (it is kotlinx.coroutines.CancellationException) throw it
+                    local.value = local.value.copy(preparingEdit = false, status = it.message ?: "Could not get the pages ready.")
+                }
+        }
+    }
+
+    fun consumePendingEdit() {
+        local.value = local.value.copy(pendingEdit = null)
+    }
+
+    /** Opens a chapter from a title's chapter list: offline when downloaded, otherwise online. */
+    fun readChapter(chapter: MangaChapter) {
+        val existing = uiState.value.downloads.firstOrNull { it.sourceId == chapter.sourceId && it.remoteId == chapter.remoteId }
+        if (existing?.status == "completed") openReader(existing.id, existing.lastPageRead)
+        else openOnlineReader(chapter, existing?.lastPageRead ?: 0)
+    }
+
     fun closeReader() {
         local.value = local.value.copy(readerChapter = null, readerPagePaths = emptyList(), readerPageIndex = 0, readerOnline = false)
     }
@@ -1179,6 +1218,8 @@ fun MangaChapterReader(
     onAction: ((MangaReaderAction, chapterId: String, pageIndex: Int) -> Unit)? = null,
     online: Boolean = false,
     onPageChanged: (Int) -> Unit = {},
+    /** Shown over the action bar while an online chapter is fetched for the studio. */
+    preparingLabel: String? = null,
 ) {
     val listState = rememberLazyListState()
     val currentPage = listState.firstVisibleItemIndex.coerceIn(0, (pagePaths.size - 1).coerceAtLeast(0))
@@ -1248,12 +1289,11 @@ fun MangaChapterReader(
                                 style = MaterialTheme.typography.labelMedium,
                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
                             )
-                        } else if (online) {
-                            Text(
-                                "Download this chapter to unlock Edit, Translate, and Color.",
-                                style = MaterialTheme.typography.labelMedium,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
-                            )
+                        } else if (preparingLabel != null) {
+                            Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp)) {
+                                Text(preparingLabel, style = MaterialTheme.typography.labelMedium)
+                                androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 6.dp))
+                            }
                         } else Row(
                             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(2.dp),

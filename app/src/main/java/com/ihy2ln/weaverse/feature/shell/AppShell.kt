@@ -131,6 +131,7 @@ import com.ihy2ln.weaverse.feature.settings.SettingsScreen
 import com.ihy2ln.weaverse.feature.storyboard.MangaEditRequest
 import com.ihy2ln.weaverse.feature.storyboard.StoryboardMangaHubScreen
 import java.io.File
+import com.ihy2ln.weaverse.data.settings.ModeBackdrops
 import kotlinx.coroutines.flow.first
 
 @Composable
@@ -142,6 +143,10 @@ fun AppShell(
     promptViewModel: GlobalPromptViewModel = hiltViewModel(),
 ) {
     var showHome by rememberSaveable { mutableStateOf(true) }
+    // The browser's open tab decides whether WeaverBrowser is on its first page (New Tab Page).
+    val browserData by hiltViewModel<com.ihy2ln.weaverse.feature.browser.BrowserViewModel>().data.collectAsState()
+    // Likewise Manga Studio's hub: an open title or chapter is past its first page.
+    val mangaHub by hiltViewModel<com.ihy2ln.weaverse.feature.storyboard.MangaSourceViewModel>().uiState.collectAsState()
     // The launch splash plays once per start, not on rotation or when returning Home.
     var introPlayed by rememberSaveable { mutableStateOf(false) }
     var notesDest by rememberSaveable { mutableStateOf(NotesDestination.Chat.name) }
@@ -520,51 +525,84 @@ fun AppShell(
         val userBackgroundVideo = shellInfo.backgroundVideoPath
         val showProfileArt =
             userBackgroundImage == null && userBackgroundVideo == null && prefs.profileBackgroundEnabled
-        when {
-            userBackgroundVideo != null -> LoopingVideoBackground(
-                path = userBackgroundVideo,
-                modifier = Modifier.fillMaxSize(),
-            )
-            userBackgroundImage != null -> AsyncImage(
-                model = File(userBackgroundImage),
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-                alpha = 1f,
-            )
-            showProfileArt -> AppBackdrop(
-                style = BackdropStyle.fromName(prefs.backdropStyle),
-                profile = prefs.appearanceProfile,
-                modifier = Modifier.fillMaxSize(),
-            )
+        // The appearance wallpaper: the user's own picture or video, else the profile's art.
+        val wallpaperLayer: @Composable () -> Unit = {
+            when {
+                userBackgroundVideo != null -> LoopingVideoBackground(path = userBackgroundVideo, modifier = Modifier.fillMaxSize())
+                userBackgroundImage != null -> AsyncImage(
+                    model = File(userBackgroundImage),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+                prefs.profileBackgroundEnabled -> AppBackdrop(
+                    style = BackdropStyle.fromName(prefs.backdropStyle),
+                    profile = prefs.appearanceProfile,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
         val homeShown = showHome && !showSettings && !showSearch && !showExport && !showLibrary
-        // Home sits on a splash: the chosen key art, or the user's own picture when the
-        // choice is left on automatic, or just the wallpaper.
-        val splashKey = prefs.homeSplashArt
-        val splashModel: Any? = if (splashKey.isBlank() && userBackgroundImage != null) File(userBackgroundImage) else null
-        val splashBrand: ModeBrand? = when {
-            splashKey == "wallpaper" -> null
-            splashKey.isBlank() && userBackgroundVideo != null -> null
-            else -> ModeArt.splash(splashKey)
-        }
-        androidx.compose.animation.AnimatedVisibility(
-            visible = homeShown,
-            enter = androidx.compose.animation.fadeIn(tween(420)),
-            exit = androidx.compose.animation.fadeOut(tween(260)),
-        ) {
-            HomeSplashBackdrop(splashBrand, Modifier.fillMaxSize(), model = splashModel)
-        }
-        // Glass clarity sets how much wallpaper shows through every page. Home's splash
-        // carries its own wash, so this one fades out there.
-        val shellWash =
-            if (showProfileArt || userBackgroundImage != null || userBackgroundVideo != null) {
-                bgColor.copy(alpha = bgColor.alpha * (1f - prefs.glassClarityPercent.coerceIn(0, 80) / 100f * 0.8f))
-            } else {
-                bgColor
+        // Every mode sits on its backdrop like Home does: in full on the mode's first page,
+        // quiet (blurred, dimmed, videos paused) once you go further in.
+        val shellMode = runCatching { AppMode.valueOf(mode) }.getOrDefault(AppMode.Novel)
+        val onModeLanding = !showHome && !showSettings && !showSearch && !showExport && !showLibrary &&
+            chromeTool == null && selectedCodexEntryId == null && selectedCharacterId == null &&
+            selectedPersonaId == null && workspaceFocus == WorkspaceFocus.Story.name &&
+            when (shellMode) {
+                AppMode.Novel -> novelDest == NovelDestination.Bookshelf.name && browseRoutes.size <= 1
+                AppMode.Roleplay -> rpDest == RoleplayDestination.Campaign.name && selectedRpChatId == null
+                AppMode.Games -> true
+                AppMode.Chatting -> browserData.tabs.firstOrNull { it.id == browserData.selectedTabId }?.url ==
+                    com.ihy2ln.weaverse.feature.browser.WeaverPages.NEW_TAB
+                AppMode.Storyboard -> storyboardDest == StoryboardDestination.Library.name && storyboardChatId == null && !mangaEditorOnly &&
+                    mangaHub.selected == null && mangaHub.readerChapter == null
+                AppMode.Notes -> notesDest == NotesDestination.Chat.name && !notesDetailOpen
             }
+        val backdropLevel = when {
+            homeShown -> BackdropLevel.Splash
+            onModeLanding -> BackdropLevel.Hero
+            else -> BackdropLevel.Quiet
+        }
+        val backdropKey = if (showHome) ModeArt.home.key else ModeArt.of(shellMode).key
+        val hasOwnBackground = userBackgroundImage != null || userBackgroundVideo != null
+        // Nothing chosen for a mode: Home keeps its splash setting, the modes their key art
+        // (or the user's own background picture, as before).
+        val splashKey = prefs.homeSplashArt
+        val defaultBackdrops = when {
+            showHome && splashKey == ModeBackdrops.WALLPAPER -> listOf(ModeBackdrops.WALLPAPER)
+            showHome && splashKey.isNotBlank() -> listOf(ModeBackdrops.ART + ModeArt.splash(splashKey).key)
+            hasOwnBackground -> listOf(OWN_BACKGROUND)
+            else -> listOf(ModeBackdrops.ART + backdropKey)
+        }
+        val backdropEntries = prefs.modeBackdrops[backdropKey].orEmpty().ifEmpty { defaultBackdrops }
+        // Several backgrounds per mode: the next one each visit, and a slow slideshow on the
+        // mode's first page.
+        val backdropTurns = remember { androidx.compose.runtime.mutableStateMapOf<String, Int>() }
+        LaunchedEffect(backdropKey) { backdropTurns[backdropKey] = (backdropTurns[backdropKey] ?: -1) + 1 }
+        LaunchedEffect(backdropKey, backdropLevel == BackdropLevel.Quiet, backdropEntries.size, prefs.backdropSlideshow) {
+            if (backdropLevel != BackdropLevel.Quiet && backdropEntries.size > 1 && prefs.backdropSlideshow) {
+                while (true) {
+                    kotlinx.coroutines.delay(BACKDROP_SLIDE_MS)
+                    backdropTurns[backdropKey] = (backdropTurns[backdropKey] ?: 0) + 1
+                }
+            }
+        }
+        val backdropEntry = backdropEntries[(backdropTurns[backdropKey] ?: 0).mod(backdropEntries.size)]
+        val backdropSource = when {
+            backdropEntry == OWN_BACKGROUND && userBackgroundVideo != null -> BackdropSource.Video(userBackgroundVideo, OWN_BACKGROUND)
+            backdropEntry == OWN_BACKGROUND && userBackgroundImage != null ->
+                BackdropSource.Art(ModeArt.home, File(userBackgroundImage), OWN_BACKGROUND)
+            else -> backdropSourceOf(backdropEntry, shellInfo.backdropFiles)
+        } ?: BackdropSource.Art(if (showHome) ModeArt.home else ModeArt.of(shellMode), key = "art-$backdropKey")
+        ModeBackdropLayer(backdropSource, backdropLevel, wallpaperLayer, Modifier.fillMaxSize())
+        // The launch intro plays over the same art.
+        val splashBrand: ModeBrand? = (backdropSource as? BackdropSource.Art)?.brand
+        val splashModel: Any? = (backdropSource as? BackdropSource.Art)?.picture
+        // Past a mode's first page the glass wash sits over the quiet backdrop as before.
+        val shellWash = bgColor.copy(alpha = bgColor.alpha * (1f - prefs.glassClarityPercent.coerceIn(0, 80) / 100f * 0.8f))
         val washAlpha by androidx.compose.animation.core.animateFloatAsState(
-            if (homeShown) 0f else 1f,
+            if (backdropLevel == BackdropLevel.Quiet) 1f else 0f,
             tween(320),
             label = "shellWash",
         )
@@ -1134,7 +1172,9 @@ fun AppShell(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .background(contentColor),
+                        // The backdrop shows through; only a color the user picked for the
+                        // content area is painted here.
+                        .background(if (prefs.appearance.content.colorHex.isBlank()) Color.Transparent else contentColor),
                 ) { (modeAndTool, focus, dests) ->
                     val (currentMode, tool) = modeAndTool
                     val nd = dests[0] ?: NovelDestination.Bookshelf.name
@@ -1542,3 +1582,9 @@ private fun RailPanel(
         }
     }
 }
+
+/** A mode's backdrop entry meaning "the user's own background picture or video". */
+private const val OWN_BACKGROUND = "own-background"
+
+/** How long each background shows in a mode's slideshow. */
+private const val BACKDROP_SLIDE_MS = 30_000L

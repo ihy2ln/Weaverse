@@ -1598,9 +1598,11 @@ private fun MihonMangaDetail(state: MangaSourceUiState, viewModel: MangaSourceVi
         }
         lazyItems(visibleChapters, key = { "${it.sourceId}:${it.remoteId}" }) { chapter ->
             val existing = state.downloads.firstOrNull { it.sourceId == chapter.sourceId && it.remoteId == chapter.remoteId }
+            // Tapping a chapter reads it — offline in the studio when downloaded, online
+            // otherwise. The trailing icon is what downloads.
             Row(Modifier.fillMaxWidth().clickable {
                 if (existing?.status == "completed") onEditChapter(MangaEditRequest(existing.id))
-                else viewModel.enqueue(chapter)
+                else viewModel.readChapter(chapter)
             }.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(mihonChapterLabel(chapter), maxLines = 2, overflow = TextOverflow.Ellipsis)

@@ -30,6 +30,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -544,6 +546,44 @@ class SettingsViewModel @Inject constructor(
 
     fun setHomeSplashArt(key: String) {
         viewModelScope.launch { settings.setHomeSplashArt(key) }
+    }
+
+    /** Pictures and videos from the media library, for the mode-backgrounds previews. */
+    val backdropFiles: kotlinx.coroutines.flow.StateFlow<Map<String, com.ihy2ln.weaverse.feature.shell.BackdropFile>> =
+        mediaRepository.observeAll().map { all ->
+            all.filter { it.type == "image" || it.type == "video" }.associate { entity ->
+                entity.id to com.ihy2ln.weaverse.feature.shell.BackdropFile(
+                    mediaRepository.resolveFile(entity).absolutePath,
+                    video = entity.type == "video",
+                )
+            }
+        }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    fun toggleModeBackdrop(modeKey: String, entry: String) {
+        viewModelScope.launch {
+            val current = settings.preferences.first().modeBackdrops[modeKey].orEmpty()
+            settings.setModeBackdrops(modeKey, if (entry in current) current - entry else current + entry)
+        }
+    }
+
+    fun removeModeBackdrop(modeKey: String, entry: String) {
+        viewModelScope.launch {
+            val current = settings.preferences.first().modeBackdrops[modeKey].orEmpty()
+            settings.setModeBackdrops(modeKey, current - entry)
+        }
+    }
+
+    /** Adds a picture or video from the phone to a mode's backgrounds (copied into the media library). */
+    fun importModeBackdrop(modeKey: String, uri: Uri) {
+        viewModelScope.launch {
+            val media = mediaRepository.importFromUri(uri)
+            val current = settings.preferences.first().modeBackdrops[modeKey].orEmpty()
+            settings.setModeBackdrops(modeKey, current + (com.ihy2ln.weaverse.data.settings.ModeBackdrops.MEDIA + media.id))
+        }
+    }
+
+    fun setBackdropSlideshow(enabled: Boolean) {
+        viewModelScope.launch { settings.setBackdropSlideshow(enabled) }
     }
 
     fun setHomeIntroEnabled(enabled: Boolean) {

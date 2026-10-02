@@ -122,6 +122,10 @@ data class UserPreferences(
     val homeSplashArt: String = "",
     /** Play the Weaverse intro over the splash when the app starts at Home. */
     val homeIntroEnabled: Boolean = true,
+    /** Backgrounds per mode, several each; see [ModeBackdrops]. */
+    val modeBackdrops: Map<String, List<String>> = emptyMap(),
+    /** Cycle through a mode's backgrounds while its first page is open. */
+    val backdropSlideshow: Boolean = true,
     /** Media id of the RPG town backdrop; blank draws the built-in fallback. */
     val townBackgroundMediaId: String = "",
     val roleplayPresetId: String = "preset-balanced",
@@ -221,6 +225,8 @@ class SettingsRepository @Inject constructor(
             profileBackgroundEnabled = prefs[KEY_PROFILE_BACKGROUND] ?: true,
             homeSplashArt = prefs[KEY_HOME_SPLASH_ART] ?: "",
             homeIntroEnabled = prefs[KEY_HOME_INTRO] ?: true,
+            modeBackdrops = ModeBackdrops.decode(prefs[KEY_MODE_BACKDROPS]),
+            backdropSlideshow = prefs[KEY_BACKDROP_SLIDESHOW] ?: true,
             townBackgroundMediaId = prefs[KEY_TOWN_BACKGROUND_MEDIA] ?: "",
             roleplayPresetId = prefs[KEY_RP_PRESET] ?: "preset-balanced",
             layout = LayoutPreferences(
@@ -532,6 +538,19 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setHomeIntroEnabled(enabled: Boolean) {
         context.dataStore.edit { it[KEY_HOME_INTRO] = enabled }
+    }
+
+    /** Replaces one mode's backgrounds; an empty list goes back to the mode's own key art. */
+    suspend fun setModeBackdrops(modeKey: String, entries: List<String>) {
+        context.dataStore.edit { prefs ->
+            val map = ModeBackdrops.decode(prefs[KEY_MODE_BACKDROPS]).toMutableMap()
+            if (entries.isEmpty()) map.remove(modeKey) else map[modeKey] = entries
+            prefs[KEY_MODE_BACKDROPS] = ModeBackdrops.encode(map)
+        }
+    }
+
+    suspend fun setBackdropSlideshow(enabled: Boolean) {
+        context.dataStore.edit { it[KEY_BACKDROP_SLIDESHOW] = enabled }
     }
 
     suspend fun setRoleplayPresetId(presetId: String) {
@@ -872,6 +891,8 @@ class SettingsRepository @Inject constructor(
         private val KEY_PROFILE_BACKGROUND = booleanPreferencesKey("profile_background_enabled")
         private val KEY_HOME_SPLASH_ART = stringPreferencesKey("home_splash_art")
         private val KEY_HOME_INTRO = booleanPreferencesKey("home_intro_enabled")
+        private val KEY_MODE_BACKDROPS = stringPreferencesKey("mode_backdrops")
+        private val KEY_BACKDROP_SLIDESHOW = booleanPreferencesKey("backdrop_slideshow")
         private val KEY_TOWN_BACKGROUND_MEDIA = stringPreferencesKey("town_background_media_id")
         private val KEY_RP_PRESET = stringPreferencesKey("roleplay_preset_id")
         private val KEY_RAIL_WIDTH = floatPreferencesKey("rail_width_dp")

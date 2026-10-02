@@ -98,14 +98,9 @@ fun NewTabPage(
             if (private) Modifier.background(Brush.verticalGradient(listOf(colors.bar, colors.page))) else Modifier,
         ),
     ) {
-        // Brave puts a photo behind its New Tab Page; WeaverBrowser uses its own key art,
-        // washed in the appearance profile like every mode's art, with the accent glowing in.
+        // Brave puts a photo behind its New Tab Page; here the mode's backdrop (key art, a focus
+        // video or the user's own picks) shows through from the shell, with the accent glowing in.
         if (!private) {
-            com.ihy2ln.weaverse.feature.shell.ModeArtImage(
-                brand = com.ihy2ln.weaverse.feature.shell.ModeArt.of(com.ihy2ln.weaverse.feature.shell.AppMode.Chatting),
-                fade = 0.3f,
-                modifier = Modifier.matchParentSize(),
-            )
             Box(
                 Modifier.matchParentSize().background(
                     Brush.radialGradient(listOf(colors.accent.copy(alpha = .28f), Color.Transparent), center = androidx.compose.ui.geometry.Offset(120f, 80f), radius = 1300f),

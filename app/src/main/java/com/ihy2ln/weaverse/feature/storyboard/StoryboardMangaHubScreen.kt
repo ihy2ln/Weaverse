@@ -97,16 +97,34 @@ fun StoryboardMangaHubScreen(
         tabName = runCatching { MangaHubTab.valueOf(initialTab).name }.getOrDefault(MangaHubTab.Library.name)
     }
 
-    // All chapter entry points use the same reader/editor. Streaming chapters need a
-    // local copy before that surface can create its editable pages.
+    // Downloaded chapters open straight in the studio. Online chapters are read here; their
+    // Edit / Translate / Color buttons fetch the pages in the background, then open the studio.
     LaunchedEffect(state.readerChapter?.id, state.readerOnline) {
-        state.readerChapter?.let { chapter ->
+        val chapter = state.readerChapter ?: return@LaunchedEffect
+        if (!state.readerOnline) {
             val pageIndex = state.readerPageIndex
-            val online = state.readerOnline
             viewModel.closeReader()
-            if (online) viewModel.downloadOptions(chapter)
-            else onEditChapter(MangaEditRequest(chapter.id, pageIndex))
+            onEditChapter(MangaEditRequest(chapter.id, pageIndex))
         }
+    }
+    LaunchedEffect(state.pendingEdit) {
+        val request = state.pendingEdit ?: return@LaunchedEffect
+        viewModel.consumePendingEdit()
+        viewModel.closeReader()
+        onEditChapter(request)
+    }
+    val onlineChapter = state.readerChapter?.takeIf { state.readerOnline }
+    if (onlineChapter != null) {
+        MangaChapterReader(
+            chapter = onlineChapter,
+            pagePaths = state.readerPagePaths,
+            onDismiss = viewModel::closeReader,
+            initialPageIndex = state.readerPageIndex,
+            onAction = { action, _, pageIndex -> viewModel.editOnline(action, pageIndex) },
+            online = true,
+            onPageChanged = { page -> viewModel.recordReaderPage(onlineChapter.id, page, state.readerPagePaths.size) },
+            preparingLabel = if (state.preparingEdit) "Getting pages ready for the studio…" else null,
+        )
     }
 
     MihonMangaHome(

@@ -142,6 +142,26 @@ fun SettingsScreen(
     ) { uri ->
         if (uri != null) viewModel.importBackground(uri)
     }
+    // Mode backgrounds: the mode whose picker is open, and its phone picker.
+    var backdropPickerMode by rememberSaveable { mutableStateOf<String?>(null) }
+    val backdropFiles by viewModel.backdropFiles.collectAsState()
+    val modeBackdropPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        val modeKey = backdropPickerMode
+        if (uri != null && modeKey != null) viewModel.importModeBackdrop(modeKey, uri)
+    }
+    backdropPickerMode?.let { modeKey ->
+        ModeBackdropPicker(
+            modeKey = modeKey,
+            chosen = state.prefs.modeBackdrops[modeKey].orEmpty(),
+            onToggle = { viewModel.toggleModeBackdrop(modeKey, it) },
+            onFromPhone = {
+                modeBackdropPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+            },
+            onDismiss = { backdropPickerMode = null },
+        )
+    }
     val topicMediaFolderPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree(),
     ) { uri ->
@@ -300,6 +320,20 @@ fun SettingsScreen(
                     modifier = Modifier.semantics { contentDescription = "Intro on launch" },
                 )
             }
+
+            SettingHeading(
+                "Mode backgrounds",
+                "What each mode sits on: Weaverse art, calm focus videos, the wallpaper or your own pictures and videos. " +
+                    "A mode's first page shows it in full; pages further in show it quietly behind your work.",
+            )
+            ModeBackgroundsSection(
+                backdrops = state.prefs.modeBackdrops,
+                slideshow = state.prefs.backdropSlideshow,
+                files = backdropFiles,
+                onSlideshow = viewModel::setBackdropSlideshow,
+                onAdd = { backdropPickerMode = it },
+                onRemove = viewModel::removeModeBackdrop,
+            )
 
             SettingHeading("Glass", "How much wallpaper shows through panels and pages.")
             LabeledSlider(

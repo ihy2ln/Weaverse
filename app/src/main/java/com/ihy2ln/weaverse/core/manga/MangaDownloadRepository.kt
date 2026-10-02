@@ -360,6 +360,36 @@ class MangaDownloadRepository @Inject constructor(
     suspend fun clearReadingHistory() = db.mangaDao().clearReadingHistory()
 
     suspend fun enqueue(chapter: MangaChapterEntity) {
+        ensurePageManifest(chapter)
+        db.mangaDao().upsertChapter(
+            chapter.copy(
+                status = "queued",
+                errorMessage = "",
+                pageCount = db.mangaDao().getPages(chapter.id).size.takeIf { it > 0 } ?: chapter.pageCount,
+                updatedAt = System.currentTimeMillis(),
+            ),
+        )
+        schedule(chapter.id)
+    }
+
+    /**
+     * Fetches an online chapter's pages straight into the studio so it can be edited,
+     * translated or colored from the reader, without a separate download step.
+     */
+    suspend fun prepareForEditing(chapter: MangaChapterEntity) {
+        val stored = db.mangaDao().getChapter(chapter.id) ?: chapter
+        if (stored.status == "completed") return
+        ensurePageManifest(stored)
+        try {
+            downloadChapter(stored.id)
+        } catch (failure: Exception) {
+            if (failure is kotlinx.coroutines.CancellationException) throw failure
+            markFailed(stored.id, failure.message ?: "Could not fetch the pages")
+            throw failure
+        }
+    }
+
+    private suspend fun ensurePageManifest(chapter: MangaChapterEntity) {
         val pages = db.mangaDao().getPages(chapter.id)
         if (pages.isEmpty()) {
             val adapter = registry.get(chapter.sourceId) ?: error("Source is not installed: ${chapter.sourceId}")
@@ -378,14 +408,6 @@ class MangaDownloadRepository @Inject constructor(
             })
             db.mangaDao().upsertChapter(chapter.copy(pageCount = discovered.size))
         }
-        db.mangaDao().upsertChapter(
-            chapter.copy(
-                status = "queued",
-                errorMessage = "",
-                updatedAt = System.currentTimeMillis(),
-            ),
-        )
-        schedule(chapter.id)
     }
 
     suspend fun enqueueWebLink(url: String, title: String = ""): MangaChapterEntity {

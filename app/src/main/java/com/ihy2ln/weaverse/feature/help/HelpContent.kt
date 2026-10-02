@@ -665,6 +665,15 @@ object HelpContent {
                         "A source that requires a browser challenge reports the block instead of showing a fake empty library.",
                 ),
                 HelpEntry(
+                    "Read online, then edit, translate or color",
+                    "Tap a chapter in a title's list to read it online; the download icon beside it is what " +
+                        "downloads. Edit page, Edit chapter, Translate and Color work while reading online: " +
+                        "Weaverse fetches the pages in the background, then opens the studio on the same page " +
+                        "with that tool ready (AI jobs still wait for you to tap Run). Every finished edit, " +
+                        "translation and coloring also saves a copy, English included, to the phone's gallery " +
+                        "under Pictures/Weaverse/<title>.",
+                ),
+                HelpEntry(
                     "Favorites and sections",
                     "Open a title in Browse and tap one or more Favorite section chips. In Library, " +
                         "switch between Downloads and your named sections. Type a name in New favorite section " +
@@ -736,6 +745,15 @@ object HelpContent {
                     "Home splash picks the art Home opens on: Weaverse's own, any mode's, your own " +
                         "background picture (Automatic) or just the wallpaper. Intro on launch shows the " +
                         "Weaverse mark over it for a moment when the app opens; tap to skip.",
+                ),
+                HelpEntry(
+                    "Mode backgrounds",
+                    "Every mode sits on a backdrop the way Home does. A mode's first page shows it in " +
+                        "full; pages further in show it quietly (blurred and dimmed, videos paused) so " +
+                        "your work stays in focus. Appearance → Mode backgrounds takes several per mode: " +
+                        "Weaverse art, focus videos (rain, ocean, forest, space, snow, aurora), the " +
+                        "wallpaper, or your own pictures and videos. Each visit moves to the next one, and " +
+                        "with Slideshow on, a mode's first page changes every 30 seconds.",
                 ),
                 HelpEntry(
                     "Wallpaper and glass",
