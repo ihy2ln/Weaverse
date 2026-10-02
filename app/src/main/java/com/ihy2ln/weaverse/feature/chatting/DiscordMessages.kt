@@ -37,6 +37,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Forum
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.filled.AddReaction
 import androidx.compose.material.icons.filled.Close
@@ -285,6 +287,12 @@ fun DiscordMessageList(
             onMarkUnread = { viewModel.markUnreadFrom(target); actionTarget = null },
             onRegenerate = { viewModel.retry(); actionTarget = null },
             onDelete = { deleteTarget = target; actionTarget = null },
+            onThread = if (state.selectedRoom?.kind == ROOM_KIND_CHANNEL && !target.isSystem) {
+                { viewModel.beginThread(target); actionTarget = null }
+            } else null,
+            onSaveToCodex = if (!target.isSystem && target.text.isNotBlank()) {
+                { viewModel.beginCodexSave(target); actionTarget = null }
+            } else null,
         )
     }
     reactionPickerFor?.let { messageId ->
@@ -356,16 +364,26 @@ private fun ChannelWelcome(room: DiscordRoomUi?) {
     val colors = discordColors()
     room ?: return
     Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 8.dp)) {
-        if (room.kind == ROOM_KIND_CHANNEL) {
+        if (room.kind == ROOM_KIND_CHANNEL || room.kind == ROOM_KIND_VOICE) {
             Box(
                 Modifier.size(68.dp).clip(CircleShape).background(colors.elevated),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Filled.Tag, contentDescription = null, tint = colors.header, modifier = Modifier.size(42.dp))
+                Icon(roomKindIcon(room.kind) ?: Icons.Filled.Tag, contentDescription = null, tint = colors.header, modifier = Modifier.size(42.dp))
             }
             Spacer(Modifier.height(8.dp))
             Text("Welcome to #${room.name}!", fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, color = colors.header)
             Text("This is the start of the #${room.name} channel.", fontSize = 15.sp, color = colors.muted)
+        } else if (room.kind == ROOM_KIND_THREAD) {
+            Box(
+                Modifier.size(68.dp).clip(CircleShape).background(colors.elevated),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Filled.Forum, contentDescription = null, tint = colors.header, modifier = Modifier.size(40.dp))
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(room.name, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = colors.header)
+            Text("This is the start of the thread.", fontSize = 15.sp, color = colors.muted)
         } else {
             CharacterAvatar(name = room.name, colorHex = room.avatarColorHex, size = 80.dp)
             Spacer(Modifier.height(8.dp))
@@ -801,6 +819,8 @@ private fun MessageActionSheet(
     onMarkUnread: () -> Unit,
     onRegenerate: () -> Unit,
     onDelete: () -> Unit,
+    onThread: (() -> Unit)? = null,
+    onSaveToCodex: (() -> Unit)? = null,
 ) {
     val colors = discordColors()
     val clipboard = LocalClipboardManager.current
@@ -834,6 +854,8 @@ private fun MessageActionSheet(
         ) {
             if (message.isUser) SheetAction(Icons.Filled.Edit, "Edit Message", onClick = onEdit)
             SheetAction(Icons.AutoMirrored.Filled.Reply, "Reply", onClick = onReply)
+            if (onThread != null) SheetAction(Icons.Filled.Forum, "Create Thread", onClick = onThread)
+            if (onSaveToCodex != null) SheetAction(Icons.AutoMirrored.Filled.MenuBook, "Save to Codex", onClick = onSaveToCodex)
             SheetAction(Icons.Filled.PushPin, if (message.pinned) "Unpin Message" else "Pin Message", onClick = onPin)
             SheetAction(Icons.Filled.ContentCopy, "Copy Text") {
                 clipboard.setText(AnnotatedString(message.text))
@@ -913,7 +935,12 @@ fun MemberListPanel(
     modifier: Modifier = Modifier,
 ) {
     val colors = discordColors()
-    val byStatus = state.members.groupBy { presenceFor(it.name) }
+    // Hoisted roles get their own group, highest role first; everyone else groups by status.
+    val roleGroups = state.roles.filter { it.hoist }.map { role ->
+        role to state.members.filter { m -> state.roles.firstOrNull { it.hoist && it.id in state.memberRoles[m.characterId].orEmpty() }?.id == role.id }
+    }.filter { it.second.isNotEmpty() }
+    val grouped = roleGroups.flatMap { it.second }.map { it.characterId }.toSet()
+    val byStatus = state.members.filterNot { it.characterId in grouped }.groupBy { presenceFor(it.name) }
     Column(modifier.background(colors.sidebar)) {
         PanelHeader("Members", icon = null, onClose = onClose)
         LazyColumn(Modifier.fillMaxWidth(), contentPadding = PaddingValues(vertical = 8.dp)) {
@@ -928,6 +955,19 @@ fun MemberListPanel(
                     onClick = onOpenYou,
                 )
             }
+            roleGroups.forEach { (role, members) ->
+                item(key = "role-${role.id}") { MemberGroupHeader("${role.name} — ${members.size}") }
+                items(members, key = { "rm-" + role.id + it.characterId }) { member ->
+                    MemberRow(
+                        name = member.name,
+                        colorHex = role.colorHex,
+                        status = presenceFor(member.name),
+                        activity = state.selectedServer?.title.orEmpty(),
+                        crown = false,
+                        onClick = { onOpenProfile(member) },
+                    )
+                }
+            }
             listOf(DiscordStatus.Online, DiscordStatus.Idle, DiscordStatus.DoNotDisturb).forEach { group ->
                 val members = byStatus[group].orEmpty()
                 if (members.isNotEmpty()) {
@@ -935,7 +975,7 @@ fun MemberListPanel(
                     items(members, key = { "m-" + it.characterId }) { member ->
                         MemberRow(
                             name = member.name,
-                            colorHex = member.colorHex,
+                            colorHex = state.roleColors[member.characterId] ?: member.colorHex,
                             status = group,
                             activity = if (member.joinedViaMention) "Invited by mention" else state.selectedServer?.title.orEmpty(),
                             crown = false,
@@ -1192,6 +1232,10 @@ fun ProfilePanel(
     onRemove: (String) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    /** The server's roles, to give or take from this member. */
+    roles: List<ServerRole> = emptyList(),
+    memberRoleIds: List<String> = emptyList(),
+    onToggleRole: (String) -> Unit = {},
 ) {
     val colors = discordColors()
     Column(modifier.background(colors.sidebar).verticalScroll(rememberScrollState())) {
@@ -1266,6 +1310,11 @@ fun ProfilePanel(
                     .padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                if (roles.isNotEmpty() && !profile.isYou && profile.characterId != null) {
+                    ProfileSection("Server Roles") {
+                        RoleToggles(roles, memberRoleIds, onToggleRole)
+                    }
+                }
                 if (profile.about.isNotBlank()) {
                     ProfileSection("About Me") {
                         Text(profile.about, fontSize = 14.sp, color = colors.text)

@@ -434,6 +434,10 @@ interface RoleplayDao {
     )
     fun observeRoomsForBook(bookId: String): Flow<List<RpChatEntity>>
 
+    /** Every Chatting room of a server, whatever its kind (threads, forums, voice, codex too). */
+    @Query("SELECT * FROM rp_chats WHERE bookId = :bookId AND displayMode = 'messenger' AND roomKind != '' ORDER BY createdAt")
+    suspend fun getAllRoomsForBook(bookId: String): List<RpChatEntity>
+
     /** Direct messages: explicit DMs plus legacy messenger chats with no owning work. */
     @Query(
         "SELECT * FROM rp_chats WHERE roomKind = 'dm' OR (roomKind = '' AND " +
@@ -679,4 +683,20 @@ interface SocialDao {
 
     @Query("DELETE FROM social_posts WHERE id = :id OR parentId = :id OR repostOfId = :id")
     suspend fun deleteWithReplies(id: String)
+}
+
+/** Chatting servers' own settings: icon, description, members, codex, roles. */
+@Dao
+interface ChatServerDao {
+    @Query("SELECT * FROM chat_servers")
+    fun observeAll(): Flow<List<com.ihy2ln.weaverse.data.db.entities.ChatServerEntity>>
+
+    @Query("SELECT * FROM chat_servers WHERE bookId = :bookId LIMIT 1")
+    suspend fun get(bookId: String): com.ihy2ln.weaverse.data.db.entities.ChatServerEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(server: com.ihy2ln.weaverse.data.db.entities.ChatServerEntity)
+
+    @Query("DELETE FROM chat_servers WHERE bookId = :bookId")
+    suspend fun delete(bookId: String)
 }

@@ -26,6 +26,12 @@ class ChatCastResolver @Inject constructor(
 ) {
     /** Every character eligible to live in [book]'s rooms: roster + codex cast. */
     suspend fun castForBook(book: BookEntity): List<RpCharacterEntity> {
+        // A writer-made server seats exactly who was picked for it.
+        val picked = db.chatServerDao().get(book.id)?.let { ServerJson.ids(it.memberIdsJson) }.orEmpty()
+        if (picked.isNotEmpty()) {
+            val seated = picked.mapNotNull { db.roleplayDao().getCharacter(it) }
+            if (seated.isNotEmpty() || book.workType == WORK_TYPE_SERVER) return seated
+        }
         val characterCategory = characterCategoryEntries(book.id)
         val materialized = characterCategory.map { entry -> materializeCharacter(entry) }
         val campaignSetup = db.roleplayDao().getChats()
@@ -61,8 +67,18 @@ class ChatCastResolver @Inject constructor(
         val entries = db.codexDao().getAllEntries()
         val categoryIds = categories.map { it.id }.toSet()
         val inCategory = entries.filter { it.categoryId in categoryIds }
-        val scoped = inCategory.filter { it.scopeId == bookId || it.sheetJson.contains(bookId) }
-        return scoped.ifEmpty { inCategory }
+        return scopeToServer(inCategory, bookId)
+    }
+
+    /**
+     * The codex a server's AI may use. A server set to selected entries gets just those;
+     * otherwise the work's own entries, or the whole shared codex when it has none.
+     */
+    suspend fun scopeToServer(entries: List<CodexEntryEntity>, bookId: String?): List<CodexEntryEntity> {
+        if (bookId == null) return entries
+        val picked = db.chatServerDao().get(bookId)?.let { ServerJson.ids(it.codexIdsJson) }.orEmpty().toSet()
+        if (picked.isNotEmpty()) return entries.filter { it.id in picked }
+        return entries.filter { it.scopeId == bookId || it.sheetJson.contains(bookId) }.ifEmpty { entries }
     }
 
     /** Finds or creates the character card backing a codex entry, idempotent by a deterministic id. */
@@ -101,9 +117,7 @@ class ChatCastResolver @Inject constructor(
         if (text.isBlank()) return emptyList()
         val entries = db.codexDao().getAllEntries().filterNot { it.disabled }
         if (entries.isEmpty()) return emptyList()
-        val scoped = bookId?.let { id ->
-            entries.filter { it.scopeId == id || it.sheetJson.contains(id) }.ifEmpty { entries }
-        } ?: entries
+        val scoped = scopeToServer(entries, bookId)
         val byId = scoped.associateBy { it.id }
         val targets = scoped.map { entry ->
             CodexMentionTarget(
@@ -143,9 +157,7 @@ class ChatCastResolver @Inject constructor(
     /** Entries the writer flagged as always-include, scoped to the work when possible. */
     suspend fun alwaysIncludeEntries(bookId: String?): List<CodexEntryEntity> {
         val entries = db.codexDao().getAllEntries().filterNot { it.disabled }.filter { it.alwaysInclude }
-        if (bookId == null) return entries
-        val scoped = entries.filter { it.scopeId == bookId || it.sheetJson.contains(bookId) }
-        return scoped.ifEmpty { entries }
+        return scopeToServer(entries, bookId)
     }
 
     private suspend fun entriesByIds(ids: List<String>): List<CodexEntryEntity> {

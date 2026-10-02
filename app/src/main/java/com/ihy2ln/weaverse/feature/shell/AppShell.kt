@@ -740,6 +740,7 @@ fun AppShell(
                     onRoomSelect = { selectedRpChatId = it; if (it != null) shellViewModel.recordAccess("Chatting", "chat", it) },
                     onOpenMode = { switchWorkspace(it) },
                     onOpenAppSettings = { showSettings = true },
+                    onOpenCodexEntry = { selectedCodexEntryId = it },
                     appearance = prefs.appearance,
                     wallpaperVisible = wallpaperShown,
                 )

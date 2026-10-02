@@ -345,6 +345,34 @@ object HelpContent {
                         "character tied to the work.",
                 ),
                 HelpEntry(
+                    "Servers of your own",
+                    "The green + at the bottom of the server rail makes a server that isn't tied " +
+                        "to a novel or campaign: name it, give it an emoji and color, pick who's in " +
+                        "it, and choose what its AI knows — the whole codex or only the entries you " +
+                        "pick. Server Settings (tap the server name) changes all of that later, and " +
+                        "a server you made can be deleted there.",
+                ),
+                HelpEntry(
+                    "Channels, threads and forums",
+                    "Create Channel offers Text, Forum and Voice. Long-press a message and choose " +
+                        "Create Thread to branch a conversation off it; threads sit under their " +
+                        "channel. A forum holds posts, each with its own replies. In a voice channel, " +
+                        "Join Voice and the cast's replies are read aloud, with whoever is talking lit " +
+                        "up. Type @everyone or @here to have several people answer at once.",
+                ),
+                HelpEntry(
+                    "Roles",
+                    "Server Settings → Roles makes roles with a color. Tap someone's name and pick a " +
+                        "role to give it to them: their name takes the color of their highest role and " +
+                        "the member list groups them under it.",
+                ),
+                HelpEntry(
+                    "The codex in a server",
+                    "Every reply in a server follows the codex as canon, the same as Novel and RPG. " +
+                        "Each server has a #codex channel to read and add entries, and long-pressing a " +
+                        "message offers Save to Codex, as a new entry or added to an existing one.",
+                ),
+                HelpEntry(
                     "Who is in a room",
                     "Every room seats 1-5 people from the work's Codex characters, shown as " +
                         "an avatar strip under the room header. Each channel gets its own " +

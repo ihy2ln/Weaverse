@@ -141,7 +141,11 @@ fun ChatPromptWindow(
         if (mentionQuery != null) {
             val seated = state.members.map { it.name }
             val everyone = (seated + state.mentionCandidates.map { it.name }).distinct()
-            val matches = rankMentionMatches(mentionQuery, everyone).take(8)
+            // Server rooms can ping the whole room, as on Discord.
+            val pings = if (state.selectedServerId != null && seated.size > 1) {
+                listOf("everyone", "here").filter { it.startsWith(mentionQuery, ignoreCase = true) }
+            } else emptyList()
+            val matches = (pings + rankMentionMatches(mentionQuery, everyone)).take(8)
             if (matches.isNotEmpty()) {
                 Row(
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -150,7 +154,7 @@ fun ChatPromptWindow(
                 ) {
                     matches.forEach { name ->
                         PromptDockChip(
-                            label = if (name in seated) name else "$name +",
+                            label = if (name in seated || name in pings) name else "$name +",
                             onClick = {
                                 val (next, _) = completeMention(state.input, state.input.length, name)
                                 viewModel.onInputChange(next)

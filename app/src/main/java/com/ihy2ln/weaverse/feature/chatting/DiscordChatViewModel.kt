@@ -55,6 +55,32 @@ data class DiscordServerUi(
     val workType: String,
     val monogram: String,
     val colorHex: String,
+    /** Emoji on the server icon instead of the monogram; blank = monogram. */
+    val emoji: String = "",
+    val description: String = "",
+    /** A server the writer made just for chatting, rather than a novel's or campaign's. */
+    val isOwn: Boolean = false,
+)
+
+/** One codex entry as the server's codex channel and pickers show it. */
+data class CodexItemUi(
+    val id: String,
+    val name: String,
+    val category: String,
+    val categoryId: String,
+    val colorHex: String?,
+    val text: String,
+    val isCharacter: Boolean,
+)
+
+/** One server-wide search result. */
+data class ServerSearchHit(val roomId: String, val roomName: String, val message: DiscordMessageUi)
+
+/** The voice channel the writer is connected to, and who is talking right now. */
+data class VoiceUi(
+    val roomId: String? = null,
+    val speakingCharacterId: String? = null,
+    val deafened: Boolean = false,
 )
 
 /** One room in the channel sidebar, or one DM under Home. */
@@ -73,6 +99,8 @@ data class DiscordRoomUi(
     val lastMessageAt: Long = 0L,
     /** The server this room belongs to; blank for a true DM. Shown on cross-server recent rows. */
     val serverTitle: String = "",
+    /** The channel a thread or forum post lives under. */
+    val parentRoomId: String? = null,
 )
 
 /** One emoji reaction chip under a message. */
@@ -198,7 +226,38 @@ data class DiscordChatUiState(
     val personaName: String = "You",
     /** Open profile popout, if any. */
     val profile: DiscordProfileUi? = null,
+    /** The selected server's roles, highest first. */
+    val roles: List<ServerRole> = emptyList(),
+    /** characterId to role ids in the selected server. */
+    val memberRoles: Map<String, List<String>> = emptyMap(),
+    /** Who a writer-made server seats; empty = every codex character. */
+    val serverMemberIds: List<String> = emptyList(),
+    /** Codex entries the selected server's AI may use; empty = the whole codex. */
+    val serverCodexIds: List<String> = emptyList(),
+    /** The whole shared codex, for the codex channel and the pickers. */
+    val codex: List<CodexItemUi> = emptyList(),
+    /** Codex categories as id to name. */
+    val codexCategories: List<Pair<String, String>> = emptyList(),
+    /** Message a thread is being started from (the Create Thread dialog). */
+    val threadDraftFor: DiscordMessageUi? = null,
+    /** Message being saved to the codex (the Save to Codex dialog). */
+    val codexSaveFor: DiscordMessageUi? = null,
+    val voice: VoiceUi = VoiceUi(),
+    /** Results of the last whole-server search. */
+    val serverSearch: List<ServerSearchHit> = emptyList(),
+    /** Every character, for picking who's in a server. */
+    val people: List<DiscordMemberUi> = emptyList(),
 ) {
+    /** Codex entries in reach of the selected server's AI. */
+    val serverCodex: List<CodexItemUi>
+        get() = if (serverCodexIds.isEmpty()) codex else serverCodexIds.toSet().let { ids -> codex.filter { it.id in ids } }
+
+    /** characterId to the color of their highest role, as Discord colors names. */
+    val roleColors: Map<String, String>
+        get() = memberRoles.mapNotNull { (characterId, ids) ->
+            roles.firstOrNull { it.id in ids }?.let { characterId to it.colorHex }
+        }.toMap()
+
     val pinnedMessages: List<DiscordMessageUi>
         get() = messages.filter { it.pinned }
 
@@ -229,6 +288,7 @@ class DiscordChatViewModel @Inject constructor(
     private val mediaRepository: com.ihy2ln.weaverse.core.media.MediaRepository,
     private val characterMedia: com.ihy2ln.weaverse.feature.chatting.media.CharacterMediaFetcher,
     private val relations: com.ihy2ln.weaverse.feature.chatting.social.SocialRelations,
+    private val tts: com.ihy2ln.weaverse.core.tts.TtsService,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DiscordChatUiState())
@@ -236,6 +296,11 @@ class DiscordChatViewModel @Inject constructor(
 
     private var charactersById: Map<String, RpCharacterEntity> = emptyMap()
     private var booksById: Map<String, BookEntity> = emptyMap()
+    private var serverSettingsById: Map<String, com.ihy2ln.weaverse.data.db.entities.ChatServerEntity> = emptyMap()
+    /** The selected room's raw messages, so a role change can recolor names without a DB write. */
+    private var lastRawMessages: List<RpMessageEntity> = emptyList()
+    /** A forum post's opening message, sent as soon as the post opens. */
+    private var pendingAutoSend: String? = null
     private var defaultModelRef: String = ""
     private var contextLimit: Int = ContextMeter.DEFAULT_LIMIT
     private var generateJob: Job? = null
@@ -262,7 +327,9 @@ class DiscordChatViewModel @Inject constructor(
                 db.bookDao().observeAll(),
                 db.roleplayDao().observeChats(),
                 db.roleplayDao().observeCharacters(),
-            ) { books, chats, characters ->
+                db.chatServerDao().observeAll(),
+            ) { books, chats, characters, settings ->
+                serverSettingsById = settings.associateBy { it.bookId }
                 Triple(books, chats, characters)
             }.collect { (books, chats, characters) ->
                 booksById = books.associateBy { it.id }
@@ -276,12 +343,16 @@ class DiscordChatViewModel @Inject constructor(
                     .filter { it.workType in SERVER_WORK_TYPES }
                     .sortedByDescending { it.updatedAt }
                     .map { book ->
+                        val settings = serverSettingsById[book.id]
                         DiscordServerUi(
                             bookId = book.id,
                             title = book.title,
                             workType = book.workType,
                             monogram = monogramOf(book.title).take(1),
-                            colorHex = avatarColorHexFor(book.title, null),
+                            colorHex = settings?.colorHex?.takeIf { it.isNotBlank() } ?: avatarColorHexFor(book.title, null),
+                            emoji = settings?.emoji.orEmpty(),
+                            description = settings?.description.orEmpty(),
+                            isOwn = book.workType == WORK_TYPE_SERVER,
                         )
                     }
                 _uiState.update {
@@ -293,7 +364,28 @@ class DiscordChatViewModel @Inject constructor(
                 }
                 allChats = chats
                 rebuildRooms(chats)
+                publishServerSettings()
                 refreshBadges()
+            }
+        }
+        viewModelScope.launch {
+            combine(db.codexDao().observeAllEntries(), db.codexDao().observeAllCategories()) { entries, categories ->
+                val names = categories.associate { it.id to it.name }
+                val items = entries.filterNot { it.disabled }.map { entry ->
+                    val category = names[entry.categoryId].orEmpty()
+                    CodexItemUi(
+                        id = entry.id,
+                        name = entry.name,
+                        category = category,
+                        categoryId = entry.categoryId,
+                        colorHex = entry.colorHex,
+                        text = castResolver.entryText(entry),
+                        isCharacter = category.equals("Characters", ignoreCase = true),
+                    )
+                }.sortedWith(compareBy({ it.category.lowercase() }, { it.name.lowercase() }))
+                items to categories.sortedBy { it.sortOrder }.map { it.id to it.name }
+            }.collect { (items, categories) ->
+                _uiState.update { it.copy(codex = items, codexCategories = categories) }
             }
         }
         viewModelScope.launch {
@@ -362,6 +454,7 @@ class DiscordChatViewModel @Inject constructor(
         // The chats flow only re-emits when the database changes, so without this the
         // freshly selected server would show an empty sidebar until something wrote a row.
         rebuildRooms(allChats)
+        publishServerSettings()
         if (bookId != null) {
             viewModelScope.launch {
                 refreshBadges()
@@ -413,6 +506,10 @@ class DiscordChatViewModel @Inject constructor(
                 }
                 db.roleplayDao().getChat(chatId)?.let { chat ->
                     boundRoom = chat
+                    if (pendingAutoSend == chatId && _uiState.value.selectedRoomId == chatId) {
+                        pendingAutoSend = null
+                        send()
+                    }
                     val hasUnread = db.roleplayDao().countUnread(chat.id, chat.lastReadAt) > 0
                     if (hasUnread && chat.lastReadAt > 0L && _uiState.value.selectedRoomId == chatId) {
                         _uiState.update { it.copy(unreadSince = chat.lastReadAt) }
@@ -673,22 +770,7 @@ class DiscordChatViewModel @Inject constructor(
     }
 
     /** Creates a new user-named text channel in the selected server. */
-    fun createChannel(name: String) {
-        val serverId = _uiState.value.selectedServerId ?: return
-        val clean = name.trim().trimStart('#').trim()
-        if (clean.isBlank()) return
-        viewModelScope.launch {
-            val book = booksById[serverId] ?: return@launch
-            roomSeeder.createRoom(
-                book = book,
-                name = clean,
-                kind = ROOM_KIND_CHANNEL,
-                characterId = null,
-                topic = "A channel about ${book.title}.",
-                character = null,
-            )
-        }
-    }
+    fun createChannel(name: String) = createChannel(name, ROOM_KIND_CHANNEL)
 
     /** Creates a per-character room inside the selected server, seeded with their greeting. */
     fun createCharacterRoom(characterId: String) {
@@ -915,7 +997,11 @@ class DiscordChatViewModel @Inject constructor(
         // spoken to, so they answer — without this the reply fell to whoever happened to
         // be first in the member list.
         val named = (matchNamedCharacters(userText, cast + members) + fromCodex).distinctBy { it.id }
-        val namedMembers = named.filter { person -> members.any { it.id == person.id } }
+        // @everyone / @here pings the whole room: several seated people answer.
+        val everyone = pingsEveryone(userText)
+        val namedMembers = named.filter { person -> members.any { it.id == person.id } }.let { addressed ->
+            if (everyone) (addressed + members).distinctBy { it.id }.take(MAX_EVERYONE) else addressed
+        }
         val discussed = named
             .filterNot { person -> person.id == roomCharacter?.id || members.any { it.id == person.id } }
             .take(MAX_DISCUSSED)
@@ -939,6 +1025,7 @@ class DiscordChatViewModel @Inject constructor(
             discussed = discussed,
             addressed = namedMembers,
             codexRefs = castResolver.describe(codexEntries),
+            everyone = everyone,
         )
         val maxTokens = (state.maximumWords * 1.7 + 192).toInt().coerceIn(192, 8192)
         val builder = StringBuilder()
@@ -1032,6 +1119,8 @@ class DiscordChatViewModel @Inject constructor(
         val speakerPool = (members + discussed + listOfNotNull(fallbackSpeaker)).distinctBy { it.id }
         val lines = parseSpeakerLines(replyText, speakerPool)
         val replyBase = System.currentTimeMillis()
+        // In a voice channel each saved line is also spoken, by whoever said it.
+        val spoken = mutableListOf<Pair<String?, String>>()
         lines.forEachIndexed { index, line ->
             // A character's [gif: …] / [meme: …] / [pic: …] becomes a picture, fetched below.
             // [cw: …] labels are for the feed's filters; in chat they are just dropped. A DM
@@ -1044,6 +1133,7 @@ class DiscordChatViewModel @Inject constructor(
             if (lineText.isBlank() && mediaTags.isEmpty()) return@forEachIndexed
             val messageId = "rpm-${replyBase + index}"
             if (mediaTags.isNotEmpty()) attachCharacterMedia(messageId, mediaTags)
+            if (lineText.isNotBlank()) spoken += line.character?.id to lineText
             db.roleplayDao().upsertMessage(
                 RpMessageEntity(
                     id = messageId,
@@ -1078,6 +1168,8 @@ class DiscordChatViewModel @Inject constructor(
         _uiState.update {
             it.copy(isStreaming = false, streamingText = "", lastUsage = usageText)
         }
+        val voice = _uiState.value.voice
+        if (room.roomKind == ROOM_KIND_VOICE && voice.roomId == room.id && !voice.deafened) speak(spoken)
         // Now and then someone in the room drops a reaction on what the writer said,
         // the way people do on Discord instead of typing a whole reply.
         if (userMessageAlreadyStored && kotlin.random.Random.nextFloat() < AI_REACTION_CHANCE) {
@@ -1190,7 +1282,11 @@ class DiscordChatViewModel @Inject constructor(
             val character = characterId?.let { db.roleplayDao().getCharacter(it) }
                 ?: charactersById.values.firstOrNull { it.name.equals(name, ignoreCase = true) }
             val member = _uiState.value.members.firstOrNull { m -> m.characterId == character?.id }
+            val state = _uiState.value
+            val serverRoles = character?.id?.let { id -> state.memberRoles[id] }.orEmpty()
+                .let { ids -> state.roles.filter { it.id in ids }.map { it.name } }
             val roles = buildList {
+                addAll(serverRoles)
                 add(if (character?.inParty == true) "Party" else "Character")
                 if (member != null) add(if (member.joinedViaMention) "Invited" else "Room regular")
                 _uiState.value.selectedServer?.let { s -> add(if (s.workType == "campaign") "Adventurer" else "Cast") }
@@ -1348,6 +1444,423 @@ class DiscordChatViewModel @Inject constructor(
 
     // ------------------------------------------------------------ rendering
 
+    // -------------------------------------------------------------- servers you make
+
+    /** Publishes the selected server's roles, members and codex picks. */
+    private fun publishServerSettings() {
+        val settings = _uiState.value.selectedServerId?.let { serverSettingsById[it] }
+        val roles = settings?.let { ServerJson.roles(it.rolesJson) }.orEmpty()
+        val memberRoles = settings?.let { ServerJson.memberRoles(it.memberRolesJson) }.orEmpty()
+        val changedColors = roles != _uiState.value.roles || memberRoles != _uiState.value.memberRoles
+        _uiState.update {
+            it.copy(
+                roles = roles,
+                memberRoles = memberRoles,
+                serverMemberIds = settings?.let { s -> ServerJson.ids(s.memberIdsJson) }.orEmpty(),
+                serverCodexIds = settings?.let { s -> ServerJson.ids(s.codexIdsJson) }.orEmpty(),
+            )
+        }
+        // Names in chat take their role's color, so a role change repaints the open room.
+        if (changedColors && lastRawMessages.isNotEmpty()) viewModelScope.launch { publishMessages(lastRawMessages) }
+    }
+
+    /** Loads every character, for choosing who's in a server. */
+    fun loadPeople() {
+        viewModelScope.launch {
+            val people = castResolver.allChatContacts().map { character ->
+                DiscordMemberUi(
+                    characterId = character.id,
+                    name = character.name,
+                    colorHex = avatarColorHexFor(character.name, character.colorHex),
+                    monogram = monogramOf(character.name),
+                    joinedViaMention = false,
+                )
+            }.sortedBy { it.name.lowercase() }
+            _uiState.update { it.copy(people = people) }
+        }
+    }
+
+    /**
+     * Makes a server of the writer's own: not a novel or campaign, just a place to chat.
+     * [memberIds] are who's in it (empty = every character); [codexIds] limit what its AI
+     * knows (empty = the whole codex).
+     */
+    fun createServer(
+        name: String,
+        description: String,
+        colorHex: String,
+        emoji: String,
+        memberIds: List<String>,
+        codexIds: List<String>,
+        onCreated: (String) -> Unit,
+    ) {
+        val title = name.trim()
+        if (title.isBlank()) return
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val book = BookEntity(
+                id = "server-${UUID.randomUUID()}",
+                seriesId = null,
+                title = title,
+                createdAt = now,
+                updatedAt = now,
+                workType = WORK_TYPE_SERVER,
+            )
+            // Settings first: seeding reads who the server seats.
+            db.chatServerDao().upsert(
+                com.ihy2ln.weaverse.data.db.entities.ChatServerEntity(
+                    bookId = book.id,
+                    description = description.trim(),
+                    colorHex = colorHex,
+                    emoji = emoji.trim(),
+                    memberIdsJson = ServerJson.ids(memberIds),
+                    codexIdsJson = ServerJson.ids(codexIds),
+                    updatedAt = now,
+                ),
+            )
+            db.bookDao().upsert(book)
+            roomSeeder.ensureRoomsForBook(book)
+            onCreated(book.id)
+        }
+    }
+
+    /** Server Settings → Overview, Members and Codex. [name] and [memberIds] only apply to your own servers. */
+    fun updateServer(
+        name: String,
+        description: String,
+        colorHex: String,
+        emoji: String,
+        memberIds: List<String>,
+        codexIds: List<String>,
+    ) {
+        val serverId = _uiState.value.selectedServerId ?: return
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val book = db.bookDao().getById(serverId) ?: return@launch
+            val own = book.workType == WORK_TYPE_SERVER
+            val current = db.chatServerDao().get(serverId)
+                ?: com.ihy2ln.weaverse.data.db.entities.ChatServerEntity(bookId = serverId)
+            db.chatServerDao().upsert(
+                current.copy(
+                    description = description.trim(),
+                    colorHex = colorHex,
+                    emoji = emoji.trim(),
+                    memberIdsJson = if (own) ServerJson.ids(memberIds) else current.memberIdsJson,
+                    codexIdsJson = ServerJson.ids(codexIds),
+                    updatedAt = now,
+                ),
+            )
+            if (own && name.isNotBlank() && name.trim() != book.title) {
+                db.bookDao().upsert(book.copy(title = name.trim(), updatedAt = now))
+            }
+            if (own) {
+                // Someone newly added gets their own room, like the rest of the cast.
+                val rooms = db.roleplayDao().getAllRoomsForBook(serverId)
+                memberIds.forEach { characterId ->
+                    if (rooms.any { it.roomKind == ROOM_KIND_CHARACTER && it.characterId == characterId }) return@forEach
+                    val character = db.roleplayDao().getCharacter(characterId) ?: return@forEach
+                    val room = roomSeeder.createRoom(
+                        book = book,
+                        name = character.name,
+                        kind = ROOM_KIND_CHARACTER,
+                        characterId = character.id,
+                        topic = "A private room where ${character.name} hangs out.",
+                        character = character,
+                    )
+                    castResolver.addMember(room.id, character, seeded = true)
+                }
+            }
+        }
+    }
+
+    /** Deletes a server you made, with every room and message in it. Novels' and campaigns' servers can't be deleted. */
+    fun deleteServer(serverId: String, onDeleted: () -> Unit) {
+        viewModelScope.launch {
+            val book = db.bookDao().getById(serverId) ?: return@launch
+            if (book.workType != WORK_TYPE_SERVER) return@launch
+            db.roleplayDao().getAllRoomsForBook(serverId).forEach { room ->
+                db.roleplayDao().getMessages(room.id).forEach { db.roleplayDao().deleteMessage(it.id) }
+                db.roleplayDao().getMembers(room.id).forEach { db.roleplayDao().deleteMember(room.id, it.characterId) }
+                db.roleplayDao().deleteChat(room.id)
+            }
+            db.chatServerDao().delete(serverId)
+            db.bookDao().deleteById(serverId)
+            onDeleted()
+        }
+    }
+
+    private fun editServerSettings(
+        transform: (com.ihy2ln.weaverse.data.db.entities.ChatServerEntity) -> com.ihy2ln.weaverse.data.db.entities.ChatServerEntity,
+    ) {
+        val serverId = _uiState.value.selectedServerId ?: return
+        viewModelScope.launch {
+            val current = db.chatServerDao().get(serverId)
+                ?: com.ihy2ln.weaverse.data.db.entities.ChatServerEntity(bookId = serverId)
+            db.chatServerDao().upsert(transform(current).copy(updatedAt = System.currentTimeMillis()))
+        }
+    }
+
+    fun addRole(name: String, colorHex: String) {
+        val clean = name.trim()
+        if (clean.isBlank()) return
+        editServerSettings { s ->
+            s.copy(rolesJson = ServerJson.roles(ServerJson.roles(s.rolesJson) + ServerRole("role-${UUID.randomUUID()}", clean, colorHex)))
+        }
+    }
+
+    fun deleteRole(roleId: String) = editServerSettings { s ->
+        s.copy(
+            rolesJson = ServerJson.roles(ServerJson.roles(s.rolesJson).filterNot { it.id == roleId }),
+            memberRolesJson = ServerJson.memberRoles(ServerJson.memberRoles(s.memberRolesJson).mapValues { (_, ids) -> ids - roleId }),
+        )
+    }
+
+    /** Moves a role up (toward the top, which wins the name color) or down. */
+    fun moveRole(roleId: String, up: Boolean) = editServerSettings { s ->
+        val roles = ServerJson.roles(s.rolesJson).toMutableList()
+        val index = roles.indexOfFirst { it.id == roleId }
+        val target = if (up) index - 1 else index + 1
+        if (index < 0 || target !in roles.indices) s
+        else s.copy(rolesJson = ServerJson.roles(roles.apply { add(target, removeAt(index)) }))
+    }
+
+    fun toggleMemberRole(characterId: String, roleId: String) = editServerSettings { s ->
+        val map = ServerJson.memberRoles(s.memberRolesJson).toMutableMap()
+        val current = map[characterId].orEmpty()
+        map[characterId] = if (roleId in current) current - roleId else current + roleId
+        s.copy(memberRolesJson = ServerJson.memberRoles(map))
+    }
+
+    // -------------------------------------------------------------- threads and forums
+
+    fun beginThread(message: DiscordMessageUi?) = _uiState.update { it.copy(threadDraftFor = message) }
+
+    /** Starts a thread off a message: the message opens the thread, and the room's people come along. */
+    fun createThread(name: String, onOpen: (String) -> Unit) {
+        val message = _uiState.value.threadDraftFor ?: return
+        val parent = boundRoom ?: return
+        _uiState.update { it.copy(threadDraftFor = null) }
+        viewModelScope.launch {
+            val book = parent.bookId?.let { booksById[it] } ?: return@launch
+            val title = name.trim().ifBlank { message.text.replace('\n', ' ').take(THREAD_TITLE_CHARS) }.ifBlank { "Thread" }
+            val thread = roomSeeder.createRoom(
+                book = book,
+                name = title,
+                kind = ROOM_KIND_THREAD,
+                characterId = null,
+                topic = "Thread from #${parent.title}",
+                character = null,
+                parentRoomId = parent.id,
+            )
+            castResolver.membersOf(parent.id).forEach { castResolver.addMember(thread.id, it, seeded = true) }
+            val now = System.currentTimeMillis()
+            db.roleplayDao().getMessages(parent.id).firstOrNull { it.id == message.id }?.let { original ->
+                db.roleplayDao().upsertMessage(
+                    original.copy(
+                        id = "rpm-${UUID.randomUUID()}",
+                        chatId = thread.id,
+                        swipeGroupId = "sw-${UUID.randomUUID()}",
+                        createdAt = now,
+                        pinned = false,
+                        replyToId = null,
+                        reactionsJson = "{}",
+                        userReactions = "",
+                    ),
+                )
+            }
+            systemLine(parent.id, "You started a thread: $title", now + 1)
+            onOpen(thread.id)
+        }
+    }
+
+    /** Creates a channel of [kind]: text, forum or voice. */
+    fun createChannel(name: String, kind: String) {
+        val serverId = _uiState.value.selectedServerId ?: return
+        val clean = name.trim().trimStart('#').trim()
+        if (clean.isBlank()) return
+        viewModelScope.launch {
+            val book = booksById[serverId] ?: return@launch
+            val topic = when (kind) {
+                ROOM_KIND_FORUM -> "Start a post; everyone can reply in it."
+                ROOM_KIND_VOICE -> "Hang out and talk out loud."
+                else -> "A channel about ${book.title}."
+            }
+            val room = roomSeeder.createRoom(book, clean, kind, null, topic, null)
+            if (kind == ROOM_KIND_FORUM || kind == ROOM_KIND_VOICE) {
+                val cast = castResolver.castForBook(book)
+                cast.shuffled().take(cast.size.coerceIn(0, 5)).forEach { castResolver.addMember(room.id, it, seeded = true) }
+            }
+        }
+    }
+
+    /** New forum post: a thread named [title] whose first message is [body], answered like any message. */
+    fun createForumPost(title: String, body: String, onOpen: (String) -> Unit) {
+        val forum = boundRoom?.takeIf { it.roomKind == ROOM_KIND_FORUM } ?: return
+        if (title.isBlank() && body.isBlank()) return
+        viewModelScope.launch {
+            val book = forum.bookId?.let { booksById[it] } ?: return@launch
+            val post = roomSeeder.createRoom(
+                book = book,
+                name = title.trim().ifBlank { body.replace('\n', ' ').take(THREAD_TITLE_CHARS) },
+                kind = ROOM_KIND_THREAD,
+                characterId = null,
+                topic = "Post in #${forum.title}",
+                character = null,
+                parentRoomId = forum.id,
+            )
+            castResolver.membersOf(forum.id).forEach { castResolver.addMember(post.id, it, seeded = true) }
+            if (body.isNotBlank()) {
+                draftsByRoom[post.id] = body.trim()
+                pendingAutoSend = post.id
+            }
+            onOpen(post.id)
+        }
+    }
+
+    private suspend fun systemLine(roomId: String, text: String, at: Long = System.currentTimeMillis()) {
+        db.roleplayDao().upsertMessage(
+            RpMessageEntity(
+                id = "rpm-${UUID.randomUUID()}",
+                chatId = roomId,
+                swipeGroupId = "sw-${UUID.randomUUID()}",
+                swipeIndex = 0,
+                isActiveSwipe = true,
+                role = "system",
+                contentJson = Document.fromPlainText(text).toJson(),
+                createdAt = at,
+                displayMode = "messenger",
+            ),
+        )
+    }
+
+    // -------------------------------------------------------------- voice
+
+    fun joinVoice() {
+        val roomId = _uiState.value.selectedRoomId ?: return
+        _uiState.update { it.copy(voice = VoiceUi(roomId = roomId, deafened = it.voice.deafened)) }
+    }
+
+    fun leaveVoice() {
+        tts.stop()
+        _uiState.update { it.copy(voice = VoiceUi(deafened = it.voice.deafened)) }
+    }
+
+    fun toggleDeafen() {
+        val deafened = !_uiState.value.voice.deafened
+        if (deafened) tts.stop()
+        _uiState.update { it.copy(voice = it.voice.copy(deafened = deafened, speakingCharacterId = null)) }
+    }
+
+    /** Reads lines aloud in order, lighting up whoever is talking. */
+    private fun speak(lines: List<Pair<String?, String>>) {
+        if (lines.isEmpty()) return
+        tts.speakParagraphs(
+            lines.map { it.second },
+            onProgress = { index ->
+                _uiState.update { it.copy(voice = it.voice.copy(speakingCharacterId = lines.getOrNull(index)?.first)) }
+            },
+            onFinished = { _uiState.update { it.copy(voice = it.voice.copy(speakingCharacterId = null)) } },
+        )
+    }
+
+    // -------------------------------------------------------------- codex
+
+    fun beginCodexSave(message: DiscordMessageUi?) = _uiState.update { it.copy(codexSaveFor = message) }
+
+    /** Adds a codex entry. In a server limited to picked entries it joins the picks, so its AI knows it. */
+    fun createCodexEntry(name: String, categoryId: String, text: String) {
+        val clean = name.trim()
+        if (clean.isBlank()) return
+        val serverId = _uiState.value.selectedServerId
+        _uiState.update { it.copy(codexSaveFor = null) }
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val entry = com.ihy2ln.weaverse.data.db.entities.CodexEntryEntity(
+                id = "entry-${UUID.randomUUID()}",
+                categoryId = categoryId,
+                scopeType = com.ihy2ln.weaverse.data.repo.CodexScopes.TYPE,
+                scopeId = com.ihy2ln.weaverse.data.repo.CodexScopes.ID,
+                name = clean,
+                docJson = Document.fromPlainText(text.trim()).toJson(),
+                plainText = text.trim(),
+                trackMentions = true,
+                createdAt = now,
+                updatedAt = now,
+            )
+            db.codexDao().upsertEntry(entry)
+            if (serverId != null && _uiState.value.serverCodexIds.isNotEmpty()) {
+                editServerSettings { s -> s.copy(codexIdsJson = ServerJson.ids(ServerJson.ids(s.codexIdsJson) + entry.id)) }
+            }
+        }
+    }
+
+    /** Adds [text] as a new paragraph at the end of an existing codex entry. */
+    fun appendToCodexEntry(entryId: String, text: String) {
+        val clean = text.trim()
+        _uiState.update { it.copy(codexSaveFor = null) }
+        if (clean.isBlank()) return
+        viewModelScope.launch {
+            val entry = db.codexDao().getAllEntries().firstOrNull { it.id == entryId } ?: return@launch
+            val doc = documentFromJson(entry.docJson)
+            val paragraph = com.ihy2ln.weaverse.core.text.Paragraph(
+                "p-${UUID.randomUUID()}",
+                listOf(com.ihy2ln.weaverse.core.text.Span(clean)),
+            )
+            db.codexDao().upsertEntry(
+                entry.copy(
+                    docJson = doc.copy(blocks = doc.blocks + paragraph).toJson(),
+                    plainText = (entry.plainText.trimEnd() + "\n\n" + clean).trim(),
+                    updatedAt = System.currentTimeMillis(),
+                ),
+            )
+        }
+    }
+
+    // -------------------------------------------------------------- server search
+
+    /** Searches every room in the selected server, newest first. */
+    fun searchServer(query: String) {
+        val serverId = _uiState.value.selectedServerId
+        val terms = query.trim()
+        if (serverId == null || terms.isBlank()) {
+            _uiState.update { it.copy(serverSearch = emptyList()) }
+            return
+        }
+        viewModelScope.launch {
+            val rooms = allChats.filter { it.bookId == serverId && it.displayMode == "messenger" && it.roomKind != ROOM_KIND_CODEX }
+            val hits = rooms.flatMap { room ->
+                db.roleplayDao().getMessagesForMode(room.id, "messenger")
+                    .filter { it.isActiveSwipe && it.role != "system" }
+                    .mapNotNull { msg ->
+                        val text = documentFromJson(msg.contentJson).plainText().trim()
+                        if (!text.contains(terms, ignoreCase = true)) return@mapNotNull null
+                        val character = msg.speakerCharacterId?.let { charactersById[it] }
+                        val author = when {
+                            msg.role == "user" -> "You"
+                            character != null -> character.name
+                            else -> msg.speakerName.ifBlank { "Unknown" }
+                        }
+                        ServerSearchHit(
+                            roomId = room.id,
+                            roomName = room.title,
+                            message = DiscordMessageUi(
+                                id = msg.id,
+                                authorName = author,
+                                authorColorHex = avatarColorHexFor(author, character?.colorHex),
+                                isUser = msg.role == "user",
+                                isBot = false,
+                                text = text,
+                                hasMedia = false,
+                                createdAt = msg.createdAt,
+                                authorCharacterId = character?.id,
+                            ),
+                        )
+                    }
+            }.sortedByDescending { it.message.createdAt }.take(SERVER_SEARCH_LIMIT)
+            if (_uiState.value.selectedServerId == serverId) _uiState.update { it.copy(serverSearch = hits) }
+        }
+    }
+
     private fun rebuildRooms(chats: List<RpChatEntity>) {
         val state = _uiState.value
         val rooms = chats
@@ -1366,6 +1879,8 @@ class DiscordChatViewModel @Inject constructor(
         val recent = chats
             .filter {
                 it.displayMode == "messenger" &&
+                    // The codex, voice and forum channels aren't conversations of their own.
+                    it.roomKind !in QUIET_KINDS &&
                     (it.roomKind in ROOM_KINDS || it.roomKind == ROOM_KIND_DM ||
                         (it.roomKind.isEmpty() && it.bookId == null))
             }
@@ -1411,11 +1926,14 @@ class DiscordChatViewModel @Inject constructor(
             topic = authorsNote,
             lastMessageAt = updatedAt,
             serverTitle = bookId?.let { booksById[it]?.title }.orEmpty(),
+            parentRoomId = parentRoomId,
         )
     }
 
     private suspend fun publishMessages(messages: List<RpMessageEntity>) {
+        lastRawMessages = messages
         val state = _uiState.value
+        val roleColors = state.roleColors
         val roomId = messages.firstOrNull()?.chatId ?: state.selectedRoomId ?: return
         val room = (state.rooms + state.directMessages).find { it.chatId == roomId } ?: state.selectedRoom
         val roomCharacter = room?.characterId?.let { charactersById[it] }
@@ -1452,7 +1970,7 @@ class DiscordChatViewModel @Inject constructor(
                 DiscordMessageUi(
                     id = msg.id,
                     authorName = authorName,
-                    authorColorHex = character?.let { avatarColorHexFor(it.name, it.colorHex) }
+                    authorColorHex = character?.let { roleColors[it.id] ?: avatarColorHexFor(it.name, it.colorHex) }
                         ?: avatarColorHexFor(authorName, null),
                     isUser = isUser,
                     // Only a message we cannot attribute to any person is an app/bot line.
@@ -1655,6 +2173,8 @@ class DiscordChatViewModel @Inject constructor(
         addressed: List<RpCharacterEntity> = emptyList(),
         /** Codex the reply must obey, grouped by the category that governs it. */
         codexRefs: List<ChatCastResolver.CodexRef> = emptyList(),
+        /** The writer pinged @everyone or @here. */
+        everyone: Boolean = false,
     ): List<String> {
         val blocks = mutableListOf<String>()
         if (roomCharacter != null) {
@@ -1677,11 +2197,23 @@ class DiscordChatViewModel @Inject constructor(
                     "You ARE the people in this group chat — never a narrator, host, or app. " +
                         "There is no narrator in this room.",
                 )
-                if (book != null) {
+                if (book != null && book.workType == WORK_TYPE_SERVER) {
+                    appendLine("This is the Discord server \"${book.title}\".")
+                    serverSettingsById[book.id]?.description?.takeIf { it.isNotBlank() }?.let { appendLine("About the server: $it") }
+                } else if (book != null) {
                     appendLine("Everyone here knows the world of \"${book.title}\" and can talk about it.")
                     if (book.genre.isNotBlank()) appendLine("Genre of that world: ${book.genre}.")
                 }
-                appendLine("This is the #${room.title} channel.")
+                val parent = room.parentRoomId?.let { id -> allChats.firstOrNull { it.id == id } }
+                when {
+                    room.roomKind == ROOM_KIND_THREAD && parent?.roomKind == ROOM_KIND_FORUM ->
+                        appendLine("This is the forum post \"${room.title}\" in #${parent.title}. Stay on the post's topic.")
+                    room.roomKind == ROOM_KIND_THREAD && parent != null ->
+                        appendLine("This is the thread \"${room.title}\" off #${parent.title}. Stay on the thread's topic.")
+                    room.roomKind == ROOM_KIND_VOICE ->
+                        appendLine("This is the voice channel ${room.title}: people are talking out loud, so write what they say aloud. Spoken words only: no emoji, no picture tags, no links.")
+                    else -> appendLine("This is the #${room.title} channel.")
+                }
                 if (room.authorsNote.isNotBlank()) appendLine("Channel topic: ${room.authorsNote}")
                 append(
                     "Write ONLY what a person types into a chat app: first person, present tense, " +
@@ -1746,7 +2278,11 @@ class DiscordChatViewModel @Inject constructor(
                 blocks += RoleplayPromptBuilder.characterBlock(character, com.ihy2ln.weaverse.feature.shell.AppMode.Chatting)
             }
         }
-        if (mentioned.isNotEmpty()) {
+        if (everyone && addressed.isNotEmpty()) {
+            blocks += "The writer pinged @everyone, so several people here answer: " +
+                "${addressed.joinToString(", ") { it.name }} each reply in their own voice, one line each, " +
+                "as \"Name: what they say\". They don't all have to agree."
+        } else if (mentioned.isNotEmpty()) {
             val cap = (members.size + outsiders.size).coerceAtMost(3).coerceAtLeast(1)
             blocks += "The user addressed ${mentioned.joinToString(", ") { "@${it.name}" }}. " +
                 "${mentioned.first().name} replies first. Any of the other people in the room may reply too, " +
@@ -1820,8 +2356,14 @@ class DiscordChatViewModel @Inject constructor(
     }
 
     companion object {
-        private val SERVER_WORK_TYPES = setOf("novel", "campaign")
-        private val ROOM_KINDS = setOf(ROOM_KIND_CHANNEL, ROOM_KIND_CHARACTER)
+        private val SERVER_WORK_TYPES = setOf("novel", "campaign", WORK_TYPE_SERVER)
+        private const val MAX_EVERYONE = 5
+        private val QUIET_KINDS = setOf(ROOM_KIND_CODEX, ROOM_KIND_VOICE, ROOM_KIND_FORUM)
+        private const val THREAD_TITLE_CHARS = 48
+        private const val SERVER_SEARCH_LIMIT = 100
+        private val ROOM_KINDS = setOf(
+            ROOM_KIND_CHANNEL, ROOM_KIND_CHARACTER, ROOM_KIND_THREAD, ROOM_KIND_FORUM, ROOM_KIND_VOICE, ROOM_KIND_CODEX,
+        )
         private const val HISTORY_LIMIT = 24
         /** How much of a codex entry to quote per reference block. */
         private const val CODEX_BLOCK_CHARS = 700

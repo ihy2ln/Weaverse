@@ -3,6 +3,39 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.84 - Servers: your own servers, Discord parity, codex as server knowledge
+
+- DB v35 (`MIGRATION_34_35`): new `chat_servers` table (`ChatServerEntity`: description, color,
+  emoji, picked members, picked codex entries, roles, member roles) and `rp_chats.parentRoomId`
+  for threads and forum posts. New room kinds: `thread`, `forum`, `voice`, `codex`
+  (`ServerModels.kt`). The emulator's v34 database upgraded on launch.
+- Own servers: books with `workType = "server"` (kept out of every library, which filter by
+  workType). Rail green + → `CreateServerDialog`; Server Settings (server name menu) edits
+  overview, members (own only), codex picks and roles; own servers can be deleted.
+- Same codex-driven AI everywhere: `ChatCastResolver.scopeToServer` limits codex matches,
+  always-include entries and the cast to the server's picks (empty = whole codex, as before),
+  and own servers seat exactly the picked members.
+- Discord parity: Create Channel types (text/forum/voice), threads from a message (nested under
+  the channel), forum posts (first message auto-sends when the post opens), voice channel stage
+  (Join Voice; replies are spoken with TTS and the speaker's tile lights up), roles with colors
+  (top role colors names, hoisted roles group the member list, toggled from the profile),
+  @everyone/@here (up to 5 seated members answer), whole-server search.
+- Codex as knowledge: every server gets a #codex channel (browse, search, add entries, open in
+  the Codex editor from the browser) and messages have Save to Codex (new entry or appended
+  paragraph). Codex and voice rooms are seeded for older servers too, and kept out of Recents.
+- Fixed during testing: the seeder's existence check used `observeRoomsForBook`, which only
+  returns text/character rooms, so codex/voice rooms were re-made on every launch; it now uses
+  `getAllRoomsForBook` and drops empty duplicates.
+- TTS `speakParagraphs` gained `onFinished` (parameter order: paragraphs, onFinished, onProgress).
+- Builds needed `-Dorg.gradle.jvmargs=-Xmx4g -Pkotlin.daemon.jvmargs=-Xmx4g`: the Kotlin
+  daemon ran out of its 2 GB heap compiling `SettingsScreen.kt`.
+- Rebased onto v1.4.83 (its Home stays; WeaverBrowser keeps its full-width slot). 635 unit tests
+  pass (4 new in `ServerModelsTest`). On the Games AVD: created a server, its
+  channels, codex channel, voice stage, a thread, a forum post, a role assigned from a profile.
+  AI replies were not exercised (no API key on the emulator).
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.4.84.apk`, SHA-256
+  `2d2c57c0ad27df1be08198987c6ffc140e4aa477c597d5a8ddfea837a9c8b6d1`.
+
 ## v1.4.83 - WV 10.2.1: streaming-style Home over a splash; every mode follows the profile
 
 - Home is its own screen again (`feature/shell/WeaverHome.kt`), not WeaverBrowser. It sits on a

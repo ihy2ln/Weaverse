@@ -52,7 +52,7 @@ class TextToSpeechController @Inject constructor(
         }
     }
 
-    fun speakParagraphs(paragraphs: List<String>, onProgress: (Int) -> Unit) {
+    fun speakParagraphs(paragraphs: List<String>, onFinished: () -> Unit = {}, onProgress: (Int) -> Unit) {
         if (paragraphs.isEmpty()) return
         ensureReady { ok ->
             if (!ok) return@ensureReady
@@ -63,9 +63,13 @@ class TextToSpeechController @Inject constructor(
                         val idx = utteranceId?.removePrefix("p-")?.toIntOrNull() ?: return
                         onProgress(idx)
                     }
-                    override fun onDone(utteranceId: String?) = Unit
+                    override fun onDone(utteranceId: String?) {
+                        if (utteranceId == "p-${paragraphs.lastIndex}") onFinished()
+                    }
                     @Deprecated("Deprecated in Java")
-                    override fun onError(utteranceId: String?) = Unit
+                    override fun onError(utteranceId: String?) {
+                        if (utteranceId == "p-${paragraphs.lastIndex}") onFinished()
+                    }
                 },
             )
             paragraphs.forEachIndexed { index, para ->

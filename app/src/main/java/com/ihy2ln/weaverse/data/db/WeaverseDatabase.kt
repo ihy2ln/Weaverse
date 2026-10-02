@@ -88,8 +88,9 @@ import com.ihy2ln.weaverse.data.db.entities.RpgCampaignSaveEntity
         RpgCampaignSaveEntity::class,
         RpRoomMemberEntity::class,
         com.ihy2ln.weaverse.data.db.entities.SocialPostEntity::class,
+        com.ihy2ln.weaverse.data.db.entities.ChatServerEntity::class,
     ],
-    version = 34,
+    version = 35,
     exportSchema = true,
 )
 @TypeConverters(InkTypeConverters::class)
@@ -109,6 +110,7 @@ abstract class WeaverseDatabase : RoomDatabase() {
     abstract fun promptDao(): PromptDao
     abstract fun textGameSaveDao(): TextGameSaveDao
     abstract fun socialDao(): com.ihy2ln.weaverse.data.db.dao.SocialDao
+    abstract fun chatServerDao(): com.ihy2ln.weaverse.data.db.dao.ChatServerDao
 
     abstract fun homeAccessDao(): com.ihy2ln.weaverse.feature.shell.HomeAccessDao
     abstract fun bookBrowsingDao(): com.ihy2ln.weaverse.feature.library.BookBrowsingDao
@@ -120,6 +122,18 @@ abstract class WeaverseDatabase : RoomDatabase() {
                 generateSequence { if (c.moveToNext()) c.getString(nameIndex) else null }.any { it == column }
             }
             if (!exists) execSQL("ALTER TABLE `$table` ADD COLUMN `$column` $definition")
+        }
+
+        val MIGRATION_34_35 = object : Migration(34, 35) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `chat_servers` (`bookId` TEXT NOT NULL, `description` TEXT NOT NULL, " +
+                        "`colorHex` TEXT NOT NULL, `emoji` TEXT NOT NULL, `memberIdsJson` TEXT NOT NULL, " +
+                        "`codexIdsJson` TEXT NOT NULL, `rolesJson` TEXT NOT NULL, `memberRolesJson` TEXT NOT NULL, " +
+                        "`updatedAt` INTEGER NOT NULL, PRIMARY KEY(`bookId`))",
+                )
+                db.addColumnIfMissing("rp_chats", "parentRoomId", "TEXT")
+            }
         }
 
         val MIGRATION_33_34 = object : Migration(33, 34) {
@@ -508,6 +522,7 @@ abstract class WeaverseDatabase : RoomDatabase() {
             MIGRATION_31_32,
             MIGRATION_32_33,
             MIGRATION_33_34,
+            MIGRATION_34_35,
         )
     }
 }

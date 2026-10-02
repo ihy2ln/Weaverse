@@ -101,6 +101,8 @@ fun DiscordChatScreen(
     onOpenFriends: () -> Unit,
     appearance: AppearanceOverrides = AppearanceOverrides(),
     wallpaperVisible: Boolean = false,
+    /** Opens a codex entry in the full Codex editor; null = read it in the #codex channel. */
+    onOpenCodexEntry: ((String) -> Unit)? = null,
     viewModel: DiscordChatViewModel = hiltViewModel(),
  ) = DiscordTheme(appearance = appearance, wallpaperVisible = wallpaperVisible) {
     val state by viewModel.uiState.collectAsState()
@@ -119,6 +121,8 @@ fun DiscordChatScreen(
 
     var pickerOpen by rememberSaveable { mutableStateOf(false) }
     var channelDialogOpen by rememberSaveable { mutableStateOf(false) }
+    var createServerOpen by rememberSaveable { mutableStateOf(false) }
+    var serverSettingsOpen by rememberSaveable { mutableStateOf(false) }
     var pendingDeleteRoomId by rememberSaveable { mutableStateOf<String?>(null) }
     var modelsOpen by rememberSaveable { mutableStateOf(false) }
     var modelSearch by rememberSaveable { mutableStateOf("") }
@@ -135,7 +139,12 @@ fun DiscordChatScreen(
     LaunchedEffect(state.mediaPickRequestId) {
         if (state.mediaPickRequestId > 0L) mediaPicker = state.mediaPickStart
     }
-    LaunchedEffect(state.selectedRoomId) { sidePanel = SidePanel.None }
+    val chromeCollapse = com.ihy2ln.weaverse.core.ui.components.LocalChromeCollapse.current
+    LaunchedEffect(state.selectedRoomId) {
+        sidePanel = SidePanel.None
+        // A new room starts with the mode tabs and address bar showing.
+        chromeCollapse.expand()
+    }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         // Landscape on a phone is wide enough to show the room list beside the
@@ -178,6 +187,7 @@ fun DiscordChatScreen(
                     selectedServerId = selectedServerId,
                     onOpenDirectMessages = openDirectMessages,
                     onSelect = onServerSelect,
+                    onAddServer = { viewModel.loadPeople(); createServerOpen = true },
                 )
                 Column(
                     modifier = (if (compact) Modifier.weight(1f) else Modifier.width(240.dp))
@@ -198,6 +208,7 @@ fun DiscordChatScreen(
                         onFindConversation = openDirectMessages,
                         onOpenFriends = onOpenFriends,
                         onMarkRead = viewModel::markServerRead,
+                        onOpenSettings = { viewModel.loadPeople(); serverSettingsOpen = true },
                         modifier = Modifier.weight(1f),
                     )
                     UserPanel(
@@ -232,6 +243,11 @@ fun DiscordChatScreen(
                         onClose = { sidePanel = SidePanel.None },
                         onJump = { id -> jumpToMessageId = id; sidePanel = SidePanel.None },
                         onOpenProfile = { sidePanel = SidePanel.Profile },
+                        onOpenRoom = { roomId, messageId ->
+                            onRoomSelect(roomId)
+                            jumpToMessageId = messageId
+                            sidePanel = SidePanel.None
+                        },
                         modifier = Modifier.weight(1f).fillMaxHeight(),
                     )
                 } else {
@@ -254,6 +270,8 @@ fun DiscordChatScreen(
                         onOpenProfile = { sidePanel = SidePanel.Profile },
                         jumpToMessageId = jumpToMessageId,
                         onJumpHandled = { jumpToMessageId = null },
+                        onOpenRoom = { onRoomSelect(it); channelsOpen = false },
+                        onOpenCodexEntry = onOpenCodexEntry,
                         modifier = Modifier.weight(1f).fillMaxHeight(),
                     )
                     if (roomyEnoughForMembers && sidePanel != SidePanel.None) {
@@ -265,6 +283,7 @@ fun DiscordChatScreen(
                             onClose = { sidePanel = SidePanel.None },
                             onJump = { id -> jumpToMessageId = id },
                             onOpenProfile = { sidePanel = SidePanel.Profile },
+                            onOpenRoom = { roomId, messageId -> onRoomSelect(roomId); jumpToMessageId = messageId },
                             modifier = Modifier.width(300.dp).fillMaxHeight(),
                         )
                     } else if (roomyEnoughForMembers && memberListOpen && state.selectedRoom != null &&
@@ -318,40 +337,49 @@ fun DiscordChatScreen(
         )
     }
     if (channelDialogOpen) {
-        var channelName by rememberSaveable { mutableStateOf("") }
-        AlertDialog(
-            onDismissRequest = { channelDialogOpen = false },
-            title = { Text("Create Channel") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "CHANNEL NAME",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = colors.muted,
-                    )
-                    OutlinedTextField(
-                        value = channelName,
-                        // Discord channel names are lowercase and hyphenated.
-                        onValueChange = { channelName = it.lowercase().replace(' ', '-') },
-                        singleLine = true,
-                        leadingIcon = { Icon(Icons.Filled.Tag, contentDescription = null) },
-                        placeholder = { Text("new-channel") },
-                    )
-                }
+        CreateChannelDialog(
+            onDismiss = { channelDialogOpen = false },
+            onCreate = { name, kind ->
+                viewModel.createChannel(name, kind)
+                channelDialogOpen = false
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.createChannel(channelName)
-                        channelDialogOpen = false
-                    },
-                    enabled = channelName.isNotBlank(),
-                ) { Text("Create Channel") }
+        )
+    }
+    if (createServerOpen) {
+        CreateServerDialog(
+            state = state,
+            onDismiss = { createServerOpen = false },
+            onCreate = { name, description, color, emoji, members, codex ->
+                createServerOpen = false
+                viewModel.createServer(name, description, color, emoji, members, codex) { id -> onServerSelect(id) }
             },
-            dismissButton = {
-                TextButton(onClick = { channelDialogOpen = false }) { Text("Cancel") }
-            },
+        )
+    }
+    if (serverSettingsOpen) {
+        state.selectedServer?.let { server ->
+            ServerSettingsDialog(
+                state = state,
+                server = server,
+                viewModel = viewModel,
+                onDismiss = { serverSettingsOpen = false },
+                onDeleted = { serverSettingsOpen = false; onRoomSelect(null); onServerSelect(null) },
+            )
+        } ?: run { serverSettingsOpen = false }
+    }
+    state.threadDraftFor?.let { message ->
+        CreateThreadDialog(
+            message = message,
+            onDismiss = { viewModel.beginThread(null) },
+            onCreate = { name -> viewModel.createThread(name) { id -> onRoomSelect(id) } },
+        )
+    }
+    state.codexSaveFor?.let { message ->
+        SaveToCodexDialog(
+            state = state,
+            message = message,
+            onDismiss = { viewModel.beginCodexSave(null) },
+            onNew = viewModel::createCodexEntry,
+            onAppend = viewModel::appendToCodexEntry,
         )
     }
     mediaPicker?.let { start ->
@@ -404,6 +432,7 @@ private fun SidePanelContent(
     onClose: () -> Unit,
     onJump: (String) -> Unit,
     onOpenProfile: () -> Unit,
+    onOpenRoom: (String, String) -> Unit,
     modifier: Modifier,
 ) {
     when (panel) {
@@ -428,16 +457,31 @@ private fun SidePanelContent(
             onClose = onClose,
             modifier = modifier,
         )
-        SidePanel.Search -> SearchMessagesPanel(
-            state = state,
-            viewModel = viewModel,
-            onJump = onJump,
-            onClose = onClose,
-            modifier = modifier,
-        )
+        SidePanel.Search -> if (state.selectedServerId != null) {
+            ServerSearchPanel(
+                state = state,
+                viewModel = viewModel,
+                onOpen = { roomId, messageId ->
+                    if (roomId == state.selectedRoomId) onJump(messageId) else onOpenRoom(roomId, messageId)
+                },
+                onClose = onClose,
+                modifier = modifier,
+            )
+        } else {
+            SearchMessagesPanel(
+                state = state,
+                viewModel = viewModel,
+                onJump = onJump,
+                onClose = onClose,
+                modifier = modifier,
+            )
+        }
         SidePanel.Profile -> ProfilePanel(
             profile = state.profile,
             status = status,
+            roles = if (state.selectedServerId != null) state.roles else emptyList(),
+            memberRoleIds = state.profile?.characterId?.let { state.memberRoles[it] }.orEmpty(),
+            onToggleRole = { roleId -> state.profile?.characterId?.let { viewModel.toggleMemberRole(it, roleId) } },
             onMessage = { id -> onClose(); viewModel.closeProfile(); viewModel.openDirectMessage(id) },
             onRemove = { id -> viewModel.removeMember(id); viewModel.closeProfile(); onClose() },
             onClose = { viewModel.closeProfile(); onClose() },
@@ -455,6 +499,7 @@ private fun ServerRail(
     selectedServerId: String?,
     onOpenDirectMessages: () -> Unit,
     onSelect: (String?) -> Unit,
+    onAddServer: () -> Unit,
 ) {
     val colors = discordColors()
     Column(
@@ -514,13 +559,28 @@ private fun ServerRail(
                 onClick = { onSelect(server.bookId) },
                 description = server.title,
             ) {
-                Text(
-                    server.monogram,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
-                )
+                if (server.emoji.isNotBlank()) {
+                    Text(server.emoji, fontSize = 22.sp)
+                } else {
+                    Text(
+                        server.monogram,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                    )
+                }
             }
+        }
+        // Discord's green "Add a Server".
+        RailItem(
+            selected = false,
+            unread = 0,
+            background = colors.green,
+            idleBackground = colors.elevated,
+            onClick = onAddServer,
+            description = "Add a Server",
+        ) {
+            Icon(Icons.Filled.Add, contentDescription = null, tint = colors.green, modifier = Modifier.size(26.dp))
         }
     }
 }
@@ -612,6 +672,7 @@ private fun ChannelSidebar(
     onFindConversation: () -> Unit,
     onOpenFriends: () -> Unit,
     onMarkRead: () -> Unit,
+    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = discordColors()
@@ -650,6 +711,7 @@ private fun ChannelSidebar(
                 onAddChannel = onAddChannel,
                 onAddCharacter = onAddCharacter,
                 onMarkRead = onMarkRead,
+                onOpenSettings = onOpenSettings,
             )
         }
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp)) {
@@ -721,18 +783,56 @@ private fun ChannelSidebar(
                         onAdd = onAddChannel,
                     )
                 }
-                val channels = state.rooms.filter { it.kind == ROOM_KIND_CHANNEL }
+                val channels = state.rooms.filter { it.kind == ROOM_KIND_CHANNEL || it.kind == ROOM_KIND_FORUM }
+                // Text channels with their threads tucked underneath, Discord-style. Forum posts
+                // live inside their forum instead.
+                val threadsByParent = state.rooms.filter { it.kind == ROOM_KIND_THREAD }.groupBy { it.parentRoomId }
                 // Collapsed categories still show the open channel and anything unread, like Discord.
-                items(
-                    channels.filter { "text" !in collapsed || it.chatId == state.selectedRoomId || it.unread > 0 },
-                    key = { "ch-" + it.chatId },
-                ) { room ->
+                channels.filter { "text" !in collapsed || it.chatId == state.selectedRoomId || it.unread > 0 }.forEach { channel ->
+                    item(key = "ch-" + channel.chatId) {
+                        ChannelRow(
+                            room = channel,
+                            selected = channel.chatId == state.selectedRoomId,
+                            onClick = { onRoomSelect(channel.chatId) },
+                            onLongClick = { onDeleteRoom(channel.chatId) },
+                        )
+                    }
+                    if (channel.kind == ROOM_KIND_CHANNEL && "text" !in collapsed) {
+                        items(threadsByParent[channel.chatId].orEmpty().sortedByDescending { it.lastMessageAt }, key = { "th-" + it.chatId }) { thread ->
+                            ChannelRow(
+                                room = thread,
+                                selected = thread.chatId == state.selectedRoomId,
+                                onClick = { onRoomSelect(thread.chatId) },
+                                onLongClick = { onDeleteRoom(thread.chatId) },
+                                indent = true,
+                            )
+                        }
+                    }
+                }
+                val voice = state.rooms.filter { it.kind == ROOM_KIND_VOICE }
+                item(key = "voice-header") {
+                    CategoryHeader("Voice Channels", "voice" in collapsed, onToggle = { toggle("voice") }, onAdd = onAddChannel)
+                }
+                items(voice.filter { "voice" !in collapsed || it.chatId == state.selectedRoomId }, key = { "vc-" + it.chatId }) { room ->
                     ChannelRow(
                         room = room,
                         selected = room.chatId == state.selectedRoomId,
                         onClick = { onRoomSelect(room.chatId) },
                         onLongClick = { onDeleteRoom(room.chatId) },
+                        subtitle = if (state.voice.roomId == room.chatId) "Connected" else "",
                     )
+                }
+                val knowledge = state.rooms.filter { it.kind == ROOM_KIND_CODEX }
+                if (knowledge.isNotEmpty()) {
+                    item(key = "codex-header") { CategoryHeader("Knowledge", "codex" in collapsed, onToggle = { toggle("codex") }) }
+                    items(knowledge.filter { "codex" !in collapsed || it.chatId == state.selectedRoomId }, key = { "cx-" + it.chatId }) { room ->
+                        ChannelRow(
+                            room = room,
+                            selected = room.chatId == state.selectedRoomId,
+                            onClick = { onRoomSelect(room.chatId) },
+                            onLongClick = {},
+                        )
+                    }
                 }
                 item(key = "char-header") {
                     CategoryHeader(
@@ -769,6 +869,7 @@ private fun ServerHeader(
     onAddChannel: () -> Unit,
     onAddCharacter: () -> Unit,
     onMarkRead: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val colors = discordColors()
     val tint = parseHexColor(server.colorHex, colors.blurple)
@@ -798,13 +899,24 @@ private fun ServerHeader(
                 Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Server menu", tint = Color.White)
             }
             Text(
-                if (server.workType == "campaign") "Campaign server" else "Novel server",
+                when {
+                    server.isOwn -> server.description.ifBlank { "Your server" }
+                    server.workType == "campaign" -> "Campaign server"
+                    else -> "Novel server"
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 fontSize = 11.sp,
                 color = Color.White.copy(alpha = 0.85f),
                 modifier = Modifier.padding(start = 16.dp, bottom = 8.dp),
             )
         }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            DropdownMenuItem(
+                text = { Text("Server Settings") },
+                leadingIcon = { Icon(Icons.Filled.Settings, null) },
+                onClick = { menuOpen = false; onOpenSettings() },
+            )
             DropdownMenuItem(text = { Text("Mark As Read") }, onClick = { menuOpen = false; onMarkRead() })
             DropdownMenuItem(
                 text = { Text("Create Channel") },
@@ -911,6 +1023,8 @@ private fun ChannelRow(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     subtitle: String = "",
+    /** A thread, drawn tucked under its channel. */
+    indent: Boolean = false,
 ) {
     val colors = discordColors()
     val unread = room.unread > 0 && !selected
@@ -928,7 +1042,7 @@ private fun ChannelRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 1.dp)
+                .padding(start = if (indent) 28.dp else 8.dp, end = 8.dp, top = 1.dp, bottom = 1.dp)
                 .clip(RoundedCornerShape(4.dp))
                 .background(if (selected) colors.selected else Color.Transparent)
                 .combinedClickable(onClick = onClick, onLongClick = onLongClick)
@@ -936,8 +1050,11 @@ private fun ChannelRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (room.kind == ROOM_KIND_CHANNEL) {
-                Icon(Icons.Filled.Tag, contentDescription = null, tint = colors.muted, modifier = Modifier.size(20.dp))
+            val kindIcon = roomKindIcon(room.kind)
+            if (indent) {
+                Text("└", color = colors.muted, fontSize = 14.sp)
+            } else if (kindIcon != null) {
+                Icon(kindIcon, contentDescription = null, tint = colors.muted, modifier = Modifier.size(20.dp))
             } else {
                 CharacterAvatar(name = room.name, colorHex = room.avatarColorHex, size = 22.dp)
             }
@@ -1167,6 +1284,8 @@ private fun MessagePane(
     onOpenProfile: () -> Unit,
     jumpToMessageId: String?,
     onJumpHandled: () -> Unit,
+    onOpenRoom: (String) -> Unit,
+    onOpenCodexEntry: ((String) -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val colors = discordColors()
@@ -1182,10 +1301,32 @@ private fun MessagePane(
             onTogglePanel = onTogglePanel,
             onOpenDirectMessages = onOpenDirectMessages.takeIf { state.selectedServerId != null },
             onOpenFriends = onOpenFriends,
+            parentName = room?.parentRoomId?.let { id -> state.rooms.firstOrNull { it.chatId == id } }?.name,
+            onOpenParent = { room?.parentRoomId?.let(onOpenRoom) },
         )
 
         if (room == null) {
             EmptyPaneHint(state)
+        } else if (room.kind == ROOM_KIND_FORUM) {
+            ForumPane(
+                state = state,
+                room = room,
+                onOpenPost = onOpenRoom,
+                onNewPost = { title, body -> viewModel.createForumPost(title, body) { id -> onOpenRoom(id) } },
+                modifier = Modifier.weight(1f),
+            )
+        } else if (room.kind == ROOM_KIND_CODEX) {
+            CodexChannelPane(state = state, viewModel = viewModel, onOpenEntry = onOpenCodexEntry, modifier = Modifier.weight(1f))
+        } else if (room.kind == ROOM_KIND_VOICE) {
+            VoiceStage(state = state, room = room, viewModel = viewModel, modifier = Modifier.weight(1f))
+            ChatPromptWindow(
+                state = state,
+                viewModel = viewModel,
+                roomName = room.name,
+                onModelClick = onModelClick,
+                onMicTap = onMicTap,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 148.dp).padding(horizontal = 8.dp, vertical = 4.dp),
+            )
         } else {
             DiscordMessageList(
                 state = state,
@@ -1230,6 +1371,9 @@ private fun ChannelHeader(
     onTogglePanel: (SidePanel) -> Unit,
     onOpenDirectMessages: (() -> Unit)?,
     onOpenFriends: () -> Unit,
+    /** For a thread or forum post: the channel it lives under. */
+    parentName: String? = null,
+    onOpenParent: () -> Unit = {},
 ) {
     val colors = discordColors()
     var topicOpen by remember { mutableStateOf(false) }
@@ -1246,9 +1390,16 @@ private fun ChannelHeader(
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = colors.muted)
                 }
             }
-            when (room?.kind) {
-                ROOM_KIND_CHANNEL -> Icon(Icons.Filled.Tag, null, tint = colors.muted, modifier = Modifier.size(22.dp))
-                null -> Unit
+            when {
+                room == null -> Unit
+                parentName != null -> Text(
+                    "# $parentName ›",
+                    color = colors.muted,
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    modifier = Modifier.clip(RoundedCornerShape(4.dp)).clickable(onClick = onOpenParent).padding(horizontal = 4.dp, vertical = 2.dp),
+                )
+                roomKindIcon(room.kind) != null -> Icon(roomKindIcon(room.kind)!!, null, tint = colors.muted, modifier = Modifier.size(22.dp))
                 else -> StatusAvatar(room.name, room.avatarColorHex, 24.dp, presenceFor(room.name), ring = colors.chat)
             }
             Spacer(Modifier.width(8.dp))

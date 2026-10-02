@@ -327,9 +327,13 @@ data class RpChatEntity(
     /**
      * Chatting-mode Discord room kind: "" = legacy messenger chat (reads as a DM),
      * "channel" = work text channel, "character" = per-character room inside a
-     * work's server, "dm" = direct message conversation.
+     * work's server, "dm" = direct message conversation, "thread" = a thread or forum post
+     * under [parentRoomId], "forum" = forum channel, "voice" = voice channel, "codex" = the
+     * server's codex (knowledge) channel.
      */
     val roomKind: String = "",
+    /** The channel a thread or forum post belongs to. */
+    val parentRoomId: String? = null,
 )
 
 /** One storyboard page within a roleplay chat's DM/Roleplay canvas. */
@@ -435,6 +439,29 @@ data class SocialPostEntity(
 )
 
 /** One member of a Chatting room's cast — seeded with the room, or pulled in later by an @mention. */
+/**
+ * A Chatting server's own settings. Every server has a book behind it: a novel, a campaign,
+ * or (workType "server") one the writer made just for chatting.
+ */
+@Entity(tableName = "chat_servers")
+data class ChatServerEntity(
+    @PrimaryKey val bookId: String,
+    val description: String = "",
+    /** Icon color; blank = derived from the name. */
+    val colorHex: String = "",
+    /** Optional emoji shown on the server icon instead of the monogram. */
+    val emoji: String = "",
+    /** Character ids seated in a writer-made server; empty = every codex character. */
+    val memberIdsJson: String = "[]",
+    /** Codex entries this server's AI may use; empty = the whole shared codex. */
+    val codexIdsJson: String = "[]",
+    /** JSON List<ServerRole>. */
+    val rolesJson: String = "[]",
+    /** JSON Map<characterId, List<roleId>>. */
+    val memberRolesJson: String = "{}",
+    val updatedAt: Long = 0L,
+)
+
 @Entity(tableName = "rp_room_members", primaryKeys = ["roomId", "characterId"])
 data class RpRoomMemberEntity(
     val roomId: String,

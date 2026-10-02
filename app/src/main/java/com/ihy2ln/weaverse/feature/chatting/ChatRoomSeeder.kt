@@ -33,15 +33,21 @@ class ChatRoomSeeder @Inject constructor(
     suspend fun ensureRoomsForBook(book: BookEntity) {
         if (book.workType !in SERVER_WORK_TYPES) return
         if (!ensured.add(book.id)) return
-        val existing = db.roleplayDao().observeRoomsForBook(book.id).first()
+        val existing = db.roleplayDao().getAllRoomsForBook(book.id)
         val cast = castResolver.castForBook(book)
 
         if (existing.none { it.roomKind == ROOM_KIND_CHANNEL }) {
-            listOf(
-                Triple("general", "General chat about ${book.title}.", ambientGeneral(book.title)),
-                Triple("lore", "Deep-dive the world, canon, and lore of ${book.title}.", ambientLore(book.title)),
-                Triple("brainstorm", "Pitch ideas, outlines, and what-ifs for ${book.title}.", ambientBrainstorm(book.title)),
-            ).forEach { (name, topic, lines) ->
+            val starters = if (book.workType == WORK_TYPE_SERVER) {
+                // A writer-made server starts like a fresh Discord server: one #general.
+                listOf(Triple("general", "Say hi to everyone in ${book.title}.", ambientGeneral(book.title)))
+            } else {
+                listOf(
+                    Triple("general", "General chat about ${book.title}.", ambientGeneral(book.title)),
+                    Triple("lore", "Deep-dive the world, canon, and lore of ${book.title}.", ambientLore(book.title)),
+                    Triple("brainstorm", "Pitch ideas, outlines, and what-ifs for ${book.title}.", ambientBrainstorm(book.title)),
+                )
+            }
+            starters.forEach { (name, topic, lines) ->
                 val room = createRoom(book, name, ROOM_KIND_CHANNEL, null, topic, null)
                 val members = channelCast(book, name, cast)
                 members.forEach { castResolver.addMember(room.id, it, seeded = true) }
@@ -64,6 +70,23 @@ class ChatRoomSeeder @Inject constructor(
             }
         }
 
+        // Every server has its codex channel and a voice lounge; older servers catch up here.
+        // A build briefly re-made them on every launch: keep the first, drop empty repeats.
+        existing.filter { it.roomKind == ROOM_KIND_CODEX }.drop(1).forEach { db.roleplayDao().deleteChat(it.id) }
+        existing.filter { it.roomKind == ROOM_KIND_VOICE && it.title == "Lounge" }.drop(1)
+            .filter { db.roleplayDao().getMessages(it.id).isEmpty() }
+            .forEach { room ->
+                db.roleplayDao().getMembers(room.id).forEach { db.roleplayDao().deleteMember(room.id, it.characterId) }
+                db.roleplayDao().deleteChat(room.id)
+            }
+        if (existing.none { it.roomKind == ROOM_KIND_CODEX }) {
+            createRoom(book, "codex", ROOM_KIND_CODEX, null, "The canon this server's AI follows. Read it, add to it, fix it.", null)
+        }
+        if (existing.none { it.roomKind == ROOM_KIND_VOICE }) {
+            val lounge = createRoom(book, "Lounge", ROOM_KIND_VOICE, null, "Hang out and talk out loud.", null)
+            channelCast(book, "Lounge", cast).forEach { castResolver.addMember(lounge.id, it, seeded = true) }
+        }
+
         // Older builds seated extra people in character rooms; a character room is that
         // person's own room, so trim anyone who was not invited by an @mention.
         existing.filter { it.roomKind == ROOM_KIND_CHARACTER && it.characterId != null }
@@ -78,7 +101,7 @@ class ChatRoomSeeder @Inject constructor(
         existing.filter { room -> db.roleplayDao().getMembers(room.id).isEmpty() }
             .forEach { room ->
                 val members = when (room.roomKind) {
-                    ROOM_KIND_CHANNEL -> channelCast(book, room.title, cast)
+                    ROOM_KIND_CHANNEL, ROOM_KIND_FORUM, ROOM_KIND_VOICE -> channelCast(book, room.title, cast)
                     ROOM_KIND_CHARACTER -> room.characterId?.let { id -> cast.filter { it.id == id } }.orEmpty()
                         .ifEmpty { room.characterId?.let { id -> db.roleplayDao().getCharacter(id) }?.let(::listOf).orEmpty() }
                     else -> emptyList()
@@ -102,6 +125,7 @@ class ChatRoomSeeder @Inject constructor(
         characterId: String?,
         topic: String,
         character: RpCharacterEntity?,
+        parentRoomId: String? = null,
     ): RpChatEntity {
         val now = System.currentTimeMillis()
         val chat = RpChatEntity(
@@ -115,6 +139,7 @@ class ChatRoomSeeder @Inject constructor(
             updatedAt = now,
             bookId = book.id,
             roomKind = kind,
+            parentRoomId = parentRoomId,
         )
         db.roleplayDao().upsertChat(chat)
         if (character != null) seedGreeting(chat.id, character, now)
@@ -194,7 +219,7 @@ class ChatRoomSeeder @Inject constructor(
     }
 
     companion object {
-        private val SERVER_WORK_TYPES = setOf("novel", "campaign")
+        private val SERVER_WORK_TYPES = setOf("novel", "campaign", WORK_TYPE_SERVER)
         private const val AMBIENT_MESSAGE_SPACING_MS = 15 * 60 * 1000L
     }
 }

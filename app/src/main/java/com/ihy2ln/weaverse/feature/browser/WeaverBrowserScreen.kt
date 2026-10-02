@@ -99,6 +99,8 @@ fun WeaverBrowserScreen(
     onRoomSelect: (String?) -> Unit,
     onOpenMode: (String) -> Unit,
     onOpenAppSettings: () -> Unit,
+    /** Opens a codex entry in the full Codex editor. */
+    onOpenCodexEntry: ((String) -> Unit)? = null,
     appearance: AppearanceOverrides = AppearanceOverrides(),
     wallpaperVisible: Boolean = true,
     viewModel: BrowserViewModel = hiltViewModel(),
@@ -234,6 +236,7 @@ fun WeaverBrowserScreen(
                                 onOpenFriends = { viewModel.navigate(tab.id, WeaverPages.CONTACTS) },
                                 appearance = appearance,
                                 wallpaperVisible = wallpaperVisible,
+                                onOpenCodexEntry = onOpenCodexEntry,
                             )
                             WeaverPages.CONTACTS -> FriendsScreen(
                                 onOpenChat = { chatId ->
