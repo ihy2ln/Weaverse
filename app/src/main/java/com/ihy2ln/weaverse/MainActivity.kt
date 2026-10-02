@@ -15,8 +15,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -58,12 +56,13 @@ class MainActivity : ComponentActivity() {
                 val barColor = if (themed.alpha < 0.4f) tokens.panel else themed.copy(alpha = 1f)
                 LaunchedEffect(barColor) {
                     val argb = barColor.toArgb()
-                    val style = if (barColor.luminance() > 0.5f) {
-                        SystemBarStyle.light(argb, argb)
-                    } else {
-                        SystemBarStyle.dark(argb)
-                    }
-                    enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+                    val lightBars = barColor.luminance() > 0.5f
+                    val style = if (lightBars) SystemBarStyle.light(argb, argb) else SystemBarStyle.dark(argb)
+                    // The status bar is see-through: AppShell draws Home's splash and the
+                    // wallpaper behind it, and its own glass strip on other pages.
+                    val clear = android.graphics.Color.TRANSPARENT
+                    val statusStyle = if (lightBars) SystemBarStyle.light(clear, clear) else SystemBarStyle.dark(clear)
+                    enableEdgeToEdge(statusBarStyle = statusStyle, navigationBarStyle = style)
                 }
                 Surface(
                     modifier = Modifier
@@ -88,12 +87,9 @@ class MainActivity : ComponentActivity() {
                             },
                         )
                     }
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .statusBarsPadding()
-                            .navigationBarsPadding(),
-                    ) {
+                    // AppShell pads its pages for the system bars itself, so Home's splash
+                    // and the wallpaper can run underneath them.
+                    Box(modifier = Modifier.fillMaxSize()) {
                         AppShell()
                     }
 

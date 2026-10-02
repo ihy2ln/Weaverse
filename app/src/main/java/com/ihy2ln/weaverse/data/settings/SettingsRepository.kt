@@ -115,6 +115,13 @@ data class UserPreferences(
     val backgroundMediaId: String = "",
     /** Draw the appearance profile's ambient background art behind the shell. */
     val profileBackgroundEnabled: Boolean = true,
+    /**
+     * Home's splash art: a [com.ihy2ln.weaverse.feature.shell.ModeBrand] key, "wallpaper" for
+     * the app wallpaper, or blank for the user's own background picture if set, else Weaverse's.
+     */
+    val homeSplashArt: String = "",
+    /** Play the Weaverse intro over the splash when the app starts at Home. */
+    val homeIntroEnabled: Boolean = true,
     /** Media id of the RPG town backdrop; blank draws the built-in fallback. */
     val townBackgroundMediaId: String = "",
     val roleplayPresetId: String = "preset-balanced",
@@ -212,6 +219,8 @@ class SettingsRepository @Inject constructor(
             selectedBookId = prefs[KEY_SELECTED_BOOK] ?: "book-adams-haven-1",
             backgroundMediaId = prefs[KEY_BACKGROUND_MEDIA] ?: "",
             profileBackgroundEnabled = prefs[KEY_PROFILE_BACKGROUND] ?: true,
+            homeSplashArt = prefs[KEY_HOME_SPLASH_ART] ?: "",
+            homeIntroEnabled = prefs[KEY_HOME_INTRO] ?: true,
             townBackgroundMediaId = prefs[KEY_TOWN_BACKGROUND_MEDIA] ?: "",
             roleplayPresetId = prefs[KEY_RP_PRESET] ?: "preset-balanced",
             layout = LayoutPreferences(
@@ -515,6 +524,14 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setProfileBackgroundEnabled(enabled: Boolean) {
         context.dataStore.edit { it[KEY_PROFILE_BACKGROUND] = enabled }
+    }
+
+    suspend fun setHomeSplashArt(key: String) {
+        context.dataStore.edit { it[KEY_HOME_SPLASH_ART] = key }
+    }
+
+    suspend fun setHomeIntroEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[KEY_HOME_INTRO] = enabled }
     }
 
     suspend fun setRoleplayPresetId(presetId: String) {
@@ -853,6 +870,8 @@ class SettingsRepository @Inject constructor(
         private val KEY_SELECTED_BOOK = stringPreferencesKey("selected_book_id")
         private val KEY_BACKGROUND_MEDIA = stringPreferencesKey("background_media_id")
         private val KEY_PROFILE_BACKGROUND = booleanPreferencesKey("profile_background_enabled")
+        private val KEY_HOME_SPLASH_ART = stringPreferencesKey("home_splash_art")
+        private val KEY_HOME_INTRO = booleanPreferencesKey("home_intro_enabled")
         private val KEY_TOWN_BACKGROUND_MEDIA = stringPreferencesKey("town_background_media_id")
         private val KEY_RP_PRESET = stringPreferencesKey("roleplay_preset_id")
         private val KEY_RAIL_WIDTH = floatPreferencesKey("rail_width_dp")

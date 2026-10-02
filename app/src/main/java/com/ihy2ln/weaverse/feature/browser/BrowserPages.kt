@@ -94,16 +94,24 @@ fun NewTabPage(
     var adding by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<BrowserFavorite?>(null) }
     Box(
-        Modifier.fillMaxSize().background(
-            if (private) Brush.verticalGradient(listOf(Color(0xFF1A1230), Color(0xFF0B0716)))
-            else Brush.verticalGradient(listOf(Color.Black.copy(alpha = .25f), Color.Black.copy(alpha = .55f))),
-        ).then(
-            // The streaming theme's violet glow, standing in for Brave's photo backgrounds.
-            if (private) Modifier else Modifier.background(
-                Brush.radialGradient(listOf(Color(0xFF6A4BB8).copy(alpha = .45f), Color.Transparent), center = androidx.compose.ui.geometry.Offset(120f, 80f), radius = 1300f),
-            ),
+        Modifier.fillMaxSize().then(
+            if (private) Modifier.background(Brush.verticalGradient(listOf(colors.bar, colors.page))) else Modifier,
         ),
     ) {
+        // Brave puts a photo behind its New Tab Page; WeaverBrowser uses its own key art,
+        // washed in the appearance profile like every mode's art, with the accent glowing in.
+        if (!private) {
+            com.ihy2ln.weaverse.feature.shell.ModeArtImage(
+                brand = com.ihy2ln.weaverse.feature.shell.ModeArt.of(com.ihy2ln.weaverse.feature.shell.AppMode.Chatting),
+                fade = 0.3f,
+                modifier = Modifier.matchParentSize(),
+            )
+            Box(
+                Modifier.matchParentSize().background(
+                    Brush.radialGradient(listOf(colors.accent.copy(alpha = .28f), Color.Transparent), center = androidx.compose.ui.geometry.Offset(120f, 80f), radius = 1300f),
+                ),
+            )
+        }
         if (private) {
             Column(
                 Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(28.dp),
@@ -128,18 +136,18 @@ fun NewTabPage(
             if (data.settings.showPrivacyStats) {
                 Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(colors.cardScrim).padding(18.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Outlined.VerifiedUser, null, tint = Color.White, modifier = Modifier.size(22.dp))
-                        Text("Privacy Stats", color = Color.White, fontSize = 17.sp, modifier = Modifier.weight(1f).padding(start = 8.dp))
+                        Icon(Icons.Outlined.VerifiedUser, null, tint = colors.text, modifier = Modifier.size(22.dp))
+                        Text("Privacy Stats", color = colors.text, fontSize = 17.sp, modifier = Modifier.weight(1f).padding(start = 8.dp))
                         Box(Modifier.size(36.dp).clip(RoundedCornerShape(50)).clickable(onClick = onHideStats), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Outlined.VisibilityOff, "Hide Privacy Stats", tint = Color.White, modifier = Modifier.size(22.dp))
+                            Icon(Icons.Outlined.VisibilityOff, "Hide Privacy Stats", tint = colors.text, modifier = Modifier.size(22.dp))
                         }
                     }
                     Row(Modifier.fillMaxWidth().padding(top = 14.dp)) {
                         val (bytes, bytesUnit) = sizeParts(data.stats.bytesSaved)
                         val (time, timeUnit) = timeParts(data.stats.msSaved)
-                        Stat(compact(data.stats.blocked), "", "Trackers & Ads\nBlocked", colors.statOrange, Modifier.weight(1f))
-                        Stat(bytes, bytesUnit, "Est. Data\nSaved", colors.statPurple, Modifier.weight(1f))
-                        Stat(time, timeUnit, "Est. Time\nSaved", Color.White, Modifier.weight(1f))
+                        Stat(compact(data.stats.blocked), "", "Trackers & Ads\nBlocked", colors.statOrange, Modifier.weight(1f), colors.text)
+                        Stat(bytes, bytesUnit, "Est. Data\nSaved", colors.accent, Modifier.weight(1f), colors.text)
+                        Stat(time, timeUnit, "Est. Time\nSaved", colors.text, Modifier.weight(1f), colors.text)
                     }
                 }
                 Spacer(Modifier.height(14.dp))
@@ -158,7 +166,7 @@ fun NewTabPage(
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             FavoriteIcon(fav.url, colors)
-                            Text(fav.title, color = Color.White, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            Text(fav.title, color = colors.text, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp, start = 4.dp, end = 4.dp))
                         }
                     }
@@ -166,10 +174,10 @@ fun NewTabPage(
                         Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).clickable { adding = true }.padding(vertical = 6.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Box(Modifier.size(56.dp).clip(RoundedCornerShape(50)).background(Color(0xFFF2F1F7)), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Filled.Add, null, tint = Color(0xFF1B1B21), modifier = Modifier.size(30.dp))
+                        Box(Modifier.size(56.dp).clip(RoundedCornerShape(50)).background(colors.text.copy(alpha = .92f)), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Filled.Add, null, tint = colors.page, modifier = Modifier.size(30.dp))
                         }
-                        Text("Add new", color = Color.White, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+                        Text("Add new", color = colors.text, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
                     }
                     // Keeps the last row's tiles the same width as the others.
                     repeat((4 - (data.favorites.size + 1) % 4) % 4) { Spacer(Modifier.weight(1f)) }
@@ -194,7 +202,7 @@ fun NewTabPage(
 }
 
 @Composable
-private fun Stat(value: String, unit: String, label: String, color: Color, modifier: Modifier) {
+private fun Stat(value: String, unit: String, label: String, color: Color, modifier: Modifier, labelColor: Color) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             buildAnnotatedString {
@@ -203,7 +211,7 @@ private fun Stat(value: String, unit: String, label: String, color: Color, modif
             },
             color = color,
         )
-        Text(label, color = Color.White, fontSize = 15.sp, textAlign = TextAlign.Center, lineHeight = 19.sp)
+        Text(label, color = labelColor, fontSize = 15.sp, textAlign = TextAlign.Center, lineHeight = 19.sp)
     }
 }
 
@@ -249,11 +257,11 @@ private fun favoriteIcon(url: String): ImageVector? = when (url) {
 private fun FavoriteIcon(url: String, colors: BrowserColors) {
     val icon = favoriteIcon(url)
     Box(
-        Modifier.size(56.dp).clip(RoundedCornerShape(50)).background(if (icon != null) colors.accent else Color(0xFFF2F1F7)),
+        Modifier.size(56.dp).clip(RoundedCornerShape(50)).background(if (icon != null) colors.accent else colors.text.copy(alpha = .92f)),
         contentAlignment = Alignment.Center,
     ) {
         if (icon != null) Icon(icon, null, tint = colors.onAccent, modifier = Modifier.size(28.dp))
-        else Text(hostOf(url).take(1).uppercase(), color = Color(0xFF1B1B21), fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        else Text(hostOf(url).take(1).uppercase(), color = colors.page, fontSize = 24.sp, fontWeight = FontWeight.Bold)
     }
 }
 

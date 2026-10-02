@@ -15,6 +15,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -42,36 +44,42 @@ data class BrowserColors(
     val shieldOrange = Color(0xFFFB542B)
     val shieldRed = Color(0xFFE2052A)
     val statOrange = Color(0xFFFF6A47)
-    val statPurple = Color(0xFFA0A5EB)
-    val cardScrim = Color.Black.copy(alpha = .55f)
+    /** The New Tab Page's cards: frosted page color, so they follow the profile. */
+    val cardScrim get() = page.copy(alpha = if (private) .55f else .7f)
 }
 
 @Composable
 fun browserColors(private: Boolean): BrowserColors {
     val t = inkTokens()
+    // Everything comes from the appearance profile. Private tabs stay dark whatever the
+    // profile, as Brave's do, but take their tint from the profile's accent.
     return if (!private) BrowserColors(
         private = false,
         bar = t.panel,
         field = t.hover,
-        menu = Color(0xFF1E1D29),
+        menu = t.hover.copy(alpha = 0.6f).compositeOver(t.panel),
         page = t.background,
         text = t.primaryText,
         muted = t.secondaryText,
         accent = t.activePill,
         onAccent = t.activePillLabel,
         hairline = t.hairline,
-    ) else BrowserColors(
-        private = true,
-        bar = Color(0xFF1A1230),
-        field = Color(0xFF2B1F4A),
-        menu = Color(0xFF221836),
-        page = Color(0xFF120B22),
-        text = Color.White,
-        muted = Color(0xFFB9AEDB),
-        accent = Color(0xFFC8B6FF),
-        onAccent = Color(0xFF120B22),
-        hairline = Color(0xFF3A2E5C),
-    )
+    ) else {
+        val ink = Color(0xFF0A0812)
+        val accent = t.activePill.copy(alpha = 1f)
+        BrowserColors(
+            private = true,
+            bar = accent.copy(alpha = 0.16f).compositeOver(ink),
+            field = accent.copy(alpha = 0.26f).compositeOver(ink),
+            menu = accent.copy(alpha = 0.2f).compositeOver(ink),
+            page = accent.copy(alpha = 0.09f).compositeOver(ink),
+            text = Color.White,
+            muted = accent.copy(alpha = 0.35f).compositeOver(Color(0xFFB8B4C4)),
+            accent = if (accent.luminance() < 0.35f) accent.copy(alpha = 0.45f).compositeOver(Color.White) else accent,
+            onAccent = ink,
+            hairline = accent.copy(alpha = 0.3f).compositeOver(ink),
+        )
+    }
 }
 
 /** The Shields button: an orange shield, greyed out when Shields are down for the site. */

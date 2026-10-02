@@ -542,6 +542,14 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { settings.setProfileBackgroundEnabled(enabled) }
     }
 
+    fun setHomeSplashArt(key: String) {
+        viewModelScope.launch { settings.setHomeSplashArt(key) }
+    }
+
+    fun setHomeIntroEnabled(enabled: Boolean) {
+        viewModelScope.launch { settings.setHomeIntroEnabled(enabled) }
+    }
+
     fun exportBackup() {
         viewModelScope.launch {
             runCatching { backupManager.exportBackup() }

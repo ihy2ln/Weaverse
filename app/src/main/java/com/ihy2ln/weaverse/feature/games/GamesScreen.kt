@@ -42,6 +42,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
@@ -88,7 +89,7 @@ fun GamesScreen(viewModel: GamesViewModel = hiltViewModel()) {
             Modifier
                 .fillMaxWidth()
                 .height(220.dp)
-                .clip(RoundedCornerShape(16.dp)),
+                .clip(RoundedCornerShape(com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd() * 1.5f)),
         ) {
             AsyncImage(
                 model = HERO_ART,
@@ -96,22 +97,24 @@ fun GamesScreen(viewModel: GamesViewModel = hiltViewModel()) {
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
+            // Fades into the profile's page color, with the profile's accent and type, like
+            // every other mode's art.
             Box(
                 Modifier
                     .fillMaxSize()
-                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.82f)))),
+                    .background(Brush.verticalGradient(listOf(Color.Transparent, tokens.background.copy(alpha = 0.9f)))),
             )
             Column(
                 Modifier
                     .align(Alignment.BottomStart)
                     .padding(InkSpacing.lg),
             ) {
-                Text("SILVERWOOD EXPEDITIONS", style = MaterialTheme.typography.labelMedium, color = Color(0xFFE9C46A))
-                Text("Adams Haven", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, color = Color.White)
+                Text("SILVERWOOD EXPEDITIONS", style = MaterialTheme.typography.labelMedium, color = tokens.activePill, letterSpacing = 1.5.sp)
+                Text("Adams Haven", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, color = tokens.primaryText)
                 Text(
                     installed?.manifest?.version?.takeIf { it.isNotBlank() }?.let { "Version $it" } ?: "Card roguelite · Tower tycoon",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.8f),
+                    color = tokens.primaryText.copy(alpha = 0.8f),
                 )
             }
         }

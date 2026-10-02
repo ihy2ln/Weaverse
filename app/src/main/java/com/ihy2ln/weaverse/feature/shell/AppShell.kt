@@ -18,7 +18,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -46,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -126,6 +131,7 @@ import com.ihy2ln.weaverse.feature.settings.SettingsScreen
 import com.ihy2ln.weaverse.feature.storyboard.MangaEditRequest
 import com.ihy2ln.weaverse.feature.storyboard.StoryboardMangaHubScreen
 import java.io.File
+import kotlinx.coroutines.flow.first
 
 @Composable
 fun AppShell(
@@ -136,6 +142,8 @@ fun AppShell(
     promptViewModel: GlobalPromptViewModel = hiltViewModel(),
 ) {
     var showHome by rememberSaveable { mutableStateOf(true) }
+    // The launch splash plays once per start, not on rotation or when returning Home.
+    var introPlayed by rememberSaveable { mutableStateOf(false) }
     var notesDest by rememberSaveable { mutableStateOf(NotesDestination.Chat.name) }
     var homeThreadId by rememberSaveable { mutableStateOf<String?>(null) }
     var homeMangaId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -454,6 +462,11 @@ fun AppShell(
         inRpChat -> rpChrome!!.title
         inNotes -> "Notes"
         inGames -> "Adams Haven"
+        // Off a work, the mode banner names the section rather than the last book.
+        showHome -> bookTitle
+        mode == AppMode.Roleplay.name -> roleplayDestinationOf(rpDest).label
+        mode == AppMode.Storyboard.name -> storyboardDestinationOf(storyboardDest).label
+        mode == AppMode.Novel.name && novelDest == NovelDestination.Bookshelf.name -> "Bookshelf"
         else -> bookTitle
     }
     val toolbarSubtitle = when {
@@ -525,14 +538,53 @@ fun AppShell(
                 modifier = Modifier.fillMaxSize(),
             )
         }
-        // Glass clarity sets how much wallpaper shows through every page, Home included.
+        val homeShown = showHome && !showSettings && !showSearch && !showExport && !showLibrary
+        // Home sits on a splash: the chosen key art, or the user's own picture when the
+        // choice is left on automatic, or just the wallpaper.
+        val splashKey = prefs.homeSplashArt
+        val splashModel: Any? = if (splashKey.isBlank() && userBackgroundImage != null) File(userBackgroundImage) else null
+        val splashBrand: ModeBrand? = when {
+            splashKey == "wallpaper" -> null
+            splashKey.isBlank() && userBackgroundVideo != null -> null
+            else -> ModeArt.splash(splashKey)
+        }
+        androidx.compose.animation.AnimatedVisibility(
+            visible = homeShown,
+            enter = androidx.compose.animation.fadeIn(tween(420)),
+            exit = androidx.compose.animation.fadeOut(tween(260)),
+        ) {
+            HomeSplashBackdrop(splashBrand, Modifier.fillMaxSize(), model = splashModel)
+        }
+        // Glass clarity sets how much wallpaper shows through every page. Home's splash
+        // carries its own wash, so this one fades out there.
         val shellWash =
             if (showProfileArt || userBackgroundImage != null || userBackgroundVideo != null) {
                 bgColor.copy(alpha = bgColor.alpha * (1f - prefs.glassClarityPercent.coerceIn(0, 80) / 100f * 0.8f))
             } else {
                 bgColor
             }
-        Column(modifier = Modifier.fillMaxSize().background(shellWash).collapseChromeOnScroll(chromeCollapse)) {
+        val washAlpha by androidx.compose.animation.core.animateFloatAsState(
+            if (homeShown) 0f else 1f,
+            tween(320),
+            label = "shellWash",
+        )
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = washAlpha }.background(shellWash))
+        // Behind the see-through status bar, the same glass as the tabs under it.
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .windowInsetsTopHeight(androidx.compose.foundation.layout.WindowInsets.statusBars)
+                .graphicsLayer { alpha = washAlpha }
+                .background(tokens.panel.copy(alpha = com.ihy2ln.weaverse.core.ui.components.glassFillAlpha())),
+        )
+        // Wallpaper and splash run under the status and navigation bars; the pages do not.
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .collapseChromeOnScroll(chromeCollapse),
+        ) {
             val currentMode = runCatching { AppMode.valueOf(mode) }.getOrDefault(AppMode.Novel)
             val defaultModeOptions = when (currentMode) {
                 AppMode.Novel -> NovelDestination.entries.map { SegmentedOption(it.name, it.label) }
@@ -630,7 +682,6 @@ fun AppShell(
             val inNovelWorkspace = !showHome && mode == AppMode.Novel.name && novelDest != NovelDestination.Bookshelf.name &&
                 !showLibrary && !showSettings && !showSearch && !showExport && chromeTool == null &&
                 selectedCodexEntryId == null && workspaceFocus != WorkspaceFocus.Pictures.name
-            // WeaverBrowser is home: choosing it (from the tabs, a favorite or the drawer) goes home.
             val switchWorkspace: (String) -> Unit = { next ->
                 if (next == AppMode.Novel.name) browseRoutes = listOf("books")
                 showHome = false
@@ -660,7 +711,22 @@ fun AppShell(
                 if (next != AppMode.Notes.name) {
                     workspaceFocus = WorkspaceFocus.Story.name
                 }
-                if (next == AppMode.Chatting.name) showHome = true
+            }
+            /** Opens a Home history entry (Home's rows, the bookshelf's recents) where it lives. */
+            fun openRecentItem(item: HomeItem) {
+                shellViewModel.openRecent(item) { recent ->
+                    mode = recent.mode; showHome = false
+                    showLibrary = false; showSettings = false; showExport = false; showSearch = false
+                    chromeTool = null; workspaceFocus = WorkspaceFocus.Story.name
+                    selectedCodexEntryId = null; selectedCharacterId = null; selectedPersonaId = null
+                    when (recent.mode) {
+                        "Novel" -> { selectedSceneId = recent.target; novelDest = NovelDestination.Write.name }
+                        "Roleplay" -> { selectedRpChatId = recent.sessionId; rpDest = RoleplayDestination.Chats.name }
+                        "Chatting" -> { chatServerId = recent.bookId; selectedRpChatId = recent.sessionId; chatDest = ChattingDestination.Chats.name }
+                        "Storyboard" -> { homeMangaId = recent.contentId.takeIf { recent.kind == "manga" }; storyboardChatId = recent.sessionId.takeIf { recent.kind != "manga" }; storyboardDest = StoryboardDestination.Library.name }
+                        "Notes" -> if (recent.kind == "note") { notesDest = NotesDestination.Board.name; notesViewModel.selectNote(recent.contentId); notesDetailOpen = true } else { notesDest = NotesDestination.Chat.name; homeThreadId = recent.contentId }
+                    }
+                }
             }
             val wallpaperShown = showProfileArt || userBackgroundImage != null || userBackgroundVideo != null
             val browserScreen: @Composable () -> Unit = {
@@ -679,11 +745,12 @@ fun AppShell(
                 )
             }
             val overlayOpen = showSettings || showSearch || showExport || showLibrary
-            val browserShown = (showHome || currentMode == AppMode.Chatting) && !overlayOpen
+            val browserShown = !showHome && currentMode == AppMode.Chatting && !overlayOpen &&
+                chromeTool == null && workspaceFocus != WorkspaceFocus.Pictures.name
             val shellChrome: @Composable () -> Unit = { WorkspaceChrome(
                 showTitleRow = !inNovelWorkspace && !browserShown,
-                browsing = isBookBrowsing,
-                isHome = showHome && !showSettings && !showSearch && !showExport && !showLibrary,
+                isHome = homeShown,
+                overArt = homeShown,
                 onHome = {
                     browseRoutes = listOf("home")
                     showHome = true; showSettings = false; showExport = false; showSearch = false; showLibrary = false
@@ -856,7 +923,21 @@ fun AppShell(
                     onOpenExport = { showExport = true },
                     modifier = Modifier.weight(1f).fillMaxSize(),
                 )
-                showHome -> Box(Modifier.weight(1f).fillMaxSize()) { browserScreen() }
+                showHome -> Box(Modifier.weight(1f).fillMaxSize()) {
+                    WeaverHomeScreen(
+                        modes = workspaceOptions.mapNotNull { option -> AppMode.entries.firstOrNull { it.name == option.id } },
+                        onMode = { switchWorkspace(it.name) },
+                        onRecent = ::openRecentItem,
+                        onCreate = { target ->
+                            when (target) {
+                                AppMode.Novel -> creatingWork = CreateWorkVocabulary.Novel
+                                AppMode.Roleplay -> creatingWork = CreateWorkVocabulary.Campaign
+                                AppMode.Storyboard -> storyboardPlusMenu = true
+                                else -> switchWorkspace(target.name)
+                            }
+                        },
+                    )
+                }
                 isBookBrowsing -> homeStateHolder.SaveableStateProvider("browser") {
                     com.ihy2ln.weaverse.feature.library.BookBrowserScreen(
                         // Home is WeaverBrowser now, so the bookshelf starts at the books.
@@ -883,16 +964,7 @@ fun AppShell(
                             chatDest = ChattingDestination.Chats.name; storyboardDest = StoryboardDestination.Library.name
                             notesDest = NotesDestination.Chat.name
                         },
-                        onRecent = { item -> shellViewModel.openRecent(item) { recent ->
-                            mode = recent.mode; showHome = false
-                            when (recent.mode) {
-                                "Novel" -> { selectedSceneId = recent.target; novelDest = NovelDestination.Write.name }
-                                "Roleplay" -> { selectedRpChatId = recent.sessionId; rpDest = RoleplayDestination.Chats.name }
-                                "Chatting" -> { chatServerId = recent.bookId; selectedRpChatId = recent.sessionId; chatDest = ChattingDestination.Chats.name; showHome = true }
-                                "Storyboard" -> { homeMangaId = recent.contentId.takeIf { recent.kind == "manga" }; storyboardChatId = recent.sessionId.takeIf { recent.kind != "manga" }; storyboardDest = StoryboardDestination.Library.name }
-                                "Notes" -> if (recent.kind == "note") { notesDest = NotesDestination.Board.name; notesViewModel.selectNote(recent.contentId); notesDetailOpen = true } else { notesDest = NotesDestination.Chat.name; homeThreadId = recent.contentId }
-                            }
-                        } }, modifier = Modifier.weight(1f).fillMaxSize(),
+                        onRecent = ::openRecentItem, modifier = Modifier.weight(1f).fillMaxSize(),
                     )
                 }
                 selectedCodexEntryId != null -> Column(Modifier.weight(1f).fillMaxSize()) {
@@ -981,6 +1053,9 @@ fun AppShell(
                 selectedPersonaId != null -> Box(Modifier.weight(1f).fillMaxSize()) {
                     PersonaDetailScreen(personaId = selectedPersonaId!!, onBack = { selectedPersonaId = null })
                 }
+                // WeaverBrowser takes the full width, like Home used to; its tools still open
+                // through the content area below.
+                browserShown -> Box(Modifier.weight(1f).fillMaxSize()) { browserScreen() }
                 else -> {
             if (inRpChat && rpChrome!!.showSwitcher) {
                 RoleplayDisplayModeBar(
@@ -1323,8 +1398,21 @@ fun AppShell(
                 selectedCharacterId == null &&
                 selectedPersonaId == null &&
                 !showLibrary && !showSettings && !showSearch && !showExport,
-            modifier = Modifier.align(Alignment.BottomStart),
+            modifier = Modifier.align(Alignment.BottomStart).navigationBarsPadding(),
         )
+        // The launch splash, over the same art Home sits on, so its fade lands on Home. It
+        // belongs to the start only: once any other page has shown, it is spent.
+        LaunchedEffect(homeShown) { if (!homeShown) introPlayed = true }
+        if (!introPlayed && homeShown) {
+            val prefsLoaded by androidx.compose.runtime.produceState(false) {
+                shellViewModel.preferences.first()
+                value = true
+            }
+            LaunchedEffect(prefsLoaded, prefs.homeIntroEnabled) {
+                if (prefsLoaded && !prefs.homeIntroEnabled) introPlayed = true
+            }
+            HomeIntro(splashBrand, onDone = { introPlayed = true }, model = splashModel)
+        }
     }
     }
 }

@@ -93,7 +93,7 @@ private fun HomePoster(item: HomeItem, art: String?, width: androidx.compose.ui.
     var menu by remember { mutableStateOf(false) }
     Column(Modifier.width(width)) {
         Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(16.dp))
-            .background(Brush.linearGradient(listOf(Color(0xFF38314F), Color(0xFF181722))))
+            .background(Brush.linearGradient(listOf(tokens.hover, tokens.panel)))
             .border(1.dp, HomeAccent.copy(alpha = .2f), RoundedCornerShape(16.dp))
             .combinedClickable(onClick = onOpen, onLongClick = { menu = true }), contentAlignment = Alignment.Center) {
             Text(item.title.split(' ').take(2).mapNotNull { it.firstOrNull()?.uppercase() }.joinToString(""), color = HomeAccent.copy(alpha = .6f), fontSize = 44.sp, fontWeight = FontWeight.Light)

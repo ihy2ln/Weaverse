@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Android 12+ shows a system splash before the first frame. Dark, with the W, so it hands
+      off to Home's own intro without a white flash.
+    -->
+    <style name="Theme.Weaverse" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#0B0B10</item>
+        <item name="android:colorAccent">#B39AFF</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:enforceStatusBarContrast">false</item>
+        <item name="android:enforceNavigationBarContrast">false</item>
+        <item name="android:windowSplashScreenBackground">#0B0B10</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_w</item>
+    </style>
+</resources>

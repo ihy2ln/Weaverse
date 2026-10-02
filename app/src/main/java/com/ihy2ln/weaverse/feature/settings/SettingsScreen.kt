@@ -267,6 +267,40 @@ fun SettingsScreen(
                 }
             }
 
+            SettingHeading("Home splash", "The art Home opens on, washed in your profile. Automatic uses your own background picture when you have one.")
+            WallpaperGroup("Splash art") {
+                val splash = state.prefs.homeSplashArt
+                WallpaperTile("Automatic", selected = splash.isBlank(), onClick = { viewModel.setHomeSplashArt("") }) {
+                    com.ihy2ln.weaverse.feature.shell.ModeArtImage(com.ihy2ln.weaverse.feature.shell.ModeArt.home, it, fade = 1f)
+                }
+                com.ihy2ln.weaverse.feature.shell.ModeArt.splashChoices.forEach { brand ->
+                    WallpaperTile(brand.title, selected = splash == brand.key, onClick = { viewModel.setHomeSplashArt(brand.key) }) {
+                        com.ihy2ln.weaverse.feature.shell.ModeArtImage(brand, it, fade = 1f)
+                    }
+                }
+                WallpaperTile("Wallpaper only", selected = splash == "wallpaper", onClick = { viewModel.setHomeSplashArt("wallpaper") }) {
+                    AppBackdrop(BackdropStyle.fromName(state.prefs.backdropStyle), profile, it)
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = InkSpacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Intro on launch", style = MaterialTheme.typography.bodyMedium, color = inkTokens().primaryText)
+                    Text(
+                        "The Weaverse mark over the splash for a moment when the app opens. Tap it to skip.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = inkTokens().secondaryText,
+                    )
+                }
+                androidx.compose.material3.Switch(
+                    checked = state.prefs.homeIntroEnabled,
+                    onCheckedChange = viewModel::setHomeIntroEnabled,
+                    modifier = Modifier.semantics { contentDescription = "Intro on launch" },
+                )
+            }
+
             SettingHeading("Glass", "How much wallpaper shows through panels and pages.")
             LabeledSlider(
                 value = state.prefs.glassClarityPercent.toFloat(),

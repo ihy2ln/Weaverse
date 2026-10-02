@@ -28,12 +28,15 @@ object HelpContent {
                 ),
                 HelpEntry(
                     "Home",
-                    "Home is WeaverBrowser: the first tab across the top. Its New Tab Page " +
-                        "has a favorite for every mode, so it is also the way into every workspace.",
+                    "Weaverse opens on Home: a splash of key art with the Weaverse mark, then " +
+                        "your modes as a row of posters, like a streaming app. Tap a poster to go " +
+                        "into that mode; Resume reopens whatever you had open last, and Create starts " +
+                        "a novel, campaign or manga project. Below the posters, a Continue row for " +
+                        "each mode lists what you opened recently; hold a poster to remove it.",
                 ),
                 HelpEntry(
                     "The three rows",
-                    "1) Modes, as tabs across the top: WeaverBrowser (home), Novel, RPG, Games, Manga Studio, Notes. " +
+                    "1) Home and the modes, as tabs across the top: Home, Novel, RPG, Games, WeaverBrowser, Manga Studio, Notes. " +
                         "The tabs fold away while you scroll down and come back when you scroll up. " +
                         "2) Sub-modes for whichever mode you are in. " +
                         "3) Extra: Codex, Prompts, Notes, Snippets, Chats and Pictures — " +
@@ -276,11 +279,11 @@ object HelpContent {
         HelpSection(
             id = "browser",
             title = "WeaverBrowser",
-            summary = "Home: a Brave-style web browser with WeaverSocial, chats and Contacts built in",
+            summary = "A Brave-style web browser with WeaverSocial, chats and Contacts built in",
             entries = listOf(
                 HelpEntry(
-                    "Home is a browser",
-                    "WeaverBrowser opens first. Type an address or a search into the bar at the " +
+                    "The browser",
+                    "WeaverBrowser is a mode like the others: pick it from Home or the tabs. Type an address or a search into the bar at the " +
                         "top; the bottom toolbar has Home, Bookmarks, Search, your tabs and the menu. " +
                         "The New Tab Page shows Privacy Stats and your favorites, which start as " +
                         "WeaverSocial, Chats, Contacts and every other mode. The address bar and the " +
@@ -693,6 +696,18 @@ object HelpContent {
                 HelpEntry(
                     "Section colours",
                     "Layer on top of any profile. Reset section colours undoes them.",
+                ),
+                HelpEntry(
+                    "One look for every mode",
+                    "Every mode draws from the same profile: Home, the browser, WeaverSocial, Manga " +
+                        "Studio, Games and the rest all change together when you change it. Each mode's " +
+                        "key art is washed in the profile's colors, on Home and in the banner under the tabs.",
+                ),
+                HelpEntry(
+                    "Home splash and intro",
+                    "Home splash picks the art Home opens on: Weaverse's own, any mode's, your own " +
+                        "background picture (Automatic) or just the wallpaper. Intro on launch shows the " +
+                        "Weaverse mark over it for a moment when the app opens; tap to skip.",
                 ),
                 HelpEntry(
                     "Wallpaper and glass",

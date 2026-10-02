@@ -144,7 +144,6 @@ import androidx.preference.EditTextPreference
 import androidx.preference.MultiSelectListPreference
 import androidx.compose.material3.Switch
 
-private val MihonBackground: Color @androidx.compose.runtime.Composable get() = com.ihy2ln.weaverse.core.ui.theme.inkTokens().background
 private val MihonSurface: Color @androidx.compose.runtime.Composable get() = com.ihy2ln.weaverse.core.ui.theme.inkTokens().panel
 private val MihonSurfaceHigh: Color @androidx.compose.runtime.Composable get() = com.ihy2ln.weaverse.core.ui.theme.inkTokens().hover
 private val MihonPrimary: Color @androidx.compose.runtime.Composable get() = com.ihy2ln.weaverse.core.ui.theme.inkTokens().activePill
@@ -152,8 +151,6 @@ private val MihonOnPrimary: Color @androidx.compose.runtime.Composable get() = c
 private val MihonText: Color @androidx.compose.runtime.Composable get() = com.ihy2ln.weaverse.core.ui.theme.inkTokens().primaryText
 private val MihonMuted: Color @androidx.compose.runtime.Composable get() = com.ihy2ln.weaverse.core.ui.theme.inkTokens().secondaryText
 private val MihonError = Color(0xFFFFB4AB)
-
-private val MihonColors = com.ihy2ln.weaverse.core.ui.theme.StreamingColors
 
 private enum class MihonDestination(val label: String, val icon: ImageVector) {
     Library("Library", Icons.Outlined.CollectionsBookmark),
@@ -239,13 +236,16 @@ internal fun MihonMangaHome(
         }
     }
 
-    MaterialTheme(colorScheme = MihonColors) {
+    // Manga Studio wears the appearance profile like every other mode: the profile's color
+    // scheme, and glass bars over the shared wallpaper instead of an opaque page of its own.
+    val glass = com.ihy2ln.weaverse.core.ui.components.glassFillAlpha()
+    MaterialTheme(colorScheme = MaterialTheme.colorScheme.copy(surface = MihonSurface.copy(alpha = glass))) {
         Scaffold(
             modifier = modifier.fillMaxSize(),
-            containerColor = MihonBackground,
+            containerColor = Color.Transparent,
             snackbarHost = { SnackbarHost(snackbar) },
             bottomBar = {
-                NavigationBar(containerColor = MihonSurface) {
+                NavigationBar(containerColor = MihonSurface.copy(alpha = glass)) {
                     MihonDestination.entries.forEach { item ->
                         NavigationBarItem(
                             selected = destination == item,
@@ -784,7 +784,7 @@ private fun MihonBrowseScreen(
                 IconButton(onClick = { viewModel.setStatus("Source filters are available in Extensions") }) { Icon(Icons.Outlined.FilterList, "Filter") }
             },
         )
-        ScrollableTabRow(selectedTabIndex = tab.ordinal, edgePadding = 16.dp, containerColor = MihonBackground) {
+        ScrollableTabRow(selectedTabIndex = tab.ordinal, edgePadding = 16.dp, containerColor = Color.Transparent) {
             MihonBrowseTab.entries.forEach { item -> Tab(selected = tab == item, onClick = { onTab(item) }, text = { Text(item.label) }) }
         }
         if (globalSearch && globalQuery.isNotBlank()) {
@@ -1763,7 +1763,7 @@ private fun MihonMoreDetail(
                 kind = WorkShelfKind.Storyboard,
                 onCreate = onCreateProject,
                 onOpen = onOpenProject,
-                modifier = Modifier.fillMaxSize().background(MihonBackground),
+                modifier = Modifier.fillMaxSize(),
             )
         }
     }

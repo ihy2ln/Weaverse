@@ -63,6 +63,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.BiasAlignment
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.animation.core.animateDpAsState
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -172,7 +179,6 @@ fun WorkspaceChrome(
     onHome: () -> Unit = {},
     onSearch: () -> Unit = {},
     isHome: Boolean = false,
-    browsing: Boolean = false,
     onLibrary: () -> Unit,
     onSettings: () -> Unit,
     onImport: () -> Unit,
@@ -191,21 +197,29 @@ fun WorkspaceChrome(
     onModeOrderChange: (List<String>) -> Unit = {},
     /** The workspace's title row under the mode tabs (back, mode and book). */
     showTitleRow: Boolean = true,
+    /** Home: no glass of its own, so the splash runs up behind the tabs. */
+    overArt: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val tokens = inkTokens()
     var arrangeMenu by remember { mutableStateOf<ArrangeMenu?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
     val accent = com.ihy2ln.weaverse.feature.shell.HomeAccent
-    Surface(color = tokens.panel.copy(alpha = glassFillAlpha()), tonalElevation = 0.dp, modifier = modifier.fillMaxWidth()) {
+    val glass by animateFloatAsState(if (overArt) 0f else glassFillAlpha(), tween(320), label = "chromeGlass")
+    // Over art the labels get a soft shadow, like a streaming app's billboard tabs.
+    val tabShadow = if (overArt && tokens.background.luminance() < 0.5f) {
+        Shadow(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f), blurRadius = 10f)
+    } else {
+        null
+    }
+    Surface(color = tokens.panel.copy(alpha = glass), tonalElevation = 0.dp, modifier = modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth()) {
-            // The modes, as a streaming site's top tabs. WeaverBrowser is home and comes first.
-            val homeId = com.ihy2ln.weaverse.feature.shell.AppMode.Chatting.name
-            val tabs = workspaceOptions.filter { it.id == homeId } + workspaceOptions.filter { it.id != homeId }
+            // Home, then the modes in the user's order, as a streaming site's top tabs.
+            val homeId = "Home"
+            val tabs = listOf(SegmentedOption(homeId, "Home")) + workspaceOptions
             val selectedTab = if (isHome) homeId else workspaceId
             Row(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.Menu, "Open navigation", tint = tokens.primaryText) }
-                if (browsing && canGoBack) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = tokens.primaryText) }
                 Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
                     tabs.forEach { option ->
                         val selected = option.id == selectedTab
@@ -217,26 +231,35 @@ fun WorkspaceChrome(
                         ) {
                             Text(
                                 option.label,
-                                color = if (selected) tokens.primaryText else tokens.secondaryText,
+                                color = when {
+                                    selected -> tokens.primaryText
+                                    overArt -> tokens.primaryText.copy(alpha = 0.78f)
+                                    else -> tokens.secondaryText
+                                },
                                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                                 fontSize = 15.sp,
                                 maxLines = 1,
                                 softWrap = false,
+                                style = TextStyle(shadow = tabShadow),
                             )
                             Spacer(Modifier.height(4.dp))
-                            Box(Modifier.width(if (selected) 22.dp else 0.dp).height(3.dp).clip(RoundedCornerShape(2.dp)).background(accent))
+                            val underline by animateDpAsState(if (selected) 22.dp else 0.dp, tween(200), label = "tabUnderline")
+                            Box(Modifier.width(underline).height(3.dp).clip(RoundedCornerShape(2.dp)).background(accent))
                         }
                     }
                 }
                 IconButton(onClick = onSearch) { Icon(Icons.Default.Search, "Search", tint = tokens.primaryText) }
                 IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, "Settings", tint = tokens.primaryText) }
             }
-            if (showTitleRow && !browsing && !isHome) Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (canGoBack) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = tokens.primaryText) }
-                Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
-                    Text(workspaceOptions.firstOrNull { it.id == workspaceId }?.label.orEmpty(), color = accent, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                    Text(bookTitle.ifBlank { modeOptions.firstOrNull { it.id == modeId }?.label.orEmpty() }, color = tokens.primaryText, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
-                }
+            if (showTitleRow && !isHome) {
+                val mode = com.ihy2ln.weaverse.feature.shell.AppMode.entries.firstOrNull { it.name == workspaceId }
+                ModeBanner(
+                    brand = mode?.let(com.ihy2ln.weaverse.feature.shell.ModeArt::of) ?: com.ihy2ln.weaverse.feature.shell.ModeArt.home,
+                    eyebrow = workspaceOptions.firstOrNull { it.id == workspaceId }?.label.orEmpty(),
+                    title = bookTitle.ifBlank { modeOptions.firstOrNull { it.id == modeId }?.label.orEmpty() },
+                    canGoBack = canGoBack,
+                    onBack = onBack,
+                )
             }
         }
     }
@@ -436,4 +459,71 @@ fun InkModeCapsule(
         overflow = TextOverflow.Ellipsis,
         softWrap = false,
     )
+}
+
+/**
+ * The mode's title under the tabs, on a strip of its key art washed in the profile: the same
+ * banner in every mode, so they read as one app whichever profile is chosen.
+ */
+@Composable
+private fun ModeBanner(
+    brand: com.ihy2ln.weaverse.feature.shell.ModeBrand,
+    eyebrow: String,
+    title: String,
+    canGoBack: Boolean,
+    onBack: () -> Unit,
+) {
+    val tokens = inkTokens()
+    val shape = RoundedCornerShape(inkRadiusMd())
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = 10.dp, end = 10.dp, bottom = 8.dp)
+            .heightIn(min = 60.dp)
+            .clip(shape)
+            .border(1.dp, tokens.hairline.copy(alpha = 0.5f), shape),
+    ) {
+        com.ihy2ln.weaverse.feature.shell.ModeArtImage(
+            brand = brand,
+            fade = 1f,
+            alignment = BiasAlignment(0f, -0.25f),
+            modifier = Modifier.matchParentSize(),
+        )
+        Box(
+            Modifier.matchParentSize().background(
+                Brush.horizontalGradient(
+                    0f to tokens.background.copy(alpha = 0.92f),
+                    0.5f to tokens.background.copy(alpha = 0.55f),
+                    1f to tokens.background.copy(alpha = 0.06f),
+                ),
+            ),
+        )
+        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp, horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (canGoBack) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = tokens.primaryText) }
+            Column(Modifier.weight(1f).padding(horizontal = if (canGoBack) 4.dp else 12.dp)) {
+                Text(
+                    eyebrow.uppercase(),
+                    color = tokens.activePill,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 10.sp,
+                    letterSpacing = 1.6.sp,
+                    maxLines = 1,
+                )
+                Text(
+                    title,
+                    color = tokens.primaryText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Icon(
+                brand.icon,
+                null,
+                tint = tokens.primaryText.copy(alpha = 0.7f),
+                modifier = Modifier.padding(end = 14.dp).size(20.dp),
+            )
+        }
+    }
 }

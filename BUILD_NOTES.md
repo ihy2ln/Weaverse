@@ -3,6 +3,43 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.83 - WV 10.2.1: streaming-style Home over a splash; every mode follows the profile
+
+- Home is its own screen again (`feature/shell/WeaverHome.kt`), not WeaverBrowser. It sits on a
+  full-bleed splash (key art drifting slowly, washed in the profile) that runs under the now
+  see-through status bar: the Weaverse mark and greeting, Resume (last opened item) and Create
+  (novel / campaign / manga project), then the modes as a row of streaming-style posters, then a
+  "Continue in <mode>" row per mode from `home_access` history.
+- A launch intro (mark + wordmark + a drawn thread over the same art, tap to skip) plays once per
+  start when the app opens at Home. Android 12+ gets a dark system splash (`values-v31`) so there
+  is no white flash before it.
+- Key art: seven crops of the bundled Adams Haven location paintings in
+  `assets/images/weaverse/modes/` (home = The Harmonized Expanse, novel = The Argent Bourse,
+  rpg = Silverbrook Adventure Guild, games = Adams Haven, browser = UCLA Neo Campus, manga =
+  Aqualuria, notes = Starter Base), card frames cropped off. `ModeArt.kt` maps modes to art,
+  eyebrow, tagline and glyph; `ModeArtImage` grades the art toward the profile accent
+  (BlendMode.Color, plain tint below API 29) and fades it into the profile background.
+- Same look in every mode: the tabs are Home + the modes in the user's order; the title row under
+  them is a key-art banner for every mode (Novel's bookshelf included, which now names the section
+  instead of the last book). WeaverBrowser's New Tab Page uses its key art in place of Brave's
+  photos, and its cards, menu color and Private-tab palette come from the profile. Manga Studio no
+  longer forces the Streaming color scheme and its bars are glass over the wallpaper. WeaverSocial,
+  Games and the old Home posters lost their hard-coded dark colors.
+- Appearance gets "Home splash" (Automatic = the user's own background picture if set, else
+  Weaverse; any mode's art; or wallpaper only) and "Intro on launch". New prefs
+  `home_splash_art`, `home_intro_enabled`.
+- System bar padding moved from `MainActivity` into `AppShell` so the splash and wallpaper draw
+  under the status bar; non-Home pages put a glass strip there.
+- Choosing WeaverBrowser (tabs, posters, drawer) opens it full width as a mode; `openRecentItem`
+  in AppShell is shared by Home and the bookshelf.
+- 631 unit tests pass (2 new in `ModeArtTest`). Checked on a temporary `WVTest` AVD (the Dev and
+  Games AVDs were in use): intro, Home portrait and landscape, every mode, Resume, the Continue
+  row, the splash picker, intro off, and Streaming vs Sakura Light.
+- Version is 1.4.83 because the parallel WV 10.3.0 work already built a 1.4.82.
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.4.83.apk` (debug build, installs as
+  `com.ihy2ln.weaverse.textgame`), SHA-256
+  `9e118d212cc3d9a55d056d2b73476f87a191539c0062bf8e5b528990daa6aee3`.
+
 ## v1.4.81 - WV 10.2.0: WeaverBrowser replaces WeaverSocial as home
 
 - The Chatting mode is now **WeaverBrowser** (`feature/browser/`), a Brave-style browser on

@@ -437,13 +437,13 @@ fun WeaverSocialScreen(
                     if (state.error.isNotBlank()) {
                         Text(
                             state.error,
-                            color = Color.White,
+                            color = c.bg.copy(alpha = 1f),
                             fontSize = 14.sp,
                             modifier = Modifier
                                 .align(Alignment.BottomCenter)
                                 .padding(16.dp)
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xFF2B2D36))
+                                .background(c.text.copy(alpha = 0.92f))
                                 .clickable { viewModel.dismissError() }
                                 .padding(horizontal = 14.dp, vertical = 10.dp),
                         )
@@ -850,7 +850,7 @@ private fun HomeFeed(
                             .width(96.dp)
                             .height(160.dp)
                             .clip(RoundedCornerShape(14.dp))
-                            .background(Brush.verticalGradient(listOf(tint, tint.copy(alpha = 0.5f), Color(0xFF0F1015))))
+                            .background(Brush.verticalGradient(listOf(tint, tint.copy(alpha = 0.5f), inkTokens().background)))
                             .clickable { onStory(index) },
                     ) {
                         if (story.imagePath != null) {

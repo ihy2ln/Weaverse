@@ -33,7 +33,7 @@ object WikiContent {
                   review your manuscripts.
                 - [[RPG]] — AI game-master campaigns, dice, roster, inventory,
                   towns, and illustrated adventure scenes.
-                - WeaverBrowser — home: a Brave-style browser with Shields,
+                - WeaverBrowser — a Brave-style browser with Shields,
                   Private tabs and Leo. [[WeaverSocial]], the character chats and
                   Contacts open as tabs inside it.
                 - [[WeaverSocial]] — WeaverSocial, a social network where your novels and
