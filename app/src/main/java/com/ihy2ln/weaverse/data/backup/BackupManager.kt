@@ -67,11 +67,17 @@ class BackupManager @Inject constructor(
         settings.setLastAutoBackupAt(System.currentTimeMillis())
     }
 
+    /**
+     * Keeps the newest [keep] backups. One backup is up to four files (mobile and PC zips,
+     * each in the private and shareable folders), grouped by the timestamp in their names.
+     */
     fun pruneBackupZips(keep: Int = 7) {
-        val all = (backupDir.listFiles()?.toList().orEmpty() + shareDir.listFiles()?.toList().orEmpty())
-            .filter { it.isFile && it.extension.equals("zip", ignoreCase = true) }
-            .sortedByDescending { it.lastModified() }
-        all.drop(keep).forEach { runCatching { it.delete() } }
+        val byExport = (backupDir.listFiles()?.toList().orEmpty() + shareDir.listFiles()?.toList().orEmpty())
+            .filter { it.isFile }
+            .mapNotNull { file -> BackupArchives.backupTimestamp(file.name)?.let { it to file } }
+            .groupBy({ it.first }, { it.second })
+        byExport.keys.sortedDescending().drop(keep)
+            .forEach { stamp -> byExport.getValue(stamp).forEach { runCatching { it.delete() } } }
     }
 
     private fun pruneSnapshots(dir: File, keep: Int) {
@@ -123,44 +129,80 @@ class BackupManager @Inject constructor(
         restoreFrom(latest)
     }
 
+    /**
+     * Replaces the library with [zipFile]. Everything is unpacked into a staging folder and
+     * checked first; the current library is then saved as a "pre-restore" snapshot, the
+     * database is closed, and the staged files are moved in. The app must restart afterwards
+     * (see [com.ihy2ln.weaverse.core.AppRestarter]); the closed database can't be used again.
+     */
     suspend fun restoreFrom(zipFile: File) = withContext(Dispatchers.IO) {
-        ZipInputStream(FileInputStream(zipFile)).use { zip ->
-            var entry = zip.nextEntry
-            while (entry != null) {
-                val name = entry.name
-                when {
-                    BackupArchives.isMobileDbEntry(name) -> {
-                        val suffix = name.removePrefix("weaverse.db")
-                        val out = File(context.getDatabasePath("weaverse.db").path + suffix)
+        val staging = File(context.cacheDir, "restore-staging").also { it.deleteRecursively(); it.mkdirs() }
+        try {
+            val stagedDb = File(staging, "db").also { it.mkdirs() }
+            val stagedMedia = File(staging, "media")
+            val stagedManga = File(staging, "manga")
+            val stagedSettings = File(staging, "datastore")
+            ZipInputStream(FileInputStream(zipFile)).use { zip ->
+                var entry = zip.nextEntry
+                while (entry != null) {
+                    val name = entry.name
+                    val out: File? = when {
+                        BackupArchives.isMobileDbEntry(name) -> File(stagedDb, name)
+                        BackupArchives.isPcDbEntry(name) -> File(stagedDb, BackupArchives.MOBILE_DB)
+                        BackupArchives.mediaRelativePath(name) != null ->
+                            BackupArchives.childInside(stagedMedia, BackupArchives.mediaRelativePath(name)!!)
+                        BackupArchives.mangaRelativePath(name) != null ->
+                            BackupArchives.childInside(stagedManga, BackupArchives.mangaRelativePath(name)!!)
+                        BackupArchives.settingsRelativePath(name) != null ->
+                            BackupArchives.childInside(stagedSettings, BackupArchives.settingsRelativePath(name)!!)
+                        else -> null
+                    }
+                    if (out != null && !entry.isDirectory) {
                         out.parentFile?.mkdirs()
                         FileOutputStream(out).use { zip.copyTo(it) }
                     }
-                    BackupArchives.isPcDbEntry(name) -> {
-                        val out = context.getDatabasePath("weaverse.db")
-                        FileOutputStream(out).use { zip.copyTo(it) }
-                    }
-                    BackupArchives.mediaRelativePath(name) != null -> {
-                        val relative = BackupArchives.mediaRelativePath(name)!!
-                        val outFile = File(File(context.filesDir, "media"), relative)
-                        outFile.parentFile?.mkdirs()
-                        FileOutputStream(outFile).use { zip.copyTo(it) }
-                    }
-                    BackupArchives.mangaRelativePath(name) != null -> {
-                        val relative = BackupArchives.mangaRelativePath(name)!!
-                        val outFile = File(File(context.filesDir, "manga"), relative)
-                        outFile.parentFile?.mkdirs()
-                        FileOutputStream(outFile).use { zip.copyTo(it) }
-                    }
-                    BackupArchives.settingsRelativePath(name) != null -> {
-                        val relative = BackupArchives.settingsRelativePath(name)!!
-                        val outFile = File(File(context.filesDir, "datastore"), relative)
-                        outFile.parentFile?.mkdirs()
-                        FileOutputStream(outFile).use { zip.copyTo(it) }
-                    }
+                    zip.closeEntry()
+                    entry = zip.nextEntry
                 }
-                zip.closeEntry()
-                entry = zip.nextEntry
             }
+            val restoredDb = File(stagedDb, BackupArchives.MOBILE_DB)
+            require(restoredDb.isFile && restoredDb.length() > 0) { "That zip has no Weaverse library in it" }
+            val backupVersion = schemaVersionOf(restoredDb)
+            val appVersion = db.openHelper.readableDatabase.version
+            require(backupVersion <= appVersion) {
+                "That backup is from a newer Weaverse (library version $backupVersion, this app reads up to $appVersion). Update the app first."
+            }
+            // Keep the current library so a wrong restore can be undone.
+            snapshotBeforeMerge("pre-restore")
+            db.close()
+            val liveDb = context.getDatabasePath("weaverse.db")
+            listOf("", "-wal", "-shm", "-journal").forEach { File(liveDb.path + it).delete() }
+            liveDb.parentFile?.mkdirs()
+            listOf("", "-wal", "-shm").forEach { suffix ->
+                File(stagedDb, BackupArchives.MOBILE_DB + suffix).takeIf { it.isFile }
+                    ?.copyTo(File(liveDb.path + suffix), overwrite = true)
+            }
+            stagedMedia.takeIf { it.isDirectory }?.copyRecursively(File(context.filesDir, "media"), overwrite = true)
+            stagedManga.takeIf { it.isDirectory }?.copyRecursively(File(context.filesDir, "manga"), overwrite = true)
+            stagedSettings.takeIf { it.isDirectory }?.copyRecursively(File(context.filesDir, "datastore"), overwrite = true)
+        } finally {
+            staging.deleteRecursively()
+        }
+    }
+
+    /** True once a restore has closed the database; only an app restart recovers. */
+    fun libraryClosed(): Boolean = !db.isOpen
+
+    /** Room keeps its schema version in SQLite's user_version, which also sits at byte 60 of the header. */
+    private fun schemaVersionOf(dbFile: File): Int = runCatching {
+        android.database.sqlite.SQLiteDatabase.openDatabase(
+            dbFile.path, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY,
+        ).use { it.version }
+    }.getOrElse {
+        java.io.RandomAccessFile(dbFile, "r").use { file ->
+            require(file.length() >= 100) { "That zip's library file is damaged" }
+            file.seek(60)
+            file.readInt()
         }
     }
 

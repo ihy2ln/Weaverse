@@ -340,6 +340,13 @@ fun ExportImportScreen(
                 modifier = Modifier.padding(top = InkSpacing.sm),
             )
         }
+        if (state.exportedPath.isNotBlank()) {
+            com.ihy2ln.weaverse.core.ui.components.ExportedFileActions(
+                path = state.exportedPath,
+                modifier = Modifier.padding(top = InkSpacing.xs),
+                onResult = viewModel::setStatus,
+            )
+        }
     }
 }
 

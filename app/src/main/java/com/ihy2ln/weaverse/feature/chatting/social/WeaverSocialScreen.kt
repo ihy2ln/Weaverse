@@ -256,9 +256,10 @@ fun WeaverSocialScreen(
         if (state.mediaPickRequestId > 0) pickerGifs = PickerStart.Library
     }
     var viewing by remember { mutableStateOf<Triple<List<String>, Int, String>?>(null) }
-    LaunchedEffect(state.castLoaded) {
+    LaunchedEffect(state.castLoaded, state.postsLoaded) {
         // Opening the mode fills an empty feed, or pulls what the followed accounts posted since.
-        if (state.castLoaded) {
+        // Waits for saved posts to load, or every open would look empty and pay for a fresh batch.
+        if (state.castLoaded && state.postsLoaded) {
             if (state.posts.isEmpty()) viewModel.refreshFeed(5) else viewModel.onOpened()
         }
     }

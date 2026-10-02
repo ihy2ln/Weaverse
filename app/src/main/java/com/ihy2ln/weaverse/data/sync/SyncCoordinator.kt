@@ -58,6 +58,7 @@ import io.ktor.server.request.receiveChannel
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondFile
 import io.ktor.server.response.respondText
+import io.ktor.server.plugins.origin
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
@@ -91,6 +92,8 @@ data class SyncUiSnapshot(
     val hosting: Boolean = false,
     val port: Int = DEFAULT_SYNC_PORT,
     val pairPin: String = "",
+    /** Permanent Bearer token MCP clients (Codex, Claude Code, Cursor) send; survives restarts. */
+    val mcpToken: String = "",
     val deviceName: String = "Weaverse Android",
     val lanAddress: String = "",
     val statusText: String = "",
@@ -111,6 +114,7 @@ class SyncCoordinator @Inject constructor(
     private val novelcrafterImporter: NovelcrafterImporter,
     private val backupManager: BackupManager,
     private val mcpTools: com.ihy2ln.weaverse.core.mcp.McpTools,
+    private val secrets: com.ihy2ln.weaverse.data.settings.SecureKeyStore,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val json = Json {
@@ -120,12 +124,13 @@ class SyncCoordinator @Inject constructor(
 
     private val deviceId = SyncAuth.newDeviceId()
     private val pairPin = SyncAuth.newPairPin()
-    private val sessions = ConcurrentHashMap.newKeySet<String>()
+    private val guard = com.ihy2ln.weaverse.sync.SyncGuard()
     private val foregrounded = AtomicBoolean(true)
 
     private val _state = MutableStateFlow(
         SyncUiSnapshot(
             pairPin = pairPin,
+            mcpToken = runCatching { loadOrCreateMcpToken() }.getOrDefault(""),
             deviceName = "Weaverse · ${Build.MODEL}",
             lanAddress = ipv4Address(),
         ),
@@ -238,7 +243,7 @@ class SyncCoordinator @Inject constructor(
                 peerHost = it.peerHost.ifBlank { url },
                 tlsEnabled = tlsEnabled,
                 certSha256 = hostCertSha256.ifBlank { it.certSha256 },
-                statusText = "Web hub running. Open the web link to see the password.",
+                statusText = "Web hub running. Open the web link on this phone to see the password.",
                 lastError = "",
             )
         }
@@ -258,7 +263,8 @@ class SyncCoordinator @Inject constructor(
                         appVersion = BuildConfig.VERSION_NAME,
                         hostMode = "android",
                         port = port,
-                        pairPin = pairPin,
+                        // Only a browser on this phone may read the password; other devices must type it.
+                        pairPin = pairPin.takeIf { com.ihy2ln.weaverse.sync.SyncGuard.isLoopback(call.request.origin.remoteHost) },
                         hasLibrary = true,
                         webUrl = localWebUrl(port),
                         lanHint = ipv4Address(),
@@ -267,14 +273,23 @@ class SyncCoordinator @Inject constructor(
                     ),
                 )
             }
+            // Lets the web hub check whether its saved session is still good before asking for the password.
+            get("/api/session") {
+                call.respond(mapOf("ok" to authorized(call.request.headers["X-Weaverse-Token"])))
+            }
             post("/api/pair") {
                 val body = call.receive<SyncPairRequest>()
-                if (!SyncAuth.constantTimeEquals(body.pin, pairPin)) {
-                    call.respond(SyncPairResponse(false, message = "Invalid password"))
+                val client = call.request.origin.remoteHost
+                if (!guard.checkSecret(client, body.pin, pairPin)) {
+                    call.respond(
+                        SyncPairResponse(
+                            false,
+                            message = if (guard.isLockedOut(client)) "Too many wrong passwords — wait a minute and try again" else "Invalid password",
+                        ),
+                    )
                     return@post
                 }
-                val token = SyncAuth.newSessionToken()
-                sessions.add(token)
+                val token = guard.newSession()
                 call.respond(
                     SyncPairResponse(
                         true,
@@ -310,18 +325,18 @@ class SyncCoordinator @Inject constructor(
                     )
                     return@post
                 }
-                val pin = pairPin
                 val bearer = call.request.headers["Authorization"]
                     ?.removePrefix("Bearer ")?.trim().orEmpty()
                 val altPin = call.request.headers["X-MCP-Pin"].orEmpty()
-                if ((bearer.isNotBlank() || altPin.isNotBlank()) && (bearer != pin && altPin != pin)) {
+                // A credential is always required: the permanent MCP token from Settings as a Bearer token.
+                if (!guard.checkSecret(call.request.origin.remoteHost, bearer.ifBlank { altPin }, _state.value.mcpToken.ifBlank { loadOrCreateMcpToken() })) {
                     call.respond(
                         buildJsonObject {
                             put("jsonrpc", "2.0")
                             put("id", kotlinx.serialization.json.JsonNull)
                             putJsonObject("error") {
                                 put("code", -32001)
-                                put("message", "Unauthorized — use the sync password as a Bearer token.")
+                                put("message", "Unauthorized — send the MCP token from Weaverse Settings as a Bearer token.")
                             }
                         },
                     )
@@ -395,6 +410,11 @@ class SyncCoordinator @Inject constructor(
             }
             get("/api/media/{id}") {
                 val id = call.parameters["id"].orEmpty()
+                // Ids are file names; anything that could climb out of media/ is refused.
+                if (id.isBlank() || id.contains('/') || id.contains('\\') || id.contains("..")) {
+                    call.respond(mapOf("ok" to false))
+                    return@get
+                }
                 val piece = ImportArt.pieces.firstOrNull { it.id == id }
                 val file = File(context.filesDir, "media/$id.jpg").takeIf { it.exists() }
                     ?: File(context.filesDir, "media/$id.png").takeIf { it.exists() }
@@ -411,8 +431,8 @@ class SyncCoordinator @Inject constructor(
                     return@post
                 }
                 val incoming = File(syncDir, "import-${System.currentTimeMillis()}.zip")
-                call.receiveChannel().copyTo(incoming.outputStream())
-                val bytes = incoming.readBytes()
+                incoming.outputStream().use { call.receiveChannel().copyTo(it) }
+                val bytes = try { incoming.readBytes() } finally { incoming.delete() }
                 if (!NovelcrafterZipParser.looksLikeNovelcrafterZipBytes(bytes)) {
                     call.respond(
                         ImportZipResult(
@@ -454,8 +474,8 @@ class SyncCoordinator @Inject constructor(
                     return@post
                 }
                 val incoming = File(syncDir, "incoming-${System.currentTimeMillis()}.zip")
-                call.receiveChannel().copyTo(incoming.outputStream())
-                val report = mergePackage(incoming)
+                incoming.outputStream().use { call.receiveChannel().copyTo(it) }
+                val report = try { mergePackage(incoming) } finally { incoming.delete() }
                 call.respond(
                     SyncPushResult(
                         true,
@@ -620,10 +640,16 @@ class SyncCoordinator @Inject constructor(
         return token
     }
 
-    private fun authorized(token: String?): Boolean {
-        if (token.isNullOrBlank()) return false
-        if (sessions.contains(token)) return true
-        return SyncAuth.constantTimeEquals(token, pairPin)
+    private fun authorized(token: String?): Boolean = guard.isSession(token)
+
+    private fun loadOrCreateMcpToken(): String =
+        secrets.get(MCP_TOKEN_KEY) ?: SyncAuth.newSessionToken().also { secrets.set(MCP_TOKEN_KEY, it) }
+
+    /** Replaces the MCP token; clients set up with the old one stop working. */
+    fun regenerateMcpToken() {
+        val token = SyncAuth.newSessionToken()
+        secrets.set(MCP_TOKEN_KEY, token)
+        _state.update { it.copy(mcpToken = token) }
     }
 
     private fun buildLocalPackage(): File {
@@ -708,5 +734,6 @@ class SyncCoordinator @Inject constructor(
 
     companion object {
         private const val FOREGROUND_POLL_MS = 8_000L
+        private const val MCP_TOKEN_KEY = "mcp_token"
     }
 }

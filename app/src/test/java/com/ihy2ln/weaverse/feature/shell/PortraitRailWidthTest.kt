@@ -1,8 +1,8 @@
 package com.ihy2ln.weaverse.feature.shell
 
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
 
 /**
  * Guards the portrait rail coerceIn bug: max must be ≥ min or Kotlin throws
@@ -12,16 +12,16 @@ class PortraitRailWidthTest {
     @Test
     fun portraitRailRangeIsValid() {
         assertTrue(
-            "railPortraitMin must be <= railPortraitMax",
             InkSpacing.railPortraitMin <= InkSpacing.railPortraitMax,
+            "railPortraitMin must be <= railPortraitMax",
         )
     }
 
     @Test
     fun landscapeRailRangeIsValid() {
         assertTrue(
-            "railMin must be <= railMax",
             InkSpacing.railMin <= InkSpacing.railMax,
+            "railMin must be <= railMax",
         )
     }
 

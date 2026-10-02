@@ -11,10 +11,13 @@ import com.ihy2ln.weaverse.ai.WeaverseAiLog
 import com.ihy2ln.weaverse.ai.openrouter.OpenRouterErrorMapper
 import com.ihy2ln.weaverse.data.settings.SecureKeyStore
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
@@ -99,9 +102,11 @@ class AnthropicProvider @Inject constructor(
         } catch (e: IOException) {
             throw AIError.NoNetwork(e)
         }
-    }
+    }.flowOn(Dispatchers.IO)
 
-    override suspend fun complete(request: AIRequest): AIResult {
+    override suspend fun complete(request: AIRequest): AIResult = withContext(Dispatchers.IO) { completeBlocking(request) }
+
+    private suspend fun completeBlocking(request: AIRequest): AIResult {
         val key = settings.apiKey(SecureKeyStore.ANTHROPIC) ?: throw AIError.NoApiKey()
         val model = request.modelId.removePrefix("anthropic/")
         val httpRequest = Request.Builder()

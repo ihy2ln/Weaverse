@@ -136,6 +136,38 @@ interface ManuscriptDao {
     @Query("DELETE FROM chapters WHERE id = :id")
     suspend fun deleteChapter(id: String)
 
+    // A book's whole manuscript, for deleting the book. Each step leans on the tables the
+    // next ones remove, so callers run them in this order inside one transaction.
+    @Query(
+        "DELETE FROM scene_revisions WHERE sceneId IN (SELECT s.id FROM scenes s " +
+            "JOIN chapters c ON c.id = s.chapterId JOIN acts a ON a.id = c.actId WHERE a.bookId = :bookId)",
+    )
+    suspend fun deleteRevisionsForBook(bookId: String)
+
+    @Query(
+        "DELETE FROM scene_codex_links WHERE sceneId IN (SELECT s.id FROM scenes s " +
+            "JOIN chapters c ON c.id = s.chapterId JOIN acts a ON a.id = c.actId WHERE a.bookId = :bookId)",
+    )
+    suspend fun deleteCodexLinksForBook(bookId: String)
+
+    @Query("DELETE FROM scenes WHERE chapterId IN (SELECT c.id FROM chapters c JOIN acts a ON a.id = c.actId WHERE a.bookId = :bookId)")
+    suspend fun deleteScenesForBook(bookId: String)
+
+    @Query("DELETE FROM chapters WHERE actId IN (SELECT id FROM acts WHERE bookId = :bookId)")
+    suspend fun deleteChaptersForBook(bookId: String)
+
+    @Query("DELETE FROM acts WHERE bookId = :bookId")
+    suspend fun deleteActsForBook(bookId: String)
+
+    @Query("DELETE FROM scene_revisions WHERE sceneId IN (SELECT id FROM scenes WHERE chapterId = :chapterId)")
+    suspend fun deleteRevisionsForChapter(chapterId: String)
+
+    @Query("DELETE FROM scene_codex_links WHERE sceneId IN (SELECT id FROM scenes WHERE chapterId = :chapterId)")
+    suspend fun deleteCodexLinksForChapter(chapterId: String)
+
+    @Query("DELETE FROM scenes WHERE chapterId = :chapterId")
+    suspend fun deleteScenesForChapter(chapterId: String)
+
     @Query("SELECT * FROM scene_revisions WHERE sceneId = :sceneId ORDER BY createdAt DESC")
     fun observeRevisions(sceneId: String): Flow<List<SceneRevisionEntity>>
 
@@ -154,11 +186,19 @@ interface ManuscriptDao {
     @Query("DELETE FROM scene_revisions WHERE id = :id")
     suspend fun deleteRevision(id: String)
 
+    /** Rotates the automatic hourly snapshots only; manual and before-restore snapshots are kept. */
     @Query(
-        "DELETE FROM scene_revisions WHERE sceneId = :sceneId AND id NOT IN " +
-            "(SELECT id FROM scene_revisions WHERE sceneId = :sceneId ORDER BY createdAt DESC LIMIT :keep)",
+        "DELETE FROM scene_revisions WHERE sceneId = :sceneId AND kind = 'hourly' AND id NOT IN " +
+            "(SELECT id FROM scene_revisions WHERE sceneId = :sceneId AND kind = 'hourly' ORDER BY createdAt DESC LIMIT :keep)",
     )
     suspend fun pruneRevisions(sceneId: String, keep: Int)
+
+    /** A far looser cap for snapshots the writer chose to keep. */
+    @Query(
+        "DELETE FROM scene_revisions WHERE sceneId = :sceneId AND kind != 'hourly' AND id NOT IN " +
+            "(SELECT id FROM scene_revisions WHERE sceneId = :sceneId AND kind != 'hourly' ORDER BY createdAt DESC LIMIT :keep)",
+    )
+    suspend fun pruneKeptRevisions(sceneId: String, keep: Int)
 }
 
 @Dao
@@ -207,6 +247,9 @@ interface CodexDao {
 
     @Query("DELETE FROM codex_entries_lore WHERE entryId = :entryId")
     suspend fun deleteLore(entryId: String)
+
+    @Query("DELETE FROM codex_entries_lore WHERE entryId IN (SELECT id FROM codex_entries WHERE scopeId = :scopeId)")
+    suspend fun deleteLoreForScope(scopeId: String)
 
     @Query("DELETE FROM codex_entries WHERE scopeId = :scopeId")
     suspend fun deleteEntriesForScope(scopeId: String)
@@ -288,6 +331,9 @@ interface SnippetDao {
 
     @Query("DELETE FROM snippets WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    @Query("DELETE FROM snippets WHERE scopeId = :scopeId")
+    suspend fun deleteForScope(scopeId: String)
 }
 
 @Dao
@@ -318,6 +364,12 @@ interface WorkshopChatDao {
 
     @Query("DELETE FROM chat_threads WHERE id = :threadId")
     suspend fun deleteThread(threadId: String)
+
+    @Query("DELETE FROM chat_messages WHERE threadId IN (SELECT id FROM chat_threads WHERE scopeId = :scopeId)")
+    suspend fun deleteMessagesForScope(scopeId: String)
+
+    @Query("DELETE FROM chat_threads WHERE scopeId = :scopeId")
+    suspend fun deleteThreadsForScope(scopeId: String)
 }
 
 @Dao

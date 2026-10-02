@@ -46,21 +46,42 @@ Do not unzip only the inner files onto the desktop — keep the data/ folder nam
     /** Relative path under the app media dir, or null if not a media entry. */
     fun mediaRelativePath(entryName: String): String? = when {
         entryName.startsWith(MOBILE_MEDIA) && !entryName.endsWith("/") ->
-            entryName.removePrefix(MOBILE_MEDIA)
+            safeRelative(entryName.removePrefix(MOBILE_MEDIA))
         entryName.startsWith(PC_MEDIA) && !entryName.endsWith("/") ->
-            entryName.removePrefix(PC_MEDIA)
+            safeRelative(entryName.removePrefix(PC_MEDIA))
         else -> null
     }
 
     fun mangaRelativePath(entryName: String): String? {
         if (!entryName.startsWith(MOBILE_MANGA) || entryName.endsWith("/")) return null
-        return entryName.removePrefix(MOBILE_MANGA).takeUnless { it.split('/').any { part -> part == ".." } }
+        return safeRelative(entryName.removePrefix(MOBILE_MANGA))
     }
 
     fun settingsRelativePath(entryName: String): String? {
         if (!entryName.startsWith(MOBILE_SETTINGS) || entryName.endsWith("/")) return null
-        return entryName.removePrefix(MOBILE_SETTINGS)
+        return safeRelative(entryName.removePrefix(MOBILE_SETTINGS))
     }
+
+    /**
+     * A zip entry's path only if it stays inside its folder: no `..`, no absolute or drive
+     * paths, no backslashes. A crafted backup can't write anywhere else in the app.
+     */
+    fun safeRelative(path: String): String? = path.takeUnless {
+        it.isBlank() || it.startsWith("/") || it.contains('\\') || it.contains(':') ||
+            it.split('/').any { part -> part == ".." || part == "." }
+    }
+
+    /** [relative] inside [base], or null if it would land outside it once resolved. */
+    fun childInside(base: File, relative: String): File? {
+        val safe = safeRelative(relative) ?: return null
+        val root = base.canonicalFile
+        val child = File(root, safe).canonicalFile
+        return child.takeIf { it.path.startsWith(root.path + File.separator) }
+    }
+
+    /** The export timestamp in a backup zip's name, which pairs its mobile and PC zips. */
+    fun backupTimestamp(fileName: String): Long? =
+        Regex("^weaverse-backup-(?:mobile|pc)-(\\d+)\\.zip$").find(fileName)?.groupValues?.get(1)?.toLongOrNull()
 
     fun packMobile(
         zipFile: File,

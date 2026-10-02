@@ -63,6 +63,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import android.content.Intent
@@ -1235,7 +1236,8 @@ fun SettingsScreen(
             )
             val clipboardMcp = LocalClipboardManager.current
             val mcpEndpoint = "http://${state.sync.lanAddress.ifBlank { "<device-ip>" }}:${state.sync.port}/mcp"
-            val codexSetupCommand = "codex mcp add weaverse --url $mcpEndpoint"
+            val mcpToken = state.sync.mcpToken.ifBlank { "<mcp-token>" }
+            val codexSetupCommand = "WEAVERSE_MCP_TOKEN=$mcpToken codex mcp add weaverse --url $mcpEndpoint --bearer-token-env-var WEAVERSE_MCP_TOKEN"
             InkCard(modifier = Modifier.fillMaxWidth().padding(top = InkSpacing.sm)) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(InkSpacing.sm),
@@ -1284,6 +1286,30 @@ fun SettingsScreen(
                     )
                 }
             }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = InkSpacing.xs),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("MCP token", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        "Clients send this as \"Authorization: Bearer <token>\". It stays the same across restarts; " +
+                            "regenerating it disconnects every client set up with the old one.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = inkTokens().secondaryText,
+                    )
+                }
+                InkOutlinedButton(
+                    label = "Copy token",
+                    onClick = { clipboardMcp.setText(AnnotatedString(state.sync.mcpToken)) },
+                    modifier = Modifier.padding(start = InkSpacing.xs),
+                )
+                InkOutlinedButton(
+                    label = "Regenerate",
+                    onClick = viewModel::regenerateMcpToken,
+                    modifier = Modifier.padding(start = InkSpacing.xs),
+                )
+            }
             Text(
                 "Only leave Codex MCP enabled on a network you trust. Download and Storyboard-writing " +
                     "tools still require their normal confirmation flow.",
@@ -1298,10 +1324,10 @@ fun SettingsScreen(
                 modifier = Modifier.padding(top = InkSpacing.xs),
             )
             listOf(
-                "Claude Code" to "claude mcp add --transport http weaverse $mcpEndpoint",
-                "OpenCode" to "opencode mcp add weaverse --url $mcpEndpoint",
-                "Cursor IDE" to "Cursor Settings → MCP → New MCP Server · name: weaverse · type: http · url: $mcpEndpoint · header Authorization: Bearer <sync-password>",
-                "Cursor CLI" to "{\"mcpServers\":{\"weaverse\":{\"url\":\"$mcpEndpoint\",\"type\":\"http\",\"headers\":{\"Authorization\":\"Bearer <sync-password>\"}}}} then: agent mcp enable weaverse",
+                "Claude Code" to "claude mcp add --transport http weaverse $mcpEndpoint --header \"Authorization: Bearer $mcpToken\"",
+                "OpenCode" to "opencode.json → \"mcp\":{\"weaverse\":{\"type\":\"remote\",\"url\":\"$mcpEndpoint\",\"headers\":{\"Authorization\":\"Bearer $mcpToken\"}}}",
+                "Cursor IDE" to "Cursor Settings → MCP → New MCP Server · name: weaverse · type: http · url: $mcpEndpoint · header Authorization: Bearer $mcpToken",
+                "Cursor CLI" to "{\"mcpServers\":{\"weaverse\":{\"url\":\"$mcpEndpoint\",\"type\":\"http\",\"headers\":{\"Authorization\":\"Bearer $mcpToken\"}}}} then: agent mcp enable weaverse",
             ).forEach { (harness, command) ->
                 Row(
                     modifier = Modifier
@@ -1353,7 +1379,7 @@ fun SettingsScreen(
         ) {
 
             Text(
-                "Backup now writes two zip files: one for this phone (Restore) and one for PC (extract into the Weaverse folder that contains data/). Copies also go to Android/data/…/files/backups so you can copy them off the device. Daily auto-backup keeps the last 7 zips.",
+                "Backup now writes two zip files: one for this phone (Restore) and one for PC (extract into the Weaverse folder that contains data/). Copies also go to Android/data/…/files/backups so you can copy them off the device. Daily auto-backup keeps the last 7 backups.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(bottom = InkSpacing.sm),
@@ -1385,18 +1411,35 @@ fun SettingsScreen(
 
                 )
 
+                var confirmRestore by remember { mutableStateOf(false) }
                 InkConfirmButton(
-
-                    onClick = viewModel::restoreBackup,
-
+                    onClick = { confirmRestore = true },
                     label = "Restore",
-
                     contentDescription = "Restore latest backup",
-
                     modifier = Modifier.padding(start = InkSpacing.sm),
-
                 )
-
+                if (confirmRestore) {
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { confirmRestore = false },
+                        title = { Text("Restore the latest backup?") },
+                        text = {
+                            Text(
+                                "Your library is replaced by the newest backup zip, then Weaverse restarts. " +
+                                    "The current library is saved first as a pre-restore snapshot. API keys aren't in " +
+                                    "backups, so re-enter them if this is a new device.",
+                            )
+                        },
+                        confirmButton = {
+                            androidx.compose.material3.TextButton(onClick = {
+                                confirmRestore = false
+                                viewModel.restoreBackup()
+                            }) { Text("Restore") }
+                        },
+                        dismissButton = {
+                            androidx.compose.material3.TextButton(onClick = { confirmRestore = false }) { Text("Cancel") }
+                        },
+                    )
+                }
             }
 
             if (state.exportStatus.isNotBlank()) {

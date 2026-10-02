@@ -28,6 +28,8 @@ data class ExportImportUiState(
     val format: ExportFormat = ExportFormat.Markdown,
     val options: ExportOptions = ExportOptions(),
     val status: String = "",
+    /** The file the last export wrote, offered for Share / Save to…. */
+    val exportedPath: String = "",
     val busy: Boolean = false,
     val tab: ExportTab = ExportTab.Novel,
     val installedPacks: List<InstalledMediaPack> = emptyList(),
@@ -117,10 +119,12 @@ class ExportImportViewModel @Inject constructor(
         _uiState.update { it.copy(options = transform(it.options)) }
     }
 
+    fun setStatus(message: String) = _uiState.update { it.copy(status = message) }
+
     fun export() {
         val state = _uiState.value
         viewModelScope.launch {
-            _uiState.update { it.copy(busy = true, status = "Exporting…") }
+            _uiState.update { it.copy(busy = true, status = "Exporting…", exportedPath = "") }
             runCatching {
                 when (state.tab) {
                     ExportTab.Novel -> {
@@ -139,7 +143,9 @@ class ExportImportViewModel @Inject constructor(
                     ExportTab.Notes -> exportManager.exportNotes()
                 }
             }.onSuccess { path ->
-                _uiState.update { it.copy(busy = false, status = "Exported to $path") }
+                _uiState.update {
+                    it.copy(busy = false, status = "Exported ${java.io.File(path.toString()).name} — share it or save it anywhere.", exportedPath = path.toString())
+                }
             }.onFailure { err ->
                 _uiState.update { it.copy(busy = false, status = "Export failed: ${err.message}") }
             }

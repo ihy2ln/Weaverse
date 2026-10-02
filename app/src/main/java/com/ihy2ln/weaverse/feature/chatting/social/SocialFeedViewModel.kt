@@ -146,6 +146,8 @@ data class SocialUiState(
     val pendingImagePaths: List<String> = emptyList(),
     val mediaPickRequestId: Long = 0,
     val castLoaded: Boolean = false,
+    /** The saved posts have been read once; until then an empty list doesn't mean an empty feed. */
+    val postsLoaded: Boolean = false,
     val safety: SocialSafety = SocialSafety(),
     /** One-off message such as "Mara blocked you", shown as a snackbar. */
     val notice: String = "",
@@ -299,6 +301,7 @@ class SocialFeedViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 posts = top,
+                postsLoaded = true,
                 repliesByParent = replies,
                 allById = full.filterKeys { id -> entities[id]?.let(::visible) == true },
                 people = people,

@@ -38,6 +38,8 @@ data class CharacterDetailUiState(
     val equipment: List<String> = emptyList(),
     val saved: Boolean = false,
     val statusMessage: String = "",
+    /** The card file the last export wrote, offered for Share / Save to…. */
+    val exportedCardPath: String = "",
 )
 
 @HiltViewModel
@@ -167,12 +169,14 @@ class CharacterDetailViewModel @Inject constructor(
         }
     }
 
+    fun setStatus(message: String) = _uiState.update { it.copy(statusMessage = message) }
+
     fun exportPngCard() {
         val id = _uiState.value.id
         if (id.isBlank()) return
         viewModelScope.launch {
             runCatching { cardExporter.exportPng(id) }
-                .onSuccess { file -> _uiState.update { it.copy(statusMessage = "PNG card: ${file.absolutePath}") } }
+                .onSuccess { file -> _uiState.update { it.copy(statusMessage = "PNG card ready: ${file.name}", exportedCardPath = file.absolutePath) } }
                 .onFailure { err -> _uiState.update { it.copy(statusMessage = "Export failed: ${err.message}") } }
         }
     }
@@ -182,7 +186,7 @@ class CharacterDetailViewModel @Inject constructor(
         if (id.isBlank()) return
         viewModelScope.launch {
             runCatching { cardExporter.exportJson(id) }
-                .onSuccess { file -> _uiState.update { it.copy(statusMessage = "JSON card: ${file.absolutePath}") } }
+                .onSuccess { file -> _uiState.update { it.copy(statusMessage = "JSON card ready: ${file.name}", exportedCardPath = file.absolutePath) } }
                 .onFailure { err -> _uiState.update { it.copy(statusMessage = "Export failed: ${err.message}") } }
         }
     }

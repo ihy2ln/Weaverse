@@ -3,6 +3,43 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.69 - Audit Tier 1: security, data safety, broken flows
+
+From the app-wide audit (plan: Tier 1 of 4; Tiers 2-4 still open).
+- Sync/web hub: `/api/status` only returns the password to loopback (the host's own
+  browser); other devices type it (web UI prompts; new `/api/session` checks a saved
+  token). New `SyncGuard` (sync-core): 12 h session expiry, lockout after 5 wrong
+  passwords (30 s, doubling, max 1 h), raw PIN no longer accepted as a session token.
+  Upload temp zips are deleted; Android `/api/media/{id}` rejects path ids.
+- Android MCP no longer accepts credential-less requests. It now uses a permanent MCP
+  token (SecureKeyStore `mcp_token`) shown in Settings with Copy / Regenerate; setup
+  commands include it. **Existing MCP clients must be re-added once.** Desktop MCP keeps
+  the sync password, now rate-limited.
+- Backups: restore unpacks to staging with zip-slip guards (`BackupArchives.safeRelative`
+  / `childInside`), refuses newer-schema backups, snapshots the current library
+  ("pre-restore"), closes Room, clears WAL/SHM, then relaunches (`AppRestarter`). Restore
+  asks for confirmation. Pruning keeps 7 backups (grouped by timestamp), not 7 files.
+- Scene snapshots: restore saves the on-screen text first ("before-restore") and writes
+  through the editor's ordered save queue (undoable); hourly rotation no longer deletes
+  manual / before-restore snapshots (those cap at 100).
+- Book delete removes manuscript, snapshots, codex links/lore, notes and workshop chats in
+  one transaction; duplicate and chapter delete are transactional.
+- Exports and character cards: Share and "Save to…" (SAF) buttons
+  (`ExportedFileActions`).
+- OpenAI / Anthropic / Gemini providers run on Dispatchers.IO.
+- Six JUnit 4 test files converted to Jupiter (they never ran); MediaGridTest updated
+  for the 12 / 6 grid sizes from ec0d223. 615 unit tests pass; SyncGuardTest added.
+- WeaverSocial waits for saved posts before deciding the feed is empty (no paid batch on
+  every open).
+- Roleplay: Stop keeps the partial reply and no longer shows a coroutine error;
+  regenerate is cancellable and single-flight, and no longer re-applies Adventure
+  inventory/roster capture.
+- Verified: desktop host live (loopback vs LAN status, MCP 401, lockout). Not verified on
+  device (MuMu not found at its old path).
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.4.69.apk`, SHA-256
+  `55c620bd82ca0e16a01915e9687e905e38f8840f7d109900fd8cc9d6521dd175`, debug-key signed
+  (same certificate `f16db508…51fc05`).
+
 ## v1.4.68 - WeaverSocial: accounts you follow
 
 - New Privacy & filters > Accounts you follow: kinds of real accounts the timeline follows

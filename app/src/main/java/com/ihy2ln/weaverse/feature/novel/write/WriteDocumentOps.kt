@@ -65,7 +65,8 @@ class WriteDocumentOps @Inject constructor(
         return updated
     }
 
-    suspend fun restoreRevision(revisionId: String): SceneEntity? = sceneRevisions.restore(revisionId)
+    suspend fun prepareRestore(revisionId: String, current: SceneEntity) =
+        sceneRevisions.prepareRestore(revisionId, current)
 
     suspend fun snapshotNow(scene: SceneEntity, kind: String = "manual") =
         sceneRevisions.snapshotNow(scene, kind)

@@ -2820,6 +2820,30 @@ class RoleplayChatViewModel @Inject constructor(
                     }
                 }
             }.onFailure { err ->
+                if (err is kotlin.coroutines.cancellation.CancellationException) {
+                    // Stop keeps what was written so far as the reply instead of throwing it away.
+                    val partial = adventureStartupProseFrom(adventureWorldProseFrom(adventureProseFrom(
+                        AiSceneAdvanceMarker.replace(topicMediaVisibleText(builder.toString()), "").trim(),
+                    ))).trim()
+                    if (partial.isNotBlank() && !startupActive) {
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                            db.roleplayDao().upsertMessage(
+                                RpMessageEntity(
+                                    id = "rpm-${now + 1}",
+                                    chatId = state.chatId,
+                                    swipeGroupId = groupId,
+                                    swipeIndex = 0,
+                                    isActiveSwipe = true,
+                                    role = "char",
+                                    contentJson = Document.fromPlainText(partial).toJson(),
+                                    createdAt = now + 1,
+                                    displayMode = mode,
+                                ),
+                            )
+                        }
+                    }
+                    throw err
+                }
                 workspaceHistory.record(
                     undo = { db.roleplayDao().deleteMessage(userMessage.id) },
                     redo = { db.roleplayDao().upsertMessage(userMessage) },
@@ -2950,7 +2974,7 @@ class RoleplayChatViewModel @Inject constructor(
     fun cancelGeneration() {
         generateJob?.cancel()
         generateJob = null
-        _uiState.update { it.copy(isStreaming = false, streamingText = "", errorMessage = "Cancelled", adventurePlanProgress = 0) }
+        _uiState.update { it.copy(isStreaming = false, streamingText = "", errorMessage = "Stopped — anything already written was kept", adventurePlanProgress = 0) }
     }
 
     fun swipe(messageId: String, direction: Int) {
@@ -2972,7 +2996,9 @@ class RoleplayChatViewModel @Inject constructor(
     }
 
     fun regenerate(messageId: String) {
-        viewModelScope.launch {
+        // One generation at a time; a second tap mustn't start a parallel one.
+        if (_uiState.value.isStreaming || generateJob?.isActive == true) return
+        generateJob = viewModelScope.launch {
             val current = rawMessages.find { it.id == messageId && it.role == "char" } ?: return@launch
             val state = _uiState.value
             val activeModelRef = PromptModelSelection.effectiveModelRef(
@@ -3050,12 +3076,8 @@ class RoleplayChatViewModel @Inject constructor(
                 )
                 deactivated.forEach { db.roleplayDao().upsertMessage(it) }
                 db.roleplayDao().upsertMessage(generated)
-                if (current.displayMode.ifBlank { currentDisplayMode() } == "dungeonMaster") {
-                    val captureChatId = current.chatId
-                    viewModelScope.launch {
-                        adventureCapture.captureAndApply(reply.text, captureChatId)
-                    }
-                }
+                // No Adventure bookkeeping here: the reply being swiped was already captured, and
+                // capturing an alternate take of the same beat would add its items and people twice.
                 workspaceHistory.record(
                     undo = {
                         db.roleplayDao().deleteMessage(generated.id)
@@ -3077,6 +3099,7 @@ class RoleplayChatViewModel @Inject constructor(
                     )
                 }
             }.onFailure { err ->
+                if (err is kotlin.coroutines.cancellation.CancellationException) throw err
                 _uiState.update {
                     it.copy(isStreaming = false, errorMessage = formatError(err))
                 }

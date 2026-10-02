@@ -1,5 +1,6 @@
 package com.ihy2ln.weaverse.data.repo
 
+import androidx.room.withTransaction
 import com.ihy2ln.weaverse.core.media.AiMediaRequest
 import com.ihy2ln.weaverse.core.media.AiMediaResolver
 import com.ihy2ln.weaverse.core.media.MediaRepository
@@ -139,7 +140,9 @@ class BookRepository @Inject constructor(
         db.bookDao().upsert(entity.copy(updatedAt = System.currentTimeMillis()))
 
     /** Deep-copy a work so long-press Copy includes its manuscript, codex, notes, and workshop chats. */
-    suspend fun duplicateBook(bookId: String): BookEntity? {
+    suspend fun duplicateBook(bookId: String): BookEntity? = db.withTransaction { duplicateBookInTransaction(bookId) }
+
+    private suspend fun duplicateBookInTransaction(bookId: String): BookEntity? {
         val source = db.bookDao().getById(bookId) ?: return null
         val now = System.currentTimeMillis()
         val copyId = "book-${UUID.randomUUID()}"
@@ -211,9 +214,22 @@ class BookRepository @Inject constructor(
         db.bookDao().upsert(book.copy(seriesId = seriesId, updatedAt = System.currentTimeMillis()))
     }
 
-    suspend fun deleteBook(bookId: String) {
+    /**
+     * Removes a book and everything that belongs only to it — manuscript, snapshots, codex,
+     * notes and workshop chats — all or nothing. Roleplay chats that mention the book stay.
+     */
+    suspend fun deleteBook(bookId: String) = db.withTransaction {
+        db.manuscriptDao().deleteRevisionsForBook(bookId)
+        db.manuscriptDao().deleteCodexLinksForBook(bookId)
+        db.manuscriptDao().deleteScenesForBook(bookId)
+        db.manuscriptDao().deleteChaptersForBook(bookId)
+        db.manuscriptDao().deleteActsForBook(bookId)
+        db.codexDao().deleteLoreForScope(bookId)
         db.codexDao().deleteEntriesForScope(bookId)
         db.codexDao().deleteCategoriesForScope(bookId)
+        db.snippetDao().deleteForScope(bookId)
+        db.workshopChatDao().deleteMessagesForScope(bookId)
+        db.workshopChatDao().deleteThreadsForScope(bookId)
         db.bookDao().deleteById(bookId)
     }
 
@@ -251,8 +267,10 @@ class ManuscriptRepository @Inject constructor(
 
     suspend fun deleteScene(sceneId: String) = db.manuscriptDao().deleteScene(sceneId)
 
-    suspend fun deleteChapter(chapterId: String) {
-        db.manuscriptDao().getScenes(chapterId).forEach { db.manuscriptDao().deleteScene(it.id) }
+    suspend fun deleteChapter(chapterId: String) = db.withTransaction {
+        db.manuscriptDao().deleteRevisionsForChapter(chapterId)
+        db.manuscriptDao().deleteCodexLinksForChapter(chapterId)
+        db.manuscriptDao().deleteScenesForChapter(chapterId)
         db.manuscriptDao().deleteChapter(chapterId)
     }
 

@@ -544,10 +544,23 @@ class WriteViewModel @Inject constructor(
     }
 
     fun restoreRevision(revisionId: String) {
+        val scene = loadedScene ?: return
+        flushTypingHistory()
+        val before = _uiState.value.blocks.toList()
+        val current = Document(before)
         viewModelScope.launch {
-            val restored = documentOps.restoreRevision(revisionId) ?: return@launch
-            applyScene(restored)
-            _uiState.update { it.copy(showHistory = false, statusMessage = "Restored snapshot") }
+            val revision = documentOps.prepareRestore(
+                revisionId,
+                scene.copy(docJson = current.toJson(), plainText = current.plainText(), wordCount = current.wordCount()),
+            ) ?: return@launch
+            val restoredBlocks = documentFromJson(revision.docJson).blocks
+                .ifEmpty { listOf(Paragraph("new-p", listOf(Span("")))) }
+            // Same ordered path as undo, so a keystroke save still queued can't land on top of it.
+            restoreSceneBlocks(scene.id, restoredBlocks)
+            recordDocumentEdit(before, restoredBlocks)
+            _uiState.update {
+                it.copy(showHistory = false, statusMessage = "Restored snapshot — the text before it was saved as a snapshot")
+            }
         }
     }
 

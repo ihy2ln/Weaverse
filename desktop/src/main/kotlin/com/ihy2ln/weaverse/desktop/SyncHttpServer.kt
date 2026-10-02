@@ -6,6 +6,7 @@ import com.ihy2ln.weaverse.sync.LibrarySummary
 import com.ihy2ln.weaverse.sync.NoteDetail
 import com.ihy2ln.weaverse.sync.SceneDetail
 import com.ihy2ln.weaverse.sync.SyncAuth
+import com.ihy2ln.weaverse.sync.SyncGuard
 import com.ihy2ln.weaverse.sync.WorkspaceSnapshot
 import com.ihy2ln.weaverse.sync.SyncMerge
 import com.ihy2ln.weaverse.sync.SyncPackage
@@ -28,6 +29,7 @@ import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.engine.sslConnector
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.server.plugins.origin
 import io.ktor.server.request.receive
 import io.ktor.server.request.receiveChannel
 import io.ktor.server.response.respond
@@ -55,7 +57,7 @@ class SyncHttpServer(
     private val dataDir: File,
     private val config: DesktopConfig,
 ) {
-    private val sessions = ConcurrentHashMap.newKeySet<String>()
+    private val guard = SyncGuard()
     private val lastSyncAt = AtomicReference<Long?>(null)
     private var engine: EmbeddedServer<*, *>? = null
     private var certSha256: String = ""
@@ -126,7 +128,8 @@ class SyncHttpServer(
                         appVersion = config.appVersion,
                         hostMode = "desktop",
                         port = config.port,
-                        pairPin = config.pairPin,
+                        // Only a browser on this PC may read the password; other devices must type it.
+                        pairPin = config.pairPin.takeIf { SyncGuard.isLoopback(call.request.origin.remoteHost) },
                         lastSyncAt = lastSyncAt.get(),
                         hasLibrary = DesktopPaths.dbFile(dataDir).exists() ||
                             DesktopPaths.latestSyncZip(dataDir).exists(),
@@ -145,9 +148,7 @@ class SyncHttpServer(
                 val bearer = call.request.headers["Authorization"]
                     ?.removePrefix("Bearer ")?.trim().orEmpty()
                 val pin = call.request.headers["X-MCP-Pin"].orEmpty()
-                if (!SyncAuth.constantTimeEquals(config.pairPin, bearer) &&
-                    !SyncAuth.constantTimeEquals(config.pairPin, pin)
-                ) {
+                if (!guard.checkSecret(call.request.origin.remoteHost, bearer.ifBlank { pin }, config.pairPin)) {
                     call.respond(
                         HttpStatusCode.Unauthorized,
                         buildJsonObject {
@@ -184,17 +185,24 @@ class SyncHttpServer(
                     ContentType.Text.Plain,
                 )
             }
+            // Lets the web hub check whether its saved session is still good before asking for the password.
+            get("/api/session") {
+                call.respond(mapOf("ok" to authorized(call.request.headers["X-Weaverse-Token"])))
+            }
             post("/api/pair") {
                 val body = call.receive<SyncPairRequest>()
-                if (!SyncAuth.constantTimeEquals(body.pin, config.pairPin)) {
+                val client = call.request.origin.remoteHost
+                if (!guard.checkSecret(client, body.pin, config.pairPin)) {
                     call.respond(
                         HttpStatusCode.Unauthorized,
-                        SyncPairResponse(ok = false, message = "Invalid password"),
+                        SyncPairResponse(
+                            ok = false,
+                            message = if (guard.isLockedOut(client)) "Too many wrong passwords — wait a minute and try again" else "Invalid password",
+                        ),
                     )
                     return@post
                 }
-                val token = SyncAuth.newSessionToken()
-                sessions.add(token)
+                val token = guard.newSession()
                 call.respond(
                     SyncPairResponse(
                         ok = true,
@@ -319,12 +327,12 @@ class SyncHttpServer(
                 }
                 val incoming = File(dataDir, "incoming/import-${System.currentTimeMillis()}.zip")
                 incoming.parentFile?.mkdirs()
-                call.receiveChannel().copyTo(incoming.outputStream())
-                if (!incoming.exists() || incoming.length() < 32) {
+                incoming.outputStream().use { call.receiveChannel().copyTo(it) }
+                val bytes = try { incoming.readBytes() } finally { incoming.delete() }
+                if (bytes.size < 32) {
                     call.respond(ImportZipResult(false, "Empty ZIP"))
                     return@post
                 }
-                val bytes = incoming.readBytes()
                 if (!NovelcrafterZipParser.looksLikeNovelcrafterZipBytes(bytes)) {
                     call.respond(
                         HttpStatusCode.BadRequest,
@@ -364,13 +372,17 @@ class SyncHttpServer(
                 }
                 val incoming = File(dataDir, "incoming/push-${System.currentTimeMillis()}.zip")
                 incoming.parentFile?.mkdirs()
-                call.receiveChannel().copyTo(incoming.outputStream())
+                incoming.outputStream().use { call.receiveChannel().copyTo(it) }
                 if (!incoming.exists() || incoming.length() < 32) {
+                    incoming.delete()
                     call.respond(SyncPushResult(false, "Empty package"))
                     return@post
                 }
-                val report = mergeIncoming(incoming)
-                incoming.copyTo(DesktopPaths.latestSyncZip(dataDir), overwrite = true)
+                val report = try {
+                    mergeIncoming(incoming).also { incoming.copyTo(DesktopPaths.latestSyncZip(dataDir), overwrite = true) }
+                } finally {
+                    incoming.delete()
+                }
                 lastSyncAt.set(System.currentTimeMillis())
                 call.respond(
                     SyncPushResult(
@@ -430,11 +442,7 @@ class SyncHttpServer(
         }
     }
 
-    private fun authorized(token: String?): Boolean {
-        if (token.isNullOrBlank()) return false
-        if (sessions.contains(token)) return true
-        return SyncAuth.constantTimeEquals(token, config.pairPin)
-    }
+    private fun authorized(token: String?): Boolean = guard.isSession(token)
 
     private fun ensureLatestZip() {
         val zip = DesktopPaths.latestSyncZip(dataDir)

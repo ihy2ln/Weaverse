@@ -434,10 +434,23 @@ fun webAppJs(): String = """
   (async () => {
     try {
       const status = await (await fetch('/api/status')).json();
+      // The host only hands its password to a browser on the same device; elsewhere it is typed in.
       const password = status.pairPin || '';
-      el('passwordBox').textContent = password || '—';
+      el('passwordBox').textContent = password || 'Locked';
       el('statusChip').textContent = 'Web hub · live sync';
-      if (password) await unlock(password);
+      if (password) {
+        await unlock(password);
+      } else {
+        const stillValid = !!state.token && !!(await (await api('/api/session')).json().catch(() => ({}))).ok;
+        let tries = 0;
+        while (!stillValid && tries < 5) {
+          const typed = window.prompt('Enter the sync password shown on the device running Weaverse:');
+          if (typed === null) break;
+          if (await unlock(typed.trim())) { el('passwordBox').textContent = 'Unlocked'; break; }
+          tries++;
+          el('statusChip').textContent = 'Wrong password';
+        }
+      }
       await loadWorkspace();
       showTab('plan');
     } catch (e) {

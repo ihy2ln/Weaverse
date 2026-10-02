@@ -34,6 +34,7 @@ class SceneRevisionRepository @Inject constructor(
         db.manuscriptDao().pruneRevisions(scene.id, KEEP_PER_SCENE)
     }
 
+    /** Snapshots the writer asked for (or made before a restore) are kept apart from the hourly rotation. */
     suspend fun snapshotNow(scene: SceneEntity, kind: String = "manual") {
         db.manuscriptDao().upsertRevision(
             SceneRevisionEntity(
@@ -46,26 +47,26 @@ class SceneRevisionRepository @Inject constructor(
                 kind = kind,
             ),
         )
-        db.manuscriptDao().pruneRevisions(scene.id, KEEP_PER_SCENE)
+        db.manuscriptDao().pruneKeptRevisions(scene.id, KEEP_SAVED_PER_SCENE)
     }
 
-    suspend fun restore(revisionId: String): SceneEntity? {
+    /**
+     * Saves [current] — the text on screen, including edits not yet written — as a
+     * "before-restore" snapshot, then hands back [revisionId] for the editor to write
+     * through its own ordered save queue. Restoring never loses what was there.
+     */
+    suspend fun prepareRestore(revisionId: String, current: SceneEntity): SceneRevisionEntity? {
         val revision = db.manuscriptDao().getRevision(revisionId) ?: return null
-        val scene = db.manuscriptDao().getScene(revision.sceneId) ?: return null
-        val restored = scene.copy(
-            docJson = revision.docJson,
-            plainText = revision.plainText,
-            wordCount = revision.wordCount,
-            updatedAt = writeStamps.next(),
-        )
-        db.manuscriptDao().upsertScene(restored)
-        snapshotNow(restored, kind = "restore-point")
-        return restored
+        if (revision.sceneId != current.id) return null
+        snapshotNow(current, kind = KIND_BEFORE_RESTORE)
+        return revision
     }
 
     companion object {
         const val HOUR_MS = 60L * 60L * 1000L
         const val KEEP_PER_SCENE = 24
+        const val KEEP_SAVED_PER_SCENE = 100
+        const val KIND_BEFORE_RESTORE = "before-restore"
 
         fun isDue(
             latestCreatedAt: Long?,

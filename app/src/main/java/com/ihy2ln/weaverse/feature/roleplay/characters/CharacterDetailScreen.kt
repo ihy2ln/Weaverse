@@ -101,6 +101,9 @@ fun CharacterDetailScreen(
                 }
             }
             if (state.statusMessage.isNotBlank()) Text(state.statusMessage, style = MaterialTheme.typography.bodySmall, color = tokens.secondaryText)
+            if (state.exportedCardPath.isNotBlank()) {
+                com.ihy2ln.weaverse.core.ui.components.ExportedFileActions(state.exportedCardPath, onResult = viewModel::setStatus)
+            }
             InkConfirmButton(
                 onClick = viewModel::save,
                 label = if (state.saved) "Saved" else "Save character sheet",

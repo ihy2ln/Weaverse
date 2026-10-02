@@ -1121,7 +1121,8 @@ object WikiContent {
                 Settings → Sync lists copy commands for **Cursor IDE**,
                 **Cursor CLI** (`agent mcp enable weaverse` after the same
                 `~/.cursor/mcp.json` entry), Claude Code, OpenCode, and Codex
-                CLI. Auth is the sync password as a Bearer token.
+                CLI. Auth is the MCP token from Settings (Copy token) as a Bearer token;
+                it stays the same across restarts until you regenerate it.
 
                 ## Troubleshooting
 

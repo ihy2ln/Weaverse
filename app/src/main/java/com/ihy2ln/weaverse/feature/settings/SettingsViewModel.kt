@@ -236,6 +236,8 @@ class SettingsViewModel @Inject constructor(
 
     fun suggestedWebUrl(): String = syncCoordinator.suggestedWebUrl()
 
+    fun regenerateMcpToken() = syncCoordinator.regenerateMcpToken()
+
     fun onOpenRouterKey(value: String) = _uiState.update { it.copy(openRouterKey = value) }
     fun onAnthropicKey(value: String) = _uiState.update { it.copy(anthropicKey = value) }
     fun onOpenAiKey(value: String) = _uiState.update { it.copy(openAiKey = value) }
@@ -550,9 +552,21 @@ class SettingsViewModel @Inject constructor(
 
     fun restoreBackup() {
         viewModelScope.launch {
+            _uiState.update { it.copy(exportStatus = "Restoring… your current library is saved first.") }
             runCatching { backupManager.restoreLatestBackup() }
-                .onSuccess { _uiState.update { it.copy(exportStatus = "Restore complete — restart app") } }
-                .onFailure { err -> _uiState.update { it.copy(exportStatus = "Restore failed: ${err.message}") } }
+                .onSuccess {
+                    _uiState.update { it.copy(exportStatus = "Restore complete — restarting Weaverse…") }
+                    kotlinx.coroutines.delay(900)
+                    com.ihy2ln.weaverse.core.AppRestarter.restart(appContext)
+                }
+                .onFailure { err ->
+                    _uiState.update { it.copy(exportStatus = "Restore failed: ${err.message}") }
+                    // Past the point the database was closed, only a fresh start can reopen it.
+                    if (backupManager.libraryClosed()) {
+                        kotlinx.coroutines.delay(2500)
+                        com.ihy2ln.weaverse.core.AppRestarter.restart(appContext)
+                    }
+                }
         }
     }
 

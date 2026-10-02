@@ -51,4 +51,24 @@ class BackupArchivesTest {
         assertTrue(BackupArchives.mobileZipName(9).contains("-mobile-"))
         assertTrue(BackupArchives.pcZipName(9).contains("-pc-"))
     }
+
+    @Test
+    fun `entries that climb out of their folder are refused`() {
+        assertNull(BackupArchives.mediaRelativePath("media/../../databases/evil.db"))
+        assertNull(BackupArchives.settingsRelativePath("settings/../shared_prefs/x.xml"))
+        assertNull(BackupArchives.mangaRelativePath("manga/a/../../../x"))
+        assertNull(BackupArchives.mediaRelativePath("data/media//etc/passwd"))
+        assertNull(BackupArchives.mediaRelativePath("media/..\\x.jpg"))
+        assertEquals("pic.jpg", BackupArchives.mediaRelativePath("media/pic.jpg"))
+        assertEquals("ch1/001.png", BackupArchives.mangaRelativePath("manga/ch1/001.png"))
+        assertNull(BackupArchives.childInside(temp, "../outside.txt"))
+        assertEquals(File(temp, "a/b.txt").canonicalFile, BackupArchives.childInside(temp, "a/b.txt"))
+    }
+
+    @Test
+    fun `mobile and pc zips of one export share a timestamp`() {
+        assertEquals(1700000000000L, BackupArchives.backupTimestamp(BackupArchives.mobileZipName(1700000000000L)))
+        assertEquals(1700000000000L, BackupArchives.backupTimestamp(BackupArchives.pcZipName(1700000000000L)))
+        assertNull(BackupArchives.backupTimestamp("pre-merge-sync-1.zip"))
+    }
 }
