@@ -35,6 +35,13 @@ enum class FeedCategory(
     val blueskySearch: List<String> = emptyList(),
     /** Eporner's public video API. */
     val eporner: Boolean = false,
+    /** RedGIFs clips with these tags (e.g. Twerking, Cleavage). */
+    val redgifsTags: List<String> = emptyList(),
+    /**
+     * Adult kinds normally keep only Bluesky posts Bluesky labels as adult. Promo and thirst
+     * posts are often unlabelled; they're still adult here and stay behind 18+.
+     */
+    val blueskyUnlabelledOk: Boolean = false,
 ) {
     GameOutlets(
         "game_outlets", "Video game outlets", "IGN, GameSpot, Polygon, PC Gamer, Eurogamer, Kotaku", "games",
@@ -133,9 +140,13 @@ enum class FeedCategory(
         blueskySearch = listOf("stand-up comedy", "comedian"),
     ),
     Thirst(
-        "thirst", "Thirst posts", "Selfies and thirst traps from adult communities", "adult", adult = true,
+        "thirst", "Thirst posts", "Twerking, cleavage and thirst traps: RedGIFs, Bluesky #twerk / #cleavage, Mastodon, lemmynsfw", "adult", adult = true,
         subreddits = listOf("PrettyGirls", "LadyBoners", "SFWcurves", "tightdresses", "gentlemanboners"),
-        blueskySearch = listOf("thirst trap", "#thirsttrap"),
+        hashtags = listOf("twerk"),
+        lemmyCommunities = listOf("cleavage@lemmynsfw.com"),
+        blueskySearch = listOf("#twerk", "#cleavage", "thirst trap", "#thirsttrap"),
+        redgifsTags = listOf("Twerking", "Cleavage"),
+        blueskyUnlabelledOk = true,
     ),
     PornAggregators(
         "porn_aggregators", "Porn aggregators", "RedGIFs, Pornhub and Eporner trending videos, r/nsfw, r/NSFW_GIF, r/RealGirls", "adult", adult = true,
@@ -151,8 +162,12 @@ enum class FeedCategory(
         lemmyCommunities = listOf("workgonewild@lemmynsfw.com", "amazingbum@lemmynsfw.com"),
     ),
     OnlyFans(
-        "onlyfans", "OnlyFans promos", "Free public teasers creators post to promote their OnlyFans — never paid content", "adult", adult = true,
+        "onlyfans", "OnlyFans promos", "Creators' public promo posts for their OnlyFans: Bluesky, Mastodon #onlyfans, lemmynsfw, Reddit — never paid content", "adult", adult = true,
         subreddits = listOf("OnlyFans101", "OnlyFansPromotions", "onlyfansgirls101"),
+        hashtags = listOf("onlyfans"),
+        lemmyCommunities = listOf("onlyfans@lemmynsfw.com"),
+        blueskySearch = listOf("#onlyfans", "onlyfans link", "#ofcreator", "link in bio onlyfans"),
+        blueskyUnlabelledOk = true,
     ),
     OtherAdult(
         "other_adult", "Other adult social", "lemmynsfw, adult-labelled Bluesky and #nsfw on Mastodon", "adult", adult = true,

@@ -109,11 +109,15 @@ class RealWebFeed @Inject constructor(
                 kind.lemmy.forEach { server -> add { lemmy(adultAllowed, server, kind.topic).map { it.copy(adult = it.adult || kind.adult) } } }
                 if (kind.blueskyAdult) add { bluesky(adultAllowed).filter { it.adult }.map { it.copy(topic = kind.topic) } }
                 if (kind.redgifs) add { redgifs(kind.topic) }
+                kind.redgifsTags.randomOrNull()?.let { tag -> add { redgifs(kind.topic, tag) } }
                 if (kind.pornhub) add { pornhub(kind.topic) }
                 if (kind.eporner) add { eporner(kind.topic) }
                 kind.fourChan.randomOrNull()?.let { board -> add { fourChan(board, kind.topic) } }
                 kind.blueskySearch.randomOrNull()?.let { words ->
-                    add { blueskySearch(words, kind.topic, adultAllowed, adultOnly = kind.adult) }
+                    add {
+                        blueskySearch(words, kind.topic, adultAllowed, adultOnly = kind.adult && !kind.blueskyUnlabelledOk)
+                            .map { if (kind.adult) it.copy(adult = true, topic = SocialNpcs.ADULT_TOPIC) else it }
+                    }
                 }
                 kind.lemmyCommunities.shuffled().take(2).forEach { community -> add { lemmyCommunity(community, kind.topic, adultAllowed, kind.adult) } }
             }
@@ -349,14 +353,15 @@ class RealWebFeed @Inject constructor(
     }
 
     /** RedGIFs' trending clips (an adult aggregator with a public API and verified creators). */
-    private fun redgifs(topic: String): List<RealWebItem> {
+    private fun redgifs(topic: String, tag: String? = null): List<RealWebItem> {
         if (redgifsToken.isBlank() || System.currentTimeMillis() > redgifsTokenUntil) {
             redgifsToken = web.getJson("https://api.redgifs.com/v2/auth/temporary").obj().str("token").orEmpty()
             redgifsTokenUntil = System.currentTimeMillis() + 20 * 60 * 60_000L
         }
         val order = listOf("trending", "top7", "latest").random()
+        val tagQuery = tag?.let { "&tags=" + URLEncoder.encode(it, "UTF-8") }.orEmpty()
         val gifs = web.getJson(
-            "https://api.redgifs.com/v2/gifs/search?order=$order&count=40",
+            "https://api.redgifs.com/v2/gifs/search?order=$order&count=40$tagQuery",
             mapOf("Authorization" to "Bearer $redgifsToken"),
         ).obj()["gifs"].arr()
         return gifs.mapNotNull { element ->
