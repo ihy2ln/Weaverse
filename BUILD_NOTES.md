@@ -3,6 +3,41 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.81 - WV 10.2.0: WeaverBrowser replaces WeaverSocial as home
+
+- The Chatting mode is now **WeaverBrowser** (`feature/browser/`), a Brave-style browser on
+  Android System WebView, and it is the home screen (`showHome` renders it). The layout follows
+  Brave Android 1.96.60 (reference screenshots taken from the official APK on the Games AVD):
+  address bar with the Shields button, New Tab Page with Privacy Stats + favorites, bottom
+  toolbar (Home, Bookmarks, Search, Tabs, Menu), Brave's menu, Shields panel with Advanced
+  controls, grid tab switcher with Private tabs, Leo AI sheet. Colors are the Streaming theme
+  (inkTokens), not Brave's; the logo is a Weaverse shield, not Brave's lion.
+- Shields: host blocklist in `Shields.kt` via `shouldInterceptRequest` (Standard = third-party
+  only, Aggressive = everywhere + cosmetic CSS), HTTPS upgrade, pop-up blocking, cross-site
+  cookie blocking, fingerprinting noise via `addDocumentStartJavaScript`, per-site Shields down.
+  Counters feed the NTP stats (48 KB / 55 ms per block are estimates). Verified on cnn.com.
+- Private tabs use an androidx.webkit `ProfileStore` profile (`weaver-private`, new dependency
+  `androidx.webkit:webkit:1.12.1`), deleted when the last Private tab closes; the NTP only
+  promises separate cookies when `MULTI_PROFILE` is supported.
+- WeaverSocial, Chats (DiscordChatScreen) and Contacts (FriendsScreen) are `weaver://` pages
+  opened as tabs; `weaver://novel|rpg|games|manga|notes` switch modes. WeaverSocial's own Browse
+  tab and `SiteBrowser.kt` are gone; post links open as browser tabs (`onOpenUrl`).
+  `ChattingDestination.Friends` was removed (old saved values fall back to Chats).
+- Modes are a streaming-style tab strip at the top of `WorkspaceChrome` (WeaverBrowser first).
+  `ChromeCollapseState` folds the tab strip (every mode) and the browser's address bar and
+  toolbar away on scroll down: Compose content through a nested-scroll observer, WebViews
+  through `setOnScrollChangeListener`.
+- State persists in `filesDir/weaver_browser.json` (tabs, bookmarks, history, downloads,
+  favorites, settings, stats); Private tabs are never saved.
+- The uncommitted user-CA network config and `SignedInSites.kt` were moved aside for this
+  build and restored afterwards; they are not in this APK.
+- 629 unit tests pass (5 new in `BrowserLogicTest`). Checked on the Games AVD: browsing,
+  collapse on scroll in the browser and in Novel, Shields panel, menu, tab switcher, Private
+  tab, WeaverSocial tab. Leo was not exercised (no AI key on the emulator).
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.4.81.apk` (debug build; installs as
+  `com.ihy2ln.weaverse.textgame`, "Weaverse Test"), SHA-256
+  `55a9e878fd5ea56a8ed76b479a468505d0a0de053711f84922c601a6cd12298d`.
+
 ## v1.4.74 - Rebuild for emulator testing
 
 - Same code as 1.4.73 (no user-CA config, no SignedInSites). Installed on the Dev AVD (S:\Android).

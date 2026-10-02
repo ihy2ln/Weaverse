@@ -356,7 +356,7 @@ private fun WikiFigure(kind: String, modifier: Modifier = Modifier) {
     val accent = MaterialTheme.colorScheme.primary
     val faint = tokens.secondaryText.copy(alpha = 0.35f)
     val label = when (kind) {
-        "chatting" -> "WeaverSocial · timeline, servers, chats"
+        "chatting" -> "WeaverBrowser · web, WeaverSocial, chats"
         "rpg" -> "RPG · scene art, story, action bar"
         "novel" -> "Novel · Plan, Write, Read, Chat, Review"
         "brainstorm" -> "Brainstorm · threads and AI chat"

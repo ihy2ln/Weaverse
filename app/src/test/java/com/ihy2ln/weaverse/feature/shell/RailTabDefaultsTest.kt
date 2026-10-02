@@ -44,7 +44,7 @@ class RailTabDefaultsTest {
             AppMode.entries.map { it.name },
         )
         assertEquals(
-            listOf("Novel", "RPG", "Games", "WeaverSocial", "Manga Studio", "Brainstorm/Notes"),
+            listOf("Novel", "RPG", "Games", "WeaverBrowser", "Manga Studio", "Brainstorm/Notes"),
             AppMode.entries.map { it.label },
         )
     }

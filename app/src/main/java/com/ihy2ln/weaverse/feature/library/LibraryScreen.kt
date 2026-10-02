@@ -340,7 +340,7 @@ private fun ModeShelf(
     val modes = listOf(
         Triple("Novel", "Novel", "Plan, write and review a book"),
         Triple("Roleplay", "RPG", "Run a campaign: adventures, party, lore"),
-        Triple("Chatting", "WeaverSocial", "Your cast's social network: feed, servers and DMs"),
+        Triple("Chatting", "WeaverBrowser", "Browse the web; WeaverSocial, chats and Contacts are inside"),
         Triple("Storyboard", "Manga Studio", "Edit, translate and color manga or comic pages"),
         Triple("Notes", "Notes", "One shared board across every mode"),
     )

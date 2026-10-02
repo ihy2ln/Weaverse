@@ -110,7 +110,7 @@ import com.ihy2ln.weaverse.feature.roleplay.chat.RoleplayChatDetailScreen
 import com.ihy2ln.weaverse.feature.roleplay.chat.ImportedMangaEditorScreen
 import com.ihy2ln.weaverse.feature.roleplay.chat.roleplayModeSubtitle
 import com.ihy2ln.weaverse.feature.games.GamesScreen
-import com.ihy2ln.weaverse.feature.roleplay.friends.FriendsScreen
+import com.ihy2ln.weaverse.core.ui.components.collapseChromeOnScroll
 import com.ihy2ln.weaverse.feature.roleplay.lorebook.LorebookScreen
 import com.ihy2ln.weaverse.feature.roleplay.personas.PersonaDetailScreen
 import com.ihy2ln.weaverse.feature.brainstorm.BrainstormChatScreen
@@ -463,7 +463,7 @@ fun AppShell(
         else -> "$seriesTitle · Codex & Prompts stay shared"
     }
 
-    val isBookBrowsing = (showHome || (mode == AppMode.Novel.name && novelDest == NovelDestination.Bookshelf.name)) &&
+    val isBookBrowsing = (!showHome && mode == AppMode.Novel.name && novelDest == NovelDestination.Bookshelf.name) &&
                 !showSettings && !showExport && !showSearch && !showLibrary && chromeTool == null &&
                 selectedCodexEntryId == null && selectedCharacterId == null && selectedPersonaId == null && workspaceFocus == WorkspaceFocus.Story.name
 
@@ -471,7 +471,12 @@ fun AppShell(
     LaunchedEffect(Unit) {
         runCatching { shellFocus.requestFocus() }
     }
+    // The mode tabs and the browser's address bar fold away while scrolling down.
+    val chromeCollapseThreshold = with(LocalDensity.current) { 40.dp.toPx() }
+    val chromeCollapse = remember { com.ihy2ln.weaverse.core.ui.components.ChromeCollapseState(chromeCollapseThreshold) }
+    LaunchedEffect(mode, showHome, novelDest, rpDest, storyboardDest, notesDest, showSettings, showLibrary) { chromeCollapse.expand() }
     CompositionLocalProvider(
+        com.ihy2ln.weaverse.core.ui.components.LocalChromeCollapse provides chromeCollapse,
         LocalPromptShortcutHandler provides { shortcut ->
             shellViewModel.openPrompt(
                 when (shortcut) {
@@ -527,7 +532,7 @@ fun AppShell(
             } else {
                 bgColor
             }
-        Column(modifier = Modifier.fillMaxSize().background(shellWash)) {
+        Column(modifier = Modifier.fillMaxSize().background(shellWash).collapseChromeOnScroll(chromeCollapse)) {
             val currentMode = runCatching { AppMode.valueOf(mode) }.getOrDefault(AppMode.Novel)
             val defaultModeOptions = when (currentMode) {
                 AppMode.Novel -> NovelDestination.entries.map { SegmentedOption(it.name, it.label) }
@@ -625,7 +630,58 @@ fun AppShell(
             val inNovelWorkspace = !showHome && mode == AppMode.Novel.name && novelDest != NovelDestination.Bookshelf.name &&
                 !showLibrary && !showSettings && !showSearch && !showExport && chromeTool == null &&
                 selectedCodexEntryId == null && workspaceFocus != WorkspaceFocus.Pictures.name
+            // WeaverBrowser is home: choosing it (from the tabs, a favorite or the drawer) goes home.
+            val switchWorkspace: (String) -> Unit = { next ->
+                if (next == AppMode.Novel.name) browseRoutes = listOf("books")
+                showHome = false
+                homeThreadId = null
+                homeMangaId = null
+                showLibrary = false
+                showSettings = false
+                showExport = false
+                showSearch = false
+                mode = next
+                chromeTool = null
+                selectedRpChatId = null
+                selectedCodexEntryId = null
+                selectedCharacterId = null
+                selectedPersonaId = null
+                notesDetailOpen = false
+                storyboardChatId = null
+                rpChrome = null
+                when (next) {
+                    AppMode.Novel.name -> novelDest = NovelDestination.Bookshelf.name
+                    AppMode.Roleplay.name -> rpDest = RoleplayDestination.Campaign.name
+                    AppMode.Games.name -> { /* single destination */ }
+                    AppMode.Chatting.name -> chatDest = ChattingDestination.Chats.name
+                    AppMode.Storyboard.name -> storyboardDest = StoryboardDestination.Library.name
+                    AppMode.Notes.name -> notesDest = NotesDestination.Chat.name
+                }
+                if (next != AppMode.Notes.name) {
+                    workspaceFocus = WorkspaceFocus.Story.name
+                }
+                if (next == AppMode.Chatting.name) showHome = true
+            }
+            val wallpaperShown = showProfileArt || userBackgroundImage != null || userBackgroundVideo != null
+            val browserScreen: @Composable () -> Unit = {
+                com.ihy2ln.weaverse.feature.browser.WeaverBrowserScreen(
+                    selectedServerId = chatServerId,
+                    selectedRoomId = selectedRpChatId,
+                    onServerSelect = {
+                        chatServerId = it
+                        if (it != null) selectedRpChatId = null
+                    },
+                    onRoomSelect = { selectedRpChatId = it; if (it != null) shellViewModel.recordAccess("Chatting", "chat", it) },
+                    onOpenMode = { switchWorkspace(it) },
+                    onOpenAppSettings = { showSettings = true },
+                    appearance = prefs.appearance,
+                    wallpaperVisible = wallpaperShown,
+                )
+            }
+            val overlayOpen = showSettings || showSearch || showExport || showLibrary
+            val browserShown = (showHome || currentMode == AppMode.Chatting) && !overlayOpen
             val shellChrome: @Composable () -> Unit = { WorkspaceChrome(
+                showTitleRow = !inNovelWorkspace && !browserShown,
                 browsing = isBookBrowsing,
                 isHome = showHome && !showSettings && !showSearch && !showExport && !showLibrary,
                 onHome = {
@@ -689,36 +745,7 @@ fun AppShell(
                         if (id != null) workspaceFocus = WorkspaceFocus.Story.name
                     }
                 },
-                onWorkspace = { next ->
-                    if (next == AppMode.Novel.name) browseRoutes = listOf("books")
-                    showHome = false
-                    homeThreadId = null
-                    homeMangaId = null
-                    showLibrary = false
-                    showSettings = false
-                    showExport = false
-                    showSearch = false
-                    mode = next
-                    chromeTool = null
-                    selectedRpChatId = null
-                    selectedCodexEntryId = null
-                    selectedCharacterId = null
-                    selectedPersonaId = null
-                    notesDetailOpen = false
-                    storyboardChatId = null
-                    rpChrome = null
-                    when (next) {
-                        AppMode.Novel.name -> novelDest = NovelDestination.Bookshelf.name
-                        AppMode.Roleplay.name -> rpDest = RoleplayDestination.Campaign.name
-                        AppMode.Games.name -> { /* single destination */ }
-                        AppMode.Chatting.name -> chatDest = ChattingDestination.Chats.name
-                        AppMode.Storyboard.name -> storyboardDest = StoryboardDestination.Library.name
-                        AppMode.Notes.name -> notesDest = NotesDestination.Chat.name
-                    }
-                    if (next != AppMode.Notes.name) {
-                        workspaceFocus = WorkspaceFocus.Story.name
-                    }
-                },
+                onWorkspace = switchWorkspace,
                 onMode = { id ->
                     if (currentMode == AppMode.Novel && id == NovelDestination.Bookshelf.name) browseRoutes = listOf("books")
                     showHome = false
@@ -752,7 +779,11 @@ fun AppShell(
                 onWorkspaceOrderChange = shellViewModel::setWorkspaceButtonOrder,
                 onModeOrderChange = { shellViewModel.setModeButtonOrder(currentMode, it) },
             ) }
-            if (!inNovelWorkspace) {
+            androidx.compose.animation.AnimatedVisibility(
+                visible = !chromeCollapse.collapsed,
+                enter = androidx.compose.animation.expandVertically(),
+                exit = androidx.compose.animation.shrinkVertically(),
+            ) {
                 if (isBookBrowsing) com.ihy2ln.weaverse.feature.library.BookBrowsingTheme { shellChrome() } else shellChrome()
             }
             when {
@@ -825,9 +856,11 @@ fun AppShell(
                     onOpenExport = { showExport = true },
                     modifier = Modifier.weight(1f).fillMaxSize(),
                 )
+                showHome -> Box(Modifier.weight(1f).fillMaxSize()) { browserScreen() }
                 isBookBrowsing -> homeStateHolder.SaveableStateProvider("browser") {
                     com.ihy2ln.weaverse.feature.library.BookBrowserScreen(
-                        routes = browseRoutes, onRoutes = { browseRoutes = it },
+                        // Home is WeaverBrowser now, so the bookshelf starts at the books.
+                        routes = browseRoutes.let { if (it.firstOrNull() == "home") listOf("books") + it.drop(1) else it }, onRoutes = { browseRoutes = it },
                         onRead = { id -> shellViewModel.openBookForBrowsing(id, false) { scene ->
                             selectedSceneId = scene; mode = AppMode.Novel.name; showHome = false; novelDest = NovelDestination.Read.name
                         } },
@@ -855,7 +888,7 @@ fun AppShell(
                             when (recent.mode) {
                                 "Novel" -> { selectedSceneId = recent.target; novelDest = NovelDestination.Write.name }
                                 "Roleplay" -> { selectedRpChatId = recent.sessionId; rpDest = RoleplayDestination.Chats.name }
-                                "Chatting" -> { chatServerId = recent.bookId; selectedRpChatId = recent.sessionId; chatDest = ChattingDestination.Chats.name }
+                                "Chatting" -> { chatServerId = recent.bookId; selectedRpChatId = recent.sessionId; chatDest = ChattingDestination.Chats.name; showHome = true }
                                 "Storyboard" -> { homeMangaId = recent.contentId.takeIf { recent.kind == "manga" }; storyboardChatId = recent.sessionId.takeIf { recent.kind != "manga" }; storyboardDest = StoryboardDestination.Library.name }
                                 "Notes" -> if (recent.kind == "note") { notesDest = NotesDestination.Board.name; notesViewModel.selectNote(recent.contentId); notesDetailOpen = true } else { notesDest = NotesDestination.Chat.name; homeThreadId = recent.contentId }
                             }
@@ -1030,7 +1063,7 @@ fun AppShell(
                     val (currentMode, tool) = modeAndTool
                     val nd = dests[0] ?: NovelDestination.Bookshelf.name
                     val rd = dests[1] ?: RoleplayDestination.Chats.name
-                    val cd = dests[2] ?: ChattingDestination.Friends.name
+                    val cd = dests[2] ?: ChattingDestination.Chats.name
                     val sd = dests[3] ?: StoryboardDestination.Manga.name
                     val chatId = dests[4]
                     val boardId = dests[5]
@@ -1119,29 +1152,7 @@ fun AppShell(
                                     onOpenIdeas = { notesDest = NotesDestination.Ideas.name },
                                 )
                             }
-                            AppMode.Chatting.name -> when (chattingDestinationOf(cd)) {
-                                ChattingDestination.Friends -> FriendsScreen(
-                                    onOpenChat = {
-                                        shellViewModel.recordAccess("Chatting", "chat", it)
-                                        // DMs open under Home in the Discord workspace.
-                                        chatServerId = null
-                                        selectedRpChatId = it
-                                        chatDest = ChattingDestination.Chats.name
-                                    },
-                                )
-                                ChattingDestination.Chats -> com.ihy2ln.weaverse.feature.chatting.social.WeaverSocialScreen(
-                                    selectedServerId = chatServerId,
-                                    selectedRoomId = selectedRpChatId,
-                                    onServerSelect = {
-                                        chatServerId = it
-                                        if (it != null) selectedRpChatId = null
-                                    },
-                                    onRoomSelect = { selectedRpChatId = it; if (it != null) shellViewModel.recordAccess("Chatting", "chat", it) },
-                                    onOpenFriends = { chatDest = ChattingDestination.Friends.name },
-                                    appearance = prefs.appearance,
-                                    wallpaperVisible = showProfileArt || userBackgroundImage != null || userBackgroundVideo != null,
-                                )
-                            }
+                            AppMode.Chatting.name -> browserScreen()
                             AppMode.Storyboard.name -> {
                                 if (boardId == null) {
                                     StoryboardMangaHubScreen(

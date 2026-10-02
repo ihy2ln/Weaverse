@@ -33,6 +33,9 @@ object WikiContent {
                   review your manuscripts.
                 - [[RPG]] — AI game-master campaigns, dice, roster, inventory,
                   towns, and illustrated adventure scenes.
+                - WeaverBrowser — home: a Brave-style browser with Shields,
+                  Private tabs and Leo. [[WeaverSocial]], the character chats and
+                  Contacts open as tabs inside it.
                 - [[WeaverSocial]] — WeaverSocial, a social network where your novels and
                   campaigns are servers with channels and character rooms.
                 - [[Manga Studio]] — manga and comic page building.
@@ -65,8 +68,9 @@ object WikiContent {
 
                 ## 2. Learn the three rows
 
-                Across the top: **modes** (Novel, RPG, WeaverSocial, Manga Studio,
-                Brainstorm/Notes), then the current mode's **sub-modes**
+                Across the top: **modes** as tabs (WeaverBrowser, Novel, RPG,
+                Games, Manga Studio, Brainstorm/Notes; they fold away while you
+                scroll down), then the current mode's **sub-modes**
                 (Plan, Write, Read…), then **Extra** — Codex, Prompts, Notes,
                 Snippets, Chats, Pictures. See [[Navigation and Shelves]].
 
@@ -109,8 +113,8 @@ object WikiContent {
 
                 ## The three rows
 
-                1. **Modes** — Novel, RPG, WeaverSocial, Manga Studio,
-                   Brainstorm/Notes.
+                1. **Modes** — tabs across the top: WeaverBrowser (home), Novel,
+                   RPG, Games, Manga Studio, Brainstorm/Notes.
                 2. **Sub-modes** for the current mode — for example Novel:
                    Bookshelf, Plan, Write, Read, Chat, Review.
                 3. **Extra** — Codex, Prompts, Notes, Snippets, Chats,
@@ -407,7 +411,7 @@ object WikiContent {
             markdown = """
                 ## One social app
 
-                WeaverSocial has six bottom tabs:
+                WeaverSocial opens as a tab in WeaverBrowser. It has six bottom tabs:
                 **Home**, **Social**, **Servers**, **Explore**, **Alerts** and
                 **You**. Home is the all-in-one overview: stories and the post
                 composer, live server chats, recent activity, trends and the

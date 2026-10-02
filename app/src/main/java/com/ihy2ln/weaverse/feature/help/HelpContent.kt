@@ -28,12 +28,13 @@ object HelpContent {
                 ),
                 HelpEntry(
                     "Home",
-                    "The book button opens Home. It is the way into every workspace, " +
-                        "not just novels — a card per mode, with your novels underneath.",
+                    "Home is WeaverBrowser: the first tab across the top. Its New Tab Page " +
+                        "has a favorite for every mode, so it is also the way into every workspace.",
                 ),
                 HelpEntry(
                     "The three rows",
-                    "1) Modes: Novel, RPG, Games, WeaverSocial, Manga Studio, Notes. " +
+                    "1) Modes, as tabs across the top: WeaverBrowser (home), Novel, RPG, Games, Manga Studio, Notes. " +
+                        "The tabs fold away while you scroll down and come back when you scroll up. " +
                         "2) Sub-modes for whichever mode you are in. " +
                         "3) Extra: Codex, Prompts, Notes, Snippets, Chats and Pictures — " +
                         "the tools that do not belong to any one mode.",
@@ -273,13 +274,56 @@ object HelpContent {
             ),
         ),
         HelpSection(
+            id = "browser",
+            title = "WeaverBrowser",
+            summary = "Home: a Brave-style web browser with WeaverSocial, chats and Contacts built in",
+            entries = listOf(
+                HelpEntry(
+                    "Home is a browser",
+                    "WeaverBrowser opens first. Type an address or a search into the bar at the " +
+                        "top; the bottom toolbar has Home, Bookmarks, Search, your tabs and the menu. " +
+                        "The New Tab Page shows Privacy Stats and your favorites, which start as " +
+                        "WeaverSocial, Chats, Contacts and every other mode. The address bar and the " +
+                        "mode tabs fold away while you scroll a page down.",
+                ),
+                HelpEntry(
+                    "Shields",
+                    "The shield in the address bar is Shields. Up, it blocks known ad and tracker " +
+                        "networks, upgrades links to HTTPS, blocks pop-ups and cross-site cookies and " +
+                        "adds fingerprinting noise. Tap it to see how much it blocked on the page or " +
+                        "to turn Shields down for a site that breaks. Advanced controls set " +
+                        "Standard or Aggressive blocking for every site.",
+                ),
+                HelpEntry(
+                    "Tabs and Private tabs",
+                    "The tab button shows every open tab as a card; the glasses switch to Private " +
+                        "tabs, which keep no history and use their own cookies and site data that " +
+                        "are deleted when the last Private tab closes. Long-press a link to open it " +
+                        "in a new or Private tab, copy it or download it.",
+                ),
+                HelpEntry(
+                    "WeaverSocial, chats and Contacts",
+                    "WeaverSocial, the character servers and DMs (Chats) and Contacts open as tabs " +
+                        "inside the browser, from the favorites or the menu. Links in posts open as " +
+                        "new tabs.",
+                ),
+                HelpEntry(
+                    "Leo, history, bookmarks and downloads",
+                    "The menu has History, Downloads, Bookmarks, Recent tabs, Find in page, " +
+                        "Desktop site and Leo AI, which answers questions about the open page with " +
+                        "your chosen AI model. Settings picks the search engine for normal and Private " +
+                        "tabs and the Shields defaults.",
+                ),
+            ),
+        ),
+        HelpSection(
             id = "chatting",
             title = "WeaverSocial",
             summary = "Your cast's social network: an all-in-one Home, Social feed, servers and more",
             entries = listOf(
                 HelpEntry(
                     "One social app",
-                    "WeaverSocial has six bottom tabs. Home combines your " +
+                    "WeaverSocial opens as a tab in WeaverBrowser and has six bottom tabs. Home combines your " +
                         "stories, post composer, live server chats, recent activity, trends and " +
                         "social timeline. Social is the focused feed, with For you and Following " +
                         "views. Pull down to refresh; keep scrolling on either feed and new " +

@@ -22,6 +22,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
@@ -188,6 +189,8 @@ fun WorkspaceChrome(
     onFocus: (String) -> Unit,
     onWorkspaceOrderChange: (List<String>) -> Unit = {},
     onModeOrderChange: (List<String>) -> Unit = {},
+    /** The workspace's title row under the mode tabs (back, mode and book). */
+    showTitleRow: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val tokens = inkTokens()
@@ -195,19 +198,46 @@ fun WorkspaceChrome(
     var menuOpen by remember { mutableStateOf(false) }
     val accent = com.ihy2ln.weaverse.feature.shell.HomeAccent
     Surface(color = tokens.panel.copy(alpha = glassFillAlpha()), tonalElevation = 0.dp, modifier = modifier.fillMaxWidth()) {
-        if (browsing) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (canGoBack) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = tokens.primaryText) }
-            Text(if (androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f) "Weaver\nVerse" else "WeaverVerse", Modifier.weight(1f).padding(start = 8.dp), color = tokens.primaryText, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-            TextButton(onClick = { menuOpen = true }) { Icon(Icons.Default.Menu, "Open navigation", tint = accent); Spacer(Modifier.width(6.dp)); Text("Modes", color = tokens.primaryText) }
-        } else Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.Menu, "Open navigation", tint = tokens.primaryText) }
-            if (canGoBack) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = tokens.primaryText) }
-            Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
-                Text(if (isHome) "WEAVERSE" else workspaceOptions.firstOrNull { it.id == workspaceId }?.label.orEmpty(), color = accent, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                Text(if (isHome) "Home" else bookTitle.ifBlank { modeOptions.firstOrNull { it.id == modeId }?.label.orEmpty() }, color = tokens.primaryText, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+        Column(Modifier.fillMaxWidth()) {
+            // The modes, as a streaming site's top tabs. WeaverBrowser is home and comes first.
+            val homeId = com.ihy2ln.weaverse.feature.shell.AppMode.Chatting.name
+            val tabs = workspaceOptions.filter { it.id == homeId } + workspaceOptions.filter { it.id != homeId }
+            val selectedTab = if (isHome) homeId else workspaceId
+            Row(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.Menu, "Open navigation", tint = tokens.primaryText) }
+                if (browsing && canGoBack) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = tokens.primaryText) }
+                Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                    tabs.forEach { option ->
+                        val selected = option.id == selectedTab
+                        Column(
+                            Modifier.clip(RoundedCornerShape(10.dp))
+                                .clickable { if (option.id == homeId) onHome() else onWorkspace(option.id) }
+                                .padding(horizontal = 11.dp, vertical = 6.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(
+                                option.label,
+                                color = if (selected) tokens.primaryText else tokens.secondaryText,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                fontSize = 15.sp,
+                                maxLines = 1,
+                                softWrap = false,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Box(Modifier.width(if (selected) 22.dp else 0.dp).height(3.dp).clip(RoundedCornerShape(2.dp)).background(accent))
+                        }
+                    }
+                }
+                IconButton(onClick = onSearch) { Icon(Icons.Default.Search, "Search", tint = tokens.primaryText) }
+                IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, "Settings", tint = tokens.primaryText) }
             }
-            IconButton(onClick = onSearch) { Icon(Icons.Default.Search, "Search", tint = tokens.primaryText) }
-            IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, "Settings", tint = tokens.primaryText) }
+            if (showTitleRow && !browsing && !isHome) Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (canGoBack) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = tokens.primaryText) }
+                Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                    Text(workspaceOptions.firstOrNull { it.id == workspaceId }?.label.orEmpty(), color = accent, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    Text(bookTitle.ifBlank { modeOptions.firstOrNull { it.id == modeId }?.label.orEmpty() }, color = tokens.primaryText, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+                }
+            }
         }
     }
     if (menuOpen) Dialog(onDismissRequest = { menuOpen = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -242,6 +272,7 @@ fun WorkspaceChrome(
                                     "Home" -> Icons.Default.Home
                                     "Novel", "Library", "Read" -> Icons.AutoMirrored.Filled.MenuBook
                                     "RPG", "Games" -> Icons.Default.SportsEsports
+                                    "WeaverBrowser" -> Icons.Default.Public
                                     "Chatting", "WeaverSocial", "Chat", "Chats", "Brainstorm/Notes", "Brainstorm" -> Icons.Default.ChatBubbleOutline
                                     "Manga Studio", "Pictures" -> Icons.Default.Collections
                                     "Settings" -> Icons.Default.Settings

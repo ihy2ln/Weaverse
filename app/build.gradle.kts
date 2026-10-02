@@ -38,8 +38,8 @@ android {
         applicationId = "com.ihy2ln.weaverse"
         minSdk = 26
         targetSdk = 34
-        versionCode = 212
-        versionName = "1.4.80"
+        versionCode = 213
+        versionName = "1.4.81"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -186,6 +186,8 @@ dependencies {
     // provided dependencies and expect the host application to supply them.
     implementation("io.reactivex:rxjava:1.3.8")
     implementation("org.jsoup:jsoup:1.23.1")
+    // WeaverBrowser: separate cookie/storage profile for Private tabs.
+    implementation("androidx.webkit:webkit:1.12.1")
     implementation("androidx.preference:preference-ktx:1.2.1")
     implementation("com.github.mihonapp:injekt:91edab2317")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-protobuf:1.7.3")

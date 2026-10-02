@@ -8,8 +8,11 @@ enum class AppMode(val label: String) {
     Novel("Novel"),
     Roleplay("RPG"),
     Games("Games"),
-    /** Shown as WeaverSocial; the constant stays because it is persisted in shell state. */
-    Chatting("WeaverSocial"),
+    /**
+     * WeaverBrowser, the home mode (WeaverSocial, chats and Contacts live inside it). The
+     * constant stays because it is persisted in shell state.
+     */
+    Chatting("WeaverBrowser"),
     Storyboard("Manga Studio"),
     Notes("Brainstorm/Notes"),
 }
@@ -60,12 +63,11 @@ enum class GamesDestination(val label: String) {
 }
 
 /**
- * WeaverSocial: one social app (feed, servers, explore, alerts, profiles) plus the contacts
- * list. The old Facebook/Twitter destinations fall back to it through [chattingDestinationOf].
+ * WeaverBrowser is one screen; WeaverSocial, the chats and Contacts are tabs inside it. Old
+ * saved destinations (Facebook, Twitter, Friends) fall back to it through [chattingDestinationOf].
  */
 enum class ChattingDestination(val label: String) {
-    Chats("WeaverSocial"),
-    Friends("Contacts"),
+    Chats("WeaverBrowser"),
 }
 
 /** The comic workspace — the same page canvas, read right-to-left or left-to-right. */
