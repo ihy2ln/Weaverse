@@ -285,7 +285,10 @@ class RoleplayChatViewModel @Inject constructor(
                                 mangaEditCurrent = task.current,
                                 mangaEditTotal = task.total,
                                 mangaEditItemProgress = task.itemProgress,
-                                storyboardStatus = task.status.ifBlank { state.storyboardStatus },
+                                // While a run is going the runner only mirrors this screen's own status; copying it
+                                // back could overwrite the run's final summary with a stale "Verifying n/n…".
+                                storyboardStatus = if (task.running) state.storyboardStatus
+                                else task.status.ifBlank { state.storyboardStatus },
                             )
                         }
                     }

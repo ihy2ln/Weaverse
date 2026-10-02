@@ -193,7 +193,7 @@ fun ImportedMangaEditorScreen(
                 (minOf(it.offset + it.size, layout.viewportEndOffset) - maxOf(it.offset, layout.viewportStartOffset)).coerceAtLeast(0)
             }?.key as? String
         }.distinctUntilChanged().collect { id ->
-            if (id != null && jumpToPage == null && !state.mangaEditBusy && id != state.activePageId) {
+            if (id != null && jumpToPage == null && id != state.activePageId) {
                 viewModel.focusImportedMangaPage(id)
                 selectedTextId = null; selectionReset++
             }
@@ -240,6 +240,21 @@ fun ImportedMangaEditorScreen(
     }
     BackHandler(enabled = state.editingOverlay == null) { back() }
     val review = state.activePageId in state.mangaTranslationReviewPageIds
+    // When a run ends its summary used to vanish with the progress chip; keep a "Done" chip and open
+    // the summary straight away when some pages were left unchanged, failed or need review.
+    var runFinished by remember { mutableStateOf(false) }
+    var wasBusy by remember { mutableStateOf(state.mangaEditBusy) }
+    val runHadProblems = Regex("unchanged|failed|Needs review|already contained color|could not|No readable", RegexOption.IGNORE_CASE)
+        .containsMatchIn(state.storyboardStatus)
+    LaunchedEffect(state.mangaEditBusy) {
+        if (wasBusy && !state.mangaEditBusy) {
+            runFinished = true
+            showOriginal = false
+            if (runHadProblems) sheet = "Status"
+        }
+        if (state.mangaEditBusy) runFinished = false
+        wasBusy = state.mangaEditBusy
+    }
     Box(Modifier.fillMaxSize().background(Color.Black).clipToBounds()) {
         LazyColumn(
             state = pageScroll,
@@ -295,6 +310,14 @@ fun ImportedMangaEditorScreen(
                     MangaTool("Versions", { sheet = "Versions" }, selected != null && !state.mangaEditBusy)
                     MangaTool("AI", { sheet = "AI" })
                     MangaTool("More", { sheet = "More" })
+                }
+            }
+        }
+        if (!state.mangaEditBusy && runFinished) {
+            Surface(Modifier.align(Alignment.TopEnd).padding(top = if (focusMode) 52.dp else 100.dp), shape = RoundedCornerShape(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    MangaTool(if (runHadProblems) "Done · some pages unchanged — see why" else "Done · see summary", { sheet = "Status" })
+                    MangaTool("✕", { runFinished = false })
                 }
             }
         }

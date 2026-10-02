@@ -17,20 +17,28 @@ object MangaColorPolicy {
         ${guide.take(2000).ifBlank { DEFAULT_GUIDE }}
     """.trimIndent()
 
-    /** Transfer chroma only; original luminance/alpha and already-colored pixels are retained. */
+    /**
+     * Lays the model's color under the original drawing like a manga color layer: the result is
+     * never lighter than the original pixel, so ink, hatching, screentones and shadows stay exactly
+     * as drawn, while light areas (paper, skin, clothing) take the model's color and tone. Keeping
+     * the original brightness everywhere left white areas white, so "colorized" pages came back
+     * almost unchanged. Already-colored pixels and alpha are kept.
+     */
     fun colorPixel(original: Int, generated: Int): Int {
         val r = original ushr 16 and 255; val g = original ushr 8 and 255; val b = original and 255
         if (maxOf(r, g, b) - minOf(r, g, b) > 16) return original
         val y = .299 * r + .587 * g + .114 * b
         val cr = generated ushr 16 and 255; val cg = generated ushr 8 and 255; val cb = generated and 255
         val cy = .299 * cr + .587 * cg + .114 * cb
+        // Darken blend: the drawing's darkness wins, the model only fills lighter areas.
+        val target = minOf(y, cy)
         val delta = doubleArrayOf(cr - cy, cg - cy, cb - cy)
         var scale = 1.0
         for (d in delta) {
-            if (d > 0) scale = minOf(scale, (255 - y) / d)
-            if (d < 0) scale = minOf(scale, -y / d)
+            if (d > 0) scale = minOf(scale, (255 - target) / d)
+            if (d < 0) scale = minOf(scale, -target / d)
         }
-        fun channel(d: Double) = (y + d * scale).roundToInt().coerceIn(0, 255)
+        fun channel(d: Double) = (target + d * scale).roundToInt().coerceIn(0, 255)
         return (original and -0x1000000) or (channel(delta[0]) shl 16) or
             (channel(delta[1]) shl 8) or channel(delta[2])
     }

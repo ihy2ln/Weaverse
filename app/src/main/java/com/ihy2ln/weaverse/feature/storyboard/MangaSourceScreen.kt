@@ -1175,7 +1175,8 @@ fun MangaChapterReader(
     pagePaths: List<String>,
     onDismiss: () -> Unit,
     initialPageIndex: Int = 0,
-    onAction: (MangaReaderAction, chapterId: String, pageIndex: Int) -> Unit = { _, _, _ -> },
+    /** Null where this reader can't run AI (the buttons used to show and do nothing). */
+    onAction: ((MangaReaderAction, chapterId: String, pageIndex: Int) -> Unit)? = null,
     online: Boolean = false,
     onPageChanged: (Int) -> Unit = {},
 ) {
@@ -1241,7 +1242,13 @@ fun MangaChapterReader(
                             style = MaterialTheme.typography.labelSmall,
                             modifier = Modifier.padding(horizontal = 4.dp),
                         )
-                        if (online) {
+                        if (onAction == null) {
+                            Text(
+                                "Open this chapter from Manga Studio to edit, translate or color it.",
+                                style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+                            )
+                        } else if (online) {
                             Text(
                                 "Download this chapter to unlock Edit, Translate, and Color.",
                                 style = MaterialTheme.typography.labelMedium,
@@ -1251,12 +1258,12 @@ fun MangaChapterReader(
                             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(2.dp),
                         ) {
-                            TextButton(onClick = { onAction(MangaReaderAction.EditPage, chapter.id, currentPage) }) { Text("Edit page") }
-                            TextButton(onClick = { onAction(MangaReaderAction.EditChapter, chapter.id, currentPage) }) { Text("Edit chapter") }
-                            TextButton(onClick = { onAction(MangaReaderAction.TranslatePage, chapter.id, currentPage) }) { Text("Translate to English") }
-                            TextButton(onClick = { onAction(MangaReaderAction.TranslateChapter, chapter.id, currentPage) }) { Text("Translate all") }
-                            TextButton(onClick = { onAction(MangaReaderAction.ColorPage, chapter.id, currentPage) }) { Text("Color page") }
-                            TextButton(onClick = { onAction(MangaReaderAction.ColorChapter, chapter.id, currentPage) }) { Text("Color all") }
+                            TextButton(onClick = { onAction?.invoke(MangaReaderAction.EditPage, chapter.id, currentPage) }) { Text("Edit page") }
+                            TextButton(onClick = { onAction?.invoke(MangaReaderAction.EditChapter, chapter.id, currentPage) }) { Text("Edit chapter") }
+                            TextButton(onClick = { onAction?.invoke(MangaReaderAction.TranslatePage, chapter.id, currentPage) }) { Text("Translate to English") }
+                            TextButton(onClick = { onAction?.invoke(MangaReaderAction.TranslateChapter, chapter.id, currentPage) }) { Text("Translate all") }
+                            TextButton(onClick = { onAction?.invoke(MangaReaderAction.ColorPage, chapter.id, currentPage) }) { Text("Color page") }
+                            TextButton(onClick = { onAction?.invoke(MangaReaderAction.ColorChapter, chapter.id, currentPage) }) { Text("Color all") }
                         }
                     }
                 }
