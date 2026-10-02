@@ -724,6 +724,17 @@ class SocialFeedViewModel @Inject constructor(
         }
     }
 
+    /** One tap from the feed: the writer confirms 18+ and every adult kind is followed, then the feed pulls. */
+    fun turnOnAllAdultFeeds() {
+        viewModelScope.launch {
+            settings.setSocialString("adult_feeds_confirmed", "yes")
+            val all = _uiState.value.feedCategories + FeedCategory.entries.filter { it.adult }
+            settings.setSocialString("feed_categories", encodeCategories(all))
+            lastWebPull = 0L
+            pullWebPosts(12)
+        }
+    }
+
     fun setCustomFeeds(text: String) {
         viewModelScope.launch {
             settings.setSocialString("custom_feeds", text)

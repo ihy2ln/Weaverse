@@ -373,6 +373,7 @@ fun WeaverSocialScreen(
                         hiddenSites = hiddenSites,
                         site = if (tab == WsTab.Social) site else null,
                         onSite = { picked -> site = picked; if (picked != null) tab = WsTab.Social },
+                        onAdultOn = viewModel::turnOnAllAdultFeeds,
                     )
                     tab == WsTab.Explore -> Explore(
                         state = state,
@@ -700,6 +701,7 @@ private fun HomeFeed(
     hiddenSites: Set<String> = emptySet(),
     site: String? = null,
     onSite: (String?) -> Unit = {},
+    onAdultOn: () -> Unit = {},
 ) {
     // For you · Following · Around the web (real posts reshared by everyday people).
     var feed by rememberSaveable { mutableIntStateOf(0) }
@@ -903,6 +905,22 @@ private fun HomeFeed(
                     }
                 }
                 Hairline(c)
+            }
+        }
+        if (state.safety.adultEnabled && !state.adultFeedsConfirmed && site == null) {
+            item(key = "adult-feeds-off") {
+                Row(Modifier.fillMaxWidth().padding(12.dp).clip(RoundedCornerShape(12.dp)).background(c.red.copy(alpha = .14f))
+                    .padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Adult feeds are off", color = c.text, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text("RedGIFs, Pornhub, Eporner, OnlyFans promos, thirst posts, lemmynsfw and adult Bluesky.",
+                            color = c.muted, fontSize = 12.sp)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text("Turn on · I'm 18+", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp,
+                        modifier = Modifier.clip(RoundedCornerShape(50)).background(c.red)
+                            .clickable(onClick = onAdultOn).padding(horizontal = 12.dp, vertical = 8.dp))
+                }
             }
         }
         if (posts.isEmpty() && !state.generating) {
