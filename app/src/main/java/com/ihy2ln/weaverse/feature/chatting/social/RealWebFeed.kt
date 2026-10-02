@@ -110,6 +110,11 @@ class RealWebFeed @Inject constructor(
                 if (kind.blueskyAdult) add { bluesky(adultAllowed).filter { it.adult }.map { it.copy(topic = kind.topic) } }
                 if (kind.redgifs) add { redgifs(kind.topic) }
                 if (kind.pornhub) add { pornhub(kind.topic) }
+                if (kind.eporner) add { eporner(kind.topic) }
+                kind.fourChan.randomOrNull()?.let { board -> add { fourChan(board, kind.topic) } }
+                kind.blueskySearch.randomOrNull()?.let { words ->
+                    add { blueskySearch(words, kind.topic, adultAllowed, adultOnly = kind.adult) }
+                }
                 kind.lemmyCommunities.shuffled().take(2).forEach { community -> add { lemmyCommunity(community, kind.topic, adultAllowed, kind.adult) } }
             }
         } + sources.shuffled().take(MAX_CUSTOM_PER_REFRESH).mapNotNull { source ->
@@ -415,6 +420,66 @@ class RealWebFeed @Inject constructor(
                 if (nsfw) SocialNpcs.ADULT_TOPIC else topic, web.lemmyPicture(view, gifs = false, adultAllowed = adultAllowed), nsfw,
                 author = creator, comments = comments)
         }
+    }
+
+    /** Eporner's public video API: this week's top videos. */
+    private fun eporner(topic: String): List<RealWebItem> {
+        val order = listOf("top-weekly", "latest", "most-popular").random()
+        val videos = web.getJson("https://www.eporner.com/api/v2/video/search/?per_page=30&order=$order&thumbsize=big&format=json")
+            .obj()["videos"].arr()
+        return videos.mapNotNull { element ->
+            val video = element.obj()
+            val url = video.str("url")?.takeIf { it.startsWith("https://") } ?: return@mapNotNull null
+            val title = video.str("title") ?: return@mapNotNull null
+            val thumb = video["default_thumb"].obj().str("src")
+            val tags = video.str("keywords").orEmpty()
+            RealWebItem(url, "Eporner", "", title.take(TEXT_CHARS), topic,
+                thumb?.let { WebPicture("ep-" + url.hashCode(), title.take(160), it, it, false, "Eporner", url, "Eporner",
+                    adult = true, description = "$title $tags") },
+                adult = true, author = "Eporner", tags = tags)
+        }
+    }
+
+    /**
+     * A work-safe 4chan board through its read-only public API: the busiest threads, each
+     * with its opening post and picture, and the top replies of the two busiest.
+     */
+    private fun fourChan(board: String, topic: String): List<RealWebItem> {
+        val threads = web.getJson("https://a.4cdn.org/$board/catalog.json").arr()
+            .flatMap { it.obj()["threads"].arr() }
+            .map { it.obj() }
+            .filter { it.str("sticky") == null && it.str("closed") == null }
+            .sortedByDescending { it.str("replies")?.toIntOrNull() ?: 0 }
+            .take(20)
+        return threads.mapIndexedNotNull { index, thread ->
+            val no = thread.str("no") ?: return@mapIndexedNotNull null
+            val text = listOfNotNull(thread.str("sub"), thread.str("com")?.let { web.htmlToText(it) })
+                .joinToString("\n").trim()
+            if (text.length < 15) return@mapIndexedNotNull null
+            val url = "https://boards.4chan.org/$board/thread/$no"
+            val media = thread.str("tim")?.let { tim ->
+                val ext = thread.str("ext").orEmpty()
+                val full = if (ext == ".jpg" || ext == ".png" || ext == ".gif") "https://i.4cdn.org/$board/$tim$ext" else "https://i.4cdn.org/$board/${tim}s.jpg"
+                WebPicture("4c-$board-$no", text.take(160), "https://i.4cdn.org/$board/${tim}s.jpg", full, ext == ".gif", "4chan", url,
+                    "/$board/ on 4chan", description = text.take(400))
+            }
+            val comments = if (index < 2) runCatching {
+                web.getJson("https://a.4cdn.org/$board/thread/$no.json").obj()["posts"].arr().drop(1)
+                    .mapNotNull { p -> p.obj().str("com")?.let { web.htmlToText(it) }?.replace(Regex(">>\\d+\\s*"), "")?.trim() }
+                    .filter { it.length in 12..400 }
+                    .take(3).map { "Anonymous" to it }
+            }.getOrDefault(emptyList()) else emptyList()
+            RealWebItem(url, "4chan", "/$board/", text.take(TEXT_CHARS), topic, media, author = "Anonymous · /$board/", comments = comments)
+        }
+    }
+
+    /** Bluesky's public search (no account): top posts for [words]; adult kinds keep only adult-labelled posts. */
+    private fun blueskySearch(words: String, topic: String, adultAllowed: Boolean, adultOnly: Boolean): List<RealWebItem> {
+        val posts = web.getJson(
+            "https://api.bsky.app/xrpc/app.bsky.feed.searchPosts?limit=40&sort=top&q=" + URLEncoder.encode(words, "UTF-8"),
+        ).obj()["posts"].arr()
+        val asFeed = JsonArray(posts.map { JsonObject(mapOf("post" to it)) })
+        return blueskyItems(asFeed, adultAllowed, topic).filter { !adultOnly || it.adult }
     }
 
     private fun eligible(item: RealWebItem, adultAllowed: Boolean): Boolean =

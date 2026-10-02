@@ -29,6 +29,12 @@ enum class FeedCategory(
     val pornhub: Boolean = false,
     /** Lemmy communities as `name@instance`, read like forum boards. */
     val lemmyCommunities: List<String> = emptyList(),
+    /** Work-safe 4chan boards (read-only public API), as forums. */
+    val fourChan: List<String> = emptyList(),
+    /** Bluesky searches (public, no account): top posts for these words. */
+    val blueskySearch: List<String> = emptyList(),
+    /** Eporner's public video API. */
+    val eporner: Boolean = false,
 ) {
     GameOutlets(
         "game_outlets", "Video game outlets", "IGN, GameSpot, Polygon, PC Gamer, Eurogamer, Kotaku", "games",
@@ -42,6 +48,9 @@ enum class FeedCategory(
         ),
         subreddits = listOf("Games", "gamingnews", "nintendo", "PS5", "XboxSeriesX"),
         hashtags = listOf("gamingnews", "gaming"),
+        lemmyCommunities = listOf("gaming@lemmy.world", "pcgaming@lemmy.world"),
+        fourChan = listOf("v", "vr"),
+        blueskySearch = listOf("gaming news", "game trailer"),
     ),
     Markets(
         "markets", "Stocks & crypto", "Market and crypto news, r/wallstreetbets, r/CryptoCurrency", "money",
@@ -53,6 +62,9 @@ enum class FeedCategory(
         ),
         subreddits = listOf("wallstreetbets", "stocks", "StockMarket", "investing", "CryptoCurrency", "Bitcoin", "ethtrader"),
         hashtags = listOf("stocks", "crypto", "bitcoin", "investing"),
+        lemmyCommunities = listOf("stocks@lemmy.world", "cryptocurrency@lemmy.world"),
+        fourChan = listOf("biz"),
+        blueskySearch = listOf("stocks", "bitcoin", "crypto"),
     ),
     Anime(
         "anime", "Manga & anime", "Anime News Network, MyAnimeList, r/anime, r/manga", "anime",
@@ -62,6 +74,9 @@ enum class FeedCategory(
         ),
         subreddits = listOf("anime", "manga", "Animemes", "OnePiece", "Jujutsufolk", "animeart"),
         hashtags = listOf("anime", "manga", "animeart"),
+        lemmyCommunities = listOf("anime@lemmy.world"),
+        fourChan = listOf("a", "c"),
+        blueskySearch = listOf("anime", "manga"),
     ),
     AiNews(
         "ai_news", "AI news", "The Verge, TechCrunch, Ars Technica, MIT Technology Review, WIRED, r/singularity", "ai",
@@ -74,6 +89,9 @@ enum class FeedCategory(
         ),
         subreddits = listOf("artificial", "singularity", "OpenAI", "LocalLLaMA", "ClaudeAI"),
         hashtags = listOf("ai", "llm", "machinelearning"),
+        lemmyCommunities = listOf("artificial_intelligence@lemmy.world", "technology@lemmy.world"),
+        fourChan = listOf("g"),
+        blueskySearch = listOf("AI model", "OpenAI", "Anthropic"),
     ),
     AiCreators(
         "ai_creators", "AI creators", "Two Minute Papers, Fireship, Matt Wolfe, AI Explained, r/StableDiffusion", "ai",
@@ -86,6 +104,7 @@ enum class FeedCategory(
         ),
         subreddits = listOf("StableDiffusion", "aiArt", "midjourney", "ChatGPT"),
         hashtags = listOf("aiart", "generativeai"),
+        blueskySearch = listOf("#aiart", "AI video"),
     ),
     GameCreators(
         "game_creators", "Gaming creators", "Markiplier, jacksepticeye, PewDiePie, dunkey, Game Theory, r/LivestreamFail", "creators",
@@ -98,6 +117,8 @@ enum class FeedCategory(
         ),
         subreddits = listOf("LivestreamFail", "Twitch", "youtubers"),
         hashtags = listOf("twitch", "streamer"),
+        fourChan = listOf("vg"),
+        blueskySearch = listOf("streamer", "youtuber"),
     ),
     Comedy(
         "comedy", "Comedians", "SNL, Key & Peele, Dropout, r/standupcomedy, r/ContagiousLaughter", "comedy",
@@ -108,16 +129,20 @@ enum class FeedCategory(
         ),
         subreddits = listOf("standupcomedy", "ContagiousLaughter", "comedyheaven", "funny"),
         hashtags = listOf("comedy", "standup"),
+        lemmyCommunities = listOf("comedyheaven@lemmy.world", "memes@lemmy.world"),
+        blueskySearch = listOf("stand-up comedy", "comedian"),
     ),
     Thirst(
         "thirst", "Thirst posts", "Selfies and thirst traps from adult communities", "adult", adult = true,
         subreddits = listOf("PrettyGirls", "LadyBoners", "SFWcurves", "tightdresses", "gentlemanboners"),
+        blueskySearch = listOf("thirst trap", "#thirsttrap"),
     ),
     PornAggregators(
-        "porn_aggregators", "Porn aggregators", "RedGIFs, Pornhub's trending videos, r/nsfw, r/NSFW_GIF, r/RealGirls", "adult", adult = true,
+        "porn_aggregators", "Porn aggregators", "RedGIFs, Pornhub and Eporner trending videos, r/nsfw, r/NSFW_GIF, r/RealGirls", "adult", adult = true,
         subreddits = listOf("nsfw", "NSFW_GIF", "RealGirls", "porninfifteenseconds", "nsfw_gifs"),
         redgifs = true,
         pornhub = true,
+        eporner = true,
     ),
     AdultCreators(
         "adult_creators", "Adult creators", "Creators posting their own content: RedGIFs creators, r/gonewild, lemmynsfw", "adult", adult = true,
@@ -134,6 +159,7 @@ enum class FeedCategory(
         hashtags = listOf("nsfw", "nsfwart"),
         lemmy = listOf("lemmynsfw.com"),
         lemmyCommunities = listOf("sexygirls@lemmynsfw.com", "nakedyoga@lemmynsfw.com"),
+        blueskySearch = listOf("#nsfw", "#onlyfans"),
         blueskyAdult = true,
     ),
     ;
