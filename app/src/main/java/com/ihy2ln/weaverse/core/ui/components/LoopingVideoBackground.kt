@@ -24,6 +24,8 @@ fun LoopingVideoBackground(
     path: String,
     modifier: Modifier = Modifier,
     fitInside: Boolean = false,
+    /** False pauses it where it is. */
+    playing: Boolean = true,
 ) {
     val context = LocalContext.current
     val player = remember(path) {
@@ -39,6 +41,7 @@ fun LoopingVideoBackground(
     DisposableEffect(player) {
         onDispose { player.release() }
     }
+    androidx.compose.runtime.LaunchedEffect(player, playing) { player.playWhenReady = playing }
     AndroidView(
         factory = { ctx ->
             PlayerView(ctx).apply {

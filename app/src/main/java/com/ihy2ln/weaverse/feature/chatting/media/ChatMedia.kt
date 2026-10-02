@@ -120,14 +120,19 @@ fun ChatImage(
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
     showGifBadge: Boolean = true,
+    /** A play/pause button on anything that moves (GIFs and looping clips). */
+    controls: Boolean = false,
 ) {
+    var playing by remember(path) { mutableStateOf(true) }
+    var restart by remember(path) { mutableStateOf(0) }
     Box(modifier) {
         if (isLoopVideoPath(path)) {
             com.ihy2ln.weaverse.core.ui.components.LoopingVideoBackground(
                 path, Modifier.fillMaxSize(), fitInside = contentScale == ContentScale.Fit || contentScale == ContentScale.Inside,
+                playing = playing,
             )
         } else if (isGifPath(path) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            AnimatedGif(File(path), contentScale, Modifier.fillMaxSize())
+            AnimatedGif(File(path), contentScale, Modifier.fillMaxSize(), playing = playing, restart = restart)
         } else {
             coil3.compose.AsyncImage(
                 model = File(path),
@@ -135,6 +140,12 @@ fun ChatImage(
                 contentScale = contentScale,
                 modifier = Modifier.fillMaxSize(),
             )
+        }
+        if (controls && isGifPath(path)) {
+            Row(Modifier.align(Alignment.BottomEnd).padding(6.dp)) {
+                if (!isLoopVideoPath(path)) MotionButton("⟲", "Restart") { restart++; playing = true }
+                MotionButton(if (playing) "❚❚" else "▶", if (playing) "Pause" else "Play") { playing = !playing }
+            }
         }
         if (showGifBadge && isGifPath(path)) {
             Text(
@@ -154,17 +165,28 @@ fun ChatImage(
 }
 
 @Composable
-private fun AnimatedGif(file: File, contentScale: ContentScale, modifier: Modifier) {
+private fun MotionButton(label: String, description: String, onClick: () -> Unit) {
+    Box(
+        Modifier.padding(start = 4.dp).size(32.dp).clip(CircleShape).background(Color(0xB3000000))
+            .clickable(onClickLabel = description, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Text(label, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+}
+
+@Composable
+private fun AnimatedGif(file: File, contentScale: ContentScale, modifier: Modifier, playing: Boolean = true, restart: Int = 0) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
     val drawable by produceState<Drawable?>(null, file) {
         value = withContext(Dispatchers.IO) {
             runCatching { ImageDecoder.decodeDrawable(ImageDecoder.createSource(file)) }.getOrNull()
         }
     }
-    DisposableEffect(drawable) {
+    DisposableEffect(drawable, playing, restart) {
         (drawable as? AnimatedImageDrawable)?.apply {
             repeatCount = AnimatedImageDrawable.REPEAT_INFINITE
-            start()
+            // stop() then start() begins again from the first frame.
+            if (restart > 0) stop()
+            if (playing) start() else stop()
         }
         onDispose { (drawable as? AnimatedImageDrawable)?.stop() }
     }
@@ -206,7 +228,7 @@ fun MediaGrid(
     ) {
         @Composable
         fun Cell(i: Int, m: Modifier) {
-            ChatImage(shown[i], m.clickable { onOpen(i) })
+            ChatImage(shown[i], m.clickable { onOpen(i) }, controls = true)
         }
         when (shown.size) {
             1 -> Cell(0, Modifier.fillMaxSize())
@@ -320,6 +342,11 @@ fun MediaViewer(paths: List<String>, start: Int, onClose: () -> Unit, caption: S
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ZoomablePicture(path: String) {
+    if (isLoopVideoPath(path)) {
+        // No zoom gestures over a video, or they'd swallow the player's own taps and scrubbing.
+        com.ihy2ln.weaverse.feature.chatting.social.FullVideoPlayer(listOf("Original" to path), Modifier.fillMaxSize(), loop = true)
+        return
+    }
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     val state = rememberTransformableState { zoom, pan, _ ->
@@ -339,7 +366,7 @@ private fun ZoomablePicture(path: String) {
             .graphicsLayer(scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y),
         contentAlignment = Alignment.Center,
     ) {
-        ChatImage(path, Modifier.fillMaxSize(), contentScale = ContentScale.Fit, showGifBadge = false)
+        ChatImage(path, Modifier.fillMaxSize(), contentScale = ContentScale.Fit, showGifBadge = false, controls = true)
     }
 }
 

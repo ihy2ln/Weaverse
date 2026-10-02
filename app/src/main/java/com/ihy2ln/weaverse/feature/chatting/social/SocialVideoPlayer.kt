@@ -83,7 +83,7 @@ fun SocialVideoPlayer(sources: List<Pair<String, String>>, poster: String?, desc
         if (!started) {
             Poster(poster, description) { started = true }
         } else {
-            VideoSurface(sources)
+            FullVideoPlayer(sources, Modifier.fillMaxSize())
         }
     }
 }
@@ -105,8 +105,13 @@ private fun Poster(poster: String?, description: String, onPlay: () -> Unit) {
     }
 }
 
+/**
+ * The full player for a clip or video, from a web address or a file in the app: the player's
+ * play/pause, scrubbing, rewind and fast-forward, plus mute, quality and speed.
+ */
 @Composable
-private fun VideoSurface(sources: List<Pair<String, String>>) {
+fun FullVideoPlayer(sources: List<Pair<String, String>>, modifier: Modifier = Modifier, loop: Boolean = true) {
+    if (sources.isEmpty()) return
     val context = LocalContext.current
     var quality by remember(sources) { mutableStateOf(sources.last()) }
     var muted by remember { mutableStateOf(false) }
@@ -118,14 +123,14 @@ private fun VideoSurface(sources: List<Pair<String, String>>) {
             .setSeekBackIncrementMs(10_000)
             .setSeekForwardIncrementMs(10_000)
             .build().apply {
-                setMediaItem(MediaItem.fromUri(Uri.parse(quality.second)))
-                repeatMode = Player.REPEAT_MODE_ONE
+                setMediaItem(MediaItem.fromUri(uriOf(quality.second)))
+                repeatMode = if (loop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
                 playWhenReady = true
                 prepare()
             }
     }
     DisposableEffect(player) { onDispose { player.release() } }
-    Box(Modifier.fillMaxSize()) {
+    Box(modifier) {
         AndroidView(
             factory = { ctx ->
                 PlayerView(ctx).apply {
@@ -156,7 +161,7 @@ private fun VideoSurface(sources: List<Pair<String, String>>) {
                                     // Same spot, different file.
                                     val at = player.currentPosition
                                     quality = option
-                                    player.setMediaItem(MediaItem.fromUri(Uri.parse(option.second)), at)
+                                    player.setMediaItem(MediaItem.fromUri(uriOf(option.second)), at)
                                     player.prepare()
                                 }
                             })
@@ -179,6 +184,8 @@ private fun VideoSurface(sources: List<Pair<String, String>>) {
         }
     }
 }
+
+private fun uriOf(source: String): Uri = if (source.contains("://")) Uri.parse(source) else Uri.fromFile(File(source))
 
 @Composable
 private fun Chip(label: String, onClick: () -> Unit) {
