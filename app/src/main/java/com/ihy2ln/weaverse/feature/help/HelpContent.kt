@@ -357,6 +357,18 @@ object HelpContent {
                         "Sensitive posts are skipped while 18+ is off. Nothing is posted back.",
                 ),
                 HelpEntry(
+                    "Accounts you follow",
+                    "Privacy & filters > Accounts you follow picks the kinds of real accounts your timeline " +
+                        "follows: video game outlets, stocks & crypto, manga & anime, AI news, AI creators, " +
+                        "gaming creators and comedians (from outlet RSS feeds, YouTube channels, subreddits and " +
+                        "Mastodon). With 18+ on you can also add thirst posts, porn aggregators, adult creators, " +
+                        "OnlyFans promos and other adult social; these ask you to confirm you're 18+ first and " +
+                        "only free public posts are read, never paid content. Add your own accounts one per line " +
+                        "(r/sub, #tag, @name.bsky.social, @user@server, a YouTube channel link or any RSS link; " +
+                        "start with 18+ for adult ones). New posts come in when you open WeaverSocial and on " +
+                        "every refresh, even without an API key.",
+                ),
+                HelpEntry(
                     "What characters can post",
                     "WeaverSocial 18+ is on by default; tap its 18+ badge or open Privacy & " +
                         "filters to turn it off. Off hides saved sexual posts and stops new adult " +

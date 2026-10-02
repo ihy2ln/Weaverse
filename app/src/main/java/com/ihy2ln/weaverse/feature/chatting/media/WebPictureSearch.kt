@@ -770,8 +770,9 @@ class WebPictureSearch @Inject constructor(
         .replace(Regex("<[^>]+>"), "").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
         .replace("&quot;", "\"").replace("&#39;", "'").trim()
 
-    fun getText(url: String): String {
-        val request = Request.Builder().url(url).header("User-Agent", USER_AGENT).build()
+    fun getText(url: String, headers: Map<String, String> = emptyMap()): String {
+        val request = Request.Builder().url(url).header("User-Agent", USER_AGENT)
+            .apply { headers.forEach { (name, value) -> header(name, value) } }.build()
         http.newCall(request).execute().use { response ->
             require(response.isSuccessful) { "HTTP ${response.code}" }
             return response.body?.string().orEmpty()

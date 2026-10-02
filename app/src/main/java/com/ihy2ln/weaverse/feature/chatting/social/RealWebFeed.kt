@@ -1,5 +1,6 @@
 package com.ihy2ln.weaverse.feature.chatting.social
 
+import com.ihy2ln.weaverse.feature.chatting.media.FeedXml
 import com.ihy2ln.weaverse.feature.chatting.media.RedditRss
 import com.ihy2ln.weaverse.feature.chatting.media.WebPicture
 import com.ihy2ln.weaverse.feature.chatting.media.WebPictureSearch
@@ -55,7 +56,9 @@ class RealWebFeed @Inject constructor(private val web: WebPictureSearch) {
             async(Dispatchers.IO) { runCatching { lemmy(adultAllowed) }.getOrDefault(emptyList()) },
             async(Dispatchers.IO) { runCatching { hackerNews() }.getOrDefault(emptyList()) },
         )
-        val lists = jobs.awaitAll().map { list -> list.filter { it.url !in seen }.shuffled() }
+        val lists = jobs.awaitAll().map { list ->
+            list.filter { it.url !in seen && (!it.adult || adultTextIsEligible(it.text + " " + it.credit)) }.shuffled()
+        }
         // Round-robin so no one site fills the feed.
         buildList {
             val iterators = lists.map { it.iterator() }
@@ -63,13 +66,113 @@ class RealWebFeed @Inject constructor(private val web: WebPictureSearch) {
         }.distinctBy { it.url }
     }
 
-    private fun mastodon(topic: String, tag: String, adultAllowed: Boolean): List<RealWebItem> {
+    /**
+     * Real posts for the kinds of accounts the writer follows ([FeedCategory]) plus their own
+     * list of accounts ([CustomFeedSource]): outlet headlines, creators' new videos, community
+     * posts. Every source is tried in parallel and interleaved, like [fetch].
+     */
+    suspend fun fetchFollowed(
+        categories: List<FeedCategory>,
+        custom: List<CustomFeedSource>,
+        adultAllowed: Boolean,
+        seen: Set<String>,
+    ): List<RealWebItem> = coroutineScope {
+        val kinds = categories.filter { adultAllowed || !it.adult }
+        val sources = custom.filter { adultAllowed || !it.adult }
+        // Reddit rate-limits anonymous readers, so three subreddit feeds per refresh at most.
+        var redditBudget = 3
+        val jobs = kinds.flatMap { kind ->
+            buildList<suspend () -> List<RealWebItem>> {
+                kind.feeds.randomOrNull()?.let { (name, url) -> add { outlet(name, url, kind.topic, kind.adult) } }
+                kind.youtube.shuffled().take(2).forEach { (name, id) -> add { youtube(name, id, kind.topic) } }
+                if (redditBudget > 0) kind.subreddits.randomOrNull()?.let { sub ->
+                    redditBudget--
+                    add { subreddit(sub, kind.topic, kind.adult) }
+                }
+                kind.hashtags.randomOrNull()?.let { tag -> add { mastodon(kind.topic, tag, adultAllowed, forceAdult = kind.adult) } }
+                kind.lemmy.forEach { server -> add { lemmy(adultAllowed, server, kind.topic).map { it.copy(adult = it.adult || kind.adult) } } }
+                if (kind.blueskyAdult) add { bluesky(adultAllowed).filter { it.adult }.map { it.copy(topic = kind.topic) } }
+            }
+        } + sources.shuffled().take(MAX_CUSTOM_PER_REFRESH).mapNotNull { source ->
+            val topic = if (source.adult) "adult" else "followed"
+            when (source.kind) {
+                CustomFeedSource.Kind.Subreddit -> if (redditBudget-- > 0) suspend { subreddit(source.value, topic, source.adult) } else null
+                CustomFeedSource.Kind.Hashtag -> suspend { mastodon(topic, source.value, adultAllowed, forceAdult = source.adult) }
+                CustomFeedSource.Kind.Bluesky -> suspend { blueskyAuthor(source.value, adultAllowed, topic, source.adult) }
+                CustomFeedSource.Kind.Mastodon -> suspend { mastodonAccount(source.value, adultAllowed, topic, source.adult) }
+                CustomFeedSource.Kind.YouTube -> suspend { youtube("", source.value, topic) }
+                CustomFeedSource.Kind.Feed -> suspend { outlet("", source.value, topic, source.adult) }
+            }
+        }
+        val lists = jobs.map { job -> async(Dispatchers.IO) { runCatching { job() }.getOrDefault(emptyList()) } }
+            .awaitAll()
+            .map { list ->
+                list.filter { it.url !in seen && (!it.adult || (adultAllowed && adultTextIsEligible(it.text + " " + it.credit))) }
+                    // Newest first for outlets and creators; a little shuffle so refreshes differ.
+                    .take(12).shuffled()
+            }
+        buildList {
+            val iterators = lists.shuffled().map { it.iterator() }
+            while (iterators.any { it.hasNext() }) iterators.forEach { if (it.hasNext()) add(it.next()) }
+        }.distinctBy { it.url }
+    }
+
+    /** A news site or blog's RSS/Atom feed: headline, a line of summary, and its lead picture. */
+    private fun outlet(name: String, url: String, topic: String, adult: Boolean): List<RealWebItem> {
+        val xml = web.getText(url)
+        val site = name.ifBlank { FeedXml.feedName(xml).ifBlank { url.substringAfter("://").substringBefore('/').removePrefix("www.") } }
+        return FeedXml.parse(xml).map { entry ->
+            val media = entry.image?.let { image ->
+                WebPicture("rss-" + entry.url.hashCode(), entry.title.take(160), image, image, false, site, entry.url,
+                    site, adult = adult, description = entry.title + " " + entry.summary)
+            }
+            RealWebItem(entry.url, site, entry.author.takeIf { it.isNotBlank() && it.length < 60 }?.let { "by $it" }.orEmpty(),
+                (entry.title + entry.summary.takeIf { it.isNotBlank() && !it.startsWith(entry.title) }?.let { "\n" + it.take(220) }.orEmpty()).take(TEXT_CHARS),
+                topic, media, adult)
+        }
+    }
+
+    /** A YouTube channel's newest uploads, from its public feed. */
+    private fun youtube(name: String, channelId: String, topic: String): List<RealWebItem> {
+        val xml = web.getText("https://www.youtube.com/feeds/videos.xml?channel_id=$channelId")
+        val channel = name.ifBlank { FeedXml.feedName(xml).ifBlank { "YouTube" } }
+        return FeedXml.parse(xml).mapNotNull { entry ->
+            val video = entry.youtubeVideoId ?: return@mapNotNull null
+            val thumb = "https://i.ytimg.com/vi/$video/hqdefault.jpg"
+            RealWebItem("https://www.youtube.com/watch?v=$video", "YouTube", channel,
+                (entry.title + entry.summary.takeIf { it.isNotBlank() }?.let { "\n" + it.take(200) }.orEmpty()).take(TEXT_CHARS),
+                topic, WebPicture("yt-$video", entry.title.take(160), thumb, thumb, false, "YouTube", "https://www.youtube.com/watch?v=$video",
+                    "$channel on YouTube", description = entry.title))
+        }
+    }
+
+    private fun blueskyAuthor(handle: String, adultAllowed: Boolean, topic: String, adult: Boolean): List<RealWebItem> =
+        blueskyItems(
+            web.getJson(
+                "https://public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed?limit=30&filter=posts_no_replies&actor=" +
+                    URLEncoder.encode(handle, "UTF-8"),
+            ).obj()["feed"].arr(),
+            adultAllowed, topic,
+        ).map { if (adult) it.copy(adult = true) else it }
+
+    private fun mastodonAccount(acct: String, adultAllowed: Boolean, topic: String, adult: Boolean): List<RealWebItem> {
+        val server = acct.substringAfter('@')
+        val id = web.getJson("https://$server/api/v1/accounts/lookup?acct=" + URLEncoder.encode(acct.substringBefore('@'), "UTF-8"))
+            .obj().str("id") ?: return emptyList()
+        return mastodonStatuses(web.getJson("https://$server/api/v1/accounts/$id/statuses?limit=30&exclude_replies=true&exclude_reblogs=true").arr(),
+            topic, adultAllowed, adult)
+    }
+
+    private fun mastodon(topic: String, tag: String, adultAllowed: Boolean, forceAdult: Boolean = false): List<RealWebItem> {
         val server = WebPictureSearch.MASTODON_SERVERS.random()
-        val statuses = web.getJson("https://$server/api/v1/timelines/tag/$tag?limit=30").arr()
-        return statuses.mapNotNull { element ->
+        return mastodonStatuses(web.getJson("https://$server/api/v1/timelines/tag/$tag?limit=30").arr(), topic, adultAllowed, forceAdult)
+    }
+
+    private fun mastodonStatuses(statuses: JsonArray, topic: String, adultAllowed: Boolean, forceAdult: Boolean): List<RealWebItem> =
+        statuses.mapNotNull { element ->
             val status = element.obj()
             if (status.str("language")?.startsWith("en") == false) return@mapNotNull null
-            val sensitive = status.str("sensitive") == "true"
+            val sensitive = status.str("sensitive") == "true" || forceAdult
             if (sensitive && !adultAllowed) return@mapNotNull null
             val url = status.str("url")?.takeIf { it.startsWith("https://") } ?: return@mapNotNull null
             val text = web.htmlToText(status.str("content").orEmpty())
@@ -79,11 +182,14 @@ class RealWebFeed @Inject constructor(private val web: WebPictureSearch) {
             RealWebItem(url, "Mastodon", "@" + (status["account"].obj().str("acct") ?: "someone"),
                 text.take(TEXT_CHARS), topic, media, sensitive)
         }
-    }
 
-    private fun reddit(topic: String): List<RealWebItem> {
-        val sub = TOPIC_SUBREDDITS[topic].orEmpty().ifEmpty { TOPIC_SUBREDDITS.getValue("memes") }.random()
-        return RedditRss.parse(web.getText("https://www.reddit.com/r/$sub/hot/.rss")).mapNotNull { entry ->
+    private fun reddit(topic: String): List<RealWebItem> =
+        subreddit(TOPIC_SUBREDDITS[topic].orEmpty().ifEmpty { TOPIC_SUBREDDITS.getValue("memes") }.random(), topic, adult = false)
+
+    private fun subreddit(sub: String, topic: String, adult: Boolean): List<RealWebItem> {
+        // The over18 cookie lets the feed of an adult subreddit through instead of its age interstitial.
+        val headers = if (adult) mapOf("Cookie" to "over18=1") else emptyMap()
+        return RedditRss.parse(web.getText("https://www.reddit.com/r/$sub/hot/.rss", headers)).mapNotNull { entry ->
             // Moderator stickies aren't what people share.
             if (entry.author.equals("AutoModerator", true) || entry.title.isBlank()) return@mapNotNull null
             RealWebItem(
@@ -92,7 +198,8 @@ class RealWebFeed @Inject constructor(private val web: WebPictureSearch) {
                     .filterNotNull().joinToString(" · "),
                 text = (entry.title + entry.selfText.takeIf { it.isNotBlank() }?.let { "\n" + it }.orEmpty()).take(TEXT_CHARS),
                 topic = topic,
-                media = RedditRss.toPicture(entry, gifsOnly = false),
+                media = RedditRss.toPicture(entry, gifsOnly = false)?.copy(adult = adult),
+                adult = adult,
             )
         }
     }
@@ -105,12 +212,16 @@ class RealWebFeed @Inject constructor(private val web: WebPictureSearch) {
                     guessTopic(picture.description), picture, picture.adult)
             }
 
-    private fun bluesky(adultAllowed: Boolean): List<RealWebItem> {
-        val feed = web.getJson(
+    private fun bluesky(adultAllowed: Boolean): List<RealWebItem> = blueskyItems(
+        web.getJson(
             "https://public.api.bsky.app/xrpc/app.bsky.feed.getFeed?limit=50&feed=" +
                 URLEncoder.encode(BLUESKY_DISCOVER, "UTF-8"),
-        ).obj()["feed"].arr()
-        return feed.mapNotNull { element ->
+        ).obj()["feed"].arr(),
+        adultAllowed,
+    )
+
+    private fun blueskyItems(feed: JsonArray, adultAllowed: Boolean, topic: String? = null): List<RealWebItem> =
+        feed.mapNotNull { element ->
             val post = element.obj()["post"].obj()
             val record = post["record"].obj()
             val langs = record["langs"].arr().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
@@ -139,12 +250,11 @@ class RealWebFeed @Inject constructor(private val web: WebPictureSearch) {
             }
             val body = text.ifBlank { external.str("title").orEmpty() }
             if (body.length < 12 && media == null) return@mapNotNull null
-            RealWebItem(url, "Bluesky", "@$handle", body.take(TEXT_CHARS), guessTopic(body), media, adult)
+            RealWebItem(url, "Bluesky", "@$handle", body.take(TEXT_CHARS), topic ?: guessTopic(body), media, adult)
         }
-    }
 
-    private fun lemmy(adultAllowed: Boolean): List<RealWebItem> {
-        val posts = web.getJson("https://lemmy.world/api/v3/post/list?sort=Hot&type_=All&limit=40").obj()["posts"].arr()
+    private fun lemmy(adultAllowed: Boolean, server: String = "lemmy.world", topic: String? = null): List<RealWebItem> {
+        val posts = web.getJson("https://$server/api/v3/post/list?sort=Hot&type_=All&limit=40").obj()["posts"].arr()
         return posts.mapNotNull { element ->
             val view = element.obj()
             val post = view["post"].obj()
@@ -155,7 +265,7 @@ class RealWebFeed @Inject constructor(private val web: WebPictureSearch) {
             val community = view["community"].obj().str("name") ?: "lemmy"
             val media = web.lemmyPicture(view, gifs = false, adultAllowed = adultAllowed)
             RealWebItem(page, "Lemmy", "c/$community", (title + post.str("body")?.let { "\n" + it }.orEmpty()).take(TEXT_CHARS),
-                guessTopic("$community $title"), media, nsfw)
+                topic ?: guessTopic("$community $title"), media, nsfw)
         }
     }
 
@@ -183,6 +293,16 @@ class RealWebFeed @Inject constructor(private val web: WebPictureSearch) {
 
     companion object {
         private const val TEXT_CHARS = 400
+        private const val MAX_CUSTOM_PER_REFRESH = 4
+
+        private val UNDERAGE_WORDS = Regex(
+            "\\b(?:loli|shota|child|children|kid|kids|minor|minors|underage|preteen|teen|teens|teenager|young[- ]looking|" +
+                "schoolgirl|schoolboy|highschool|high school|1[0-7]\\s*(?:yo|y/o|years?[- ]old)|barely legal|jailbait)\\b",
+            RegexOption.IGNORE_CASE,
+        )
+
+        /** Adult posts that mention or hint at anyone under 18 are never shared. */
+        fun adultTextIsEligible(text: String): Boolean = !UNDERAGE_WORDS.containsMatchIn(text)
         private const val BLUESKY_DISCOVER = "at://did:plc:z72i7hdynmk6r22z27h6tvur/app.bsky.feed.generator/whats-hot"
 
         /** WeaverSocial topics → Mastodon hashtags that reliably carry pictures and GIFs. */

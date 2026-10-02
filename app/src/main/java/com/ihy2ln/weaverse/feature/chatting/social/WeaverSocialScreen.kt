@@ -257,7 +257,10 @@ fun WeaverSocialScreen(
     }
     var viewing by remember { mutableStateOf<Triple<List<String>, Int, String>?>(null) }
     LaunchedEffect(state.castLoaded) {
-        if (state.castLoaded && state.posts.isEmpty()) viewModel.refreshFeed(5)
+        // Opening the mode fills an empty feed, or pulls what the followed accounts posted since.
+        if (state.castLoaded) {
+            if (state.posts.isEmpty()) viewModel.refreshFeed(5) else viewModel.onOpened()
+        }
     }
 
     val openRoom: (DiscordRoomUi) -> Unit = { room ->
@@ -2182,6 +2185,7 @@ private fun SafetyScreen(
     var word by rememberSaveable { mutableStateOf("") }
     var mediaSettings by remember { mutableStateOf(false) }
     var creatorSettings by remember { mutableStateOf(false) }
+    var followSettings by remember { mutableStateOf(false) }
     val byId = state.people.associateBy { it.characterId }
     LazyColumn(Modifier.fillMaxSize().background(c.surface), contentPadding = PaddingValues(bottom = 40.dp)) {
         item(key = "top") {
@@ -2220,6 +2224,17 @@ private fun SafetyScreen(
                 checked = state.webPosts,
                 c = c,
             ) { viewModel.setWebPosts(it) }
+        }
+        if (state.webPosts) item(key = "followed-accounts") {
+            Column(Modifier.fillMaxWidth().clickable { followSettings = true }
+                .padding(horizontal = 16.dp, vertical = 12.dp)) {
+                Text("Accounts you follow", color = c.accent, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                val custom = CustomFeedSource.parseAll(state.customFeeds).size
+                Text(state.feedCategories.filter { !it.adult || (state.adultFeedsConfirmed && safety.adultEnabled) }
+                    .joinToString(", ") { it.label }.ifBlank { "Nothing yet" } +
+                    if (custom > 0) " · $custom of your own" else "",
+                    color = c.muted, fontSize = 12.sp)
+            }
         }
         item(key = "fictional-creators") {
             Column(Modifier.fillMaxWidth().clickable { creatorSettings = true }
@@ -2357,6 +2372,74 @@ private fun SafetyScreen(
     }
     if (mediaSettings) SocialMediaSettingsDialog(state, viewModel, c) { mediaSettings = false }
     if (creatorSettings) SocialCreatorDialog(state, viewModel, c) { creatorSettings = false }
+    if (followSettings) FollowedAccountsDialog(state, viewModel, c) { followSettings = false }
+}
+
+/**
+ * What the timeline follows in the real world: kinds of outlets, creators and communities,
+ * plus the writer's own accounts. Adult kinds show only with WeaverSocial 18+ on and ask
+ * the writer to confirm they're an adult the first time.
+ */
+@Composable
+private fun FollowedAccountsDialog(state: SocialUiState, viewModel: SocialFeedViewModel, c: WsColors, onDismiss: () -> Unit) {
+    var custom by remember { mutableStateOf(state.customFeeds) }
+    var ageCheckFor by remember { mutableStateOf<FeedCategory?>(null) }
+    val kinds = FeedCategory.entries.filter { !it.adult || state.safety.adultEnabled }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Accounts you follow") },
+        text = {
+            Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Real public posts from these come into your timeline when you open WeaverSocial and every refresh, " +
+                    "reshared by everyday people with a link to the original. Nothing is posted back.",
+                    fontSize = 12.sp, color = c.muted)
+                kinds.forEach { kind ->
+                    SwitchRow(
+                        title = (if (kind.adult) "18+ · " else "") + kind.label,
+                        body = kind.description,
+                        checked = kind in state.feedCategories && (!kind.adult || state.adultFeedsConfirmed),
+                        c = c,
+                    ) { on ->
+                        if (on && kind.adult && !state.adultFeedsConfirmed) ageCheckFor = kind
+                        else viewModel.setFeedCategory(kind, on)
+                    }
+                }
+                if (!state.safety.adultEnabled) Text("Turn on WeaverSocial 18+ to see adult kinds.", fontSize = 12.sp, color = c.muted)
+                Spacer(Modifier.height(8.dp))
+                Text("Your own accounts", color = c.text, fontWeight = FontWeight.Bold)
+                Text("One per line: r/subreddit, #hashtag, @name.bsky.social, @user@mastodon.social, a YouTube channel link, " +
+                    "or any news/blog RSS link. Start a line with 18+ for adult accounts. Only free public posts can be read — " +
+                    "paid or subscriber-only posts (OnlyFans, Patreon, Fansly) can't be.",
+                    fontSize = 12.sp, color = c.muted)
+                OutlinedTextField(custom, { custom = it }, minLines = 4, maxLines = 10,
+                    placeholder = { Text("r/wallstreetbets\n@markiplier.bsky.social\nhttps://www.youtube.com/channel/UC…") },
+                    modifier = Modifier.fillMaxWidth())
+                val parsed = CustomFeedSource.parseAll(custom)
+                if (parsed.isNotEmpty()) Text(parsed.joinToString(" · ") { (if (it.adult) "18+ " else "") + it.label }, fontSize = 12.sp, color = c.accent)
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = {
+                if (custom != state.customFeeds) viewModel.setCustomFeeds(custom)
+                onDismiss()
+            }) { Text("Done") }
+        },
+    )
+    ageCheckFor?.let { kind ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { ageCheckFor = null },
+            title = { Text("Are you 18 or older?") },
+            text = { Text("${kind.label} brings real adult content from public adult communities into your feed. Only continue if you're an adult and it's legal where you are.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    viewModel.confirmAdultFeeds(kind)
+                    ageCheckFor = null
+                }) { Text("I'm 18+") }
+            },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { ageCheckFor = null }) { Text("Cancel") } },
+        )
+    }
 }
 
 @Composable

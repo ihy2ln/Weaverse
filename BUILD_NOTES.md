@@ -3,6 +3,30 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.68 - WeaverSocial: accounts you follow
+
+- New Privacy & filters > Accounts you follow: kinds of real accounts the timeline follows
+  (`FeedCategory`), modelled on the writer's own social feeds — video game outlets, stocks &
+  crypto, manga & anime, AI news, AI creators, gaming creators, comedians; adult kinds
+  (thirst, porn aggregators, adult creators, OnlyFans promos, other adult social) show with
+  18+ on and need a one-time "I'm 18+" confirmation. Safe-for-work kinds are on by default.
+- Sources: outlet RSS/Atom feeds (new `FeedXml` parser), YouTube channel feeds, subreddits
+  (adult ones with the `over18` cookie), Mastodon hashtags, lemmynsfw, adult-labelled
+  Bluesky. Plus the writer's own accounts, one per line (`CustomFeedSource`: r/sub, #tag,
+  Bluesky handle, Mastodon account, YouTube channel, any RSS URL; `18+` prefix = adult).
+  Only free public posts; paid/subscriber-only content (OnlyFans, Fansly, Patreon) is not
+  and cannot be read. Adult items mentioning or hinting at minors are dropped
+  (`RealWebFeed.adultTextIsEligible`), and adult reshares go only to four new adult NPCs.
+- Opening WeaverSocial now pulls followed accounts (2-minute cooldown), not only when the
+  feed is empty; refresh works with no API key or cast (quick captions, no replies).
+- Up to 4 kinds per pull, rotating; Reddit capped at 3 feeds per pull. All outlet and
+  YouTube sources checked live on 2026-10-01; VentureBeat (HTTP 429) swapped for MIT
+  Technology Review and WIRED. Reddit 429s quickly from one IP when hammered.
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.4.68.apk`, SHA-256
+  `50a44aa59154c9583468933a9f5e2f045acd0a8afd02285fe74c551026fffbcc`, debug-key signed
+  (same certificate `f16db508…51fc05`). Not verified on device. Unit tests:
+  FollowedFeedsTest, SocialRepeatGuard, HelpContent.
+
 ## v1.4.67 - Manga Studio: whole chapters, Mihon import, chapter backups
 
 - Chapter colorize/translate no longer drops pages: pages are padded to the image

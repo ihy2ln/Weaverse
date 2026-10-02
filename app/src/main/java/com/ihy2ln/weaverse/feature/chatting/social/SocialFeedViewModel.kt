@@ -163,6 +163,12 @@ data class SocialUiState(
     val mediaFromPost: Boolean = true,
     /** Made-up people reshare real posts from Mastodon, Bluesky, Lemmy and Hacker News. */
     val webPosts: Boolean = true,
+    /** Kinds of real accounts the timeline follows: outlets, creators, communities. */
+    val feedCategories: Set<FeedCategory> = FeedCategory.defaults,
+    /** The writer's own accounts to follow, one per line (see [CustomFeedSource]). */
+    val customFeeds: String = "",
+    /** The writer confirmed they're 18+, which adult feed kinds require. */
+    val adultFeedsConfirmed: Boolean = false,
 ) {
     val youHandle: String get() = handleFor(personaName)
     val followingIds: Set<String> get() = people.filter { it.isFollowing }.map { it.characterId }.toSet()
@@ -203,6 +209,9 @@ class SocialFeedViewModel @Inject constructor(
     private val mediaFetchInFlight = mutableSetOf<String>()
     private val claimedMediaUrls = mutableSetOf<String>()
     private var nextTopicDirection = Random.nextInt(SOCIAL_TOPIC_DIRECTIONS.size)
+    private var lastWebPull = 0L
+    /** Rotates through followed kinds so each one shows up across refreshes. */
+    private var nextCategory = 0
 
     fun bind(platformId: String = PLATFORM_WEAVERSOCIAL) {
         if (platform == platformId) return
@@ -219,6 +228,15 @@ class SocialFeedViewModel @Inject constructor(
             combine(settings.socialString("media_mode"), settings.socialString("web_posts")) { mode, web -> mode to web }
                 .collect { (mode, web) ->
                     _uiState.update { it.copy(mediaFromPost = mode != "tags", webPosts = web != "off") }
+                }
+        }
+        viewModelScope.launch {
+            combine(settings.socialString("feed_categories"), settings.socialString("custom_feeds"),
+                settings.socialString("adult_feeds_confirmed")) { kinds, custom, confirmed -> Triple(kinds, custom, confirmed) }
+                .collect { (kinds, custom, confirmed) ->
+                    _uiState.update {
+                        it.copy(feedCategories = decodeCategories(kinds), customFeeds = custom, adultFeedsConfirmed = confirmed == "yes")
+                    }
                 }
         }
         viewModelScope.launch {
@@ -651,6 +669,62 @@ class SocialFeedViewModel @Inject constructor(
         viewModelScope.launch { settings.setSocialString("web_posts", if (on) "" else "off") }
     }
 
+    /** Turns one kind of followed account on or off. Adult kinds need [confirmAdultFeeds] first. */
+    fun setFeedCategory(category: FeedCategory, on: Boolean) {
+        if (on && category.adult && !_uiState.value.adultFeedsConfirmed) return
+        val next = if (on) _uiState.value.feedCategories + category else _uiState.value.feedCategories - category
+        viewModelScope.launch { settings.setSocialString("feed_categories", encodeCategories(next)) }
+    }
+
+    /** The writer confirmed they're 18 or older; adult kinds can now be followed. */
+    fun confirmAdultFeeds(category: FeedCategory?) {
+        viewModelScope.launch {
+            settings.setSocialString("adult_feeds_confirmed", "yes")
+            category?.let { settings.setSocialString("feed_categories", encodeCategories(_uiState.value.feedCategories + it)) }
+        }
+    }
+
+    fun setCustomFeeds(text: String) {
+        viewModelScope.launch {
+            settings.setSocialString("custom_feeds", text)
+            val count = CustomFeedSource.parseAll(text).size
+            _uiState.update { it.copy(mediaNotice = "$count account${if (count == 1) "" else "s"} saved.") }
+        }
+    }
+
+    private fun encodeCategories(set: Set<FeedCategory>): String =
+        set.joinToString(",") { it.id }.ifBlank { NO_CATEGORIES }
+
+    private fun decodeCategories(value: String): Set<FeedCategory> = when (value) {
+        "" -> FeedCategory.defaults
+        NO_CATEGORIES -> emptySet()
+        else -> value.split(',').mapNotNull { FeedCategory.byId(it.trim()) }.toSet()
+    }
+
+    /**
+     * Opening WeaverSocial pulls new real posts from the accounts the writer follows, like
+     * any social app does on launch. Skipped when the last pull was moments ago.
+     */
+    fun onOpened() {
+        val state = _uiState.value
+        if (!state.webPosts || state.generating) return
+        if (System.currentTimeMillis() - lastWebPull < WEB_PULL_COOLDOWN_MS) return
+        pullWebPosts(5)
+    }
+
+    /** Fetches and reshares real posts without writing new cast posts (also works with no API key). */
+    private fun pullWebPosts(count: Int) {
+        if (_uiState.value.generating) return
+        _uiState.update { it.copy(generating = true) }
+        viewModelScope.launch {
+            try {
+                shareWebPosts(count)
+            } finally {
+                finish()
+            }
+        }
+    }
+
     fun saveMediaSettings(endpoint: String, workflow: String, imageModel: String) {
         viewModelScope.launch {
             settings.setSocialString("comfy_endpoint", endpoint)
@@ -727,7 +801,11 @@ class SocialFeedViewModel @Inject constructor(
         if (_uiState.value.generating) return
         viewModelScope.launch {
             cast = castResolver.allChatContacts()
-            if (!ensureReady()) return@launch
+            if (!ensureReady()) {
+                // No cast or no API key: the followed accounts can still post.
+                if (_uiState.value.webPosts) pullWebPosts((count * 3 / 4).coerceIn(3, 6))
+                return@launch
+            }
             val adultAllowed = safety.adultEnabled
             val posters = pickCast(count.coerceAtMost(cast.size), prefer = _uiState.value.followingIds)
             val history = db.socialDao().observeAllPosts().first()
@@ -934,38 +1012,62 @@ class SocialFeedViewModel @Inject constructor(
      */
     private suspend fun shareWebPosts(count: Int) {
         _uiState.update { it.copy(status = "Finding posts around the web…") }
+        lastWebPull = System.currentTimeMillis()
         val seen = entities.values.map { it.sourceUrl }.filter { it.isNotBlank() }.toSet()
-        val topics = (listOf("memes", "pets", "games") + RealWebFeed.TOPIC_HASHTAGS.keys.shuffled().take(3)).shuffled().take(3)
+        // Read straight from settings: on open this can run before the UI state has them.
+        val adultFeeds = safety.adultEnabled && settings.socialString("adult_feeds_confirmed").first() == "yes"
+        // Followed kinds and the writer's own accounts come first, like a real timeline.
+        val followed = decodeCategories(settings.socialString("feed_categories").first())
+            .filter { adultFeeds || !it.adult }.sortedBy { it.ordinal }
+        val picked = List(minOf(CATEGORIES_PER_PULL, followed.size)) { followed[(nextCategory++).mod(followed.size)] }.distinct()
+        val custom = CustomFeedSource.parseAll(settings.socialString("custom_feeds").first())
+        val fromFollowed = if (picked.isEmpty() && custom.isEmpty()) emptyList()
+        else runCatching { realWeb.fetchFollowed(picked, custom, adultFeeds, seen) }.getOrDefault(emptyList())
+        // Plus the odd meme or pet picture from the wider web.
+        val topics = (listOf("memes", "pets", "games") + RealWebFeed.TOPIC_HASHTAGS.keys.shuffled().take(3)).shuffled()
+            .take(if (fromFollowed.isEmpty()) 3 else 1)
         val found = runCatching { realWeb.fetch(topics, safety.adultEnabled, seen) }.getOrDefault(emptyList())
         // Mostly posts with a picture or GIF, the odd headline.
-        val items = (found.filter { it.media != null }.take(count - 1) + found.filter { it.media == null }.take(1) +
-            found.filter { it.media != null }.drop(count - 1)).take(count)
+        val wide = (found.filter { it.media != null }.take(count - 1) + found.filter { it.media == null }.take(1) +
+            found.filter { it.media != null }.drop(count - 1))
+        val wideShare = if (fromFollowed.isEmpty()) count else 1
+        val items = (fromFollowed.take(count - wideShare) + wide.take(wideShare)).let { chosen ->
+            chosen + (fromFollowed + wide).filterNot { it in chosen }.take(count - chosen.size)
+        }.take(count).shuffled()
         if (items.isEmpty()) return
         val used = mutableSetOf<String>()
         val pairs = items.mapNotNull { item ->
-            val pool = SocialNpcs.forTopic(item.topic).filterNot { it.id in safety.unseen || it.id in used }
-                .ifEmpty { SocialNpcs.characters.filterNot { it.id in safety.unseen || it.id in used } }
+            // Adult posts only go to the adults who follow adult accounts.
+            val topic = if (item.adult) SocialNpcs.ADULT_TOPIC else item.topic
+            val pool = SocialNpcs.forTopic(topic).filterNot { it.id in safety.unseen || it.id in used }
+                .ifEmpty { if (item.adult) emptyList() else SocialNpcs.characters.filterNot { it.id in safety.unseen || it.id in used } }
             pool.randomOrNull()?.also { used += it.id }?.let { item to it }
         }
         if (pairs.isEmpty()) return
+        val canWrite = aiGeneration.hasApiKey(null)
         val system = buildList {
             add(platformVoice())
-            add("Ordinary people on WeaverSocial are resharing real posts they found on Reddit, 9GAG, Mastodon, Bluesky and other sites." +
+            add("Ordinary people on WeaverSocial are resharing real posts they found on news sites, YouTube, Reddit, 9GAG, Mastodon, Bluesky and other sites. " +
                 "Each writes their own short caption: a reaction, joke, opinion or why they're sharing it. " +
                 "Never copy or summarise the original, and never claim they made it. Stay true to each card:")
             pairs.forEach { add(cardFor(it.second)) }
+            if (pairs.any { it.first.adult }) add("Posts marked [18+] are adult content from adult creators and communities. " +
+                "Those captions may be flirty, thirsty or explicit, the way people react on adult social media. Everyone involved is an adult; " +
+                "never suggest anyone is under 18. Label each such caption [cw: sexual].")
             add(outputRules())
         }
         val user = "Write one caption per person:\n" + pairs.joinToString("\n") { (item, npc) ->
-            "${npc.name} is sharing this ${item.site} post: \"${item.text.take(300).replace('\n', ' ')}\"" +
+            "${npc.name} is sharing this ${item.site} post${if (item.adult) " [18+]" else ""}: \"${item.text.take(300).replace('\n', ' ')}\"" +
                 when { item.media?.isGif == true -> " [with a GIF]"; item.media != null -> " [with a picture]"; else -> "" }
         }
-        val raw = complete(system, user, maxTokens = 1_500).orEmpty()
+        // Without a model the reshare still lands, with a quick caption like people really post.
+        val raw = if (canWrite) complete(system, user, maxTokens = 1_500).orEmpty() else ""
         val captions = parseSocialLines(raw, pairs.map { it.second })
             .mapNotNull { line -> line.character?.let { it.id to line.text } }.toMap()
         val base = System.currentTimeMillis()
         val created = pairs.mapIndexed { index, (item, npc) ->
-            val caption = captions[npc.id]?.let { MediaTags.extract(SocialTags.parse(splitFeeling(it).second).text).first }.orEmpty()
+            val caption = captions[npc.id]?.let { MediaTags.extract(SocialTags.parse(splitFeeling(it).second).text).first }
+                ?.takeIf { it.isNotBlank() } ?: QUICK_CAPTIONS.random()
             generatedPost(npc, caption, "", base - index * 53_000L - 20_000L, parentId = null).copy(
                 originKind = "web_share",
                 sourceUrl = item.url,
@@ -977,7 +1079,7 @@ class SocialFeedViewModel @Inject constructor(
                 item.media?.let { attachShared(post.id, it, item.text) }
             }
         }
-        generateWebReplies(created.shuffled().take(3))
+        if (canWrite) generateWebReplies(created.shuffled().take(3))
     }
 
     private fun attachShared(postId: String, picture: WebPicture, text: String) {
@@ -1456,7 +1558,12 @@ class SocialFeedViewModel @Inject constructor(
         )
         private val SEXUAL_TERMS = Regex("\\b(nude|nudity|porn|xxx|onlyfans|fansly|nsfw|erotic|sex|sexual)\\b", RegexOption.IGNORE_CASE)
         private val SELF_PHOTO_TERMS = Regex("\\b(selfie|photo of me|picture of me|here i am|this is me|my outfit|my body|my face|mirror pic|me on vacation|me at the|my vacation photo)\\b", RegexOption.IGNORE_CASE)
-        private val UNDERAGE_TERMS = Regex("\\b(?:1[0-7][ -]?year[ -]?old|teenager|underage|minor|child|schoolgirl|schoolboy)\\b", RegexOption.IGNORE_CASE)
+        private const val NO_CATEGORIES = "-"
+        private const val CATEGORIES_PER_PULL = 4
+        private const val WEB_PULL_COOLDOWN_MS = 2 * 60_000L
+        private val QUICK_CAPTIONS = listOf("👀", "this", "ok this is good", "saw this and thought of you all", "well then", "lmao",
+            "can't stop thinking about this", "thoughts?", "big if true", "😭", "obsessed", "had to share")
+        private val UNDERAGE_TERMS =Regex("\\b(?:1[0-7][ -]?year[ -]?old|teenager|underage|minor|child|schoolgirl|schoolboy)\\b", RegexOption.IGNORE_CASE)
         private val APPEARANCE_TERMS = Regex("\\b(?:blonde|brunette|redhead|black hair|brown hair|blue eyes|green eyes|brown eyes|freckles|tattooed|curvy|athletic|muscular|petite|tall|dark skin|fair skin|elf|orc)\\b", RegexOption.IGNORE_CASE)
         private val GAMING_TERMS = Regex("\\b(game|games|gaming|gamer|esports|xbox|playstation|nintendo|steam|console|pc build)\\b", RegexOption.IGNORE_CASE)
         private val INVESTMENT_TERMS = Regex("\\b(invest|investing|investment|stocks?|shares|market|portfolio|crypto|bitcoin|finance|budget|trading)\\b", RegexOption.IGNORE_CASE)

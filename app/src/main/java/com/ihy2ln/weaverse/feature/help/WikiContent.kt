@@ -519,6 +519,21 @@ object WikiContent {
                 others reply underneath. The feed's **Around the web** tab
                 shows only these. Nothing is posted to those sites.
 
+                **Accounts you follow** (Privacy & filters): the kinds of real
+                accounts the timeline follows — video game outlets (IGN,
+                GameSpot, Polygon, PC Gamer…), stocks & crypto, manga & anime,
+                AI news, AI creators, gaming creators and comedians, read from
+                outlet RSS feeds, YouTube channel feeds, subreddits and
+                Mastodon hashtags. With 18+ on, adult kinds (thirst posts, porn
+                aggregators, adult creators, OnlyFans promos, other adult
+                social) can be added after confirming you're 18+; only free
+                public posts are read and anything hinting at minors is
+                dropped. Your own accounts go one per line: `r/sub`, `#tag`,
+                `@name.bsky.social`, `@user@server`, a YouTube channel link or
+                any RSS link, with a leading `18+` for adult ones. Opening
+                WeaverSocial and every refresh pull new posts, even with no API
+                key (captions are then short reactions).
+
                 With WeaverSocial **18+** on, adult-labeled posts search public
                 Civitai, Gelbooru and Danbooru gallery items without a paid
                 search key. Your configured OpenRouter image model can also
