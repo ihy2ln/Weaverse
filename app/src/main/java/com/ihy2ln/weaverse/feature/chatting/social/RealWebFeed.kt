@@ -37,6 +37,10 @@ data class RealWebItem(
     val comments: List<Pair<String, String>> = emptyList(),
     /** Tags or categories the source gave it; checked by the adult filter too. */
     val tags: String = "",
+    /** The account's profile picture, when the site gives one. */
+    val avatar: String = "",
+    /** Playable video: quality label to stream URL (or "youtube" to a video id). */
+    val videos: List<Pair<String, String>> = emptyList(),
 ) {
     /** The name shown as the post's author. */
     val poster: String get() = author.ifBlank { credit.substringBefore(" · ").ifBlank { site } }
@@ -181,7 +185,7 @@ class RealWebFeed @Inject constructor(
             val thumb = "https://i.ytimg.com/vi/$video/hqdefault.jpg"
             RealWebItem("https://www.youtube.com/watch?v=$video", "YouTube", "", author = channel, text =
                 (entry.title + entry.summary.takeIf { it.isNotBlank() }?.let { "\n" + it.take(200) }.orEmpty()).take(TEXT_CHARS),
-                topic = topic, media = WebPicture("yt-$video", entry.title.take(160), thumb, thumb, false, "YouTube", "https://www.youtube.com/watch?v=$video",
+                topic = topic, videos = listOf("youtube" to video), media = WebPicture("yt-$video", entry.title.take(160), thumb, thumb, false, "YouTube", "https://www.youtube.com/watch?v=$video",
                     "$channel on YouTube", description = entry.title))
         }
     }
@@ -220,7 +224,8 @@ class RealWebFeed @Inject constructor(
             val media = web.mastodonMedia(status, gifs = false, adultAllowed = adultAllowed).firstOrNull()
                 ?: web.mastodonMedia(status, gifs = true, adultAllowed = adultAllowed).firstOrNull()
             val handle = "@" + (status["account"].obj().str("acct") ?: "someone")
-            RealWebItem(url, "Mastodon", handle, text.take(TEXT_CHARS), topic, media, sensitive, author = handle)
+            RealWebItem(url, "Mastodon", handle, text.take(TEXT_CHARS), topic, media, sensitive, author = handle,
+                avatar = status["account"].obj().str("avatar_static") ?: status["account"].obj().str("avatar").orEmpty())
         }
 
     private suspend fun reddit(topic: String): List<RealWebItem> =
@@ -295,7 +300,8 @@ class RealWebFeed @Inject constructor(
             val body = text.ifBlank { external.str("title").orEmpty() }
             if (body.length < 12 && media == null) return@mapNotNull null
             RealWebItem(url, "Bluesky", "@$handle", body.take(TEXT_CHARS), topic ?: guessTopic(body), media, adult,
-                author = author.str("displayName")?.takeIf { it.isNotBlank() }?.let { "$it (@$handle)" } ?: "@$handle")
+                author = author.str("displayName")?.takeIf { it.isNotBlank() }?.let { "$it (@$handle)" } ?: "@$handle",
+                avatar = author.str("avatar").orEmpty())
         }
 
     private fun lemmy(adultAllowed: Boolean, server: String = "lemmy.world", topic: String? = null): List<RealWebItem> {
@@ -335,8 +341,10 @@ class RealWebFeed @Inject constructor(
         val threads = posts.filter { it.commentCount >= 5 }.sortedByDescending { it.commentCount }.take(2).map { it.id }.toSet()
         return posts.map { post ->
             val adult = forceAdult || post.over18
-            val media = post.media?.let { full ->
-                WebPicture("rd-" + post.id, post.title.take(160), post.thumbnail ?: full, full, post.isLoop, "Reddit", post.url,
+            val isVideo = post.media != null && Regex("\\.mp4(\\?|$)|v\\.redd\\.it").containsMatchIn(post.media)
+            val still = if (isVideo) post.thumbnail else post.media
+            val media = still?.let { full ->
+                WebPicture("rd-" + post.id, post.title.take(160), post.thumbnail ?: full, full, !isVideo && post.isLoop, "Reddit", post.url,
                     "u/${post.author} · r/${post.subreddit}", adult = adult, description = post.title + " " + post.body.take(400))
             }
             val comments = if (post.id in threads) runCatching {
@@ -348,6 +356,7 @@ class RealWebFeed @Inject constructor(
                 text = (post.title + post.body.takeIf { it.isNotBlank() }?.let { "\n" + it }.orEmpty()).take(TEXT_CHARS),
                 topic = if (adult) SocialNpcs.ADULT_TOPIC else topic, media = media, adult = adult,
                 author = "u/${post.author}", comments = comments,
+                videos = if (isVideo) listOf("Auto" to post.media!!) else emptyList(),
             )
         }
     }
@@ -373,10 +382,13 @@ class RealWebFeed @Inject constructor(
             val tags = (gif["tags"].arr() + gif["niches"].arr()).mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.joinToString(", ")
             val page = "https://www.redgifs.com/watch/$id"
             val text = gif.str("description")?.takeIf { it.isNotBlank() } ?: tags.split(", ").take(5).joinToString(" · ")
+            val poster = urls.str("poster") ?: urls.str("thumbnail") ?: clip
             RealWebItem(page, "RedGIFs", "@$user", text.take(TEXT_CHARS), topic,
-                WebPicture("rg-$id", text.take(160), urls.str("thumbnail") ?: urls.str("poster") ?: clip, clip, true, "RedGIFs", page,
+                WebPicture("rg-$id", text.take(160), urls.str("thumbnail") ?: poster, poster, false, "RedGIFs", page,
                     "@$user on RedGIFs", adult = true, description = "$text $tags"),
-                adult = true, author = "@$user", tags = tags)
+                adult = true, author = "@$user", tags = tags,
+                videos = listOfNotNull(urls.str("sd")?.let { "SD" to it }, urls.str("hd")?.let { "HD" to it })
+                    .ifEmpty { listOf("SD" to clip) })
         }
     }
 
@@ -423,7 +435,7 @@ class RealWebFeed @Inject constructor(
             }.getOrDefault(emptyList()) else emptyList()
             RealWebItem(page, "Lemmy", "c/$name", (title + post.str("body")?.let { "\n" + it }.orEmpty()).take(TEXT_CHARS),
                 if (nsfw) SocialNpcs.ADULT_TOPIC else topic, web.lemmyPicture(view, gifs = false, adultAllowed = adultAllowed), nsfw,
-                author = creator, comments = comments)
+                author = creator, comments = comments, avatar = view["creator"].obj().str("avatar").orEmpty())
         }
     }
 

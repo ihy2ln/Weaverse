@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -97,6 +98,10 @@ data class SocialPostUi(
     val originKind: String = "fictional",
     val mediaCredits: List<String> = emptyList(),
     val mediaLinks: List<String> = emptyList(),
+    /** The real account's profile picture (https), when known. */
+    val avatarUrl: String = "",
+    /** Playable video: quality label to URL, or ("youtube", id). */
+    val videos: List<Pair<String, String>> = emptyList(),
     val feeling: String,
     val repostOf: SocialPostUi?,
 )
@@ -203,6 +208,17 @@ class SocialFeedViewModel @Inject constructor(
     private val realWeb: RealWebFeed,
     private val redditAccount: RedditAccount,
 ) : ViewModel() {
+    /** Sites the writer hid from the feed (long-press Social). */
+    val hiddenSites: StateFlow<Set<String>> = settings.socialSet("hidden_sites")
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, emptySet())
+
+    fun setSiteShown(site: String, shown: Boolean) {
+        viewModelScope.launch {
+            val current = settings.socialSet("hidden_sites").first()
+            settings.setSocialSet("hidden_sites", if (shown) current - site else current + site)
+        }
+    }
+
     /** The writer's Reddit sign-in, for Accounts you follow. */
     val reddit: StateFlow<RedditAccountState> = redditAccount.state
 
@@ -372,6 +388,10 @@ class SocialFeedViewModel @Inject constructor(
             sourceSite = sourceSite,
             sourceTitle = sourceTitle,
             originKind = originKind,
+            avatarUrl = authorAvatarUrl,
+            videos = sourceVideo.lines().mapNotNull { line ->
+                line.substringBefore('=', "").takeIf { it.isNotBlank() }?.let { it to line.substringAfter('=') }
+            },
             mediaCredits = attached.map { media ->
                 listOf(media.sourceSite, media.sourceCredit).filter { it.isNotBlank() }.distinct().joinToString(" · ")
             },
@@ -1151,6 +1171,8 @@ class SocialFeedViewModel @Inject constructor(
             originKind = ORIGIN_REAL,
             sourceUrl = item.url,
             sourceSite = listOf(item.site, item.credit).filter { it.isNotBlank() && it != item.poster }.distinct().joinToString(" · "),
+            authorAvatarUrl = item.avatar.takeIf { it.startsWith("https://") }.orEmpty(),
+            sourceVideo = item.videos.filter { (_, url) -> url.isNotBlank() }.joinToString("\n") { (label, url) -> "$label=$url" },
         )
         db.socialDao().upsert(post)
         item.media?.let { attachShared(post.id, it, item.text) }

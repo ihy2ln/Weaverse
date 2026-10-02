@@ -39,8 +39,20 @@ fun linkified(text: String, link: Color, bold: Boolean = false): AnnotatedString
 
 /** A round avatar with an optional ring, as both feeds draw them. */
 @Composable
-fun SocialAvatar(name: String, colorHex: String, size: Dp, ring: Color? = null, modifier: Modifier = Modifier) {
-    if (ring == null) {
+fun SocialAvatar(name: String, colorHex: String, size: Dp, ring: Color? = null, modifier: Modifier = Modifier, avatarUrl: String = "") {
+    if (avatarUrl.startsWith("https://")) {
+        // A real account's own picture, over its initials so a failed load still shows something.
+        Box(modifier.size(size + if (ring != null) 6.dp else 0.dp).let { if (ring != null) it.clip(CircleShape).border(3.dp, ring, CircleShape) else it },
+            contentAlignment = Alignment.Center) {
+            CharacterAvatar(name = name, colorHex = colorHex, size = size)
+            coil3.compose.AsyncImage(
+                model = avatarUrl,
+                contentDescription = "$name's profile picture",
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = Modifier.size(size).clip(CircleShape),
+            )
+        }
+    } else if (ring == null) {
         CharacterAvatar(name = name, colorHex = colorHex, size = size, modifier = modifier)
     } else {
         Box(

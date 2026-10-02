@@ -242,6 +242,10 @@ fun WeaverSocialScreen(
     LaunchedEffect(selectedRoomId) { if (selectedRoomId != null) tab = WsTab.Servers }
     var stack by rememberSaveable { mutableStateOf(listOf<String>()) }
     var composer by rememberSaveable { mutableStateOf(false) }
+    // A real site's own view (null = every site), and the long-press site picker.
+    var site by rememberSaveable { mutableStateOf<String?>(null) }
+    var sitePicker by remember { mutableStateOf(false) }
+    val hiddenSites by viewModel.hiddenSites.collectAsState()
     var quoteId by rememberSaveable { mutableStateOf<String?>(null) }
     var storyIndex by rememberSaveable { mutableStateOf<Int?>(null) }
     val push: (String) -> Unit = { stack = stack + it }
@@ -366,6 +370,9 @@ fun WeaverSocialScreen(
                         onMessages = { message(null) },
                         onSafety = { push("safety") },
                         messagesUnread = servers.dmUnread,
+                        hiddenSites = hiddenSites,
+                        site = if (tab == WsTab.Social) site else null,
+                        onSite = { picked -> site = picked; if (picked != null) tab = WsTab.Social },
                     )
                     tab == WsTab.Explore -> Explore(
                         state = state,
@@ -455,9 +462,21 @@ fun WeaverSocialScreen(
                     tab = tab,
                     c = c,
                     badges = mapOf(WsTab.Servers to serverUnread, WsTab.Alerts to state.notifications.size.coerceAtMost(9) + unreadRooms.size),
-                    onSelect = { t -> stack = emptyList(); tab = t },
+                    onSelect = { t -> stack = emptyList(); tab = t; if (t != WsTab.Social) site = null },
+                    onLongPress = { t -> if (t == WsTab.Social) sitePicker = true },
                 )
             }
+        }
+        if (sitePicker) {
+            SitePickerDialog(
+                present = state.posts.map { SocialSites.of(it) }.distinct(),
+                hidden = hiddenSites,
+                adultEnabled = state.safety.adultEnabled,
+                c = c,
+                onToggle = viewModel::setSiteShown,
+                onOpen = { picked -> sitePicker = false; stack = emptyList(); tab = WsTab.Social; site = picked },
+                onDismiss = { sitePicker = false },
+            )
         }
         if (composer) {
             Composer(
@@ -532,14 +551,15 @@ private class WsActions(
 // ------------------------------------------------------------------ chrome
 
 @Composable
-private fun BottomBar(tab: WsTab, c: WsColors, badges: Map<WsTab, Int>, onSelect: (WsTab) -> Unit) {
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+private fun BottomBar(tab: WsTab, c: WsColors, badges: Map<WsTab, Int>, onSelect: (WsTab) -> Unit, onLongPress: (WsTab) -> Unit = {}) {
     Column(Modifier.fillMaxWidth().background(c.surface).navigationBarsPadding()) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
         Row(Modifier.fillMaxWidth().height(58.dp)) {
             WsTab.entries.forEach { t ->
                 val selected = t == tab
                 Column(
-                    Modifier.weight(1f).fillMaxHeight().clickable { onSelect(t) },
+                    Modifier.weight(1f).fillMaxHeight().combinedClickable(onClick = { onSelect(t) }, onLongClick = { onLongPress(t) }),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                 ) {
@@ -628,9 +648,9 @@ private fun Hairline(c: WsColors) {
 
 /** Avatar with a Discord presence dot. */
 @Composable
-private fun PresenceAvatar(name: String, colorHex: String, size: Dp, c: WsColors, status: DiscordStatus? = discordStatusFor(name), ring: Color = c.surface) {
+private fun PresenceAvatar(name: String, colorHex: String, size: Dp, c: WsColors, status: DiscordStatus? = discordStatusFor(name), ring: Color = c.surface, avatarUrl: String = "") {
     Box {
-        SocialAvatar(name, colorHex, size)
+        SocialAvatar(name, colorHex, size, avatarUrl = avatarUrl)
         if (status != null) {
             val dot = (size.value * 0.3f).coerceAtLeast(10f).dp
             Box(
@@ -677,13 +697,22 @@ private fun HomeFeed(
     onMessages: () -> Unit,
     onSafety: () -> Unit,
     messagesUnread: Int,
+    hiddenSites: Set<String> = emptySet(),
+    site: String? = null,
+    onSite: (String?) -> Unit = {},
 ) {
     // For you · Following · Around the web (real posts reshared by everyday people).
     var feed by rememberSaveable { mutableIntStateOf(0) }
-    val posts = when (feed) {
-        1 -> state.posts.filter { it.isYou || it.authorCharacterId in state.followingIds }
-        2 -> state.posts.filter { it.originKind == "web_share" || it.originKind == SocialFeedViewModel.ORIGIN_REAL }
-        else -> state.posts
+    val shown = state.posts.filter { SocialSites.of(it) !in hiddenSites }
+    // Each real site present in the feed gets its own button; the busiest first.
+    val siteButtons = remember(shown) {
+        shown.groupingBy { SocialSites.of(it) }.eachCount().entries.sortedByDescending { it.value }.map { it.key }
+    }
+    val posts = when {
+        site != null -> state.posts.filter { SocialSites.of(it) == site }
+        feed == 1 -> shown.filter { it.isYou || it.authorCharacterId in state.followingIds }
+        feed == 2 -> shown.filter { it.originKind == "web_share" || it.originKind == SocialFeedViewModel.ORIGIN_REAL }
+        else -> shown
     }
     // New posts cost an AI generation, so reaching the end shows a button instead of
     // starting one on its own.
@@ -710,7 +739,33 @@ private fun HomeFeed(
                     RoundButton(Icons.Filled.Search, "Search", c, onClick = onSearch)
                     RoundButton(Icons.Outlined.MailOutline, "Messages", c, badge = messagesUnread, onClick = onMessages)
                 }
-                Row(Modifier.fillMaxWidth().height(44.dp)) {
+                if (site != null) {
+                    // The site's own view: its posts only, under its name and color.
+                    Row(Modifier.fillMaxWidth().background(parseHexColor(SocialSites.colorHex(site), c.accent)).padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text(site, color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, modifier = Modifier.weight(1f))
+                        Text("${posts.size} posts", color = Color.White.copy(alpha = .85f), fontSize = 12.sp)
+                        Spacer(Modifier.width(10.dp))
+                        Text("All sites", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp,
+                            modifier = Modifier.clip(RoundedCornerShape(50)).background(Color(0x33000000)).clickable { onSite(null) }
+                                .padding(horizontal = 10.dp, vertical = 5.dp))
+                    }
+                }
+                if (siteButtons.size > 1 || site != null) {
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        (listOf<String?>(null) + siteButtons).forEach { option ->
+                            val selected = option == site
+                            val color = option?.let { parseHexColor(SocialSites.colorHex(it), c.accent) } ?: c.accent
+                            Text(option ?: "All", fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                                color = if (selected) Color.White else color,
+                                modifier = Modifier.clip(RoundedCornerShape(50))
+                                    .background(if (selected) color else color.copy(alpha = .12f))
+                                    .clickable { onSite(option) }.padding(horizontal = 12.dp, vertical = 6.dp))
+                        }
+                    }
+                }
+                if (site == null) Row(Modifier.fillMaxWidth().height(44.dp)) {
                     listOf("For you" to 0, "Following" to 1, "Around the web" to 2).forEach { (label, value) ->
                         val selected = feed == value
                         Box(Modifier.weight(1f).fillMaxHeight().clickable { feed = value }, contentAlignment = Alignment.Center) {
@@ -976,7 +1031,13 @@ private fun PostCard(post: SocialPostUi, state: SocialUiState, c: WsColors, acti
                 if (post.originKind == SocialFeedViewModel.ORIGIN_REAL) openUrl(context, post.sourceUrl)
                 else actions.onOpenProfile(post.authorCharacterId)
             }) {
-                PresenceAvatar(post.authorName, post.colorHex, 42.dp, c, if (post.isYou) DiscordStatus.Online else discordStatusFor(post.authorName))
+                PresenceAvatar(post.authorName, post.colorHex, 42.dp, c,
+                    when {
+                        post.isYou -> DiscordStatus.Online
+                        post.originKind == SocialFeedViewModel.ORIGIN_REAL -> null
+                        else -> discordStatusFor(post.authorName)
+                    },
+                    avatarUrl = post.avatarUrl)
             }
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
@@ -1051,7 +1112,14 @@ private fun PostCard(post: SocialPostUi, state: SocialUiState, c: WsColors, acti
                         modifier = Modifier.padding(top = 2.dp),
                     )
                 }
-                SensitiveGate(post, state.safety.warnSensitive, c) { PostMedia(post, c) }
+                SensitiveGate(post, state.safety.warnSensitive, c) {
+                    when {
+                        // Videos play here with full controls; the downloaded still is the poster.
+                        post.videos.isNotEmpty() -> SocialVideoPlayer(post.videos, post.imagePath, post.text, Modifier.padding(top = 8.dp))
+                        post.imagePaths.isNotEmpty() -> PostMedia(post, c)
+                        else -> LinkMedia(post.text)
+                    }
+                }
                 if (post.imagePaths.isEmpty() && post.id in state.loadingMediaIds) {
                     Row(Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(12.dp))
                         .background(c.raised).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1310,7 +1378,7 @@ private fun QuotedPost(post: SocialPostUi, c: WsColors, onClick: () -> Unit) {
         Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).border(1.dp, c.border, RoundedCornerShape(16.dp)).clickable(onClick = onClick).padding(12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            SocialAvatar(post.authorName, post.colorHex, 20.dp)
+            SocialAvatar(post.authorName, post.colorHex, 20.dp, avatarUrl = post.avatarUrl)
             Spacer(Modifier.width(6.dp))
             Text(post.authorName, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = c.text, maxLines = 1)
             if (post.verified) Icon(Icons.Filled.Verified, null, tint = c.accent, modifier = Modifier.size(14.dp))
@@ -1326,7 +1394,7 @@ private fun QuotedPost(post: SocialPostUi, c: WsColors, onClick: () -> Unit) {
 private fun ReplyBubble(reply: SocialPostUi, c: WsColors, actions: WsActions, onReply: () -> Unit) {
     Row {
         Box(Modifier.clip(CircleShape).clickable { actions.onOpenProfile(reply.authorCharacterId) }) {
-            SocialAvatar(reply.authorName, reply.colorHex, 30.dp)
+            SocialAvatar(reply.authorName, reply.colorHex, 30.dp, avatarUrl = reply.avatarUrl)
         }
         Spacer(Modifier.width(6.dp))
         Column(Modifier.weight(1f)) {
@@ -2663,4 +2731,63 @@ private fun SwitchRow(title: String, body: String?, checked: Boolean, c: WsColor
 private fun openUrl(context: android.content.Context, url: String) {
     if (!url.startsWith("https://")) return
     runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))) }
+}
+
+/** A post with no attached media but a link to a picture, a video file or a YouTube video shows it. */
+@Composable
+private fun LinkMedia(text: String) {
+    when (val media = remember(text) { SocialVideo.mediaLinkIn(text) }) {
+        is SocialVideo.LinkMedia.YouTube -> YouTubePlayer(media.id, Modifier.padding(top = 8.dp))
+        is SocialVideo.LinkMedia.Video -> SocialVideoPlayer(listOf("Auto" to media.url), null, text, Modifier.padding(top = 8.dp))
+        is SocialVideo.LinkMedia.Image -> coil3.compose.AsyncImage(
+            model = media.url,
+            contentDescription = text.take(80),
+            contentScale = androidx.compose.ui.layout.ContentScale.FillWidth,
+            modifier = Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)),
+        )
+        null -> Unit
+    }
+}
+
+/**
+ * Long-press Social: every site the timeline can show. Tap a site to show or hide it in the
+ * feed; press and hold one to open its own view.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun SitePickerDialog(
+    present: List<String>,
+    hidden: Set<String>,
+    adultEnabled: Boolean,
+    c: WsColors,
+    onToggle: (String, Boolean) -> Unit,
+    onOpen: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sites = (SocialSites.KNOWN + present).distinct().filter { adultEnabled || it !in SocialSites.ADULT }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Sites in your feed") },
+        text = {
+            Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState())) {
+                Text("Tap to show or hide a site in your feed. Press and hold to open that site.", fontSize = 12.sp, color = c.muted)
+                sites.forEach { site ->
+                    val shown = site !in hidden
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                            .combinedClickable(onClick = { onToggle(site, !shown) }, onLongClick = { onOpen(site) })
+                            .padding(vertical = 8.dp, horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(Modifier.size(12.dp).clip(CircleShape).background(parseHexColor(SocialSites.colorHex(site), c.accent)))
+                        Spacer(Modifier.width(10.dp))
+                        Text(site, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                        if (site !in present) Text("no posts yet", fontSize = 11.sp, color = c.muted)
+                        androidx.compose.material3.Checkbox(shown, { onToggle(site, it) })
+                    }
+                }
+            }
+        },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Done") } },
+    )
 }

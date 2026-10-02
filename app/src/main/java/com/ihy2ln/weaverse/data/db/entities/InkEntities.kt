@@ -425,6 +425,13 @@ data class SocialPostEntity(
     val sourceSite: String = "",
     val sourceTitle: String = "",
     val sourceMediaUrl: String = "",
+    /** The real account's profile picture (https), for posts by real accounts. */
+    val authorAvatarUrl: String = "",
+    /**
+     * Playable video for the post, one "label=url" per line (e.g. "SD=…mp4", "HD=…mp4"), or
+     * "youtube=<video id>" for YouTube's own player.
+     */
+    val sourceVideo: String = "",
 )
 
 /** One member of a Chatting room's cast — seeded with the room, or pulled in later by an @mention. */
