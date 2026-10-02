@@ -3,6 +3,13 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.74 - Rebuild for emulator testing
+
+- Same code as 1.4.73 (no user-CA config, no SignedInSites). Installed on the Dev AVD (S:\Android).
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.4.74.apk`, SHA-256
+  `fe53bae3b69a6a56b4a91a999c2893aed5bc6267fb8604fa397385464f7e1bf8`, debug-key signed
+  (same certificate `f16db508…51fc05`).
+
 ## v1.4.73 - WeaverSocial: more no-account sources
 
 - Anonymous Reddit now answers with a bot-check page from this connection, so no-sign-in
