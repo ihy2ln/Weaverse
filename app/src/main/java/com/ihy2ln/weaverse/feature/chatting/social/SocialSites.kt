@@ -17,7 +17,10 @@ object SocialSites {
 
     /** Which site a post came from: the source's name for real posts, WeaverSocial for the cast's own. */
     fun of(post: SocialPostUi): String = when (post.originKind) {
-        SocialFeedViewModel.ORIGIN_REAL, "web_share" -> post.sourceSite.substringBefore(" · ").trim().ifBlank { "Web" }
+        SocialFeedViewModel.ORIGIN_REAL, "web_share" -> post.sourceSite.substringBefore(" · ").trim()
+            // Posts saved before the site always came first: a byline means the author is the outlet.
+            .let { if (it.startsWith("by ")) post.authorName else it }
+            .ifBlank { "Web" }
         else -> WEAVERSOCIAL
     }
 

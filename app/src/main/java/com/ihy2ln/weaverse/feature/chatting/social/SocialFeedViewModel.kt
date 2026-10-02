@@ -1170,7 +1170,9 @@ class SocialFeedViewModel @Inject constructor(
             contentTags = labels,
             originKind = ORIGIN_REAL,
             sourceUrl = item.url,
-            sourceSite = listOf(item.site, item.credit).filter { it.isNotBlank() && it != item.poster }.distinct().joinToString(" · "),
+            // Always the site first: it names the post's site button.
+            sourceSite = (listOf(item.site) + listOf(item.credit).filter { it.isNotBlank() && it != item.poster && it != item.site })
+                .filter { it.isNotBlank() }.joinToString(" · "),
             authorAvatarUrl = item.avatar.takeIf { it.startsWith("https://") }.orEmpty(),
             sourceVideo = item.videos.filter { (_, url) -> url.isNotBlank() }.joinToString("\n") { (label, url) -> "$label=$url" },
         )
