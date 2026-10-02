@@ -208,6 +208,14 @@ class SocialFeedViewModel @Inject constructor(
     private val realWeb: RealWebFeed,
     private val redditAccount: RedditAccount,
 ) : ViewModel() {
+    /** The social browser's extra sites, one "Name|https://…" (or address) per line. */
+    val browseSites: StateFlow<String> = settings.socialString("browse_sites")
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, "")
+
+    fun setBrowseSites(text: String) {
+        viewModelScope.launch { settings.setSocialString("browse_sites", text) }
+    }
+
     /** Sites the writer hid from the feed (long-press Social). */
     val hiddenSites: StateFlow<Set<String>> = settings.socialSet("hidden_sites")
         .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, emptySet())

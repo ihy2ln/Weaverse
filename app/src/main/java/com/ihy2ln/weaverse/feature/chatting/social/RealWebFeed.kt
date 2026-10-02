@@ -454,7 +454,7 @@ class RealWebFeed @Inject constructor(
             val id = image.str("id") ?: return@mapNotNull null
             val url = image.str("url")?.takeIf { it.startsWith("https://") } ?: return@mapNotNull null
             val user = image.str("username").orEmpty().ifBlank { "Civitai creator" }
-            val prompt = image["meta"].obj().str("prompt").orEmpty().replace(Regex("\s+"), " ").take(220)
+            val prompt = image["meta"].obj().str("prompt").orEmpty().replace(Regex("\\s+"), " ").take(220)
             val mature = adult || (image.str("nsfwLevel") ?: "None") != "None"
             val page = "https://civitai.com/images/$id"
             val isVideo = image.str("type") == "video"

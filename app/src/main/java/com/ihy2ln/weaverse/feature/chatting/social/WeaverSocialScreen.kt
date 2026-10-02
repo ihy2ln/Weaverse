@@ -94,6 +94,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.outlined.Language
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
@@ -197,6 +199,7 @@ private fun rememberWsColors(appearance: AppearanceOverrides, wallpaperVisible: 
 private enum class WsTab(val label: String, val icon: ImageVector, val selected: ImageVector) {
     Home("Home", Icons.Outlined.Home, Icons.Filled.Home),
     Social("Social", Icons.Outlined.Share, Icons.Filled.Public),
+    Browse("Browse", Icons.Outlined.Language, Icons.Filled.Language),
     Servers("Servers", Icons.Outlined.Forum, Icons.Filled.Forum),
     Explore("Explore", Icons.Outlined.Explore, Icons.Filled.Explore),
     Alerts("Alerts", Icons.Outlined.Notifications, Icons.Filled.Notifications),
@@ -245,6 +248,15 @@ fun WeaverSocialScreen(
     // A real site's own view (null = every site), and the long-press site picker.
     var site by rememberSaveable { mutableStateOf<String?>(null) }
     var sitePicker by remember { mutableStateOf(false) }
+    // The social browser: open sites as tabs, and the one showing (null = the Browse hub).
+    var browseTabs by remember { mutableStateOf(listOf<BrowseSite>()) }
+    var browsing by remember { mutableStateOf<BrowseSite?>(null) }
+    val customBrowseSites by viewModel.browseSites.collectAsState()
+    val openSite: (BrowseSite) -> Unit = { picked ->
+        browseTabs = (browseTabs.filterNot { it.url == picked.url } + picked).takeLast(8)
+        browsing = picked
+        tab = WsTab.Browse
+    }
     val hiddenSites by viewModel.hiddenSites.collectAsState()
     var quoteId by rememberSaveable { mutableStateOf<String?>(null) }
     var storyIndex by rememberSaveable { mutableStateOf<Int?>(null) }
@@ -374,6 +386,20 @@ fun WeaverSocialScreen(
                         site = if (tab == WsTab.Social) site else null,
                         onSite = { picked -> site = picked; if (picked != null) tab = WsTab.Social },
                         onAdultOn = viewModel::turnOnAllAdultFeeds,
+                    )
+                    tab == WsTab.Browse -> browsing?.let { open ->
+                        SiteBrowser(open, onClose = {
+                            browseTabs = browseTabs.filterNot { it.url == open.url }
+                            browsing = null
+                        }, onHub = { browsing = null })
+                    } ?: SocialBrowserHub(
+                        adultEnabled = state.safety.adultEnabled,
+                        customSites = customBrowseSites,
+                        onSaveCustomSites = viewModel::setBrowseSites,
+                        tabs = browseTabs,
+                        onOpen = openSite,
+                        onCloseTab = { closed -> browseTabs = browseTabs.filterNot { it.url == closed.url } },
+                        surface = c.surface, text = c.text, muted = c.muted, raised = c.raised,
                     )
                     tab == WsTab.Explore -> Explore(
                         state = state,
