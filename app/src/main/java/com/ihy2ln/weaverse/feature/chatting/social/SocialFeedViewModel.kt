@@ -212,6 +212,7 @@ class SocialFeedViewModel @Inject constructor(
     private val claimedMediaUrls = mutableSetOf<String>()
     private var nextTopicDirection = Random.nextInt(SOCIAL_TOPIC_DIRECTIONS.size)
     private var lastWebPull = 0L
+    private var refreshJob: kotlinx.coroutines.Job? = null
     /** Rotates through followed kinds so each one shows up across refreshes. */
     private var nextCategory = 0
 
@@ -719,7 +720,7 @@ class SocialFeedViewModel @Inject constructor(
     private fun pullWebPosts(count: Int) {
         if (_uiState.value.generating) return
         _uiState.update { it.copy(generating = true) }
-        viewModelScope.launch {
+        refreshJob = viewModelScope.launch {
             try {
                 shareWebPosts(count)
             } finally {
@@ -801,12 +802,15 @@ class SocialFeedViewModel @Inject constructor(
 
     /** Refresh / pull-to-refresh: a few new posts from the cast. */
     fun refreshFeed(count: Int = 4) {
+        // Claimed before launching, so a quick second pull can't start a parallel run.
         if (_uiState.value.generating) return
-        viewModelScope.launch {
+        _uiState.update { it.copy(generating = true) }
+        refreshJob = viewModelScope.launch {
+          try {
             cast = castResolver.allChatContacts()
             if (!ensureReady()) {
                 // No cast or no API key: the followed accounts can still post.
-                if (_uiState.value.webPosts) pullWebPosts((count * 3 / 4).coerceIn(3, 6))
+                if (_uiState.value.webPosts) shareWebPosts((count * 3 / 4).coerceIn(3, 6))
                 return@launch
             }
             val adultAllowed = safety.adultEnabled
@@ -916,8 +920,17 @@ class SocialFeedViewModel @Inject constructor(
             }
             if (planned.isNotEmpty()) attachPlannedMedia(planned)
             if (_uiState.value.webPosts) shareWebPosts((count * 3 / 4).coerceIn(2, 6))
+          } finally {
+            // Also on errors and Stop, or the spinner stays and every later refresh is ignored.
             finish()
+          }
         }
+    }
+
+    /** Stops a refresh in progress; posts already written stay. */
+    fun stopRefresh() {
+        refreshJob?.cancel()
+        refreshJob = null
     }
 
     // ---------------------------------------------------- post-as-prompt media
@@ -1037,7 +1050,12 @@ class SocialFeedViewModel @Inject constructor(
         val items = (fromFollowed.take(count - wideShare) + wide.take(wideShare)).let { chosen ->
             chosen + (fromFollowed + wide).filterNot { it in chosen }.take(count - chosen.size)
         }.take(count).shuffled()
-        if (items.isEmpty()) return
+        if (items.isEmpty()) {
+            _uiState.update {
+                it.copy(notice = "Couldn't reach the sites your timeline follows — check the connection and refresh.")
+            }
+            return
+        }
         val used = mutableSetOf<String>()
         val pairs = items.mapNotNull { item ->
             // Adult posts only go to the adults who follow adult accounts.

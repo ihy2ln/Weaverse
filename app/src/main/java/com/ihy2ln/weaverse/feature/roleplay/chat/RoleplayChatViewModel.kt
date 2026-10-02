@@ -2724,9 +2724,13 @@ class RoleplayChatViewModel @Inject constructor(
                     adventurePlanProgress = if (startupActive) 25 else it.adventurePlanProgress,
                 )
             }
-            // History is already mode-filtered via observeMessages(chatId, displayMode).
+            // History is already mode-filtered via observeMessages(chatId, displayMode). The new
+            // turn goes in as the user message, so it's left out here even if Room has echoed it.
             val history = rawMessages
-                .filter { it.isActiveSwipe && it.displayMode == mode && it.role != ADVENTURE_SCENE_ROLE }
+                .filter {
+                    it.isActiveSwipe && it.displayMode == mode && it.role != ADVENTURE_SCENE_ROLE &&
+                        it.id != userMessage.id
+                }
                 .map { msg ->
                     val role = if (msg.role == "user") "user" else "assistant"
                     role to documentFromJson(msg.contentJson).plainText()
@@ -2776,6 +2780,8 @@ class RoleplayChatViewModel @Inject constructor(
                         } else {
                             emptyList()
                         },
+                        contextTokens = contextLimit,
+                        reserveTokens = maxTokens,
                     ),
                     modelRef = activeModelRef,
                     maxTokens = maxTokens,
@@ -3015,18 +3021,27 @@ class RoleplayChatViewModel @Inject constructor(
             val temperature = difficulty?.temperature?.toDouble() ?: 0.8
             val topicMedia = currentTopicMediaSnapshot()
             _uiState.update { it.copy(isStreaming = true, errorMessage = "") }
-            val history = rawMessages
+            // Only what came before the reply being redone; the player's own turn is the prompt.
+            val earlier = rawMessages
                 .filter {
                     it.isActiveSwipe && it.displayMode == current.displayMode &&
-                        it.id != messageId && it.role != ADVENTURE_SCENE_ROLE
+                        it.swipeGroupId != current.swipeGroupId && it.role != ADVENTURE_SCENE_ROLE &&
+                        it.createdAt < current.createdAt
                 }
+                .sortedBy { it.createdAt }
                 .map { msg ->
                     val role = if (msg.role == "user") "user" else "assistant"
                     role to documentFromJson(msg.contentJson).plainText()
                 }
+            val ownTurn = rawMessages
+                .filter { it.swipeGroupId == current.swipeGroupId && it.role == "user" && it.isActiveSwipe }
+                .maxByOrNull { it.createdAt }
+                ?.let { documentFromJson(it.contentJson).plainText() }
+                ?.takeIf { it.isNotBlank() }
+            val history = earlier
             runCatching {
                 aiGeneration.complete(
-                    userMessage = "Continue the roleplay from here. Write the character's next beat.",
+                    userMessage = ownTurn ?: "Continue the roleplay from here. Write the character's next beat.",
                     assembled = generation.assemble(
                         character = boundCharacter,
                         persona = boundPersona,
@@ -3036,6 +3051,8 @@ class RoleplayChatViewModel @Inject constructor(
                         extraSystem = sessionSystemBlocks(current.displayMode) +
                             listOfNotNull(topicMedia.promptDirective()) +
                             PromptWordLimit.instruction(state.minimumOutputWords, words),
+                        contextTokens = contextLimit,
+                        reserveTokens = (words * 1.7 + 192).toInt().coerceIn(192, 8192),
                     ),
                     modelRef = activeModelRef,
                     maxTokens = (words * 1.7 + 192).toInt().coerceIn(192, 8192),

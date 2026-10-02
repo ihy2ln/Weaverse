@@ -853,10 +853,10 @@ class DiscordChatViewModel @Inject constructor(
             // retry clears the whole trailing run, not just the last row.
             val trailingReplies = messages.drop(lastUserIndex + 1).filter { it.role == "char" }
             if (trailingReplies.isEmpty()) return@launch
-            trailingReplies.forEach { db.roleplayDao().deleteMessage(it.id) }
             _uiState.update { it.copy(isStreaming = true, streamingText = "", errorMessage = "") }
             val userText = documentFromJson(lastUser.contentJson).plainText().trim()
-            generateReply(room, userText, lastUser.createdAt, userMessageAlreadyStored = true)
+            // The old replies stay until the new ones are saved, so a failed retry loses nothing.
+            generateReply(room, userText, lastUser.createdAt, userMessageAlreadyStored = true, replacing = trailingReplies)
         }
     }
 
@@ -886,14 +886,18 @@ class DiscordChatViewModel @Inject constructor(
         userText: String,
         baseTimestamp: Long,
         userMessageAlreadyStored: Boolean,
+        replacing: List<RpMessageEntity> = emptyList(),
     ) {
         val state = _uiState.value
         val now = baseTimestamp
         val members = castResolver.membersOf(room.id)
         val mentioned = resolveMentions(userText, room).map { it.character }
         val roomCharacter = room.characterId?.let { charactersById[it] }
+        val replacedIds = replacing.map { it.id }.toSet()
         val history = db.roleplayDao().getMessagesForMode(room.id, "messenger")
-            .filter { it.isActiveSwipe && it.role != "system" }
+            .filter { it.isActiveSwipe && it.role != "system" && it.id !in replacedIds }
+            // The stored turn is sent as the user message below; listing it here too sent it twice.
+            .filterNot { userMessageAlreadyStored && it.role == "user" && it.createdAt == baseTimestamp }
             .takeLast(HISTORY_LIMIT)
             .map { msg ->
                 val role = if (msg.role == "user") "user" else "assistant"
@@ -1069,6 +1073,7 @@ class DiscordChatViewModel @Inject constructor(
                 ),
             )
         }
+        replacing.forEach { db.roleplayDao().deleteMessage(it.id) }
         db.roleplayDao().upsertChat(room.copy(updatedAt = System.currentTimeMillis()))
         _uiState.update {
             it.copy(isStreaming = false, streamingText = "", lastUsage = usageText)

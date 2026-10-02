@@ -218,7 +218,8 @@ class BookRepository @Inject constructor(
      * Removes a book and everything that belongs only to it — manuscript, snapshots, codex,
      * notes and workshop chats — all or nothing. Roleplay chats that mention the book stay.
      */
-    suspend fun deleteBook(bookId: String) = db.withTransaction {
+    suspend fun deleteBook(bookId: String): DeletedBook? = db.withTransaction {
+        val archive = archiveBook(bookId)
         db.manuscriptDao().deleteRevisionsForBook(bookId)
         db.manuscriptDao().deleteCodexLinksForBook(bookId)
         db.manuscriptDao().deleteScenesForBook(bookId)
@@ -231,6 +232,45 @@ class BookRepository @Inject constructor(
         db.workshopChatDao().deleteMessagesForScope(bookId)
         db.workshopChatDao().deleteThreadsForScope(bookId)
         db.bookDao().deleteById(bookId)
+        archive
+    }
+
+    /** Everything [deleteBook] removes, kept in memory so the delete can be undone. */
+    private suspend fun archiveBook(bookId: String): DeletedBook? {
+        val book = db.bookDao().getById(bookId) ?: return null
+        val acts = db.manuscriptDao().getActs(bookId)
+        val chapters = acts.flatMap { db.manuscriptDao().getChapters(it.id) }
+        val threads = db.workshopChatDao().getThreads(bookId)
+        return DeletedBook(
+            book = book,
+            acts = acts,
+            chapters = chapters,
+            scenes = chapters.flatMap { db.manuscriptDao().getScenes(it.id) },
+            revisions = db.manuscriptDao().getRevisionsForBook(bookId),
+            codexLinks = db.manuscriptDao().getCodexLinksForBook(bookId),
+            categories = db.codexDao().getCategories(bookId),
+            entries = db.codexDao().getEntries(bookId),
+            lore = db.codexDao().getLoreForScope(bookId),
+            snippets = db.snippetDao().get(bookId),
+            threads = threads,
+            messages = threads.flatMap { db.workshopChatDao().getMessages(it.id) },
+        )
+    }
+
+    /** Puts a deleted book back exactly as it was (Undo). */
+    suspend fun restoreBook(deleted: DeletedBook) = db.withTransaction {
+        db.bookDao().upsert(deleted.book)
+        deleted.acts.forEach { db.manuscriptDao().upsertAct(it) }
+        deleted.chapters.forEach { db.manuscriptDao().upsertChapter(it) }
+        deleted.scenes.forEach { db.manuscriptDao().upsertScene(it) }
+        deleted.revisions.forEach { db.manuscriptDao().upsertRevision(it) }
+        db.manuscriptDao().upsertCodexLinks(deleted.codexLinks)
+        deleted.categories.forEach { db.codexDao().upsertCategory(it) }
+        deleted.entries.forEach { db.codexDao().upsertEntry(it) }
+        deleted.lore.forEach { db.codexDao().upsertLore(it) }
+        deleted.snippets.forEach { db.snippetDao().upsert(it) }
+        deleted.threads.forEach { db.workshopChatDao().upsertThread(it) }
+        deleted.messages.forEach { db.workshopChatDao().upsertMessage(it) }
     }
 
     suspend fun firstSceneId(bookId: String): String? {
@@ -708,3 +748,19 @@ class PromptRepository @Inject constructor(
         return entity
     }
 }
+
+/** A deleted book and everything that belonged to it, for Undo. */
+data class DeletedBook(
+    val book: BookEntity,
+    val acts: List<ActEntity>,
+    val chapters: List<ChapterEntity>,
+    val scenes: List<SceneEntity>,
+    val revisions: List<com.ihy2ln.weaverse.data.db.entities.SceneRevisionEntity>,
+    val codexLinks: List<com.ihy2ln.weaverse.data.db.entities.SceneCodexLinkEntity>,
+    val categories: List<CodexCategoryEntity>,
+    val entries: List<CodexEntryEntity>,
+    val lore: List<com.ihy2ln.weaverse.data.db.entities.CodexEntryLoreEntity>,
+    val snippets: List<com.ihy2ln.weaverse.data.db.entities.SnippetEntity>,
+    val threads: List<com.ihy2ln.weaverse.data.db.entities.ChatThreadEntity>,
+    val messages: List<com.ihy2ln.weaverse.data.db.entities.ChatMessageEntity>,
+)

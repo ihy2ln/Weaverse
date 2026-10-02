@@ -96,6 +96,7 @@ class BookBrowserViewModel @Inject constructor(
     private val media: MediaRepository,
     private val repository: BookRepository,
     private val history: HomeHistory,
+    private val workspaceHistory: com.ihy2ln.weaverse.feature.shell.WorkspaceHistory,
 ) : ViewModel() {
     val status = MutableStateFlow("")
     private val rows = combine(db.bookDao().observeAll(), db.bookBrowsingDao().observeAll(), media.observeAll(),
@@ -144,7 +145,17 @@ class BookBrowserViewModel @Inject constructor(
         runCatching { repository.duplicateBook(id) }.onSuccess { status.value = "Book copied" }.onFailure { status.value = "Copy failed: ${it.message}" }
     } }
     fun delete(id: String) { viewModelScope.launch {
-        repository.deleteBook(id); db.bookBrowsingDao().delete(id)
-        if (settings.preferences.first().selectedBookId == id) settings.setSelectedBookId("")
+        val wasSelected = settings.preferences.first().selectedBookId == id
+        val deleted = repository.deleteBook(id) ?: return@launch
+        db.bookBrowsingDao().delete(id)
+        if (wasSelected) settings.setSelectedBookId("")
+        workspaceHistory.record(
+            undo = {
+                repository.restoreBook(deleted)
+                if (wasSelected) settings.setSelectedBookId(id)
+            },
+            redo = { repository.deleteBook(id) },
+        )
+        status.value = "Book deleted — Undo brings it back"
     } }
 }

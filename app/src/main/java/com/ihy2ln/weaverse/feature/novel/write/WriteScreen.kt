@@ -343,7 +343,7 @@ fun WriteScreen(
                         InkTextButton("Find / replace", closeAction(viewModel::toggleFindReplace))
                         InkTextButton("Revision history", closeAction(viewModel::toggleHistory))
                         InkTextButton("Save revision snapshot", closeAction(viewModel::snapshotNow))
-                        InkTextButton("Summarize scene (runs AI)", closeAction(viewModel::summarizeScene))
+                        InkTextButton(if (state.isSummarizing) "Stop summarizing" else "Summarize scene (runs AI)", closeAction(viewModel::summarizeScene))
                         Text(state.contextMeter?.label.orEmpty(), style = MaterialTheme.typography.bodySmall)
                     }
                 }

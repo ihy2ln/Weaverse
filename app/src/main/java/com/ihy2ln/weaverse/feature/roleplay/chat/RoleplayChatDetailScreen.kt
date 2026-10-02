@@ -735,7 +735,8 @@ fun RoleplayChatDetailScreen(
                                         EditTextAction.Cut -> {
                                             if (message.text.isNotBlank()) {
                                                 clipboard.setText(AnnotatedString(message.text))
-                                                viewModel.editMessage(message.id, "")
+                                                // Cut removes the message (it's on the clipboard), not just its words.
+                                                viewModel.deleteMessage(message.id)
                                             }
                                         }
                                         EditTextAction.Paste -> {
@@ -759,15 +760,20 @@ fun RoleplayChatDetailScreen(
                                 },
                             )
                         }
-                        if (message.role == "char" && message.swipeCount > 1) {
+                        // Any reply can be regenerated, not only ones that already have swipes.
+                        if (message.role == "char" && (message.swipeCount > 1 || !state.isStreaming)) {
                             Row(modifier = Modifier.padding(start = MessengerGutterWidth)) {
-                                InkTextButton(label = "◀", onClick = { viewModel.swipe(message.id, -1) })
-                                Text(
-                                    "${message.swipeIndex + 1}/${message.swipeCount}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                )
-                                InkTextButton(label = "▶", onClick = { viewModel.swipe(message.id, 1) })
-                                InkTextButton(label = "Regen", onClick = { viewModel.regenerate(message.id) })
+                                if (message.swipeCount > 1) {
+                                    InkTextButton(label = "◀", onClick = { viewModel.swipe(message.id, -1) })
+                                    Text(
+                                        "${message.swipeIndex + 1}/${message.swipeCount}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                    )
+                                    InkTextButton(label = "▶", onClick = { viewModel.swipe(message.id, 1) })
+                                }
+                                if (!state.isStreaming) {
+                                    InkTextButton(label = "Regen", onClick = { viewModel.regenerate(message.id) })
+                                }
                             }
                         }
                     }

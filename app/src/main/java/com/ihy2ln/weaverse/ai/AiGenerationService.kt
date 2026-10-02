@@ -50,18 +50,22 @@ class AiGenerationService @Inject constructor(
         WeaverseAiLog.i("stream via ${provider.name} model=$model images=${imageAttachments.size}")
         return flow {
             var attempt = 0
+            var wroteText = false
             while (true) {
                 try {
                     provider.stream(request).collect { chunk ->
                         if (chunk is AIChunk.Usage) {
                             settings.recordUsage(chunk.promptTokens, chunk.completionTokens, chunk.cost)
                         }
+                        if (chunk is AIChunk.Delta) wroteText = true
                         emit(chunk)
                     }
                     return@flow
-                } catch (e: AIError.RateLimited) {
-                    if (attempt >= AiRetry.MAX_ATTEMPTS) throw e
-                    val wait = AiRetry.waitSeconds(e.retryAfterSeconds, attempt)
+                } catch (e: AIError) {
+                    // Once text has streamed, starting over would repeat it on screen; only
+                    // failures before the first word are retried.
+                    if (!AiRetry.isRetryable(e) || wroteText || attempt >= AiRetry.MAX_ATTEMPTS) throw e
+                    val wait = AiRetry.waitSecondsFor(e, attempt)
                     var left = wait.toInt()
                     while (left > 0) {
                         emit(AIChunk.RetryWait(left))
@@ -102,9 +106,9 @@ class AiGenerationService @Inject constructor(
                 val result = provider.complete(request)
                 settings.recordUsage(result.promptTokens, result.completionTokens, result.cost)
                 return result
-            } catch (e: AIError.RateLimited) {
-                if (attempt >= AiRetry.MAX_ATTEMPTS) throw e
-                delay(AiRetry.waitSeconds(e.retryAfterSeconds, attempt) * 1000)
+            } catch (e: AIError) {
+                if (!AiRetry.isRetryable(e) || attempt >= AiRetry.MAX_ATTEMPTS) throw e
+                delay(AiRetry.waitSecondsFor(e, attempt) * 1000)
                 attempt++
             }
         }

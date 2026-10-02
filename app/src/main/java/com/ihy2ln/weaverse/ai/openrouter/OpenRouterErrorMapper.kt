@@ -10,7 +10,8 @@ object OpenRouterErrorMapper {
             402 -> AIError.OutOfCredits
             429 -> AIError.RateLimited(retryAfterSeconds)
             400 -> AIError.BadRequest(extractMessage(body) ?: body.ifBlank { "Bad request" })
-            502, 503 -> AIError.ProviderDown
+            // 529 is Anthropic's "overloaded"; all of these are worth another try.
+            500, 502, 503, 504, 529 -> AIError.ProviderDown
             in 200..299 -> AIError.EmbeddedError(extractMessage(body) ?: "Unknown API error")
             else -> AIError.HttpFailure(statusCode, body.ifBlank { "HTTP $statusCode" })
         }

@@ -9,7 +9,9 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -24,36 +26,43 @@ class ReviewViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            settings.preferences.collect { prefs ->
-                val bookId = prefs.selectedBookId
-                val chapterId = bookRepository.primaryChapterId(bookId) ?: return@collect
-                val issues = mutableListOf<ReviewIssue>()
-                val scenes = db.manuscriptDao().observeScenes(chapterId).first()
-                scenes.forEach { scene ->
-                    if (scene.summary.isBlank()) {
-                        issues += ReviewIssue("Empty summary", "${scene.title} has no summary.")
-                    }
-                    if (scene.wordCount == 0) {
-                        issues += ReviewIssue("Empty scene", "${scene.title} has no words.")
-                    }
-                }
-                val povs = scenes.map { it.pov }.distinct().filter { it.isNotBlank() }
-                if (povs.size > 1) {
-                    issues += ReviewIssue("POV drift", "Scenes use different POV: ${povs.joinToString()}")
-                }
-                val entries = db.codexDao().observeEntries(bookId).first()
-                scenes.forEach { scene ->
-                    entries.forEach { entry ->
-                        if (scene.plainText.contains(entry.name, ignoreCase = true)) {
-                            issues += ReviewIssue(
-                                "Codex mention",
-                                "${entry.name} appears in ${scene.title}.",
-                            )
-                        }
-                    }
-                }
-                _issues.value = issues.distinctBy { it.title + it.detail }
+            // Only a different book needs a new review, not every settings change.
+            settings.preferences.map { it.selectedBookId }.distinctUntilChanged().collect { bookId ->
+                _issues.value = review(bookId)
             }
         }
+    }
+
+    /** Checks every chapter of the book, in reading order. */
+    private suspend fun review(bookId: String): List<ReviewIssue> {
+        val dao = db.manuscriptDao()
+        val issues = mutableListOf<ReviewIssue>()
+        val allText = StringBuilder()
+        dao.getActs(bookId).forEach { act ->
+            dao.getChapters(act.id).forEach { chapter ->
+                val scenes = dao.getScenes(chapter.id)
+                scenes.forEach { scene ->
+                    val where = listOf(chapter.title, scene.title).filter { it.isNotBlank() }.joinToString(" · ")
+                    if (scene.wordCount == 0) {
+                        issues += ReviewIssue("Empty scene", "$where has no words.")
+                    } else if (scene.summary.isBlank()) {
+                        issues += ReviewIssue("Empty summary", "$where has no summary.")
+                    }
+                    allText.append(scene.plainText).append(' ')
+                }
+                val povs = scenes.map { it.pov.trim() }.filter { it.isNotBlank() }.distinct()
+                if (povs.size > 1) {
+                    issues += ReviewIssue("POV drift", "${chapter.title.ifBlank { "A chapter" }} switches POV: ${povs.joinToString()}")
+                }
+            }
+        }
+        // Codex entries the manuscript never mentions are usually stale or misnamed.
+        val text = allText.toString()
+        if (text.isNotBlank()) {
+            db.codexDao().observeEntries(bookId).first()
+                .filter { it.name.isNotBlank() && !text.contains(it.name, ignoreCase = true) }
+                .forEach { issues += ReviewIssue("Unused codex entry", "${it.name} never appears in the manuscript.") }
+        }
+        return issues.distinctBy { it.title + it.detail }
     }
 }

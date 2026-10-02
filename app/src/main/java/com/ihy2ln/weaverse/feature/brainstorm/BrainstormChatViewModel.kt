@@ -396,12 +396,17 @@ class BrainstormChatViewModel @Inject constructor(
 
     fun attachMedia(uris: List<android.net.Uri>) {
         viewModelScope.launch {
-            pendingMedia = runCatching { mediaRepository.importFromUris(uris) }.getOrDefault(emptyList())
+            val result = runCatching { mediaRepository.importFromUris(uris) }
+            pendingMedia = result.getOrDefault(emptyList())
                 .filter { it.type == "image" }.take(4)
             _uiState.update { it.copy(
                 hasPendingMedia = pendingMedia.isNotEmpty(),
                 pendingMediaPaths = pendingMedia.map { item -> mediaRepository.resolveFile(item).absolutePath },
-                errorMessage = if (pendingMedia.isEmpty()) "Choose an image to attach." else "",
+                errorMessage = when {
+                    result.isFailure -> "Couldn't attach that: ${result.exceptionOrNull()?.message ?: "unsupported file"}"
+                    pendingMedia.isEmpty() -> "Choose an image to attach."
+                    else -> ""
+                },
             ) }
         }
     }

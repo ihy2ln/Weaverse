@@ -3,6 +3,39 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.70 - Audit Tier 2: correctness and UX
+
+- Global search covers every chapter (was the first chapter only), the app-wide codex and
+  the shared notes board, and shows the words around the match (`SearchText.excerpt`).
+- Review checks every chapter; POV drift is per chapter; the "every codex name is an
+  issue" noise is replaced by "Unused codex entry"; reruns only when the book changes.
+- Roleplay: history is trimmed to the model's context minus the reply budget
+  (`RoleplayGeneration.fitHistory`, newest 4 always kept, the model is told older turns
+  were left out). No rolling summaries yet. Regenerate now uses only earlier messages and
+  the player's own turn as the prompt; the new turn is no longer sent twice.
+- WeaverSocial chats: the stored user message is no longer sent twice; Retry keeps the old
+  replies until the new ones are saved.
+- WeaverSocial feed: refresh is claimed before launch (no double runs), always finishes
+  (no stuck spinner), has a Stop button; reaching the end shows "Load more posts" instead
+  of starting a paid generation; a refresh that finds nothing says so.
+- AI: 5xx / 529 overloaded / dropped connections are retried like rate limits, but only
+  before the first streamed word. Anthropic streams report input tokens and surface SSE
+  `error` events; default max_tokens 4096 (was 1024).
+- `WeaverseAiLog.i` (prompts, replies) only logs in debug builds; errors truncated in release.
+- Roleplay messages: Regen on every reply (not only ones with swipes); Cut deletes the
+  message instead of leaving an empty one.
+- Book delete is undoable (Undo restores manuscript, snapshots, codex, notes, workshop
+  chats) from the library, the shelf and the book browser. Summarize can be stopped and
+  its overwrite undone.
+- Startup steps run independently (one failure no longer skips backup scheduling or
+  crashes launch). SecureKeyStore resets an unreadable keystore instead of crashing, and
+  falls back to in-memory keys.
+- Attachment import failures in Notes, Workshop and Brainstorm now show a message.
+- 618 unit tests pass (AuditTier2Test added). Not verified on device.
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.4.70.apk`, SHA-256
+  `dd98fd9a082ef4ef081e008b120646eff5341d13e883cf129422f25fff6881b6`, debug-key signed
+  (same certificate `f16db508…51fc05`).
+
 ## v1.4.69 - Audit Tier 1: security, data safety, broken flows
 
 From the app-wide audit (plan: Tier 1 of 4; Tiers 2-4 still open).

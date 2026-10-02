@@ -85,14 +85,28 @@ class WeaverseApp : Application(), Configuration.Provider {
         })
         crashLog.install()
         appScope.launch {
-            seeder.seedIfEmpty()
-            sampleBookImporter.importBundledIsekaiGachaIfMissing()
-            syncCoordinator.suggestedWebUrl()
-            runCatching { dailyCharacterGenerator.generateIfDue() }
-            runCatching { backupManager.maybeAutoBackup() }
-            if (settings.preferences.first().autoBackupEnabled) {
-                AutoBackupScheduler.ensure(this@WeaverseApp)
+            // Each step stands alone: one failing (a bad seed, a broken sample book) must not
+            // skip the rest — least of all backup scheduling — or crash the app at launch.
+            startupStep("seed") { seeder.seedIfEmpty() }
+            startupStep("sample book") { sampleBookImporter.importBundledIsekaiGachaIfMissing() }
+            startupStep("sync url") { syncCoordinator.suggestedWebUrl() }
+            startupStep("daily character") { dailyCharacterGenerator.generateIfDue() }
+            startupStep("auto-backup") { backupManager.maybeAutoBackup() }
+            startupStep("backup schedule") {
+                if (settings.preferences.first().autoBackupEnabled) {
+                    AutoBackupScheduler.ensure(this@WeaverseApp)
+                }
             }
+        }
+    }
+
+    private suspend fun startupStep(name: String, block: suspend () -> Unit) {
+        try {
+            block()
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            android.util.Log.e("Weaverse", "Startup step '$name' failed", e)
         }
     }
 

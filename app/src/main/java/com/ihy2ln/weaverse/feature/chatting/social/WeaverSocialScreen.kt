@@ -359,6 +359,7 @@ fun WeaverSocialScreen(
                         onStory = { storyIndex = it },
                         onRefresh = { viewModel.refreshFeed() },
                         onLoadMore = { viewModel.refreshFeed(6) },
+                        onStop = viewModel::stopRefresh,
                         onRoom = openRoom,
                         onSearch = { tab = WsTab.Explore },
                         onOpenAlerts = { tab = WsTab.Alerts },
@@ -669,6 +670,7 @@ private fun HomeFeed(
     onStory: (Int) -> Unit,
     onRefresh: () -> Unit,
     onLoadMore: () -> Unit,
+    onStop: () -> Unit,
     onRoom: (DiscordRoomUi) -> Unit,
     onSearch: () -> Unit,
     onOpenAlerts: () -> Unit,
@@ -683,20 +685,9 @@ private fun HomeFeed(
         2 -> state.posts.filter { it.originKind == "web_share" }
         else -> state.posts
     }
+    // New posts cost an AI generation, so reaching the end shows a button instead of
+    // starting one on its own.
     val listState = rememberLazyListState()
-    var requestedAtPostCount by remember { mutableIntStateOf(-1) }
-    LaunchedEffect(listState, posts.size, state.generating) {
-        snapshotFlow {
-            val layout = listState.layoutInfo
-            layout.totalItemsCount > 0 &&
-                (layout.visibleItemsInfo.lastOrNull()?.index ?: 0) >= layout.totalItemsCount - 3
-        }.distinctUntilChanged().collect { nearEnd ->
-            if (nearEnd && posts.isNotEmpty() && !state.generating && requestedAtPostCount != posts.size) {
-                requestedAtPostCount = posts.size
-                onLoadMore()
-            }
-        }
-    }
     @OptIn(ExperimentalMaterial3Api::class)
     PullToRefreshBox(
         isRefreshing = state.generating,
@@ -884,8 +875,19 @@ private fun HomeFeed(
                     CircularProgressIndicator(Modifier.size(18.dp), color = c.accent, strokeWidth = 2.dp)
                     Spacer(Modifier.width(8.dp))
                     Text(state.status, color = c.muted, fontSize = 14.sp)
+                    Spacer(Modifier.width(12.dp))
+                    Text("Stop", color = c.accent, fontWeight = FontWeight.Bold, fontSize = 14.sp,
+                        modifier = Modifier.clip(RoundedCornerShape(50)).clickable(onClick = onStop).padding(horizontal = 8.dp, vertical = 4.dp))
                 }
                 Hairline(c)
+            }
+        } else if (posts.isNotEmpty()) {
+            item(key = "load-more") {
+                Box(Modifier.fillMaxWidth().padding(14.dp), contentAlignment = Alignment.Center) {
+                    Text("Load more posts", color = c.accent, fontWeight = FontWeight.Bold, fontSize = 15.sp,
+                        modifier = Modifier.clip(RoundedCornerShape(50)).background(c.raised).clickable(onClick = onLoadMore)
+                            .padding(horizontal = 18.dp, vertical = 9.dp))
+                }
             }
         }
     }

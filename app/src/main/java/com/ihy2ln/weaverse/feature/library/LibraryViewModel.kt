@@ -204,10 +204,17 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch {
             val wasSelected = _uiState.value.selectedBookId == bookId
             val next = _uiState.value.books.firstOrNull { it.id != bookId }?.id.orEmpty()
-            bookRepository.deleteBook(bookId)
+            val deleted = bookRepository.deleteBook(bookId) ?: return@launch
             if (wasSelected) {
-                settings.setSelectedBookId(next.ifBlank { "book-adams-haven-1" })
+                settings.setSelectedBookId(next)
             }
+            workspaceHistory.record(
+                undo = {
+                    bookRepository.restoreBook(deleted)
+                    if (wasSelected) settings.setSelectedBookId(bookId)
+                },
+                redo = { bookRepository.deleteBook(bookId) },
+            )
         }
     }
 

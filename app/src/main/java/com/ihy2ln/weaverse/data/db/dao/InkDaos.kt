@@ -145,6 +145,21 @@ interface ManuscriptDao {
     suspend fun deleteRevisionsForBook(bookId: String)
 
     @Query(
+        "SELECT * FROM scene_revisions WHERE sceneId IN (SELECT s.id FROM scenes s " +
+            "JOIN chapters c ON c.id = s.chapterId JOIN acts a ON a.id = c.actId WHERE a.bookId = :bookId)",
+    )
+    suspend fun getRevisionsForBook(bookId: String): List<SceneRevisionEntity>
+
+    @Query(
+        "SELECT * FROM scene_codex_links WHERE sceneId IN (SELECT s.id FROM scenes s " +
+            "JOIN chapters c ON c.id = s.chapterId JOIN acts a ON a.id = c.actId WHERE a.bookId = :bookId)",
+    )
+    suspend fun getCodexLinksForBook(bookId: String): List<com.ihy2ln.weaverse.data.db.entities.SceneCodexLinkEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertCodexLinks(links: List<com.ihy2ln.weaverse.data.db.entities.SceneCodexLinkEntity>)
+
+    @Query(
         "DELETE FROM scene_codex_links WHERE sceneId IN (SELECT s.id FROM scenes s " +
             "JOIN chapters c ON c.id = s.chapterId JOIN acts a ON a.id = c.actId WHERE a.bookId = :bookId)",
     )
@@ -247,6 +262,9 @@ interface CodexDao {
 
     @Query("DELETE FROM codex_entries_lore WHERE entryId = :entryId")
     suspend fun deleteLore(entryId: String)
+
+    @Query("SELECT * FROM codex_entries_lore WHERE entryId IN (SELECT id FROM codex_entries WHERE scopeId = :scopeId)")
+    suspend fun getLoreForScope(scopeId: String): List<CodexEntryLoreEntity>
 
     @Query("DELETE FROM codex_entries_lore WHERE entryId IN (SELECT id FROM codex_entries WHERE scopeId = :scopeId)")
     suspend fun deleteLoreForScope(scopeId: String)

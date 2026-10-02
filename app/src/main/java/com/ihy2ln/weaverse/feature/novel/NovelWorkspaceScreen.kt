@@ -78,7 +78,7 @@ fun NovelWorkspaceScreen(title: String, initialSceneId: String, initialDestinati
                         DropdownMenuItem(text = { Text("Revision history") }, onClick = { tab = "Write"; menu = false; writeModel.toggleHistory() })
                         DropdownMenuItem(text = { Text("Save revision snapshot") }, onClick = { menu = false; writeModel.snapshotNow() })
                         DropdownMenuItem(text = { Text("Memory, Author’s Note & style") }, onClick = { menu = false; guidance = true })
-                        DropdownMenuItem(text = { Text("Summarize scene (runs AI)") }, onClick = { menu = false; writeModel.summarizeScene() })
+                        DropdownMenuItem(text = { Text(if (writeModel.uiState.collectAsState().value.isSummarizing) "Stop summarizing" else "Summarize scene (runs AI)") }, onClick = { menu = false; writeModel.summarizeScene() })
                         listOf("Read", "Review").forEach { target -> DropdownMenuItem(text = { Text(target) }, onClick = { tab = target; menu = false }) }
                         DropdownMenuItem(text = { Text("AI & app settings") }, onClick = { menu = false; onSettings() })
                         DropdownMenuItem(text = { Text("Export / import") }, onClick = { menu = false; onExport() })

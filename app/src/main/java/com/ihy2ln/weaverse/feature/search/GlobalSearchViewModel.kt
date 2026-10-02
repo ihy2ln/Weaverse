@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ihy2ln.weaverse.data.db.WeaverseDatabase
 import com.ihy2ln.weaverse.data.repo.BookRepository
+import com.ihy2ln.weaverse.data.repo.CodexScopes
 import com.ihy2ln.weaverse.data.settings.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -56,26 +57,34 @@ class GlobalSearchViewModel @Inject constructor(
                 return@launch
             }
             val bookId = settings.preferences.first().selectedBookId
-            val chapterId = bookRepository.primaryChapterId(bookId)
             val q = query.lowercase()
             val results = mutableListOf<SearchResult>()
-            if (chapterId != null) {
-                db.manuscriptDao().observeScenes(chapterId).first().forEach { scene ->
-                    if (scene.title.lowercase().contains(q) || scene.plainText.lowercase().contains(q)) {
-                        results += SearchResult(scene.id, SearchResultType.Scene, scene.title, scene.plainText.take(120))
+            // Every chapter of the book, in reading order.
+            db.manuscriptDao().getReaderScenes(bookId).forEach { scene ->
+                if (scene.title.lowercase().contains(q) || scene.plainText.lowercase().contains(q)) {
+                    results += SearchResult(
+                        scene.id, SearchResultType.Scene,
+                        listOf(scene.chapterTitle, scene.title).filter { it.isNotBlank() }.joinToString(" · "),
+                        SearchText.excerpt(scene.plainText, query),
+                    )
+                }
+            }
+            // The book's own codex plus the app-wide one.
+            (db.codexDao().observeEntries(bookId).first() + db.codexDao().observeEntries(CodexScopes.ID).first())
+                .distinctBy { it.id }
+                .forEach { entry ->
+                    if (entry.name.lowercase().contains(q) || entry.plainText.lowercase().contains(q)) {
+                        results += SearchResult(entry.id, SearchResultType.Codex, entry.name, SearchText.excerpt(entry.plainText, query))
                     }
                 }
-            }
-            db.codexDao().observeEntries(bookId).first().forEach { entry ->
-                if (entry.name.lowercase().contains(q) || entry.plainText.lowercase().contains(q)) {
-                    results += SearchResult(entry.id, SearchResultType.Codex, entry.name, entry.plainText.take(120))
+            // Book snippets and the shared notes board.
+            (db.snippetDao().get(bookId) + db.snippetDao().get(CodexScopes.ID))
+                .distinctBy { it.id }
+                .forEach { snippet ->
+                    if (snippet.title.lowercase().contains(q) || snippet.body.lowercase().contains(q)) {
+                        results += SearchResult(snippet.id, SearchResultType.Snippet, snippet.title, SearchText.excerpt(snippet.body, query))
+                    }
                 }
-            }
-            db.snippetDao().observe(bookId).first().forEach { snippet ->
-                if (snippet.title.lowercase().contains(q) || snippet.body.lowercase().contains(q)) {
-                    results += SearchResult(snippet.id, SearchResultType.Snippet, snippet.title, snippet.body.take(120))
-                }
-            }
             db.workshopChatDao().observeThreads(bookId).first().forEach { thread ->
                 if (thread.name.lowercase().contains(q)) {
                     results += SearchResult(thread.id, SearchResultType.WorkshopChat, thread.name, "Workshop thread")
@@ -88,5 +97,17 @@ class GlobalSearchViewModel @Inject constructor(
             }
             _uiState.update { it.copy(results = results) }
         }
+    }
+}
+
+/** Search-result snippets: the words around the first match, not just the opening line. */
+object SearchText {
+    fun excerpt(text: String, query: String, width: Int = 120): String {
+        val flat = text.replace(Regex("\\s+"), " ").trim()
+        val at = flat.indexOf(query.trim(), ignoreCase = true)
+        if (at < 0 || flat.length <= width) return flat.take(width)
+        val start = (at - width / 3).coerceAtLeast(0)
+        val end = (start + width).coerceAtMost(flat.length)
+        return (if (start > 0) "…" else "") + flat.substring(start, end).trim() + if (end < flat.length) "…" else ""
     }
 }

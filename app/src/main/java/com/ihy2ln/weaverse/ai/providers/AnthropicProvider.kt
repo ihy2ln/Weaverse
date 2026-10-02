@@ -66,6 +66,7 @@ class AnthropicProvider @Inject constructor(
                         response.header("Retry-After")?.toLongOrNull(),
                     )
                 }
+                var inputTokens = 0
                 BufferedReader(response.body!!.byteStream().reader()).use { reader ->
                     while (true) {
                         currentCoroutineContext().ensureActive()
@@ -79,6 +80,18 @@ class AnthropicProvider @Inject constructor(
                         }
                         val obj = runCatching { json.parseToJsonElement(payload).jsonObject }.getOrNull() ?: continue
                         when (obj["type"]?.jsonPrimitive?.contentOrNull) {
+                            "message_start" -> {
+                                inputTokens = obj["message"]?.jsonObject?.get("usage")?.jsonObject
+                                    ?.get("input_tokens")?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0
+                            }
+                            // A stream can fail partway (e.g. overloaded); say so instead of ending quietly.
+                            "error" -> {
+                                val error = obj["error"]?.jsonObject
+                                val kind = error?.get("type")?.jsonPrimitive?.contentOrNull.orEmpty()
+                                val message = error?.get("message")?.jsonPrimitive?.contentOrNull ?: "Anthropic stream error"
+                                throw if (kind == "overloaded_error" || kind == "api_error") AIError.ProviderDown
+                                else AIError.EmbeddedError(message)
+                            }
                             "content_block_delta" -> {
                                 val text = obj["delta"]?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull
                                 if (!text.isNullOrEmpty()) emit(AIChunk.Delta(text))
@@ -86,7 +99,7 @@ class AnthropicProvider @Inject constructor(
                             "message_delta" -> {
                                 val usage = obj["usage"]?.jsonObject
                                 val out = usage?.get("output_tokens")?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0
-                                if (out > 0) emit(AIChunk.Usage(0, out, out, null))
+                                if (out > 0) emit(AIChunk.Usage(inputTokens, out, inputTokens + out, null))
                             }
                             "message_stop" -> {
                                 emit(AIChunk.Done)
@@ -155,7 +168,7 @@ class AnthropicProvider @Inject constructor(
         }
         val root = buildJsonObject {
             put("model", model)
-            put("max_tokens", request.maxTokens ?: 1024)
+            put("max_tokens", request.maxTokens ?: 4096)
             put("stream", stream)
             request.temperature?.let { put("temperature", it) }
             if (request.systemPrompt.isNotBlank()) put("system", request.systemPrompt)

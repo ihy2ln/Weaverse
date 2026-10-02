@@ -216,6 +216,7 @@ class WriteViewModel @Inject constructor(
     private val unregisterHistoryFlush = workspaceHistory.registerPreUndo { flushTypingHistory() }
     private var contextLimit = ContextMeter.DEFAULT_LIMIT
     private var revisionJob: Job? = null
+    private var summarizeJob: Job? = null
     /** docJson of the most recent local write — identifies our own Room echoes. */
     private var lastPersistedDocJson: String? = null
     private val pendingDocuments = mutableMapOf<String, Document>()
@@ -1106,8 +1107,14 @@ class WriteViewModel @Inject constructor(
     /** Runs the Scene Summarizations prompt against the current scene and saves the result into its summary. */
     fun summarizeScene() {
         val scene = loadedScene ?: return
-        if (_uiState.value.isSummarizing) return
-        viewModelScope.launch {
+        // A second tap while it runs stops it.
+        if (_uiState.value.isSummarizing) {
+            summarizeJob?.cancel()
+            summarizeJob = null
+            _uiState.update { it.copy(isSummarizing = false, statusMessage = "Summary stopped — the old one is unchanged") }
+            return
+        }
+        summarizeJob = viewModelScope.launch {
             val sceneText = Document(_uiState.value.blocks).plainText()
             val prep = writeGeneration.prepareSummarize(
                 sceneText = sceneText,
@@ -1127,9 +1134,16 @@ class WriteViewModel @Inject constructor(
                 )
             }.onSuccess { result ->
                 val summary = result.text.trim()
+                val previous = db.manuscriptDao().getScene(scene.id)?.summary.orEmpty()
                 db.novelMediaDao().updateSceneSummary(scene.id, summary, nextWriteStamp())
-                _uiState.update { it.copy(isSummarizing = false, statusMessage = "Scene summarized") }
+                // The old summary is one Undo away.
+                workspaceHistory.record(
+                    undo = { db.novelMediaDao().updateSceneSummary(scene.id, previous, nextWriteStamp()) },
+                    redo = { db.novelMediaDao().updateSceneSummary(scene.id, summary, nextWriteStamp()) },
+                )
+                _uiState.update { it.copy(isSummarizing = false, statusMessage = "Scene summarized — Undo restores the old summary") }
             }.onFailure { err ->
+                if (err is kotlin.coroutines.cancellation.CancellationException) throw err
                 _uiState.update {
                     it.copy(
                         isSummarizing = false,

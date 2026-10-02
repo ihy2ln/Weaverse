@@ -123,6 +123,7 @@ class WorkShelfViewModel @Inject constructor(
     db: WeaverseDatabase,
     private val mediaRepository: MediaRepository,
     private val settings: SettingsRepository,
+    private val workspaceHistory: com.ihy2ln.weaverse.feature.shell.WorkspaceHistory,
 ) : ViewModel() {
     private val _status = kotlinx.coroutines.flow.MutableStateFlow("")
     val status: StateFlow<String> = _status
@@ -208,11 +209,18 @@ class WorkShelfViewModel @Inject constructor(
         if (bookIds.isEmpty()) return
         viewModelScope.launch {
             val selectedBookId = settings.preferences.first().selectedBookId
-            bookIds.forEach { bookRepository.deleteBook(it) }
+            val deleted = bookIds.mapNotNull { bookRepository.deleteBook(it) }
             if (selectedBookId in bookIds) {
                 settings.setSelectedBookId(cards.value.firstOrNull { it.bookId !in bookIds }?.bookId.orEmpty())
             }
-            _status.value = if (bookIds.size == 1) "Work removed" else "${bookIds.size} works removed"
+            workspaceHistory.record(
+                undo = {
+                    deleted.forEach { bookRepository.restoreBook(it) }
+                    if (selectedBookId in bookIds) settings.setSelectedBookId(selectedBookId)
+                },
+                redo = { bookIds.forEach { bookRepository.deleteBook(it) } },
+            )
+            _status.value = (if (bookIds.size == 1) "Work removed" else "${bookIds.size} works removed") + " — Undo brings it back"
         }
     }
 }

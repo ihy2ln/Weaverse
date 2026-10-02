@@ -311,6 +311,13 @@ class NotesViewModel @Inject constructor(
                 _uiState.update { it.copy(media = it.media + imported) }
                 saveNote()
             }
+            val failed = uris.size - imported.size
+            if (failed > 0) {
+                _uiState.update {
+                    it.copy(status = if (failed == 1) "One file couldn't be added — it may be unsupported or no longer available."
+                    else "$failed files couldn't be added — they may be unsupported or no longer available.")
+                }
+            }
         }
     }
 

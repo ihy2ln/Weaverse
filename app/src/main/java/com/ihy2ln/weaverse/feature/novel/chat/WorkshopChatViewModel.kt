@@ -216,8 +216,15 @@ class WorkshopChatViewModel @Inject constructor(
 
     fun attachMedia(uris: List<android.net.Uri>) {
         viewModelScope.launch {
-            pendingMedia = runCatching { mediaRepository.importFromUris(uris) }.getOrDefault(emptyList())
-            _uiState.update { it.copy(hasPendingMedia = pendingMedia.isNotEmpty()) }
+            val result = runCatching { mediaRepository.importFromUris(uris) }
+            pendingMedia = result.getOrDefault(emptyList())
+            _uiState.update {
+                it.copy(
+                    hasPendingMedia = pendingMedia.isNotEmpty(),
+                    errorMessage = result.exceptionOrNull()?.let { err -> "Couldn't attach that: ${err.message ?: "unsupported file"}" }
+                        ?: it.errorMessage,
+                )
+            }
         }
     }
 
