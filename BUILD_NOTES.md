@@ -3,6 +3,25 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.73 - WeaverSocial: more no-account sources
+
+- Anonymous Reddit now answers with a bot-check page from this connection, so no-sign-in
+  sources were widened instead (all public, no account or key):
+  - Bluesky public search (api.bsky.app searchPosts; public.api.bsky.app returns 403)
+    per kind; adult kinds keep only adult-labelled posts (#nsfw, #onlyfans, thirst traps).
+  - Work-safe 4chan boards via the read-only API (/v/ /vr/ /vg/ /a/ /c/ /biz/ /g/), busiest
+    threads with top replies.
+  - Lemmy communities per kind (gaming, pcgaming, stocks, cryptocurrency, anime,
+    artificial_intelligence, technology, comedyheaven, memes @lemmy.world).
+  - Eporner public video API for porn aggregators (keywords run through the adult filter).
+- Not included: session-based reading of signed-in sites (blocked as third-party scraping);
+  `SignedInSites.kt` exists unwired and uncommitted. The user-CA network config change stays
+  uncommitted and is not in this APK.
+- 621 unit tests pass. Not verified on device.
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.4.73.apk`, SHA-256
+  `84e763ee7a77392cf4ba135e5dcb34966abc832758605edb97883b40e9d030c4`, debug-key signed
+  (same certificate `f16db508…51fc05`).
+
 ## v1.4.72 - WeaverSocial: real accounts, Reddit sign-in, adult sources
 
 - On the emulator every source failed with "Trust anchor for certification path not
