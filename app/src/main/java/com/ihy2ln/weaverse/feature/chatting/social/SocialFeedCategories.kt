@@ -42,6 +42,8 @@ enum class FeedCategory(
      * posts are often unlabelled; they're still adult here and stay behind 18+.
      */
     val blueskyUnlabelledOk: Boolean = false,
+    /** Civitai's public image feed (no key): today's most-liked AI art, adult on adult kinds. */
+    val civitai: Boolean = false,
 ) {
     GameOutlets(
         "game_outlets", "Video game outlets", "IGN, GameSpot, Polygon, PC Gamer, Eurogamer, Kotaku", "games",
@@ -112,6 +114,7 @@ enum class FeedCategory(
         subreddits = listOf("StableDiffusion", "aiArt", "midjourney", "ChatGPT"),
         hashtags = listOf("aiart", "generativeai"),
         blueskySearch = listOf("#aiart", "AI video"),
+        civitai = true,
     ),
     GameCreators(
         "game_creators", "Gaming creators", "Markiplier, jacksepticeye, PewDiePie, dunkey, Game Theory, r/LivestreamFail", "creators",
@@ -175,6 +178,7 @@ enum class FeedCategory(
         lemmy = listOf("lemmynsfw.com"),
         lemmyCommunities = listOf("sexygirls@lemmynsfw.com", "nakedyoga@lemmynsfw.com"),
         blueskySearch = listOf("#nsfw", "#onlyfans"),
+        civitai = true,
         blueskyAdult = true,
     ),
     ;

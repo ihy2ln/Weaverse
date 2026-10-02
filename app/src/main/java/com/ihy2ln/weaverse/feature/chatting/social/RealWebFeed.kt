@@ -116,6 +116,7 @@ class RealWebFeed @Inject constructor(
                 kind.redgifsTags.randomOrNull()?.let { tag -> add { redgifs(kind.topic, tag) } }
                 if (kind.pornhub) add { pornhub(kind.topic) }
                 if (kind.eporner) add { eporner(kind.topic) }
+                if (kind.civitai) add { civitaiFeed(kind.topic, adult = kind.adult) }
                 kind.fourChan.randomOrNull()?.let { board -> add { fourChan(board, kind.topic) } }
                 kind.blueskySearch.randomOrNull()?.let { words ->
                     add {
@@ -436,6 +437,33 @@ class RealWebFeed @Inject constructor(
             RealWebItem(page, "Lemmy", "c/$name", (title + post.str("body")?.let { "\n" + it }.orEmpty()).take(TEXT_CHARS),
                 if (nsfw) SocialNpcs.ADULT_TOPIC else topic, web.lemmyPicture(view, gifs = false, adultAllowed = adultAllowed), nsfw,
                 author = creator, comments = comments, avatar = view["creator"].obj().str("avatar").orEmpty())
+        }
+    }
+
+    /**
+     * Civitai's public image feed, no key needed: the day's most-liked images and clips, each by
+     * its real creator. Adult kinds read civitai.red with mature levels; others stay safe-for-work.
+     */
+    private fun civitaiFeed(topic: String, adult: Boolean): List<RealWebItem> {
+        val base = if (adult) "https://civitai.red" else "https://civitai.com"
+        val levels = if (adult) "X" else "None"
+        val sort = listOf("Most%20Reactions", "Most%20Comments", "Newest").random()
+        val items = web.getJson("$base/api/v1/images?limit=40&sort=$sort&period=Day&nsfw=$levels").obj()["items"].arr()
+        return items.mapNotNull { element ->
+            val image = element.obj()
+            val id = image.str("id") ?: return@mapNotNull null
+            val url = image.str("url")?.takeIf { it.startsWith("https://") } ?: return@mapNotNull null
+            val user = image.str("username").orEmpty().ifBlank { "Civitai creator" }
+            val prompt = image["meta"].obj().str("prompt").orEmpty().replace(Regex("\s+"), " ").take(220)
+            val mature = adult || (image.str("nsfwLevel") ?: "None") != "None"
+            val page = "https://civitai.com/images/$id"
+            val isVideo = image.str("type") == "video"
+            val text = prompt.ifBlank { "New on Civitai" }
+            RealWebItem(page, "Civitai", "", text.take(TEXT_CHARS), if (mature) SocialNpcs.ADULT_TOPIC else topic,
+                if (isVideo) null else WebPicture("cv-$id", text.take(160), url, url, false, "Civitai", page, "@$user on Civitai",
+                    adult = mature, description = text),
+                adult = mature, author = "@$user", tags = prompt,
+                videos = if (isVideo) listOf("Original" to url) else emptyList())
         }
     }
 

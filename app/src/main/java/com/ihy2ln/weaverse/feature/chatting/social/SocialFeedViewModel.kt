@@ -856,8 +856,14 @@ class SocialFeedViewModel @Inject constructor(
           try {
             cast = castResolver.allChatContacts()
             if (!ensureReady()) {
-                // No cast or no API key: the followed accounts can still post.
-                if (_uiState.value.webPosts) shareWebPosts((count * 2).coerceIn(6, 12))
+                // No cast or no API key: the followed accounts still post. Only the characters'
+                // own posts need the writing model, so that's a note, not an error over the feed.
+                if (_uiState.value.webPosts) {
+                    _uiState.update {
+                        it.copy(error = "", notice = "Showing real posts. Add an AI key in Settings for your characters to post too.")
+                    }
+                    shareWebPosts((count * 2).coerceIn(6, 12))
+                }
                 return@launch
             }
             val adultAllowed = safety.adultEnabled

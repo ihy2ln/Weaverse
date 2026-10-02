@@ -9,7 +9,7 @@ object SocialSites {
 
     /** Always offered in the site picker, even before any of their posts have come in. */
     val KNOWN = listOf(
-        WEAVERSOCIAL, "Reddit", "Bluesky", "Mastodon", "YouTube", "Lemmy", "lemmynsfw.com", "4chan", "Hacker News", "9GAG",
+        WEAVERSOCIAL, "Reddit", "Bluesky", "Mastodon", "YouTube", "Civitai", "Lemmy", "lemmynsfw.com", "4chan", "Hacker News", "9GAG",
         "RedGIFs", "Pornhub", "Eporner",
     )
 
@@ -34,6 +34,7 @@ object SocialSites {
         "Lemmy", "lemmynsfw.com" -> "#00BC8C"
         "4chan" -> "#789922"
         "Hacker News" -> "#FF6600"
+        "Civitai" -> "#1971C2"
         "9GAG" -> "#222222"
         "RedGIFs" -> "#E8205B"
         "Pornhub" -> "#FF9000"
