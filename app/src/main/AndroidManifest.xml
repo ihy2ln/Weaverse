@@ -50,6 +50,19 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- Reddit sign-in comes back here (WeaverSocial → Accounts you follow → Reddit). -->
+        <activity
+            android:name=".feature.chatting.social.RedditAuthActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="weaverse" android:host="reddit-auth" />
+            </intent-filter>
+        </activity>
         <!-- Read by the Godot runtime; the standalone Adams Haven export sets the same. -->
         <meta-data android:name="org.godotengine.rendering.method" android:value="mobile" />
         <meta-data android:name="org.godotengine.editor.version" android:value="4.7.1.stable" />

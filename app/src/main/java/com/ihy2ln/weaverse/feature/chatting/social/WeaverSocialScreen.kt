@@ -682,7 +682,7 @@ private fun HomeFeed(
     var feed by rememberSaveable { mutableIntStateOf(0) }
     val posts = when (feed) {
         1 -> state.posts.filter { it.isYou || it.authorCharacterId in state.followingIds }
-        2 -> state.posts.filter { it.originKind == "web_share" }
+        2 -> state.posts.filter { it.originKind == "web_share" || it.originKind == SocialFeedViewModel.ORIGIN_REAL }
         else -> state.posts
     }
     // New posts cost an AI generation, so reaching the end shows a button instead of
@@ -972,7 +972,10 @@ private fun PostCard(post: SocialPostUi, state: SocialUiState, c: WsColors, acti
             }
         }
         Row {
-            Box(Modifier.clip(CircleShape).clickable { actions.onOpenProfile(post.authorCharacterId) }) {
+            Box(Modifier.clip(CircleShape).clickable {
+                if (post.originKind == SocialFeedViewModel.ORIGIN_REAL) openUrl(context, post.sourceUrl)
+                else actions.onOpenProfile(post.authorCharacterId)
+            }) {
                 PresenceAvatar(post.authorName, post.colorHex, 42.dp, c, if (post.isYou) DiscordStatus.Online else discordStatusFor(post.authorName))
             }
             Spacer(Modifier.width(10.dp))
@@ -1001,12 +1004,17 @@ private fun PostCard(post: SocialPostUi, state: SocialUiState, c: WsColors, acti
                                     leadingIcon = { Icon(Icons.Outlined.VisibilityOff, null) },
                                     onClick = { menu = false; actions.onNotInterested(post.id) },
                                 )
-                                DropdownMenuItem(text = { Text("View profile") }, onClick = { menu = false; actions.onOpenProfile(post.authorCharacterId) })
-                                DropdownMenuItem(
-                                    text = { Text("Message ${post.authorName}") },
-                                    leadingIcon = { Icon(Icons.Outlined.MailOutline, null) },
-                                    onClick = { menu = false; actions.onMessage(post.authorCharacterId) },
-                                )
+                                if (post.originKind == SocialFeedViewModel.ORIGIN_REAL) {
+                                    DropdownMenuItem(text = { Text("Open on ${post.sourceSite.substringBefore(" · ").ifBlank { "the web" }}") },
+                                        onClick = { menu = false; openUrl(context, post.sourceUrl) })
+                                } else {
+                                    DropdownMenuItem(text = { Text("View profile") }, onClick = { menu = false; actions.onOpenProfile(post.authorCharacterId) })
+                                    DropdownMenuItem(
+                                        text = { Text("Message ${post.authorName}") },
+                                        leadingIcon = { Icon(Icons.Outlined.MailOutline, null) },
+                                        onClick = { menu = false; actions.onMessage(post.authorCharacterId) },
+                                    )
+                                }
                                 post.authorCharacterId?.let { id ->
                                     DropdownMenuItem(
                                         text = { Text("Mute @${post.handle}") },
@@ -1062,9 +1070,10 @@ private fun PostCard(post: SocialPostUi, state: SocialUiState, c: WsColors, acti
                         val label = when (post.originKind) {
                             "public_video" -> "▶ Public video preview"
                             "web_share" -> "↗ Shared from"
+                            SocialFeedViewModel.ORIGIN_REAL -> "↗ View on"
                             else -> "Public source"
                         }
-                        Text("$label ${if (post.originKind == "web_share") "" else "· "}${post.sourceSite.ifBlank { "Web" }}", color = c.accent,
+                        Text("$label ${if (post.originKind == "web_share" || post.originKind == SocialFeedViewModel.ORIGIN_REAL) "" else "· "}${post.sourceSite.ifBlank { "Web" }}", color = c.accent,
                             fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         Text(post.sourceTitle.ifBlank { post.sourceUrl }, color = c.text,
                             fontSize = 13.sp, maxLines = if (post.originKind == "web_share" && inDetail) 12 else if (post.originKind == "web_share") 4 else 2,
@@ -2387,6 +2396,9 @@ private fun SafetyScreen(
 private fun FollowedAccountsDialog(state: SocialUiState, viewModel: SocialFeedViewModel, c: WsColors, onDismiss: () -> Unit) {
     var custom by remember { mutableStateOf(state.customFeeds) }
     var ageCheckFor by remember { mutableStateOf<FeedCategory?>(null) }
+    val reddit by viewModel.reddit.collectAsState()
+    var redditClient by remember { mutableStateOf(reddit.clientId) }
+    val context = LocalContext.current
     val kinds = FeedCategory.entries.filter { !it.adult || state.safety.adultEnabled }
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
@@ -2410,10 +2422,40 @@ private fun FollowedAccountsDialog(state: SocialUiState, viewModel: SocialFeedVi
                 }
                 if (!state.safety.adultEnabled) Text("Turn on WeaverSocial 18+ to see adult kinds.", fontSize = 12.sp, color = c.muted)
                 Spacer(Modifier.height(8.dp))
+                Text("Reddit", color = c.text, fontWeight = FontWeight.Bold)
+                Text(
+                    if (reddit.signedIn) "Signed in as u/${reddit.username}. Your front page and every subreddit load through Reddit's API, including NSFW ones your account allows (turn on \"Show mature content\" in your Reddit settings)."
+                    else "Without signing in Reddit allows about one request a minute, so most Reddit and adult feeds come back empty. " +
+                        "To connect: on reddit.com/prefs/apps create an app, type \"installed app\", redirect URI ${RedditAccount.REDIRECT_URI}, then paste its client ID here and sign in. Read-only; nothing is ever posted.",
+                    fontSize = 12.sp, color = c.muted,
+                )
+                if (!reddit.signedIn) {
+                    OutlinedTextField(redditClient, { redditClient = it.trim() }, singleLine = true,
+                        label = { Text("Reddit client ID") }, modifier = Modifier.fillMaxWidth())
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (reddit.signedIn) {
+                        androidx.compose.material3.TextButton(onClick = viewModel::signOutOfReddit) { Text("Sign out of Reddit") }
+                    } else {
+                        androidx.compose.material3.TextButton(
+                            enabled = redditClient.isNotBlank(),
+                            onClick = {
+                                viewModel.setRedditClientId(redditClient)
+                                viewModel.redditSignInUri()?.let { uri ->
+                                    runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri)) }
+                                }
+                            },
+                        ) { Text("Sign in with Reddit") }
+                    }
+                }
+                if (reddit.message.isNotBlank()) Text(reddit.message, fontSize = 12.sp, color = c.accent)
+                Spacer(Modifier.height(8.dp))
                 Text("Your own accounts", color = c.text, fontWeight = FontWeight.Bold)
-                Text("One per line: r/subreddit, #hashtag, @name.bsky.social, @user@mastodon.social, a YouTube channel link, " +
-                    "or any news/blog RSS link. Start a line with 18+ for adult accounts. Only free public posts can be read — " +
-                    "paid or subscriber-only posts (OnlyFans, Patreon, Fansly) can't be.",
+                Text("One per line: r/subreddit, #hashtag, @name.bsky.social, @user@mastodon.social, !community@lemmy.server, " +
+                    "a YouTube channel link, or any website or forum link (its RSS feed is found for you). Start a line with 18+ " +
+                    "for adult accounts. X and TikTok have no public feeds; paste an RSS link for them from a bridge such as " +
+                    "RSSHub if you run one. Only free public posts can be read — paid or subscriber-only posts (OnlyFans, " +
+                    "Patreon, Fansly) can't be.",
                     fontSize = 12.sp, color = c.muted)
                 OutlinedTextField(custom, { custom = it }, minLines = 4, maxLines = 10,
                     placeholder = { Text("r/wallstreetbets\n@markiplier.bsky.social\nhttps://www.youtube.com/channel/UC…") },
@@ -2616,4 +2658,9 @@ private fun SwitchRow(title: String, body: String?, checked: Boolean, c: WsColor
             colors = androidx.compose.material3.SwitchDefaults.colors(checkedTrackColor = c.accent),
         )
     }
+}
+
+private fun openUrl(context: android.content.Context, url: String) {
+    if (!url.startsWith("https://")) return
+    runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))) }
 }

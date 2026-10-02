@@ -42,3 +42,51 @@ class AuditTier2Test {
         assertFalse(AiRetry.isRetryable(OpenRouterErrorMapper.fromHttp(400, "bad")))
     }
 }
+
+class RealFeedSourcesTest {
+    @Test
+    fun `reddit api listings become posts with real authors and media`() {
+        val listing = kotlinx.serialization.json.Json.parseToJsonElement(
+            """{"data":{"children":[
+              {"kind":"t3","data":{"id":"a1","title":"Sunset","selftext":"","author":"alice","subreddit":"pics",
+               "permalink":"/r/pics/comments/a1/sunset/","over_18":false,"score":120,"num_comments":9,
+               "url":"https://i.redd.it/x.jpg","preview":{"images":[{"source":{"url":"https://preview.redd.it/x.jpg"}}]}}},
+              {"kind":"t3","data":{"id":"a2","title":"Clip","author":"bob","subreddit":"nsfw","permalink":"/r/nsfw/comments/a2/clip/",
+               "over_18":true,"secure_media":{"reddit_video":{"fallback_url":"https://v.redd.it/a2/DASH_480.mp4"}}}},
+              {"kind":"t3","data":{"id":"a3","title":"Rules","author":"mod","stickied":true,"permalink":"/r/pics/comments/a3/"}}
+            ]}}""",
+        )
+        val posts = com.ihy2ln.weaverse.feature.chatting.social.RedditJson.posts(listing)
+        assertEquals(listOf("a1", "a2"), posts.map { it.id })
+        assertEquals("https://www.reddit.com/r/pics/comments/a1/sunset/", posts[0].url)
+        assertEquals("https://i.redd.it/x.jpg", posts[0].media)
+        assertFalse(posts[0].isLoop)
+        assertTrue(posts[1].over18)
+        assertTrue(posts[1].isLoop)
+    }
+
+    @Test
+    fun `adult filter checks tags and drops minors, leaks and fakes`() {
+        val ok = com.ihy2ln.weaverse.feature.chatting.social.RealWebFeed.Companion::adultTextIsEligible
+        assertFalse(ok("Twerking, 18 Years Old, Teen"))
+        assertFalse(ok("petite-chicks, schoolgirls"))
+        assertFalse(ok("Little Step Sis learns"))
+        assertFalse(ok("OnlyFans leaked set"))
+        assertFalse(ok("celebrity deepfake"))
+        assertTrue(ok("Care to join me in the tub? Babe, Bath, Brunette"))
+    }
+
+    @Test
+    fun `lemmy communities and forum pages are recognised`() {
+        val sources = com.ihy2ln.weaverse.feature.chatting.social.CustomFeedSource.parseAll(
+            "!sexygirls@lemmynsfw.com\nhttps://lemmy.world/c/technology\nhttps://forum.example.com/",
+        )
+        assertEquals(
+            listOf("sexygirls@lemmynsfw.com", "technology@lemmy.world", "https://forum.example.com"),
+            sources.map { it.value },
+        )
+        val html = """<html><head><link rel="alternate" type="application/rss+xml" href="/forums/-/index.rss" /></head></html>"""
+        assertEquals("https://forum.example.com/forums/-/index.rss",
+            com.ihy2ln.weaverse.feature.chatting.media.FeedXml.discover(html, "https://forum.example.com/"))
+    }
+}

@@ -44,6 +44,16 @@ object FeedXml {
         )
     }.filter { it.title.isNotBlank() }.toList()
 
+    /**
+     * The RSS/Atom feed a web page advertises (`<link rel="alternate" type="application/rss+xml">`),
+     * resolved against [pageUrl]; how forums (XenForo, Discourse, phpBB) and blogs expose theirs.
+     */
+    fun discover(html: String, pageUrl: String): String? {
+        val tag = Regex("<link[^>]+type=\"application/(?:rss|atom)\\+xml\"[^>]*>", RegexOption.IGNORE_CASE).find(html)?.value ?: return null
+        val href = Regex("href=\"([^\"]+)\"").find(tag)?.groupValues?.get(1)?.let(::unescape) ?: return null
+        return runCatching { java.net.URI(pageUrl).resolve(href).toString() }.getOrNull()?.takeIf { it.startsWith("http") }
+    }
+
     /** The feed's own name ("Polygon", "Markiplier"), used for credit on custom feeds. */
     fun feedName(xml: String): String = clean(feedTitle.find(xml.substringBefore("<item").substringBefore("<entry"))?.groupValues?.get(1).orEmpty())
 

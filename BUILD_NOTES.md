@@ -3,6 +3,28 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.72 - WeaverSocial: real accounts, Reddit sign-in, adult sources
+
+- On the emulator every source failed with "Trust anchor for certification path not
+  found": Norton Web/Mail Shield on this PC re-signs HTTPS with its own root, which Android
+  doesn't trust. Real phones off this PC are unaffected. Not resolved in committed code.
+- Anonymous Reddit RSS answers HTTP 429 after about one request a minute, so most Reddit and
+  adult kinds came back empty. New optional Reddit sign-in (`RedditAccount`, official
+  OAuth installed-app flow, `weaverse://reddit-auth`, read-only scopes): subreddits and the
+  writer's own front page via oauth.reddit.com (`RedditJson`), NSFW per the account's
+  setting, top comments as replies.
+- Followed posts now appear as the real account that posted them (`real_post`, author id
+  `web:…`, u/name / @handle / outlet), with their media, a "View on" link, and real
+  comments as replies; avatar and menu open the original. One everyday-person reshare per
+  pull when an AI key is set. 6–12 posts per refresh, 8 on open, 6 kinds per pull.
+- New sources: RedGIFs (public API), Pornhub webmaster API (trending videos), lemmynsfw
+  communities, any Lemmy community (`!name@instance` or its /c/ link), and any website or
+  forum URL (its advertised RSS/Atom feed is discovered).
+- Adult filter now checks tags too and also drops youth-coded terms, leaked content and
+  deepfakes. Not built: SimpCity (leaked paid content), X / TikTok / Pornhub community
+  (no public feeds; RSS bridges can be pasted as custom sources), Scrolller (API gone).
+- 621 unit tests pass. Feed content not verified on the emulator (TLS interception above).
+
 ## v1.4.70 - Audit Tier 2: correctness and UX
 
 - Global search covers every chapter (was the first chapter only), the app-wide codex and

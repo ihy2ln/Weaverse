@@ -23,6 +23,12 @@ enum class FeedCategory(
     val lemmy: List<String> = emptyList(),
     /** Take adult-labelled posts from Bluesky's Discover feed. */
     val blueskyAdult: Boolean = false,
+    /** RedGIFs' trending clips. */
+    val redgifs: Boolean = false,
+    /** Pornhub's webmaster API (public, made for embedding). */
+    val pornhub: Boolean = false,
+    /** Lemmy communities as `name@instance`, read like forum boards. */
+    val lemmyCommunities: List<String> = emptyList(),
 ) {
     GameOutlets(
         "game_outlets", "Video game outlets", "IGN, GameSpot, Polygon, PC Gamer, Eurogamer, Kotaku", "games",
@@ -108,12 +114,16 @@ enum class FeedCategory(
         subreddits = listOf("PrettyGirls", "LadyBoners", "SFWcurves", "tightdresses", "gentlemanboners"),
     ),
     PornAggregators(
-        "porn_aggregators", "Porn aggregators", "r/nsfw, r/NSFW_GIF, r/RealGirls and similar repost pages", "adult", adult = true,
+        "porn_aggregators", "Porn aggregators", "RedGIFs, Pornhub's trending videos, r/nsfw, r/NSFW_GIF, r/RealGirls", "adult", adult = true,
         subreddits = listOf("nsfw", "NSFW_GIF", "RealGirls", "porninfifteenseconds", "nsfw_gifs"),
+        redgifs = true,
+        pornhub = true,
     ),
     AdultCreators(
-        "adult_creators", "Adult creators", "Verified creators posting their own content on r/gonewild and similar", "adult", adult = true,
+        "adult_creators", "Adult creators", "Creators posting their own content: RedGIFs creators, r/gonewild, lemmynsfw", "adult", adult = true,
         subreddits = listOf("gonewild", "gonewildcurvy", "AsiansGoneWild", "GWCouples"),
+        redgifs = true,
+        lemmyCommunities = listOf("workgonewild@lemmynsfw.com", "amazingbum@lemmynsfw.com"),
     ),
     OnlyFans(
         "onlyfans", "OnlyFans promos", "Free public teasers creators post to promote their OnlyFans — never paid content", "adult", adult = true,
@@ -123,6 +133,7 @@ enum class FeedCategory(
         "other_adult", "Other adult social", "lemmynsfw, adult-labelled Bluesky and #nsfw on Mastodon", "adult", adult = true,
         hashtags = listOf("nsfw", "nsfwart"),
         lemmy = listOf("lemmynsfw.com"),
+        lemmyCommunities = listOf("sexygirls@lemmynsfw.com", "nakedyoga@lemmynsfw.com"),
         blueskyAdult = true,
     ),
     ;
@@ -142,7 +153,7 @@ enum class FeedCategory(
  * only loads with WeaverSocial 18+ on.
  */
 data class CustomFeedSource(val kind: Kind, val value: String, val adult: Boolean, val raw: String) {
-    enum class Kind { Subreddit, Hashtag, Bluesky, Mastodon, YouTube, Feed }
+    enum class Kind { Subreddit, Hashtag, Bluesky, Mastodon, YouTube, Feed, Lemmy }
 
     val label: String get() = when (kind) {
         Kind.Subreddit -> "r/$value"
@@ -150,6 +161,7 @@ data class CustomFeedSource(val kind: Kind, val value: String, val adult: Boolea
         Kind.Bluesky, Kind.Mastodon -> "@$value"
         Kind.YouTube -> "YouTube"
         Kind.Feed -> value.substringAfter("://").substringBefore('/').removePrefix("www.")
+        Kind.Lemmy -> "!$value"
     }
 
     companion object {
@@ -168,6 +180,8 @@ data class CustomFeedSource(val kind: Kind, val value: String, val adult: Boolea
             Regex("(?:reddit\\.com)?/?r/([A-Za-z0-9_]+)").find(s)?.takeIf { s.startsWith("r/") || s.startsWith("/r/") || "reddit.com/r/" in s }
                 ?.let { return of(Kind.Subreddit, it.groupValues[1]) }
             Regex("bsky\\.app/profile/([^/?#]+)").find(s)?.let { return of(Kind.Bluesky, it.groupValues[1]) }
+            Regex("^!([A-Za-z0-9_]+)@([A-Za-z0-9.-]+\\.[A-Za-z]{2,})$").find(s)?.let { return of(Kind.Lemmy, "${it.groupValues[1]}@${it.groupValues[2]}") }
+            Regex("^https?://([A-Za-z0-9.-]+)/c/([A-Za-z0-9_]+)").find(s)?.let { return of(Kind.Lemmy, "${it.groupValues[2]}@${it.groupValues[1]}") }
             if (s.startsWith("#")) return of(Kind.Hashtag, s.removePrefix("#").filter { it.isLetterOrDigit() || it == '_' })
             mastodonAccount.find(s)?.let { return of(Kind.Mastodon, "${it.groupValues[1]}@${it.groupValues[2]}") }
             if (s.startsWith("@") && '.' in s) return of(Kind.Bluesky, s.removePrefix("@"))

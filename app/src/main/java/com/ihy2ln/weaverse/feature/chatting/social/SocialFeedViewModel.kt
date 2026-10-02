@@ -176,6 +176,11 @@ data class SocialUiState(
     val followingIds: Set<String> get() = people.filter { it.isFollowing }.map { it.characterId }.toSet()
 }
 
+/** "u/name" → "name", "@a.bsky.social" → "a.bsky.social", "Polygon" → "polygon". */
+fun realHandle(name: String): String =
+    name.substringAfterLast('(').removeSuffix(")").trim().removePrefix("@").removePrefix("u/").removePrefix("r/")
+        .filter { it.isLetterOrDigit() || it in "_.-@" }.ifBlank { handleFor(name) }.take(40)
+
 fun handleFor(name: String): String =
     name.lowercase().filter { it.isLetterOrDigit() || it == '_' }.ifBlank { "you" }.take(15)
 
@@ -196,7 +201,18 @@ class SocialFeedViewModel @Inject constructor(
     private val webPictures: WebPictureSearch,
     private val imageGenerator: SocialImageGenerator,
     private val realWeb: RealWebFeed,
+    private val redditAccount: RedditAccount,
 ) : ViewModel() {
+    /** The writer's Reddit sign-in, for Accounts you follow. */
+    val reddit: StateFlow<RedditAccountState> = redditAccount.state
+
+    fun setRedditClientId(clientId: String) = redditAccount.setClientId(clientId)
+
+    /** Reddit's approval page; null until a client ID is saved. */
+    fun redditSignInUri(): android.net.Uri? = redditAccount.authorizeUri()
+
+    fun signOutOfReddit() = redditAccount.signOut()
+
 
     private val _uiState = MutableStateFlow(SocialUiState())
     val uiState: StateFlow<SocialUiState> = _uiState.asStateFlow()
@@ -330,10 +346,10 @@ class SocialFeedViewModel @Inject constructor(
             id = id,
             authorCharacterId = authorCharacterId,
             authorName = name,
-            handle = handleFor(name),
+            handle = if (originKind == ORIGIN_REAL) realHandle(name) else handleFor(name),
             colorHex = avatarColorHexFor(name, character?.colorHex),
             isYou = isYou,
-            verified = !isYou && seed % 3 == 0,
+            verified = !isYou && originKind != ORIGIN_REAL && seed % 3 == 0,
             // Older posts were saved before markdown was unwrapped on the way in.
             text = text.replace(Regex("\\*{1,2}([^*\\n]+)\\*{1,2}"), "$1"),
             imagePath = images.firstOrNull(),
@@ -713,7 +729,7 @@ class SocialFeedViewModel @Inject constructor(
         val state = _uiState.value
         if (!state.webPosts || state.generating) return
         if (System.currentTimeMillis() - lastWebPull < WEB_PULL_COOLDOWN_MS) return
-        pullWebPosts(5)
+        pullWebPosts(8)
     }
 
     /** Fetches and reshares real posts without writing new cast posts (also works with no API key). */
@@ -810,7 +826,7 @@ class SocialFeedViewModel @Inject constructor(
             cast = castResolver.allChatContacts()
             if (!ensureReady()) {
                 // No cast or no API key: the followed accounts can still post.
-                if (_uiState.value.webPosts) shareWebPosts((count * 3 / 4).coerceIn(3, 6))
+                if (_uiState.value.webPosts) shareWebPosts((count * 2).coerceIn(6, 12))
                 return@launch
             }
             val adultAllowed = safety.adultEnabled
@@ -919,7 +935,7 @@ class SocialFeedViewModel @Inject constructor(
                 )
             }
             if (planned.isNotEmpty()) attachPlannedMedia(planned)
-            if (_uiState.value.webPosts) shareWebPosts((count * 3 / 4).coerceIn(2, 6))
+            if (_uiState.value.webPosts) shareWebPosts((count * 2).coerceIn(6, 12))
           } finally {
             // Also on errors and Stop, or the spinner stays and every later refresh is ignored.
             finish()
@@ -1050,14 +1066,25 @@ class SocialFeedViewModel @Inject constructor(
         val items = (fromFollowed.take(count - wideShare) + wide.take(wideShare)).let { chosen ->
             chosen + (fromFollowed + wide).filterNot { it in chosen }.take(count - chosen.size)
         }.take(count).shuffled()
+        com.ihy2ln.weaverse.ai.WeaverseAiLog.i(
+            "web pull: kinds=${picked.map { it.id }} custom=${custom.size} followed=${fromFollowed.size} wide=${found.size} sharing=${items.size}",
+        )
         if (items.isEmpty()) {
             _uiState.update {
                 it.copy(notice = "Couldn't reach the sites your timeline follows — check the connection and refresh.")
             }
             return
         }
+        val canWrite = aiGeneration.hasApiKey(null)
+        val base = System.currentTimeMillis()
+        // Posts show as the real account that made them (u/name, @handle, the outlet), like a
+        // real timeline. Now and then an everyday person reshares one with their own caption.
+        val reshared = if (canWrite && items.size >= 4) items.takeLast(1) else emptyList()
+        val realPosts = (items - reshared.toSet()).mapIndexed { index, item -> saveRealPost(item, base - index * 47_000L - 10_000L) }
+        if (canWrite) generateWebReplies(realPosts.filter { it.second == 0 }.shuffled().take(2).map { it.first })
+        if (reshared.isEmpty()) return
         val used = mutableSetOf<String>()
-        val pairs = items.mapNotNull { item ->
+        val pairs = reshared.mapNotNull { item ->
             // Adult posts only go to the adults who follow adult accounts.
             val topic = if (item.adult) SocialNpcs.ADULT_TOPIC else item.topic
             val pool = SocialNpcs.forTopic(topic).filterNot { it.id in safety.unseen || it.id in used }
@@ -1065,7 +1092,6 @@ class SocialFeedViewModel @Inject constructor(
             pool.randomOrNull()?.also { used += it.id }?.let { item to it }
         }
         if (pairs.isEmpty()) return
-        val canWrite = aiGeneration.hasApiKey(null)
         val system = buildList {
             add(platformVoice())
             add("Ordinary people on WeaverSocial are resharing real posts they found on news sites, YouTube, Reddit, 9GAG, Mastodon, Bluesky and other sites. " +
@@ -1085,7 +1111,6 @@ class SocialFeedViewModel @Inject constructor(
         val raw = if (canWrite) complete(system, user, maxTokens = 1_500).orEmpty() else ""
         val captions = parseSocialLines(raw, pairs.map { it.second })
             .mapNotNull { line -> line.character?.let { it.id to line.text } }.toMap()
-        val base = System.currentTimeMillis()
         val created = pairs.mapIndexed { index, (item, npc) ->
             val caption = captions[npc.id]?.let { MediaTags.extract(SocialTags.parse(splitFeeling(it).second).text).first }
                 ?.takeIf { it.isNotBlank() } ?: QUICK_CAPTIONS.random()
@@ -1102,6 +1127,56 @@ class SocialFeedViewModel @Inject constructor(
         }
         if (canWrite) generateWebReplies(created.shuffled().take(3))
     }
+
+    /**
+     * A real post as its real author, with its picture or clip and a link to the original,
+     * plus its top comments as replies when the source has them (Reddit, Lemmy).
+     * Returns the post and how many real replies came with it.
+     */
+    private suspend fun saveRealPost(item: RealWebItem, createdAt: Long): Pair<SocialPostEntity, Int> {
+        val labels = SocialTags.store(if (item.adult) setOf(ContentLabel.Sexual) else emptySet())
+        val likes = Random.nextInt(8, 2_400)
+        val post = SocialPostEntity(
+            id = "sp-${UUID.randomUUID()}",
+            platform = platform,
+            authorCharacterId = realAuthorId(item.site, item.poster),
+            authorName = item.poster,
+            text = item.text.take(POST_CHARS),
+            likeCount = likes,
+            repostCount = likes / Random.nextInt(6, 20),
+            viewCount = likes * Random.nextInt(15, 60),
+            reactionsJson = encodeCounts(randomReactions(likes)),
+            createdAt = createdAt,
+            contentTags = labels,
+            originKind = ORIGIN_REAL,
+            sourceUrl = item.url,
+            sourceSite = listOf(item.site, item.credit).filter { it.isNotBlank() && it != item.poster }.distinct().joinToString(" · "),
+        )
+        db.socialDao().upsert(post)
+        item.media?.let { attachShared(post.id, it, item.text) }
+        item.comments.forEachIndexed { index, (who, body) ->
+            db.socialDao().upsert(
+                SocialPostEntity(
+                    id = "sp-${UUID.randomUUID()}",
+                    platform = platform,
+                    authorCharacterId = realAuthorId(item.site, who),
+                    authorName = who,
+                    text = body.take(POST_CHARS),
+                    parentId = post.id,
+                    likeCount = Random.nextInt(0, likes / 3 + 1),
+                    createdAt = createdAt + (index + 1) * 61_000L,
+                    contentTags = labels,
+                    originKind = ORIGIN_REAL,
+                    sourceUrl = item.url,
+                    sourceSite = item.site,
+                ),
+            )
+        }
+        return post to item.comments.size
+    }
+
+    private fun realAuthorId(site: String, name: String): String =
+        REAL_AUTHOR_PREFIX + (site + ":" + name).lowercase().filter { it.isLetterOrDigit() || it in "@:._-" }.take(80)
 
     private fun attachShared(postId: String, picture: WebPicture, text: String) {
         if (!mediaFetchInFlight.add(postId)) return
@@ -1133,7 +1208,8 @@ class SocialFeedViewModel @Inject constructor(
                 "add a fact or just react, in one or two lines; a [gif: …] tag may end a reaction. No narration or markdown.")
         }
         val user = posts.withIndex().joinToString("\n") { (i, post) ->
-            "${i + 1}. ${post.authorName}: ${post.text.take(200)} (sharing ${post.sourceSite}: \"${post.sourceTitle.take(200).replace('\n', ' ')}\")"
+            if (post.originKind == ORIGIN_REAL) "${i + 1}. ${post.authorName} on ${post.sourceSite}: ${post.text.take(300).replace('\n', ' ')}"
+            else "${i + 1}. ${post.authorName}: ${post.text.take(200)} (sharing ${post.sourceSite}: \"${post.sourceTitle.take(200).replace('\n', ' ')}\")"
         }
         val raw = complete(system, user, maxTokens = 1_500) ?: return
         val numbered = Regex("^\\s*(\\d+)\\s*[|.)]\\s*(.+)$")
@@ -1544,6 +1620,10 @@ class SocialFeedViewModel @Inject constructor(
         private const val CARD_CHARS = 420
         private const val BIO_CHARS = 160
         const val POST_CHARS = 500
+        /** A post shown as the real account that made it. */
+        const val ORIGIN_REAL = "real_post"
+        /** Author ids of real accounts; never a Codex character or a made-up person. */
+        const val REAL_AUTHOR_PREFIX = "web:"
         /** How often a character's post comes with one of their pictures, when they have any. */
         private const val PERSONAL_PHOTO_CHANCE = 0.2f
         /** Applied when the model did not provide its own media query. */
@@ -1580,7 +1660,7 @@ class SocialFeedViewModel @Inject constructor(
         private val SEXUAL_TERMS = Regex("\\b(nude|nudity|porn|xxx|onlyfans|fansly|nsfw|erotic|sex|sexual)\\b", RegexOption.IGNORE_CASE)
         private val SELF_PHOTO_TERMS = Regex("\\b(selfie|photo of me|picture of me|here i am|this is me|my outfit|my body|my face|mirror pic|me on vacation|me at the|my vacation photo)\\b", RegexOption.IGNORE_CASE)
         private const val NO_CATEGORIES = "-"
-        private const val CATEGORIES_PER_PULL = 4
+        private const val CATEGORIES_PER_PULL = 6
         private const val WEB_PULL_COOLDOWN_MS = 2 * 60_000L
         private val QUICK_CAPTIONS = listOf("👀", "this", "ok this is good", "saw this and thought of you all", "well then", "lmao",
             "can't stop thinking about this", "thoughts?", "big if true", "😭", "obsessed", "had to share")

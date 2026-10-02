@@ -779,8 +779,9 @@ class WebPictureSearch @Inject constructor(
         }
     }
 
-    fun getJson(url: String): JsonElement {
-        val request = Request.Builder().url(url).header("User-Agent", USER_AGENT).header("Accept", "application/json").build()
+    fun getJson(url: String, headers: Map<String, String> = emptyMap()): JsonElement {
+        val request = Request.Builder().url(url).header("User-Agent", USER_AGENT).header("Accept", "application/json")
+            .apply { headers.forEach { (name, value) -> header(name, value) } }.build()
         http.newCall(request).execute().use { response ->
             require(response.isSuccessful) { "HTTP ${response.code}" }
             return json.parseToJsonElement(response.body?.string().orEmpty())

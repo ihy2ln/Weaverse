@@ -31,7 +31,16 @@ data class RealWebItem(
     /** Its picture or GIF, downloaded and attached when present. */
     val media: WebPicture? = null,
     val adult: Boolean = false,
-)
+    /** Who posted it, as the real account: "u/name", "@handle", "Polygon". */
+    val author: String = "",
+    /** Its top comments (author to text), shown as replies so threads read like a forum. */
+    val comments: List<Pair<String, String>> = emptyList(),
+    /** Tags or categories the source gave it; checked by the adult filter too. */
+    val tags: String = "",
+) {
+    /** The name shown as the post's author. */
+    val poster: String get() = author.ifBlank { credit.substringBefore(" · ").ifBlank { site } }
+}
 
 /**
  * Pulls real, public posts from social sites that allow reading without an account —
@@ -41,7 +50,12 @@ data class RealWebItem(
  * Nothing is ever posted back to those sites.
  */
 @Singleton
-class RealWebFeed @Inject constructor(private val web: WebPictureSearch) {
+class RealWebFeed @Inject constructor(
+    private val web: WebPictureSearch,
+    private val reddit: RedditAccount,
+) {
+    private var redgifsToken: String = ""
+    private var redgifsTokenUntil: Long = 0L
 
     suspend fun fetch(topics: List<String>, adultAllowed: Boolean, seen: Set<String>): List<RealWebItem> = coroutineScope {
         val tags = topics.flatMap { TOPIC_HASHTAGS[it].orEmpty().shuffled().take(1).map { tag -> it to tag } }
@@ -57,7 +71,7 @@ class RealWebFeed @Inject constructor(private val web: WebPictureSearch) {
             async(Dispatchers.IO) { runCatching { hackerNews() }.getOrDefault(emptyList()) },
         )
         val lists = jobs.awaitAll().map { list ->
-            list.filter { it.url !in seen && (!it.adult || adultTextIsEligible(it.text + " " + it.credit)) }.shuffled()
+            list.filter { it.url !in seen && eligible(it, adultAllowed) }.shuffled()
         }
         // Round-robin so no one site fills the feed.
         buildList {
@@ -79,9 +93,11 @@ class RealWebFeed @Inject constructor(private val web: WebPictureSearch) {
     ): List<RealWebItem> = coroutineScope {
         val kinds = categories.filter { adultAllowed || !it.adult }
         val sources = custom.filter { adultAllowed || !it.adult }
-        // Reddit rate-limits anonymous readers, so three subreddit feeds per refresh at most.
-        var redditBudget = 3
-        val jobs = kinds.flatMap { kind ->
+        // Anonymous Reddit allows a request or two a minute; signed in, it's a normal API.
+        var redditBudget = if (reddit.signedIn) 8 else 3
+        val frontPage: List<suspend () -> List<RealWebItem>> =
+            if (reddit.signedIn) listOf(suspend { redditApi("/best?limit=40", "followed", forceAdult = false, adultAllowed) }) else emptyList()
+        val jobs = frontPage + kinds.flatMap { kind ->
             buildList<suspend () -> List<RealWebItem>> {
                 kind.feeds.randomOrNull()?.let { (name, url) -> add { outlet(name, url, kind.topic, kind.adult) } }
                 kind.youtube.shuffled().take(2).forEach { (name, id) -> add { youtube(name, id, kind.topic) } }
@@ -92,6 +108,9 @@ class RealWebFeed @Inject constructor(private val web: WebPictureSearch) {
                 kind.hashtags.randomOrNull()?.let { tag -> add { mastodon(kind.topic, tag, adultAllowed, forceAdult = kind.adult) } }
                 kind.lemmy.forEach { server -> add { lemmy(adultAllowed, server, kind.topic).map { it.copy(adult = it.adult || kind.adult) } } }
                 if (kind.blueskyAdult) add { bluesky(adultAllowed).filter { it.adult }.map { it.copy(topic = kind.topic) } }
+                if (kind.redgifs) add { redgifs(kind.topic) }
+                if (kind.pornhub) add { pornhub(kind.topic) }
+                kind.lemmyCommunities.shuffled().take(2).forEach { community -> add { lemmyCommunity(community, kind.topic, adultAllowed, kind.adult) } }
             }
         } + sources.shuffled().take(MAX_CUSTOM_PER_REFRESH).mapNotNull { source ->
             val topic = if (source.adult) "adult" else "followed"
@@ -102,12 +121,19 @@ class RealWebFeed @Inject constructor(private val web: WebPictureSearch) {
                 CustomFeedSource.Kind.Mastodon -> suspend { mastodonAccount(source.value, adultAllowed, topic, source.adult) }
                 CustomFeedSource.Kind.YouTube -> suspend { youtube("", source.value, topic) }
                 CustomFeedSource.Kind.Feed -> suspend { outlet("", source.value, topic, source.adult) }
+                CustomFeedSource.Kind.Lemmy -> suspend { lemmyCommunity(source.value, topic, adultAllowed, source.adult) }
             }
         }
-        val lists = jobs.map { job -> async(Dispatchers.IO) { runCatching { job() }.getOrDefault(emptyList()) } }
+        val lists = jobs.map { job ->
+            async(Dispatchers.IO) {
+                runCatching { job() }
+                    .onFailure { com.ihy2ln.weaverse.ai.WeaverseAiLog.i("followed source failed: ${it.javaClass.simpleName}: ${it.message}") }
+                    .getOrDefault(emptyList())
+            }
+        }
             .awaitAll()
             .map { list ->
-                list.filter { it.url !in seen && (!it.adult || (adultAllowed && adultTextIsEligible(it.text + " " + it.credit))) }
+                list.filter { it.url !in seen && eligible(it, adultAllowed) }
                     // Newest first for outlets and creators; a little shuffle so refreshes differ.
                     .take(12).shuffled()
             }
@@ -119,7 +145,12 @@ class RealWebFeed @Inject constructor(private val web: WebPictureSearch) {
 
     /** A news site or blog's RSS/Atom feed: headline, a line of summary, and its lead picture. */
     private fun outlet(name: String, url: String, topic: String, adult: Boolean): List<RealWebItem> {
-        val xml = web.getText(url)
+        // A site's page rather than its feed (a forum, a blog's home page): use the RSS/Atom
+        // feed the page advertises, the way feed readers do.
+        val xml = web.getText(url).let { page ->
+            if (FeedXml.parse(page).isNotEmpty()) page
+            else FeedXml.discover(page, url)?.let { feed -> web.getText(feed) } ?: page
+        }
         val site = name.ifBlank { FeedXml.feedName(xml).ifBlank { url.substringAfter("://").substringBefore('/').removePrefix("www.") } }
         return FeedXml.parse(xml).map { entry ->
             val media = entry.image?.let { image ->
@@ -128,7 +159,7 @@ class RealWebFeed @Inject constructor(private val web: WebPictureSearch) {
             }
             RealWebItem(entry.url, site, entry.author.takeIf { it.isNotBlank() && it.length < 60 }?.let { "by $it" }.orEmpty(),
                 (entry.title + entry.summary.takeIf { it.isNotBlank() && !it.startsWith(entry.title) }?.let { "\n" + it.take(220) }.orEmpty()).take(TEXT_CHARS),
-                topic, media, adult)
+                topic, media, adult, author = site)
         }
     }
 
@@ -139,9 +170,9 @@ class RealWebFeed @Inject constructor(private val web: WebPictureSearch) {
         return FeedXml.parse(xml).mapNotNull { entry ->
             val video = entry.youtubeVideoId ?: return@mapNotNull null
             val thumb = "https://i.ytimg.com/vi/$video/hqdefault.jpg"
-            RealWebItem("https://www.youtube.com/watch?v=$video", "YouTube", channel,
+            RealWebItem("https://www.youtube.com/watch?v=$video", "YouTube", "", author = channel, text =
                 (entry.title + entry.summary.takeIf { it.isNotBlank() }?.let { "\n" + it.take(200) }.orEmpty()).take(TEXT_CHARS),
-                topic, WebPicture("yt-$video", entry.title.take(160), thumb, thumb, false, "YouTube", "https://www.youtube.com/watch?v=$video",
+                topic = topic, media = WebPicture("yt-$video", entry.title.take(160), thumb, thumb, false, "YouTube", "https://www.youtube.com/watch?v=$video",
                     "$channel on YouTube", description = entry.title))
         }
     }
@@ -179,14 +210,17 @@ class RealWebFeed @Inject constructor(private val web: WebPictureSearch) {
             if (text.length < 20) return@mapNotNull null
             val media = web.mastodonMedia(status, gifs = false, adultAllowed = adultAllowed).firstOrNull()
                 ?: web.mastodonMedia(status, gifs = true, adultAllowed = adultAllowed).firstOrNull()
-            RealWebItem(url, "Mastodon", "@" + (status["account"].obj().str("acct") ?: "someone"),
-                text.take(TEXT_CHARS), topic, media, sensitive)
+            val handle = "@" + (status["account"].obj().str("acct") ?: "someone")
+            RealWebItem(url, "Mastodon", handle, text.take(TEXT_CHARS), topic, media, sensitive, author = handle)
         }
 
-    private fun reddit(topic: String): List<RealWebItem> =
+    private suspend fun reddit(topic: String): List<RealWebItem> =
         subreddit(TOPIC_SUBREDDITS[topic].orEmpty().ifEmpty { TOPIC_SUBREDDITS.getValue("memes") }.random(), topic, adult = false)
 
-    private fun subreddit(sub: String, topic: String, adult: Boolean): List<RealWebItem> {
+    private suspend fun subreddit(sub: String, topic: String, adult: Boolean): List<RealWebItem> {
+        if (reddit.signedIn) {
+            runCatching { return redditApi("/r/$sub/hot?limit=30", topic, forceAdult = adult, adultAllowed = true) }
+        }
         // The over18 cookie lets the feed of an adult subreddit through instead of its age interstitial.
         val headers = if (adult) mapOf("Cookie" to "over18=1") else emptyMap()
         return RedditRss.parse(web.getText("https://www.reddit.com/r/$sub/hot/.rss", headers)).mapNotNull { entry ->
@@ -200,6 +234,7 @@ class RealWebFeed @Inject constructor(private val web: WebPictureSearch) {
                 topic = topic,
                 media = RedditRss.toPicture(entry, gifsOnly = false)?.copy(adult = adult),
                 adult = adult,
+                author = entry.author.takeIf { it.isNotBlank() }?.let { "u/$it" } ?: "r/${entry.subreddit.ifBlank { sub }}",
             )
         }
     }
@@ -250,7 +285,8 @@ class RealWebFeed @Inject constructor(private val web: WebPictureSearch) {
             }
             val body = text.ifBlank { external.str("title").orEmpty() }
             if (body.length < 12 && media == null) return@mapNotNull null
-            RealWebItem(url, "Bluesky", "@$handle", body.take(TEXT_CHARS), topic ?: guessTopic(body), media, adult)
+            RealWebItem(url, "Bluesky", "@$handle", body.take(TEXT_CHARS), topic ?: guessTopic(body), media, adult,
+                author = author.str("displayName")?.takeIf { it.isNotBlank() }?.let { "$it (@$handle)" } ?: "@$handle")
         }
 
     private fun lemmy(adultAllowed: Boolean, server: String = "lemmy.world", topic: String? = null): List<RealWebItem> {
@@ -280,6 +316,110 @@ class RealWebFeed @Inject constructor(private val web: WebPictureSearch) {
         }
     }
 
+    /**
+     * The writer's Reddit through the official API: a subreddit or their own front page,
+     * with each post's real author and, for the busiest threads, the top comments.
+     */
+    private suspend fun redditApi(path: String, topic: String, forceAdult: Boolean, adultAllowed: Boolean): List<RealWebItem> {
+        val posts = RedditJson.posts(reddit.getJson(path))
+            .filter { adultAllowed || !it.over18 }
+        val threads = posts.filter { it.commentCount >= 5 }.sortedByDescending { it.commentCount }.take(2).map { it.id }.toSet()
+        return posts.map { post ->
+            val adult = forceAdult || post.over18
+            val media = post.media?.let { full ->
+                WebPicture("rd-" + post.id, post.title.take(160), post.thumbnail ?: full, full, post.isLoop, "Reddit", post.url,
+                    "u/${post.author} · r/${post.subreddit}", adult = adult, description = post.title + " " + post.body.take(400))
+            }
+            val comments = if (post.id in threads) runCatching {
+                RedditJson.comments(reddit.getJson("/comments/${post.id}?limit=6&depth=1&sort=top"))
+                    .take(3).map { "u/${it.author}" to it.body.take(500) }
+            }.getOrDefault(emptyList()) else emptyList()
+            RealWebItem(
+                url = post.url, site = "Reddit", credit = "r/${post.subreddit}",
+                text = (post.title + post.body.takeIf { it.isNotBlank() }?.let { "\n" + it }.orEmpty()).take(TEXT_CHARS),
+                topic = if (adult) SocialNpcs.ADULT_TOPIC else topic, media = media, adult = adult,
+                author = "u/${post.author}", comments = comments,
+            )
+        }
+    }
+
+    /** RedGIFs' trending clips (an adult aggregator with a public API and verified creators). */
+    private fun redgifs(topic: String): List<RealWebItem> {
+        if (redgifsToken.isBlank() || System.currentTimeMillis() > redgifsTokenUntil) {
+            redgifsToken = web.getJson("https://api.redgifs.com/v2/auth/temporary").obj().str("token").orEmpty()
+            redgifsTokenUntil = System.currentTimeMillis() + 20 * 60 * 60_000L
+        }
+        val order = listOf("trending", "top7", "latest").random()
+        val gifs = web.getJson(
+            "https://api.redgifs.com/v2/gifs/search?order=$order&count=40",
+            mapOf("Authorization" to "Bearer $redgifsToken"),
+        ).obj()["gifs"].arr()
+        return gifs.mapNotNull { element ->
+            val gif = element.obj()
+            val id = gif.str("id") ?: return@mapNotNull null
+            val urls = gif["urls"].obj()
+            val clip = urls.str("sd") ?: urls.str("silent") ?: urls.str("hd") ?: return@mapNotNull null
+            val user = gif.str("userName").orEmpty()
+            val tags = (gif["tags"].arr() + gif["niches"].arr()).mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.joinToString(", ")
+            val page = "https://www.redgifs.com/watch/$id"
+            val text = gif.str("description")?.takeIf { it.isNotBlank() } ?: tags.split(", ").take(5).joinToString(" · ")
+            RealWebItem(page, "RedGIFs", "@$user", text.take(TEXT_CHARS), topic,
+                WebPicture("rg-$id", text.take(160), urls.str("thumbnail") ?: urls.str("poster") ?: clip, clip, true, "RedGIFs", page,
+                    "@$user on RedGIFs", adult = true, description = "$text $tags"),
+                adult = true, author = "@$user", tags = tags)
+        }
+    }
+
+    /** Pornhub's public webmaster API (made for embedding): this week's most-viewed videos. */
+    private fun pornhub(topic: String): List<RealWebItem> {
+        val ordering = listOf("mostviewed", "rating", "newest").random()
+        val videos = web.getJson("https://www.pornhub.com/webmasters/search?ordering=$ordering&period=weekly&thumbsize=large_hd").obj()["videos"].arr()
+        return videos.mapNotNull { element ->
+            val video = element.obj()
+            val url = video.str("url")?.takeIf { it.startsWith("https://") } ?: return@mapNotNull null
+            val title = video.str("title") ?: return@mapNotNull null
+            val thumb = video["thumbs"].arr().firstOrNull()?.obj()?.str("src") ?: video.str("default_thumb") ?: video.str("thumb")
+            val tags = video["tags"].arr().mapNotNull { it.obj().str("tag_name") }.joinToString(", ")
+            val stars = video["pornstars"].arr().mapNotNull { it.obj().str("pornstar_name") }
+            val by = stars.firstOrNull() ?: "Pornhub"
+            RealWebItem(url, "Pornhub", stars.joinToString(", "), title.take(TEXT_CHARS), topic,
+                thumb?.let { WebPicture("ph-" + url.hashCode(), title.take(160), it, it, false, "Pornhub", url, "$by on Pornhub",
+                    adult = true, description = "$title $tags") },
+                adult = true, author = by, tags = tags)
+        }
+    }
+
+    /** One Lemmy community (`name@instance`), like a forum board: its hot threads with top comments. */
+    private fun lemmyCommunity(community: String, topic: String, adultAllowed: Boolean, adult: Boolean): List<RealWebItem> {
+        val name = community.substringBefore('@')
+        val server = community.substringAfter('@', "lemmy.world")
+        val posts = web.getJson("https://$server/api/v3/post/list?sort=Hot&limit=25&community_name=" + URLEncoder.encode(name, "UTF-8"))
+            .obj()["posts"].arr()
+        return posts.mapIndexedNotNull { index, element ->
+            val view = element.obj()
+            val post = view["post"].obj()
+            val nsfw = adult || post.str("nsfw") == "true" || view["community"].obj().str("nsfw") == "true"
+            if (nsfw && !adultAllowed) return@mapIndexedNotNull null
+            val page = post.str("ap_id")?.takeIf { it.startsWith("https://") } ?: return@mapIndexedNotNull null
+            val title = post.str("name") ?: return@mapIndexedNotNull null
+            val creator = view["creator"].obj().str("name")?.let { "@$it" } ?: "c/$name"
+            val comments = if (index < 2 && (view["counts"].obj().str("comments")?.toIntOrNull() ?: 0) > 0) runCatching {
+                web.getJson("https://$server/api/v3/comment/list?sort=Top&max_depth=1&limit=5&post_id=" + post.str("id"))
+                    .obj()["comments"].arr().mapNotNull { c ->
+                        val body = c.obj()["comment"].obj().str("content") ?: return@mapNotNull null
+                        val who = c.obj()["creator"].obj().str("name") ?: return@mapNotNull null
+                        "@$who" to body.take(500)
+                    }.take(3)
+            }.getOrDefault(emptyList()) else emptyList()
+            RealWebItem(page, "Lemmy", "c/$name", (title + post.str("body")?.let { "\n" + it }.orEmpty()).take(TEXT_CHARS),
+                if (nsfw) SocialNpcs.ADULT_TOPIC else topic, web.lemmyPicture(view, gifs = false, adultAllowed = adultAllowed), nsfw,
+                author = creator, comments = comments)
+        }
+    }
+
+    private fun eligible(item: RealWebItem, adultAllowed: Boolean): Boolean =
+        !item.adult || (adultAllowed && adultTextIsEligible(listOf(item.text, item.credit, item.author, item.tags).joinToString(" ")))
+
     private fun guessTopic(text: String): String {
         val lower = text.lowercase()
         return TOPIC_WORDS.entries.firstOrNull { (_, words) -> words.any { Regex("\\b$it\\b").containsMatchIn(lower) } }?.key
@@ -296,13 +436,21 @@ class RealWebFeed @Inject constructor(private val web: WebPictureSearch) {
         private const val MAX_CUSTOM_PER_REFRESH = 4
 
         private val UNDERAGE_WORDS = Regex(
-            "\\b(?:loli|shota|child|children|kid|kids|minor|minors|underage|preteen|teen|teens|teenager|young[- ]looking|" +
-                "schoolgirl|schoolboy|highschool|high school|1[0-7]\\s*(?:yo|y/o|years?[- ]old)|barely legal|jailbait)\\b",
+            "\\b(?:loli|shota|child|children|kid|kids|minor|minors|underage|under-age|preteen|pre-teen|teen|teens|teenager|teenagers|" +
+                "young[- ]looking|schoolgirls?|schoolboys?|school[- ]?girls?|school[- ]?uniform|high ?school|highschool|jailbait|" +
+                "barely legal|little step|lil step|daughter|stepdaughter|step[- ]?daughter|little sis(?:ter)?|lil sis|baby[- ]?girl|" +
+                "1[0-7]\\s*(?:yo|y/o|years?[- ]old))\\b",
+            RegexOption.IGNORE_CASE,
+        )
+        /** Leaked paid content and fakes of real people are shared without consent; never shown. */
+        private val NONCONSENSUAL_WORDS = Regex(
+            "\\b(?:leak|leaks|leaked|deepfakes?|deep[- ]fakes?|celeb ?fakes?|fake nudes?|nudify|undress(?:ed)? ai|hidden cam|spycam|upskirt|revenge)\\b",
             RegexOption.IGNORE_CASE,
         )
 
         /** Adult posts that mention or hint at anyone under 18 are never shared. */
-        fun adultTextIsEligible(text: String): Boolean = !UNDERAGE_WORDS.containsMatchIn(text)
+        fun adultTextIsEligible(text: String): Boolean =
+            !UNDERAGE_WORDS.containsMatchIn(text) && !NONCONSENSUAL_WORDS.containsMatchIn(text)
         private const val BLUESKY_DISCOVER = "at://did:plc:z72i7hdynmk6r22z27h6tvur/app.bsky.feed.generator/whats-hot"
 
         /** WeaverSocial topics → Mastodon hashtags that reliably carry pictures and GIFs. */
