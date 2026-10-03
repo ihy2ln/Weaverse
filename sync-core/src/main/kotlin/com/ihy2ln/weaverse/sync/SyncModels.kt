@@ -74,6 +74,8 @@ data class BookSummary(
     val id: String,
     val title: String,
     val updatedAt: Long = 0L,
+    /** novel, server, storyboard, manga_edit… — decides which mode the web version shows it in. */
+    val workType: String = "",
 )
 
 @Serializable

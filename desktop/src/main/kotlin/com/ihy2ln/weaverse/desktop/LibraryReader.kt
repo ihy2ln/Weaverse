@@ -222,7 +222,8 @@ object LibraryReader {
     private fun books(conn: Connection): List<BookSummary> {
         if (!tableExists(conn, "books")) return emptyList()
         return conn.createStatement().use { st ->
-            st.executeQuery("SELECT id, title, updatedAt FROM books ORDER BY updatedAt DESC").use { rs ->
+            st.executeQuery("SELECT * FROM books ORDER BY updatedAt DESC").use { rs ->
+                val columns = (1..rs.metaData.columnCount).map { rs.metaData.getColumnName(it) }.toSet()
                 buildList {
                     while (rs.next()) {
                         add(
@@ -230,6 +231,7 @@ object LibraryReader {
                                 id = rs.getString("id"),
                                 title = rs.getString("title") ?: "Untitled",
                                 updatedAt = rs.getLong("updatedAt"),
+                                workType = if ("workType" in columns) rs.getString("workType").orEmpty() else "",
                             ),
                         )
                     }

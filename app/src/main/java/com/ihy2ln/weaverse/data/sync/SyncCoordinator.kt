@@ -43,6 +43,7 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
@@ -58,6 +59,7 @@ import io.ktor.server.request.receiveChannel
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondFile
 import io.ktor.server.response.respondText
+import io.ktor.server.response.respondBytes
 import io.ktor.server.plugins.origin
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
@@ -255,6 +257,14 @@ class SyncCoordinator @Inject constructor(
             get("/") { call.respondText(webIndexHtml(), ContentType.Text.Html) }
             get("/app.js") { call.respondText(webAppJs(), ContentType.Text.JavaScript) }
             get("/app.css") { call.respondText(webAppCss(), ContentType.Text.CSS) }
+            // The web version's mode art comes from the app's own key art.
+            get("/art/{name}") {
+                val key = call.parameters["name"].orEmpty().removeSuffix(".webp")
+                if (key !in com.ihy2ln.weaverse.sync.web.webArtKeys) return@get call.respond(HttpStatusCode.NotFound, "")
+                val bytes = runCatching { context.assets.open("images/weaverse/modes/$key.webp").use { it.readBytes() } }.getOrNull()
+                    ?: return@get call.respond(HttpStatusCode.NotFound, "")
+                call.respondBytes(bytes, ContentType("image", "webp"))
+            }
             get("/api/status") {
                 call.respond(
                     SyncStatusResponse(
@@ -701,7 +711,7 @@ class SyncCoordinator @Inject constructor(
     }
 
     private suspend fun librarySummary(): LibrarySummary {
-        val books = db.bookDao().getAll().map { BookSummary(it.id, it.title, it.updatedAt) }
+        val books = db.bookDao().getAll().map { BookSummary(it.id, it.title, it.updatedAt, it.workType) }
         val notes = db.snippetDao().getByCategory("notes").map {
             NoteSummary(it.id, it.title, it.body.take(160), it.createdAt)
         }

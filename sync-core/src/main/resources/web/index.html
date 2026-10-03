@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Weaverse</title>
+  <link rel="stylesheet" href="/app.css" />
+</head>
+<body>
+  <div id="backdrop" class="backdrop" aria-hidden="true"><img id="backdropImg" alt="" /></div>
+  <div class="app">
+    <header id="chrome" class="chrome">
+      <div class="brand"><span class="mark">W</span></div>
+      <nav id="tabs" class="tabs" aria-label="Modes"></nav>
+      <div class="chrome-right">
+        <span id="statusChip" class="chip">Connecting…</span>
+        <button id="searchBtn" class="icon" type="button" title="Search" aria-label="Search">
+          <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+        </button>
+        <button id="settingsBtn" class="icon" type="button" title="Settings" aria-label="Settings">
+          <svg viewBox="0 0 24 24"><path d="M19.14 12.94a7.07 7.07 0 0 0 .06-.94 7.07 7.07 0 0 0-.06-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96a7 7 0 0 0-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84a.48.48 0 0 0-.47.41l-.36 2.54a7.4 7.4 0 0 0-1.62.94l-2.39-.96a.48.48 0 0 0-.59.22L2.74 8.87a.47.47 0 0 0 .12.61l2.03 1.58a7.4 7.4 0 0 0 0 1.88l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.04.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54a7.4 7.4 0 0 0 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.47.47 0 0 0-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></svg>
+        </button>
+      </div>
+    </header>
+    <main id="stage" class="stage"></main>
+  </div>
+
+  <div id="search" class="sheet" hidden>
+    <div class="sheet-card">
+      <div class="sheet-head"><input id="searchInput" placeholder="Search books, scenes, codex, notes, chats…" /><button class="ghost" data-close="search" type="button">Close</button></div>
+      <div id="searchResults" class="results"></div>
+    </div>
+  </div>
+
+  <div id="settings" class="sheet" hidden>
+    <div class="sheet-card">
+      <div class="sheet-head"><h2>Settings</h2><button class="ghost" data-close="settings" type="button">Close</button></div>
+      <section class="panel">
+        <h3>Sync password</h3>
+        <p class="lead">Type this into the phone under Settings → Sync through the web version. It is only shown in a browser on this PC.</p>
+        <div id="passwordBox" class="pin">••••••</div>
+        <p id="lanHint" class="lead"></p>
+      </section>
+      <section class="panel">
+        <h3>PC harnesses</h3>
+        <p class="lead">Claude Code and ChatGPT (Codex) on your own plans, and ComfyUI on this PC's graphics card — used by the phone through this window.</p>
+        <div id="harnessList" class="harnesses"><p class="lead">Checking…</p></div>
+        <button id="harnessRefresh" class="ghost" type="button">Check again</button>
+      </section>
+      <section class="panel">
+        <h3>Library</h3>
+        <div class="row">
+          <input id="importZip" type="file" accept=".zip,.json,application/zip,application/json" hidden />
+          <button id="importBtn" type="button">Import Novelcrafter ZIP</button>
+          <button id="exportBtn" class="ghost" type="button">Export JSON</button>
+          <button id="pullBtn" class="ghost" type="button">Download sync package</button>
+        </div>
+        <p id="libraryMsg" class="msg"></p>
+      </section>
+    </div>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>

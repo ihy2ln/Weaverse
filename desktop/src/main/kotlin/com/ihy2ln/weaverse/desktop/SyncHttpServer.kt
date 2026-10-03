@@ -125,6 +125,14 @@ class SyncHttpServer(
             get("/app.css") {
                 call.respondText(webAppCss(), ContentType.Text.CSS)
             }
+            get("/art/{name}") {
+                val key = call.parameters["name"].orEmpty().removeSuffix(".webp")
+                val bytes = key.takeIf { it in com.ihy2ln.weaverse.sync.web.webArtKeys }
+                    ?.let { SyncHttpServer::class.java.getResourceAsStream("/web/art/$it.webp")?.use { s -> s.readBytes() } }
+                    ?: return@get call.respond(HttpStatusCode.NotFound, "")
+                call.response.headers.append("Cache-Control", "max-age=86400")
+                call.respondBytes(bytes, ContentType("image", "webp"))
+            }
             get("/api/status") {
                 val summary = LibraryReader.summarize(DesktopPaths.dbFile(dataDir))
                 val lan = localLanAddresses().joinToString(", ")

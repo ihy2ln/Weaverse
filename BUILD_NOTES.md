@@ -3,6 +3,25 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.88 - The web version catches up with the app
+
+- The web hub (served by Weaverse Desktop and by the phone's own host) is rebuilt in the app's
+  current look: streaming-style Home over the drifting home art (greeting, "Write it, play it,
+  draw it, live it.", Last time + Resume, Create, mode posters, Continue rows), the same mode
+  tabs (Novel, RPG, Games, WeaverBrowser, Manga Studio, Brainstorm/Notes), a banner card per
+  mode, and the backdrop rules from the app (full on Home, hero on a mode's first page,
+  blurred/dimmed further in). Novel: bookshelf → manuscript list + scene editor + codex. RPG,
+  Manga Studio and WeaverBrowser: synced chats read-only, manga pictures, own servers. Notes:
+  list + editor. Search covers books, scenes, codex, notes and chats. Settings sheet: sync
+  password (local browser only), phone address, PC harness status with fixes, import / export /
+  sync package.
+- The page moved from Kotlin strings to sync-core/src/main/resources/web (index.html, app.css,
+  app.js); mode art is served at /art/<key>.webp (desktop jar resources; the phone host reads its
+  own assets). `BookSummary.workType` added so servers and manga projects land in their modes.
+- Weaverse Desktop at S:\AI\Novel\Weaverse updated and restarted. 641 unit tests pass.
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.4.88.apk`, SHA-256
+  `30370300f02ffa04d7d9ec68c456be767cb0060f257784499f1967f432dcbcd4`.
+
 ## v1.4.87 - PC harnesses: Claude Code, ChatGPT (Codex) and ComfyUI
 
 - Weaverse Desktop (`desktop/`) gains an AI bridge (`AiBridge.kt`), behind the sync password
