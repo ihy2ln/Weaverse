@@ -3,6 +3,18 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.86 - Colorize failures explain themselves
+
+- Colorizing still failed on the user's phone after the 1.4.85 fallback, and the phone could not
+  be reached over adb, so the cause is now shown in the app: when the first model and every
+  fallback fail, `MangaColorFallback.AllModelsFailed` carries each model's error
+  ("gemini-…: The Image API returned no image…; flux…: …"), and the run summary appends the
+  first failed page's errors. It also says when no other provider's image model was available
+  to retry with. Key/credit/network errors are reported the same way but are not retried.
+- 639 unit tests pass.
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.4.86.apk`, SHA-256
+  `5b0397752bdacc197118bf0e42e28ed61edbd60b98c502a031448670210b19dd`.
+
 ## v1.4.85 - Mode backgrounds, focus videos, Manga Studio reads and edits online
 
 - Every mode sits on a backdrop the way Home does (`feature/shell/ModeBackdrop.kt`, drawn once
