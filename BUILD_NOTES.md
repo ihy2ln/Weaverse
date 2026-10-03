@@ -3,6 +3,42 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.89 - fal.ai and local Ollama models (WV 10.3.0)
+
+- **fal.ai** (`ai/fal/`): one key (Settings → fal.ai → Save & check, stored as `SecureKeyStore.FAL`)
+  for fal's picture models and its text router. Refs: `fal/<endpoint id>` (pictures, e.g.
+  `fal/fal-ai/flux-pro/kontext`) and `fal-llm/<OpenRouter model id>` (text through
+  `https://fal.run/openrouter/router/openai/v1`; `FalChatProvider` is `OpenAiProvider` with
+  `Authorization: Key`). Pictures go through the queue API (`queue.fal.run` submit → status_url
+  → response_url) with the page inline as a data URI. Each endpoint's input is built from its
+  OpenAPI schema (`fal.ai/api/openapi/queue/openapi.json?endpoint_id=`): `image_url` vs
+  `image_urls`, `enable_safety_checker: false`, the highest `safety_tolerance`, PNG out, and its
+  `aspect_ratio` values become `ratio:W:H` tags so the manga editor pads pages to a shape the
+  model offers. Catalog from `api.fal.ai/v1/models` (image-to-image + text-to-image; upscalers,
+  background removal and other utilities left out), curated editors first (Kontext pro/max, Qwen
+  Image Edit 2511, FLUX 2 Pro Edit, Seedream 5 Pro Edit, Nano Banana Pro Edit). fal models show
+  in Settings → Models, Manga Studio AI settings, the image-generation dialog, and as a colorize
+  fallback provider (FLUX first) when another provider declines a page.
+- **Ollama** through Weaverse Desktop: `AiBridge` gains an `ollama` harness (`ollamaUrl`,
+  `ollamaPath` in sync-config.json). Capabilities list the PC's installed models and which ones
+  read pictures (`/api/show` capabilities → `vision`). Chats go to `/api/chat` with the real
+  turns, system prompt, temperature / top_p / num_predict, pictures on the last turn for vision
+  models, and `think: false` for thinking models. The answer streams into the job and the phone
+  polls it, so `ollama/<model>` refs stream like cloud models. Only names Ollama itself lists are
+  accepted. Desktop starts `ollama serve` when Ollama is installed but not running.
+- PC setup: Ollama 0.35.1 installed to `S:\AI\Ollama\app` (on the user PATH). Models stay in the
+  earlier store `S:\AI\Harness\Ollama\.ollama\models` (qwen3.6 36B, huihui_ai/qwen3-vl-abliterated,
+  mirage335/Llama-3-NeuralDaredevil-8B-abliterated-virtuoso, artifish/llama3.2-uncensored) via
+  `OLLAMA_MODELS` and the Ollama app's own model-location setting. Live bridge test: streamed
+  NeuralDaredevil prose, qwen3-vl read a test image, an unknown model was refused.
+- Weaverse Desktop jar at S:\AI\Novel\Weaververse\Desktop updated (previous jar kept as
+  `Weaverse.jar.v1.4.88.bak`). 647 unit tests pass (new: `FalTest` on real fal catalog/schema
+  fixtures, Ollama cases in `PcHarnessTest`).
+- Not yet done: fal generation is untested live (no fal key on this PC); the web version does not
+  show fal or Ollama yet; the new Settings section was not checked on a device (no emulator up).
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.4.89.apk`, SHA-256
+  `13a73cbf81bead6b80170aded6d639a6fb2e0df31c7b144ff1259cbd7f0e131d`.
+
 ## v1.4.88 - The web version catches up with the app
 
 - The web hub (served by Weaverse Desktop and by the phone's own host) is rebuilt in the app's
