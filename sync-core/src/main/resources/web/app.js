@@ -7,7 +7,8 @@
     { key: 'games', label: 'Games', eyebrow: 'Play', desc: 'Arcade and story games set in your worlds.' },
     { key: 'browser', label: 'WeaverBrowser', eyebrow: 'Browse & chat', desc: 'Servers and channels with your codex as knowledge.' },
     { key: 'manga', label: 'Manga Studio', eyebrow: 'Draw & read', desc: 'Read, translate and color manga and comics.' },
-    { key: 'notes', label: 'Brainstorm/Notes', eyebrow: 'Think', desc: 'Notes and brainstorming beside your codex.' }
+    { key: 'notes', label: 'Brainstorm/Notes', eyebrow: 'Think', desc: 'Notes and brainstorming beside your codex.' },
+    { key: 'live', label: 'Live app', eyebrow: 'The real app', desc: 'The current Weaverse APK, running on this PC and played from the browser.' }
   ];
   const state = {
     token: localStorage.getItem('weaverseToken') || '',
@@ -19,7 +20,7 @@
   const el = (id) => document.getElementById(id);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const mode = (key) => MODES.find((m) => m.key === key) || MODES[0];
-  const art = (key) => '/art/' + key + '.webp';
+  const art = (key) => '/art/' + (key === 'live' ? 'home' : key) + '.webp';
 
   // ---------------------------------------------------------------- server
   async function api(path, options) {
@@ -96,10 +97,11 @@
     renderTabs();
     const r = state.route;
     const stage = el('stage');
+    if (r.mode !== 'live') stopLive();
     window.scrollTo(0, 0);
     if (r.mode === 'home') { setBackdrop('home', ''); stage.innerHTML = homeHtml(); wireHome(); return; }
     setBackdrop(r.mode, r.kind ? 'quiet' : 'hero');
-    const views = { novel: novelView, rpg: rpgView, games: gamesView, browser: browserView, manga: mangaView, notes: notesView };
+    const views = { novel: novelView, rpg: rpgView, games: gamesView, browser: browserView, manga: mangaView, notes: notesView, live: liveView };
     (views[r.mode] || gamesView)(stage, r);
   }
 
@@ -132,7 +134,7 @@
     const hour = new Date().getHours();
     const greeting = hour < 5 ? 'Good night' : hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
     const last = lastTouched();
-    const posters = MODES.filter((m) => m.key !== 'home').map((m) =>
+    const posters = MODES.filter((m) => m.key !== 'home' && m.key !== 'live').map((m) =>
       '<button type="button" class="poster" data-go="' + m.key + '" style="background-image:url(' + art(m.key) + ')"><div class="body">' +
       '<div class="eyebrow">' + esc(m.eyebrow) + '</div><h3>' + esc(m.label) + '</h3><p>' + esc(m.desc) + '</p></div></button>'
     ).join('');
@@ -153,7 +155,7 @@
       '<button type="button" data-create="note">New note</button>' +
       '<div class="note">New novels, campaigns and manga projects are made on the phone and arrive here when it syncs.</div>' +
       '</div></div></section>' +
-      '<div class="rowHead"><h2>Choose a mode</h2><span class="count">' + (MODES.length - 1) + ' modes</span></div>' +
+      '<div class="rowHead"><h2>Choose a mode</h2><span class="count">' + (MODES.length - 2) + ' modes</span></div>' +
       '<div class="posters">' + posters + '</div>' + rows.join('');
   }
   function row(title, count, cards) {
@@ -263,6 +265,175 @@
         servers.map((s) => '<div class="card"><h4>' + esc(s.title) + '</h4><div class="sub">' + esc(ago(s.updatedAt)) + '</div></div>').join('') + '</div>');
     }
   }
+
+  // ---------------------------------------------------------------- Live app (the real APK)
+  // Weaverse Desktop runs the newest APK on a headless emulator and streams its screen as H.264;
+  // WebCodecs decodes it here, and taps, drags, keys and typing go back through adb.
+  let live = null;
+  function stopLive() {
+    if (!live) return;
+    live.stopped = true;
+    try { live.abort.abort(); } catch (e) {}
+    try { if (live.decoder && live.decoder.state !== 'closed') live.decoder.close(); } catch (e) {}
+    clearInterval(live.poll);
+    live = null;
+  }
+  function liveView(stage) {
+    stopLive();
+    stage.innerHTML = banner('live', 'Live app', 'The current APK, running on this PC') +
+      '<div class="live"><div class="liveSide pane">' +
+      '<div id="liveState" class="lead">Checking…</div>' +
+      '<div class="row"><button id="liveStart" class="solid" type="button">Start</button><button id="liveStop" class="ghost" type="button">Stop</button></div>' +
+      '<h3 style="margin-top:16px">Buttons</h3><div class="row">' +
+      '<button class="ghost" type="button" data-key="4">&#9664; Back</button><button class="ghost" type="button" data-key="3">&#9679; Home</button><button class="ghost" type="button" data-key="187">&#9632; Apps</button></div>' +
+      '<h3 style="margin-top:16px">Type</h3><input id="liveText" placeholder="Type here, Enter sends" />' +
+      '<p class="lead">Click to tap, drag to swipe or scroll, hold to long-press, the mouse wheel scrolls. With the screen selected you can also type and use Backspace, Enter and Esc (Back).</p>' +
+      '<p class="lead">This copy of the app keeps its own data. To see your library in it, sync it with this PC: inside the app, Settings → Sync through the web version, address http://10.0.2.2:' + (state.status.port || 8787) + '.</p>' +
+      '</div><div class="liveScreen"><canvas id="liveCanvas" tabindex="0" width="720" height="1280"></canvas><div id="liveHint" class="liveHint">Press Start</div></div></div>';
+    wireBack(stage);
+    if (!('VideoDecoder' in window)) { el('liveState').textContent = 'This browser cannot decode the stream (it needs WebCodecs: Chrome, Edge or Brave).'; return; }
+    live = { stopped: false, abort: new AbortController(), decoder: null, poll: 0, streaming: false, w: 720, h: 1280 };
+    el('liveStart').addEventListener('click', async () => { await api('/api/stream/start', { method: 'POST' }); pollLive(); });
+    el('liveStop').addEventListener('click', async () => { stopVideo(); await api('/api/stream/stop', { method: 'POST' }); pollLive(); });
+    stage.querySelectorAll('[data-key]').forEach((b) => b.addEventListener('click', () => sendInput({ t: 'key', key: Number(b.dataset.key) })));
+    el('liveText').addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      const text = e.target.value; e.target.value = '';
+      if (text) sendInput({ t: 'text', text: text });
+      sendInput({ t: 'key', key: 66 });
+    });
+    wirePointer(el('liveCanvas'));
+    live.poll = setInterval(pollLive, 2000);
+    pollLive();
+  }
+  function stopVideo() {
+    if (!live) return;
+    try { live.abort.abort(); } catch (e) {}
+    live.abort = new AbortController();
+    live.streaming = false;
+  }
+  async function pollLive() {
+    if (!live) return;
+    const res = await api('/api/stream/status').catch(() => null);
+    if (!live || !res) return;
+    if (res.status === 404) { el('liveState').textContent = 'The live app runs in Weaverse Desktop on a PC.'; clearInterval(live.poll); return; }
+    const s = await res.json().catch(() => ({ state: 'error', detail: 'Unreadable status' }));
+    const labels = { off: 'Off', booting: 'Starting', installing: 'Installing', ready: 'Running', error: 'Problem', locked: 'Locked' };
+    el('liveState').textContent = (labels[s.state] || s.state) + ' — ' + (s.detail || '') + (s.apk ? ' · ' + s.apk : '');
+    if (s.width) { live.w = s.width; live.h = s.height; }
+    el('liveHint').textContent = s.state === 'off' ? 'Press Start' : (s.detail || '');
+    el('liveHint').hidden = s.state === 'ready';
+    if (s.state === 'ready' && !live.streaming) startVideo();
+  }
+  async function startVideo() {
+    if (!live || live.streaming) return;
+    live.streaming = true;
+    const canvas = el('liveCanvas');
+    canvas.width = live.w; canvas.height = live.h;
+    const ctx = canvas.getContext('2d');
+    let sps = null, pps = null, configuredCodec = '', gotKey = false, ts = 0;
+    const decoder = new VideoDecoder({
+      output: (frame) => { ctx.drawImage(frame, 0, 0, canvas.width, canvas.height); frame.close(); },
+      error: () => { if (live) live.streaming = false; }
+    });
+    live.decoder = decoder;
+    const hex = (n) => n.toString(16).padStart(2, '0');
+    const withStart = (parts) => {
+      let len = 0; parts.forEach((p) => { len += 4 + p.length; });
+      const out = new Uint8Array(len); let o = 0;
+      parts.forEach((p) => { out.set([0, 0, 0, 1], o); out.set(p, o + 4); o += 4 + p.length; });
+      return out;
+    };
+    const onNal = (nal) => {
+      const type = nal[0] & 31;
+      if (type === 7) { sps = nal.slice(); return; }
+      if (type === 8) { pps = nal.slice(); return; }
+      if (type !== 5 && type !== 1) return;
+      if (type === 5) {
+        if (!sps || !pps) return;
+        const codec = 'avc1.' + hex(sps[1]) + hex(sps[2]) + hex(sps[3]);
+        if (codec !== configuredCodec || decoder.state !== 'configured') {
+          decoder.configure({ codec: codec, optimizeForLatency: true });
+          configuredCodec = codec;
+        }
+        gotKey = true;
+        decoder.decode(new EncodedVideoChunk({ type: 'key', timestamp: ts += 16666, data: withStart([sps, pps, nal]) }));
+      } else if (gotKey && decoder.state === 'configured') {
+        decoder.decode(new EncodedVideoChunk({ type: 'delta', timestamp: ts += 16666, data: withStart([nal]) }));
+      }
+    };
+    try {
+      const res = await api('/api/stream/video', { signal: live.abort.signal });
+      if (!res.ok || !res.body) throw new Error('No video');
+      const reader = res.body.getReader();
+      let buf = new Uint8Array(0);
+      while (live && !live.stopped) {
+        const step = await reader.read();
+        if (step.done) break;
+        const joined = new Uint8Array(buf.length + step.value.length);
+        joined.set(buf); joined.set(step.value, buf.length);
+        buf = joined;
+        // Split on 00 00 01 start codes; the last NAL stays buffered until the next one begins.
+        const starts = [];
+        for (let i = 0; i + 2 < buf.length; i++) {
+          if (buf[i] === 0 && buf[i + 1] === 0 && buf[i + 2] === 1) { starts.push(i + 3); i += 2; }
+        }
+        for (let k = 0; k + 1 < starts.length; k++) {
+          let end = starts[k + 1] - 3;
+          if (end > starts[k] && buf[end - 1] === 0) end--;
+          onNal(buf.subarray(starts[k], end));
+        }
+        if (starts.length) {
+          let keep = starts[starts.length - 1] - 3;
+          if (keep > 0 && buf[keep - 1] === 0) keep--;
+          buf = buf.slice(keep);
+        }
+      }
+    } catch (e) { /* stopped or dropped; the status poll restarts it */ }
+    if (live) live.streaming = false;
+    try { if (decoder.state !== 'closed') decoder.close(); } catch (e) {}
+  }
+  function sendInput(event) {
+    api('/api/stream/input', { method: 'POST', body: JSON.stringify(event) }).catch(() => {});
+  }
+  function wirePointer(canvas) {
+    let down = null, typed = '', typeTimer = 0, wheelTimer = 0, wheelDy = 0, wheelAt = null;
+    const pos = (e) => { const r = canvas.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height }; };
+    canvas.addEventListener('pointerdown', (e) => { canvas.focus(); canvas.setPointerCapture(e.pointerId); down = Object.assign(pos(e), { t: performance.now() }); });
+    canvas.addEventListener('pointerup', (e) => {
+      if (!down) return;
+      const p = pos(e); const ms = performance.now() - down.t;
+      const r = canvas.getBoundingClientRect();
+      const moved = Math.hypot((p.x - down.x) * r.width, (p.y - down.y) * r.height);
+      if (moved < 8) sendInput(ms > 500 ? { t: 'long', x: down.x, y: down.y } : { t: 'tap', x: down.x, y: down.y });
+      else sendInput({ t: 'swipe', x: down.x, y: down.y, x2: p.x, y2: p.y, ms: Math.round(Math.min(Math.max(ms, 80), 1200)) });
+      down = null;
+    });
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      wheelAt = wheelAt || pos(e);
+      wheelDy += e.deltaY;
+      clearTimeout(wheelTimer);
+      wheelTimer = setTimeout(() => {
+        const dy = Math.max(-0.6, Math.min(0.6, -wheelDy / 1500));
+        const y1 = Math.min(0.9, Math.max(0.1, wheelAt.y));
+        sendInput({ t: 'swipe', x: wheelAt.x, y: y1, x2: wheelAt.x, y2: Math.min(0.95, Math.max(0.05, y1 + dy)), ms: 220 });
+        wheelDy = 0; wheelAt = null;
+      }, 90);
+    }, { passive: false });
+    canvas.addEventListener('keydown', (e) => {
+      const keys = { Backspace: 67, Enter: 66, Escape: 4, Tab: 61, ArrowUp: 19, ArrowDown: 20, ArrowLeft: 21, ArrowRight: 22, Delete: 112 };
+      if (keys[e.key]) { e.preventDefault(); flush(); sendInput({ t: 'key', key: keys[e.key] }); return; }
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        typed += e.key;
+        clearTimeout(typeTimer);
+        typeTimer = setTimeout(flush, 120);
+      }
+    });
+    function flush() { if (typed) { sendInput({ t: 'text', text: typed }); typed = ''; } }
+  }
+
   function gamesView(stage) {
     stage.innerHTML = banner('games', 'Games', 'Played on the phone') +
       emptyHtml('Games run on the phone. Their worlds come from your books and codex, which you can edit here under Novel.');

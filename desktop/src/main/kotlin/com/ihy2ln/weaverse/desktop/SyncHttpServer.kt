@@ -34,6 +34,7 @@ import io.ktor.server.request.receive
 import io.ktor.server.request.receiveChannel
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytes
+import io.ktor.server.response.respondOutputStream
 import io.ktor.server.response.respondFile
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
@@ -70,6 +71,7 @@ class SyncHttpServer(
     }
     private val mcpTools = DesktopMcpTools(dataDir, config.appVersion)
     private val aiBridge = AiBridge(dataDir, config)
+    private val appStream = AppStream(config)
 
     fun start(): EmbeddedServer<*, *> {
         maybeAutoImport()
@@ -223,6 +225,35 @@ class SyncHttpServer(
                 val (bytes, mime) = aiBridge.takeImage(call.parameters["id"].orEmpty())
                     ?: return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "No image for this job"))
                 call.respondBytes(bytes, ContentType.parse(mime))
+            }
+            // The real app, live: see AppStream.
+            get("/api/stream/status") {
+                if (!authorized(call.request.headers["X-Weaverse-Token"])) return@get call.respond(HttpStatusCode.Unauthorized, AppStreamStatus("locked"))
+                call.respond(appStream.status())
+            }
+            post("/api/stream/start") {
+                if (!authorized(call.request.headers["X-Weaverse-Token"])) return@post call.respond(HttpStatusCode.Unauthorized, AppStreamStatus("locked"))
+                appStream.start()
+                call.respond(appStream.status())
+            }
+            post("/api/stream/stop") {
+                if (!authorized(call.request.headers["X-Weaverse-Token"])) return@post call.respond(HttpStatusCode.Unauthorized, AppStreamStatus("locked"))
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { appStream.stop() }
+                call.respond(appStream.status())
+            }
+            get("/api/stream/video") {
+                if (!authorized(call.request.headers["X-Weaverse-Token"])) return@get call.respond(HttpStatusCode.Unauthorized, "")
+                call.response.headers.append("Cache-Control", "no-store")
+                call.respondOutputStream(ContentType("video", "h264")) {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { appStream.streamVideo(this@respondOutputStream) }
+                }
+            }
+            post("/api/stream/input") {
+                if (!authorized(call.request.headers["X-Weaverse-Token"])) return@post call.respond(HttpStatusCode.Unauthorized, "")
+                val event = runCatching { call.receive<AppStreamInput>() }.getOrNull()
+                    ?: return@post call.respond(HttpStatusCode.BadRequest, "")
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { appStream.input(event) } }
+                call.respond(HttpStatusCode.NoContent, "")
             }
             get("/mcp") {
                 call.respondText(
