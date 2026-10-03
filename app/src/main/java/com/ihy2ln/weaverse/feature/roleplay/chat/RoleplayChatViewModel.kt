@@ -4690,28 +4690,35 @@ class RoleplayChatViewModel @Inject constructor(
      * own content rules, the page is offered to image models from other providers.
      */
     private suspend fun colorizeMangaImageAnyModel(path: String, primary: String): Pair<ByteArray, String> {
-        try {
+        val fallback = com.ihy2ln.weaverse.core.media.MangaColorFallback
+        val attempts = mutableListOf<String>()
+        val first = try {
             return colorizeMangaImage(path, primary)
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (first: Exception) {
-            if (!com.ihy2ln.weaverse.core.media.MangaColorFallback.isRefusal(first)) throw first
+        } catch (failure: Exception) {
+            failure
+        }
+        attempts += fallback.describe(primary, first)
+        val refused = fallback.isRefusal(first)
+        if (refused) {
             val others = runCatching {
                 openRouterRepository.fetchImageEditingModels().map { PromptModelSelection.modelRef(it.id) }
-            }.getOrDefault(emptyList())
-            var last: Exception = first
-            for (ref in com.ihy2ln.weaverse.core.media.MangaColorFallback.fallbacks(primary, others)) {
+            }.getOrElse { listOf<String>().also { _ -> attempts += "could not list other image models: ${it.message?.take(100)}" } }
+            val order = fallback.fallbacks(primary, others)
+            if (order.isEmpty()) attempts += "no image model from another provider is available to retry with"
+            for (ref in order) {
                 android.util.Log.i("MangaColor", "${primary.removePrefix("openrouter/")} declined; trying ${ref.removePrefix("openrouter/")}")
                 try {
                     return colorizeMangaImage(path, ref)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {
-                    last = failure
+                    attempts += fallback.describe(ref, failure)
                 }
             }
-            throw last
         }
+        throw com.ihy2ln.weaverse.core.media.MangaColorFallback.AllModelsFailed(refused, attempts.joinToString("; "))
     }
 
     private suspend fun colorizeMangaImage(path: String, modelRef: String): Pair<ByteArray, String> {
@@ -5295,7 +5302,7 @@ class RoleplayChatViewModel @Inject constructor(
                             // The page is still translated in black and white rather than dropped.
                             colorFailedPages++
                             if (com.ihy2ln.weaverse.core.media.MangaColorFallback.isRefusal(failure)) colorRefusedPages++
-                            else if (colorOtherReason == null) colorOtherReason = failure.message?.take(160)
+                            if (colorOtherReason == null) colorOtherReason = failure.message?.take(400)
                             android.util.Log.w("MangaTranslation", "Colorizing page ${index + 1} failed; translating it uncolored", failure)
                             null
                         }
@@ -5591,7 +5598,7 @@ class RoleplayChatViewModel @Inject constructor(
                 runMangaChapterBatch(targets, onFailure = { index, failure ->
                     failedPages++
                     if (com.ihy2ln.weaverse.core.media.MangaColorFallback.isRefusal(failure)) refusedPages++
-                    else if (otherReason == null) otherReason = failure.message?.take(160)
+                    if (otherReason == null) otherReason = failure.message?.take(400)
                     completed = index + 1
                     android.util.Log.e("MangaColorization", "Page ${index + 1}/${targets.size} failed; continuing", failure)
                     _uiState.update {

@@ -19,6 +19,7 @@ object MangaColorFallback {
 
     /** True when the model answered but would not make this picture (as opposed to a key, credit or network problem). */
     fun isRefusal(error: Throwable): Boolean = when (error) {
+        is AllModelsFailed -> error.refused
         is AIError.NoApiKey, is AIError.InvalidKey, is AIError.OutOfCredits, is AIError.NoNetwork,
         is AIError.RateLimited, is AIError.ProviderDown -> false
         is AIError.HttpFailure -> error.statusCode == 403 || refusalWords.containsMatchIn(error.message)
@@ -43,14 +44,17 @@ object MangaColorFallback {
     fun provider(modelRef: String): String =
         modelRef.removePrefix("openrouter/").substringBefore('/').lowercase()
 
-    /** One line for the run summary explaining why pages stayed black and white. */
-    fun reasonNote(refused: Int, otherReason: String?): String = when {
-        refused > 0 && otherReason == null ->
-            " The image models' providers declined those pages under their own content rules, " +
-                "including every fallback model tried; Weaverse itself does not filter them."
-        refused > 0 ->
-            " $refused were declined by the image providers' own content rules; others failed with: $otherReason"
-        otherReason != null -> " Reason: $otherReason"
-        else -> ""
+    /** Thrown when the first model and every fallback failed; [message] lists each model's error. */
+    class AllModelsFailed(val refused: Boolean, override val message: String) : Exception(message)
+
+    /** "gemini-2.5-flash-image: The Image API returned no image…" */
+    fun describe(modelRef: String, error: Throwable): String =
+        modelRef.removePrefix("openrouter/").substringAfter('/') + ": " +
+            (error.message?.take(160)?.ifBlank { null } ?: error.javaClass.simpleName)
+
+    /** The summary's explanation, with the first failed page's errors so a screenshot shows the cause. */
+    fun reasonNote(refused: Int, firstFailure: String?): String = buildString {
+        if (refused > 0) append(" $refused were declined by the image providers' own content rules (Weaverse adds no filter).")
+        if (firstFailure != null) append(" First failed page — $firstFailure")
     }
 }
