@@ -337,15 +337,16 @@
       if (res.status === 404) { box.innerHTML = '<p class="lead">PC harnesses run in Weaverse Desktop on a PC; this host is the phone.</p>'; return; }
       if (!res.ok) { box.innerHTML = '<p class="lead">The PC rejected the password.</p>'; return; }
       const caps = await res.json();
-      const names = { claude: 'Claude Code', codex: 'ChatGPT · Codex', comfyui: 'ComfyUI' };
+      const names = { claude: 'Claude Code', codex: 'ChatGPT · Codex', comfyui: 'ComfyUI', ollama: 'Ollama (local models)' };
       const fixes = {
         claude: 'Install Claude Code, run "claude" in a terminal and sign in with /login.',
         codex: 'Run "npm install -g @openai/codex", then "codex login" with your ChatGPT account.',
-        comfyui: 'Start ComfyUI on this PC (it should answer at 127.0.0.1:8188).'
+        comfyui: 'Start ComfyUI on this PC (it should answer at 127.0.0.1:8188).',
+        ollama: 'Install Ollama from ollama.com and pull a model ("ollama pull <model>"); Weaverse Desktop starts it when needed.'
       };
       box.innerHTML = (caps.harnesses || []).map((h) =>
         '<div class="harness ' + (h.available ? 'ok' : '') + '"><span class="dot"></span><div><strong>' + esc(names[h.id] || h.id) + '</strong>' +
-        '<div class="sub">' + esc(h.detail) + (h.models && h.models.length ? ' · ' + esc(h.models.join(', ')) : '') + '</div>' +
+        '<div class="sub">' + esc(h.detail) + (h.models && h.models.length ? ' · ' + esc(h.models.map((m) => (h.vision || []).includes(m) ? m + ' (vision)' : m).join(', ')) : '') + '</div>' +
         (h.available ? (h.id === 'claude' ? '<div class="sub">If the phone reports it is signed out, run "claude" here and sign in with /login.</div>' : '')
           : '<div class="sub">' + esc(fixes[h.id] || '') + '</div>') + '</div></div>'
       ).join('');

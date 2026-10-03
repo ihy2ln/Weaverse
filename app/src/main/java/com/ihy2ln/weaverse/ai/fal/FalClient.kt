@@ -92,6 +92,14 @@ class FalClient @Inject constructor(
         merged
     }
 
+    /**
+     * The account's credit in USD. fal only shows it to admin keys, so an ordinary key gives null
+     * (the key still works; a picture then fails with a clear "no credit" message when empty).
+     */
+    suspend fun balance(): Double? = withContext(Dispatchers.IO) {
+        runCatching { Fal.parseBalance(execute(Request.Builder().url(BILLING).get(), key())) }.getOrNull()
+    }
+
     /** `ratio:W:H` tags for the manga editor's padding, from the endpoint's schema. */
     suspend fun ratioTags(endpoint: String): List<String> =
         runCatching { Fal.ratioTags(schema(endpoint)) }.getOrDefault(emptyList())
@@ -192,6 +200,7 @@ class FalClient @Inject constructor(
         const val QUEUE = "https://queue.fal.run"
         const val CATALOG = "https://api.fal.ai/v1/models"
         const val SCHEMA = "https://fal.ai/api/openapi/queue/openapi.json"
+        const val BILLING = "https://api.fal.ai/v1/account/billing?expand=credits"
         val JSON = "application/json".toMediaType()
     }
 }

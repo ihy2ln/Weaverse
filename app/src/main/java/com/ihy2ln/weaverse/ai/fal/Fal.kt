@@ -178,6 +178,15 @@ object Fal {
         return url to picture["content_type"]?.jsonPrimitive?.contentOrNull
     }
 
+    fun isNoCredit(code: Int, message: String): Boolean =
+        code == 402 || message.contains("balance", true) || message.contains("top_up", true) ||
+            message.contains("top up", true) || message.contains("user is locked", true)
+
+    /** `GET api.fal.ai/v1/account/billing?expand=credits` → balance in USD; null when the key may not read it. */
+    fun parseBalance(body: String): Double? = runCatching {
+        json.parseToJsonElement(body).jsonObject["credits"]!!.jsonObject["current_balance"]!!.jsonPrimitive.content.toDouble()
+    }.getOrNull()
+
     /** fal error bodies: `{"detail": "..."}` or `{"detail": [{"msg": "...", "loc": [...]}]}`. */
     fun errorMessage(body: String): String? = runCatching {
         json.parseToJsonElement(body).jsonObject["detail"]?.let(::detailMessage)
@@ -194,12 +203,15 @@ object Fal {
         else -> detail.toString()
     }.take(400)
 
+    const val BILLING_PAGE = "fal.ai/dashboard/billing"
+
     /** fal's HTTP failures as the app's errors (so the manga fallback knows a refusal from a key problem). */
     fun errorFor(code: Int, body: String, retryAfter: Long?): AIError {
         val message = errorMessage(body) ?: body.take(300).ifBlank { "HTTP $code" }
         return when {
             code == 401 -> AIError.InvalidKey("fal.ai rejected the key: $message")
-            code == 402 || message.contains("balance", true) || message.contains("locked", true) -> AIError.OutOfCredits
+            // fal locks an account with no credit: "User is locked. Reason: Exhausted balance." / "Reason: TOP_UP."
+            isNoCredit(code, message) -> AIError.HttpFailure(402, "fal.ai has no credit left — add some at $BILLING_PAGE, then try again.")
             code == 403 -> AIError.HttpFailure(403, "fal: $message")
             code == 429 -> AIError.RateLimited(retryAfter)
             code == 400 || code == 422 -> AIError.BadRequest("fal: $message")

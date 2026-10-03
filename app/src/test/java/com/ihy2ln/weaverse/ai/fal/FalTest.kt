@@ -64,7 +64,18 @@ class FalTest {
         assertEquals("image/png", type)
         assertThrows<AIError.BadRequest> { Fal.resultImage("""{"detail":[{"loc":["body","image_url"],"msg":"field required"}]}""") }
         assertTrue(Fal.errorFor(401, """{"detail":"invalid key credentials"}""", null) is AIError.InvalidKey)
-        assertTrue(Fal.errorFor(403, """{"detail":"User is locked. Reason: Exhausted balance."}""", null) is AIError.OutOfCredits)
+        // Real answers from a key with no credit (2026-10-03): the queue and the text router.
+        for (body in listOf(
+            """{"detail":"User is locked. Reason: Exhausted balance. Top up your balance at fal.ai/dashboard/billing."}""",
+            """{"detail":"User is locked. Reason: TOP_UP."}""",
+        )) {
+            val noCredit = Fal.errorFor(403, body, null)
+            assertTrue(noCredit is AIError.HttpFailure && noCredit.statusCode == 402)
+            assertTrue(noCredit.message.contains(Fal.BILLING_PAGE))
+            assertFalse(MangaColorFallback.isRefusal(noCredit))
+        }
+        assertEquals(24.5, Fal.parseBalance("""{"username":"u","credits":{"current_balance":24.5,"currency":"USD"}}"""))
+        assertNull(Fal.parseBalance("""{"error":{"type":"authorization_error"}}"""))
         val refusal = Fal.errorFor(422, """{"detail":[{"msg":"content policy violation","type":"content_policy_violation"}]}""", null)
         assertTrue(MangaColorFallback.isRefusal(refusal))
     }

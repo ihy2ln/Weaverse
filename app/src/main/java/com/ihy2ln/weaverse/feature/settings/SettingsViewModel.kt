@@ -274,11 +274,17 @@ class SettingsViewModel @Inject constructor(
         settings.setApiKey(SecureKeyStore.FAL, key)
         viewModelScope.launch {
             _uiState.update { it.copy(falChecking = true, falStatus = "Checking the key with fal.ai…") }
-            val status = runCatching { fal.refreshCatalog() }.fold(
-                { models ->
+            val status = runCatching { fal.refreshCatalog() to fal.balance() }.fold(
+                { (models, balance) ->
                     val edits = models.count { it.supportsImages }
+                    val credit = when {
+                        balance == null -> "\nfal shows the balance only to admin keys. If a picture fails with \"no credit\", " +
+                            "add credit at ${com.ihy2ln.weaverse.ai.fal.Fal.BILLING_PAGE}."
+                        balance <= 0.0 -> "\n✗ No credit yet: add some at ${com.ihy2ln.weaverse.ai.fal.Fal.BILLING_PAGE} before generating."
+                        else -> "\nCredit: $" + String.format(java.util.Locale.US, "%.2f", balance)
+                    }
                     "✓ Key works. $edits picture-editing and ${models.size - edits} text-to-image models from fal.ai, " +
-                        "plus ${com.ihy2ln.weaverse.ai.fal.Fal.chatModels.size} text models through fal's router."
+                        "plus ${com.ihy2ln.weaverse.ai.fal.Fal.chatModels.size} text models through fal's router." + credit
                 },
                 { "✗ ${it.message ?: "fal.ai did not answer"}" },
             )
