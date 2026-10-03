@@ -11,6 +11,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.ihy2ln.weaverse.MainActivity
 import com.ihy2ln.weaverse.R
@@ -22,12 +23,27 @@ class MangaAiForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val notification = notification(this, MangaAiTaskState(action =
             intent?.getStringExtra(EXTRA_ACTION).orEmpty(), running = true))
+        // Android requires startForeground on every start, even when the job has already
+        // finished; only then may the service go away.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+        synchronized(lock) {
+            if (stopRequested) finish() else active = this
+        }
         return START_NOT_STICKY
+    }
+
+    override fun onDestroy() {
+        synchronized(lock) { if (active === this) active = null }
+        super.onDestroy()
+    }
+
+    private fun finish() {
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     companion object {
@@ -35,7 +51,14 @@ class MangaAiForegroundService : Service() {
         private const val NOTIFICATION_ID = 73042
         private const val EXTRA_ACTION = "action"
 
+        private val lock = Any()
+        /** The service once it is in the foreground; null until then. */
+        private var active: MangaAiForegroundService? = null
+        /** A job that ended before the service reached the foreground. */
+        private var stopRequested = false
+
         fun start(context: Context, action: String) {
+            synchronized(lock) { stopRequested = false }
             ensureChannel(context)
             ContextCompat.startForegroundService(
                 context,
@@ -48,8 +71,22 @@ class MangaAiForegroundService : Service() {
             manager.notify(NOTIFICATION_ID, notification(context, state))
         }
 
+        /**
+         * Ends the service. Never stopService here: a job that fails at once (no API key, no
+         * model) would stop the service before it called startForeground, and Android 12+
+         * kills the whole app for that (ForegroundServiceDidNotStartInTimeException).
+         */
+        @Suppress("UNUSED_PARAMETER")
         fun stop(context: Context) {
-            context.stopService(Intent(context, MangaAiForegroundService::class.java))
+            synchronized(lock) {
+                val service = active
+                if (service != null) {
+                    active = null
+                    service.finish()
+                } else {
+                    stopRequested = true
+                }
+            }
         }
 
         private fun ensureChannel(context: Context) {

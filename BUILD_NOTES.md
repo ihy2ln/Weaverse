@@ -35,8 +35,16 @@ state for picking this back up in a fresh session.
   MangaDex chapter online, Translate from page 2 opened the studio on 2/20 with Translate · Page
   selected; a manual edit saved its copy to the gallery. AI runs not exercised (no API key).
   637 unit tests pass (2 new in `ModeBackdropsTest`).
+- Fixed: Translate / Colorize / Colorize + Translate force-closed the app whenever the job ended
+  at once (no API key, no model). `MangaAiForegroundService.stop` called `stopService` before the
+  service had reached `startForeground`, and Android 12+ kills the app for that
+  (ForegroundServiceDidNotStartInTimeException); bug dates from 1.4.52. Stop is now a handshake:
+  the service always goes foreground first, then ends itself if the job already finished.
+- The manga editor now reports runs that stop instantly: the busy flag flipped within one frame
+  so no "Done" chip appeared and Run looked dead. Run sets a flag, the chip reads "Couldn't run —
+  see why", and the Status sheet opens with the reason.
 - APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.4.85.apk`, SHA-256
-  `ed05e7c1090ab4265f26c7df30874bcfb6db5fa8b3f8b3ee4ca1e1c9a1425baf`.
+  `a1244b8b7466d1443a601be3217768cbabd781950b7c84ef2532ff746f517ef0`.
 
 ## v1.4.84 - Servers: your own servers, Discord parity, codex as server knowledge
 

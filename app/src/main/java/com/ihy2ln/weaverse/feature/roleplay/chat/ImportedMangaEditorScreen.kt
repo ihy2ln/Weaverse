@@ -31,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -244,15 +245,35 @@ fun ImportedMangaEditorScreen(
     // the summary straight away when some pages were left unchanged, failed or need review.
     var runFinished by remember { mutableStateOf(false) }
     var wasBusy by remember { mutableStateOf(state.mangaEditBusy) }
-    val runHadProblems = Regex("unchanged|failed|Needs review|already contained color|could not|No readable", RegexOption.IGNORE_CASE)
+    // Set by Run. A run that stops at once (no API key, no model) is busy for less than a
+    // frame, so "busy went false" alone never fired and Run looked like it did nothing.
+    var runRequested by remember { mutableStateOf(false) }
+    val statusScope = androidx.compose.runtime.rememberCoroutineScope()
+    val runHadProblems = Regex(
+        "unchanged|failed|Needs review|already contained color|could not|No readable|needs an AI connection|" +
+            "no Vision|Choose an|already running|stopped|API key",
+        RegexOption.IGNORE_CASE,
+    ).containsMatchIn(state.storyboardStatus)
+    val runNeverStarted = Regex("needs an AI connection|API key|no Vision|Choose an|already running|Could not start", RegexOption.IGNORE_CASE)
         .containsMatchIn(state.storyboardStatus)
-    LaunchedEffect(state.mangaEditBusy) {
-        if (wasBusy && !state.mangaEditBusy) {
+    // The final status can land just after "busy" clears, so read it when the sheet opens.
+    val latestHadProblems by androidx.compose.runtime.rememberUpdatedState(runHadProblems)
+    LaunchedEffect(state.mangaEditBusy, runRequested) {
+        if ((wasBusy || runRequested) && !state.mangaEditBusy) {
             runFinished = true
             showOriginal = false
-            if (runHadProblems) sheet = "Status"
+            // Opened from a scope this effect's restarts can't cancel, after the AI sheet
+            // has finished closing.
+            statusScope.launch {
+                kotlinx.coroutines.delay(450)
+                if (latestHadProblems) sheet = "Status"
+            }
+            runRequested = false
         }
-        if (state.mangaEditBusy) runFinished = false
+        if (state.mangaEditBusy) {
+            runFinished = false
+            runRequested = false
+        }
         wasBusy = state.mangaEditBusy
     }
     Box(Modifier.fillMaxSize().background(Color.Black).clipToBounds()) {
@@ -316,7 +337,14 @@ fun ImportedMangaEditorScreen(
         if (!state.mangaEditBusy && runFinished) {
             Surface(Modifier.align(Alignment.TopEnd).padding(top = if (focusMode) 52.dp else 100.dp), shape = RoundedCornerShape(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    MangaTool(if (runHadProblems) "Done · some pages unchanged — see why" else "Done · see summary", { sheet = "Status" })
+                    MangaTool(
+                        when {
+                            runNeverStarted -> "Couldn't run — see why"
+                            runHadProblems -> "Done · some pages unchanged — see why"
+                            else -> "Done · see summary"
+                        },
+                        { sheet = "Status" },
+                    )
                     MangaTool("✕", { runFinished = false })
                 }
             }
@@ -511,6 +539,7 @@ fun ImportedMangaEditorScreen(
                         Button(enabled = !state.mangaEditBusy && (!chapterScope || initialMangaChapterId != null), onClick = {
                             showOriginal = false
                             sheet = null
+                            runRequested = true
                             if (chapterScope) initialMangaChapterId?.let { id ->
                                 when (aiAction) {
                                     "Translate" -> viewModel.translateDownloadedChapter(id)
