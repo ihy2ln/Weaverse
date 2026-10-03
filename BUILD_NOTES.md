@@ -34,10 +34,16 @@ state for picking this back up in a fresh session.
 - Weaverse Desktop jar at S:\AI\Novel\Weaververse\Desktop updated (previous jar kept as
   `Weaverse.jar.v1.4.88.bak`). 647 unit tests pass (new: `FalTest` on real fal catalog/schema
   fixtures, Ollama cases in `PcHarnessTest`).
-- Not yet done: fal generation is untested live (no fal key on this PC); the web version does not
-  show fal or Ollama yet; the new Settings section was not checked on a device (no emulator up).
+- fal key checked live (2026-10-03): the catalog loads with it; with no credit, the queue answers
+  403 "User is locked. Reason: Exhausted balance…" and the router "Reason: TOP_UP." Both now show
+  as "fal.ai has no credit left — add some at fal.ai/dashboard/billing" (HttpFailure 402, not a
+  refusal, so no fallback retries). Save & check also reads the balance from
+  `api.fal.ai/v1/account/billing?expand=credits`; fal allows that only for admin keys, and the
+  status says so otherwise. A real fal picture has not been generated yet (no credit).
+- Web version: the PC harnesses list names Ollama and marks vision models.
+- Checked on the Dev AVD: the fal.ai section and the PC harnesses subtitle render in Settings.
 - APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.4.89.apk`, SHA-256
-  `13a73cbf81bead6b80170aded6d639a6fb2e0df31c7b144ff1259cbd7f0e131d`.
+  `754a67934dd4a884ae2ad86c6994ce8f8c42a54bcad053b4f014545e32797aa3`.
 
 ## v1.4.88 - The web version catches up with the app
 
