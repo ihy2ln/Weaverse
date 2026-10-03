@@ -7,16 +7,16 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.jsoup.Jsoup
 
 /** Labels and opaque option values are kept together; never send a translated label as an ID. */
-internal data class WebsiteOption(val value: String, val label: String)
-internal class WebsiteSelect(val parameter: String, name: String, val options: List<WebsiteOption>, initial: Int = 0) :
+data class WebsiteOption(val value: String, val label: String)
+class WebsiteSelect(val parameter: String, name: String, val options: List<WebsiteOption>, initial: Int = 0) :
     Filter.Select<String>(name, options.map { it.label }.toTypedArray(), initial)
-internal class WebsiteCheck(val value: String, name: String) : Filter.CheckBox(name)
-internal class WebsiteTri(val value: String, name: String) : Filter.TriState(name)
-internal class WebsiteGroup(val parameter: String, name: String, options: List<WebsiteOption>, val excludeParameter: String? = null) :
+class WebsiteCheck(val value: String, name: String) : Filter.CheckBox(name)
+class WebsiteTri(val value: String, name: String) : Filter.TriState(name)
+class WebsiteGroup(val parameter: String, name: String, options: List<WebsiteOption>, val excludeParameter: String? = null) :
     Filter.Group<Filter<*>>(name, options.map { if (excludeParameter == null) WebsiteCheck(it.value, it.label) else WebsiteTri(it.value, it.label) })
-internal class WebsiteText(val parameter: String, name: String) : Filter.Text(name)
+class WebsiteText(val parameter: String, name: String) : Filter.Text(name)
 
-internal object WebsiteCatalogFilters {
+object WebsiteCatalogFilters {
     fun mangaFire(json: String): FilterList {
         val options = Json.parseToJsonElement(json).jsonObject.getValue("data").jsonObject
         fun choices(key: String) = (options[key] as? JsonArray).orEmpty().map { item ->

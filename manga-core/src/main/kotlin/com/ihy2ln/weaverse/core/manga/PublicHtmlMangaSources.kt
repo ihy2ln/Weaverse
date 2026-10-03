@@ -28,7 +28,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 class PublicHtmlMangaSources @Inject constructor(
     client: OkHttpClient,
     webLinkImporter: MangaWebLinkImporter,
-    renderedCatalog: RenderedCatalogClient,
+    renderedCatalog: RenderedCatalog,
 ) {
     val sources: List<MangaSourceAdapter> = listOf(
         PublicHtmlMangaSourceAdapter(
@@ -92,7 +92,7 @@ class PublicHtmlMangaSources @Inject constructor(
     )
 }
 
-internal data class PublicHtmlSourceConfig(
+data class PublicHtmlSourceConfig(
     val id: String,
     val name: String,
     val baseUrl: String,
@@ -117,7 +117,7 @@ private data class PublicHtmlMetadata(
     val rating: String = "",
 )
 
-internal class PublicHtmlMangaSourceAdapter(
+class PublicHtmlMangaSourceAdapter(
     private val config: PublicHtmlSourceConfig,
     private val client: OkHttpClient,
     private val webLinkImporter: MangaWebLinkImporter,
@@ -317,7 +317,7 @@ internal class PublicHtmlMangaSourceAdapter(
             )
         }
 
-    internal fun parseCatalog(baseUrl: String, html: String): List<MangaSearchResult> {
+    fun parseCatalog(baseUrl: String, html: String): List<MangaSearchResult> {
         if (config.id == "rawkuma") return parseRawkumaCatalog(baseUrl, html)
         val embedded = Jsoup.parse(html).selectFirst("script#initial-data")?.data()
         if (!embedded.isNullOrBlank()) {
@@ -400,7 +400,7 @@ internal class PublicHtmlMangaSourceAdapter(
         }.distinctBy { it.canonicalUrl.trimEnd('/').lowercase() }.take(40)
     }
 
-    internal fun rawkumaDetails(manga: MangaSearchResult, html: String): MangaSearchResult {
+    fun rawkumaDetails(manga: MangaSearchResult, html: String): MangaSearchResult {
         val document = Jsoup.parse(html, manga.canonicalUrl)
         val structured = document.select("script[type=application/ld+json]").mapNotNull { script ->
             runCatching { Json.parseToJsonElement(script.data()) as? JsonObject }.getOrNull()

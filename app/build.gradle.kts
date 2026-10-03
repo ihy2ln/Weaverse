@@ -131,6 +131,7 @@ android {
 
 dependencies {
     implementation(project(":sync-core"))
+    implementation(project(":manga-core"))
 
     // Games mode runs Adams Haven on the real Godot engine. This is Godot 4.7.1's
     // template_release library cut down to arm64-v8a + x86_64 (tools/README-games.md);

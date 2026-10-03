@@ -20,10 +20,10 @@ import kotlin.coroutines.resume
 
 /** Loads the site's own public UI normally; no token fabrication or challenge solving. */
 @Singleton
-class RenderedCatalogClient @Inject constructor(@ApplicationContext private val context: Context) {
+class RenderedCatalogClient @Inject constructor(@ApplicationContext private val context: Context) : RenderedCatalog {
     private val mutex = Mutex()
     @SuppressLint("SetJavaScriptEnabled")
-    suspend fun load(url: String): String = mutex.withLock {
+    override suspend fun load(url: String): String = mutex.withLock {
         withContext(Dispatchers.Main) {
             val browser = WebView(context)
             try {

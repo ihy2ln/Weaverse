@@ -25,3 +25,4 @@ rootProject.name = "weaverse"
 include(":app")
 include(":sync-core")
 include(":desktop")
+include(":manga-core")

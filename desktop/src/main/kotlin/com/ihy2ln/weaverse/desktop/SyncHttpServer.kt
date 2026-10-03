@@ -40,6 +40,7 @@ import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
+import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import io.ktor.utils.io.jvm.javaio.copyTo
 import kotlinx.serialization.json.Json
@@ -71,6 +72,7 @@ class SyncHttpServer(
     }
     private val mcpTools = DesktopMcpTools(dataDir, config.appVersion)
     private val aiBridge = AiBridge(dataDir, config)
+    private val manga = MangaService(dataDir)
 
     fun start(): EmbeddedServer<*, *> {
         maybeAutoImport()
@@ -129,6 +131,14 @@ class SyncHttpServer(
             get("/app.css") {
                 call.response.headers.append("Cache-Control", "no-cache")
                 call.respondText(webAppCss(), ContentType.Text.CSS)
+            }
+            get("/manga.js") {
+                call.response.headers.append("Cache-Control", "no-cache")
+                call.respondText(com.ihy2ln.weaverse.sync.web.webExtraAsset("manga.js").orEmpty(), ContentType.Text.JavaScript)
+            }
+            get("/manga.css") {
+                call.response.headers.append("Cache-Control", "no-cache")
+                call.respondText(com.ihy2ln.weaverse.sync.web.webExtraAsset("manga.css").orEmpty(), ContentType.Text.CSS)
             }
             get("/art/{name}") {
                 val key = call.parameters["name"].orEmpty().removeSuffix(".webp")
@@ -228,6 +238,78 @@ class SyncHttpServer(
                 val (bytes, mime) = aiBridge.takeImage(call.parameters["id"].orEmpty())
                     ?: return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "No image for this job"))
                 call.respondBytes(bytes, ContentType.parse(mime))
+            }
+            // Manga Studio for the web version: the APK's own sources (manga-core), see MangaService.
+            route("/api/manga") {
+                suspend fun io.ktor.server.application.ApplicationCall.ok(): Boolean {
+                    if (authorized(request.headers["X-Weaverse-Token"] ?: request.queryParameters["t"])) return true
+                    respond(HttpStatusCode.Unauthorized, mapOf("error" to "Locked"))
+                    return false
+                }
+                suspend fun io.ktor.server.application.ApplicationCall.attempt(block: suspend () -> Unit) {
+                    try { block() } catch (failure: Exception) {
+                        respond(HttpStatusCode.BadGateway, mapOf("error" to (failure.message ?: failure.javaClass.simpleName)))
+                    }
+                }
+                get("/sources") { if (call.ok()) call.respond(manga.descriptors()) }
+                get("/catalog") {
+                    if (!call.ok()) return@get
+                    val q = call.request.queryParameters
+                    val mode = if (q["mode"] == "latest") com.ihy2ln.weaverse.core.manga.MangaBrowseMode.Latest else com.ihy2ln.weaverse.core.manga.MangaBrowseMode.Popular
+                    call.attempt { call.respond(manga.catalog(q["source"].orEmpty(), mode, q["page"]?.toIntOrNull() ?: 0)) }
+                }
+                get("/search") {
+                    if (!call.ok()) return@get
+                    val q = call.request.queryParameters
+                    call.attempt { call.respond(manga.search(q["source"].orEmpty(), q["q"].orEmpty(), q["page"]?.toIntOrNull() ?: 0)) }
+                }
+                post("/details") {
+                    if (!call.ok()) return@post
+                    val m = call.receive<com.ihy2ln.weaverse.core.manga.MangaSearchResult>()
+                    call.attempt { call.respond(manga.details(m)) }
+                }
+                post("/chapters") {
+                    if (!call.ok()) return@post
+                    val m = call.receive<com.ihy2ln.weaverse.core.manga.MangaSearchResult>()
+                    call.attempt { call.respond(manga.chapters(m)) }
+                }
+                post("/pages") {
+                    if (!call.ok()) return@post
+                    val c = call.receive<com.ihy2ln.weaverse.core.manga.MangaChapter>()
+                    call.attempt { call.respond(manga.pages(c)) }
+                }
+                get("/image") {
+                    if (!call.ok()) return@get
+                    val q = call.request.queryParameters
+                    try {
+                        val (bytes, type) = manga.image(q["u"].orEmpty(), q["r"].orEmpty())
+                        call.response.headers.append("Cache-Control", "max-age=604800")
+                        call.respondBytes(bytes, ContentType.parse(type))
+                    } catch (failure: Exception) {
+                        call.respond(HttpStatusCode.BadGateway, "")
+                    }
+                }
+                get("/library") { if (call.ok()) call.respond(manga.library()) }
+                post("/library") {
+                    if (!call.ok()) return@post
+                    val body = call.receive<LibraryChange>()
+                    call.respond(manga.setInLibrary(body.manga, body.categoryIds, body.inLibrary))
+                }
+                post("/categories") {
+                    if (!call.ok()) return@post
+                    call.respond(manga.addCategory(call.receive<Map<String, String>>()["name"].orEmpty()))
+                }
+                post("/history") {
+                    if (!call.ok()) return@post
+                    call.respond(manga.recordRead(call.receive<HistoryEntry>()))
+                }
+                post("/history/remove") {
+                    if (!call.ok()) return@post
+                    val body = call.receive<Map<String, String>>()
+                    call.respond(manga.removeHistory(body["sourceId"].orEmpty(), body["remoteId"].orEmpty()))
+                }
+                get("/updates") { if (call.ok()) call.respond(manga.updates()) }
+                post("/updates/refresh") { if (call.ok()) call.attempt { call.respond(manga.refreshUpdates()) } }
             }
             get("/mcp") {
                 call.respondText(
@@ -534,3 +616,10 @@ class SyncHttpServer(
         }
     }
 }
+
+@kotlinx.serialization.Serializable
+data class LibraryChange(
+    val manga: com.ihy2ln.weaverse.core.manga.MangaSearchResult,
+    val categoryIds: List<String> = emptyList(),
+    val inLibrary: Boolean = true,
+)

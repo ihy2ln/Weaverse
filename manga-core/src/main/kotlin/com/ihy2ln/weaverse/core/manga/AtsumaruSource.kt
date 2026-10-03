@@ -10,7 +10,7 @@ import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 
 /** Public catalog/reader endpoints used by Atsumaru's own website, not its empty SPA shell. */
-internal class AtsumaruSource(
+class AtsumaruSource(
     private val client: OkHttpClient,
     private val baseUrl: String = "https://atsu.moe/",
 ) : MangaSourceAdapter {
@@ -107,7 +107,7 @@ internal class AtsumaruSource(
                 MangaPage(descriptor.id, chapter.remoteId, index, url, "$index.${url.substringBefore('?').substringAfterLast('.', "jpg")}")
             }
 
-    internal fun manga(item: JsonObject): MangaSearchResult {
+    fun manga(item: JsonObject): MangaSearchResult {
         val poster = item["poster"]
         val cover = if (poster is JsonObject) poster.string("mediumImage").ifBlank { poster.string("image") }
             else item.string("mediumImage").ifBlank { item.string("posterMedium").ifBlank { item.string("image").ifBlank { item.string("poster") } } }

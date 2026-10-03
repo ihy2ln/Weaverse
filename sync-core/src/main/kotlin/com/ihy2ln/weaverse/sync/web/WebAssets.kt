@@ -17,5 +17,9 @@ fun webAppCss(): String = webResource("app.css")
 
 fun webAppJs(): String = webResource("app.js")
 
+/** Extra page files (Manga Studio's manga.js / manga.css); null for unknown names. */
+fun webExtraAsset(name: String): String? =
+    name.takeIf { it in setOf("manga.js", "manga.css") }?.let(::webResource)
+
 /** Mode keys with key art at /art/<key>.webp. */
 val webArtKeys = setOf("home", "novel", "rpg", "games", "browser", "manga", "notes")

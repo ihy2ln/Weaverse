@@ -23,6 +23,9 @@ application {
 
 dependencies {
     implementation(project(":sync-core"))
+    implementation(project(":manga-core"))
+    implementation(libs.ktor.client.okhttp)
+    implementation(libs.ktor.client.content.negotiation)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.ktor.server.core)

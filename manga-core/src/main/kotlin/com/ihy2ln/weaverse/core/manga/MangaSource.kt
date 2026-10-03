@@ -10,22 +10,15 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import com.ihy2ln.weaverse.core.manga.extension.MangaExtensionManager
-import com.ihy2ln.weaverse.core.manga.extension.MihonExtensionSourceAdapter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.Filter
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /** Metadata shown in the source catalog.  Only reviewed, app-owned adapters are registered. */
+@kotlinx.serialization.Serializable
 data class MangaSourceDescriptor(
     val id: String,
     val name: String,
@@ -41,6 +34,7 @@ data class MangaSourceDescriptor(
     val supportsNativeFilters: Boolean = false,
 )
 
+@kotlinx.serialization.Serializable
 enum class MangaBrowseMode { Popular, Latest }
 
 data class MangaWebsite(
@@ -56,6 +50,7 @@ data class MangaWebsite(
  */
 val bundledMangaWebsites: List<MangaWebsite> = emptyList()
 
+@kotlinx.serialization.Serializable
 data class MangaSearchResult(
     val sourceId: String,
     val remoteId: String,
@@ -75,6 +70,7 @@ data class MangaSearchResult(
     val score: String = "",
 )
 
+@kotlinx.serialization.Serializable
 data class MangaChapter(
     val sourceId: String,
     val remoteId: String,
@@ -90,6 +86,7 @@ data class MangaChapter(
     val scanlator: String = "",
 )
 
+@kotlinx.serialization.Serializable
 data class MangaPage(
     val sourceId: String,
     val chapterId: String,
@@ -122,28 +119,6 @@ interface MangaSourceAdapter {
     suspend fun details(manga: MangaSearchResult): MangaSearchResult = manga
     suspend fun chapters(manga: MangaSearchResult): List<MangaChapter>
     suspend fun pages(chapter: MangaChapter): List<MangaPage>
-}
-
-@Singleton
-class MangaSourceRegistry @Inject constructor(
-    private val mangaDex: MangaDexSource,
-    private val publicHtml: PublicHtmlMangaSources,
-    private val extensions: MangaExtensionManager,
-    private val galleryAccount: GalleryAccountManager,
-    private val galleryHttp: okhttp3.OkHttpClient,
-) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val builtIns: List<MangaSourceAdapter> = listOf(mangaDex) + publicHtml.sources
-    private val galleries = listOf(GallerySource(galleryAccount, galleryHttp, false), GallerySource(galleryAccount, galleryHttp, true))
-    val sourcesFlow: StateFlow<List<MangaSourceAdapter>> = combine(extensions.state, galleryAccount.state) { state, account ->
-        builtIns + galleries.filter { account.enabled && (it.descriptor.id != "exhentai" || (account.restricted && account.sessionSaved)) } + state.installed.filter { it.trusted && it.error == null }.flatMap { extension ->
-            extension.sources.map { source -> MihonExtensionSourceAdapter(source, extension.packageName) }
-        }
-    }.stateIn(scope, SharingStarted.Eagerly, builtIns)
-    /** Built-ins plus every currently loaded, trusted extension source. */
-    val sources: List<MangaSourceAdapter> get() = sourcesFlow.value
-
-    fun get(sourceId: String): MangaSourceAdapter? = sources.firstOrNull { it.descriptor.id == sourceId }
 }
 
 /** First-party connector for MangaDex's documented API and At-Home image service. */

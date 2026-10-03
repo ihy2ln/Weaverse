@@ -64,7 +64,7 @@ class MangaWebLinkImporter @Inject constructor(
         }
     }
 
-    internal fun extractImageUrls(baseUrl: String, html: String): List<WebLinkPage> {
+    fun extractImageUrls(baseUrl: String, html: String): List<WebLinkPage> {
         val imageTag = Regex("<(?:img|source)\\b[^>]*>", RegexOption.IGNORE_CASE)
         val attribute = Regex(
             "(?:src|srcset|data-src|data-srcset|data-original|data-lazy-src|data-image|data-url)\\s*=\\s*[\\\"']([^\\\"']+)",

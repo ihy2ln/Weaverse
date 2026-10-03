@@ -97,6 +97,7 @@
     const r = state.route;
     const stage = el('stage');
     window.scrollTo(0, 0);
+    if (r.mode !== 'manga' && window.WeaverseManga) window.WeaverseManga.leave();
     if (r.mode === 'home') { setBackdrop('home', ''); stage.innerHTML = homeHtml(); wireHome(); return; }
     setBackdrop(r.mode, r.kind ? 'quiet' : 'hero');
     const views = { novel: novelView, rpg: rpgView, games: gamesView, browser: browserView, manga: mangaView, notes: notesView };
@@ -244,15 +245,11 @@
   function rpgView(stage, r) {
     chatView(stage, r, 'rpg', 'Campaigns', campaigns(), 'No campaigns yet. Start one on the phone and push it.', (id) => '/api/rp/' + encodeURIComponent(id) + '/messages');
   }
-  function mangaView(stage, r) {
-    const shown = chatView(stage, r, 'manga', 'Library', mangaChats(), 'No manga projects synced yet. Read and edit manga on the phone; projects arrive here when it pushes.', (id) => '/api/rp/' + encodeURIComponent(id) + '/messages');
-    if (!shown) {
-      const pictures = mediaIn(['manga', 'roleplay']);
-      if (pictures.length) {
-        stage.insertAdjacentHTML('beforeend', '<div class="rowHead"><h2>Pictures</h2><span class="count">' + pictures.length + '</span></div><div class="gallery">' +
-          pictures.map((m) => '<figure><img loading="lazy" src="/api/media/' + encodeURIComponent(m.id) + '" alt="' + esc(m.caption) + '" /><figcaption>' + esc(m.caption || m.section) + '</figcaption></figure>').join('') + '</div>');
-      }
-    }
+  // Manga Studio: the APK's Mihon-style screens, in manga.js.
+  function mangaView(stage) {
+    stage.innerHTML = banner('manga', 'Manga Studio', 'Library · Updates · History · Browse · More');
+    wireBack(stage);
+    window.WeaverseManga.mount(stage);
   }
   function browserView(stage, r) {
     const servers = books('browser');
