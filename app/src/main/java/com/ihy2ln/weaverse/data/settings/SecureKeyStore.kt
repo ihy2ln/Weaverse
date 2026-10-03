@@ -62,5 +62,6 @@ class SecureKeyStore @Inject constructor(
         const val ANTHROPIC = "anthropic"
         const val OPENAI = "openai"
         const val GEMINI = "gemini"
+        const val FAL = "fal"
     }
 }

@@ -34,26 +34,32 @@ import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** OpenAI's chat completions; open so other OpenAI-compatible endpoints (fal's router) reuse it. */
 @Singleton
-class OpenAiProvider @Inject constructor(
+open class OpenAiProvider @Inject constructor(
     private val settings: SettingsRepository,
     private val okHttpClient: OkHttpClient,
 ) : AIProvider {
     override val name: String = "OpenAI"
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
+    protected open val baseUrl: String = BASE
+    protected open val keyId: String = SecureKeyStore.OPENAI
+    protected open val modelPrefix: String = "openai/"
+    protected open fun authorization(key: String): String = "Bearer $key"
+
     override suspend fun models(): List<ModelInfo> = OtherProviderSeeds.openai
 
     override fun stream(request: AIRequest): Flow<AIChunk> = flow {
-        val key = settings.apiKey(SecureKeyStore.OPENAI) ?: throw AIError.NoApiKey()
-        val model = request.modelId.removePrefix("openai/")
+        val key = settings.apiKey(keyId) ?: throw AIError.NoApiKey()
+        val model = request.modelId.removePrefix(modelPrefix)
         val bodyJson = json.encodeToString(chatRequest(model, request, stream = true))
         val httpRequest = Request.Builder()
-            .url("$BASE/chat/completions")
-            .header("Authorization", "Bearer $key")
+            .url("$baseUrl/chat/completions")
+            .header("Authorization", authorization(key))
             .post(bodyJson.toRequestBody(JSON))
             .build()
-        WeaverseAiLog.i("stream OpenAI model=$model")
+        WeaverseAiLog.i("stream $name model=$model")
         try {
             okHttpClient.newCall(httpRequest).execute().use { response ->
                 if (!response.isSuccessful) {
@@ -90,12 +96,12 @@ class OpenAiProvider @Inject constructor(
     override suspend fun complete(request: AIRequest): AIResult = withContext(Dispatchers.IO) { completeBlocking(request) }
 
     private suspend fun completeBlocking(request: AIRequest): AIResult {
-        val key = settings.apiKey(SecureKeyStore.OPENAI) ?: throw AIError.NoApiKey()
-        val model = request.modelId.removePrefix("openai/")
+        val key = settings.apiKey(keyId) ?: throw AIError.NoApiKey()
+        val model = request.modelId.removePrefix(modelPrefix)
         val bodyJson = json.encodeToString(chatRequest(model, request, stream = false))
         val httpRequest = Request.Builder()
-            .url("$BASE/chat/completions")
-            .header("Authorization", "Bearer $key")
+            .url("$baseUrl/chat/completions")
+            .header("Authorization", authorization(key))
             .post(bodyJson.toRequestBody(JSON))
             .build()
         try {

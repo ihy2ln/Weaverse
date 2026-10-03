@@ -19,6 +19,7 @@ class AiGenerationService @Inject constructor(
     private val openRouterRepository: OpenRouterRepository,
     private val settings: SettingsRepository,
     private val pcBridge: com.ihy2ln.weaverse.ai.pc.PcBridgeClient,
+    private val fal: com.ihy2ln.weaverse.ai.fal.FalClient,
 ) {
     suspend fun resolveModelRef(override: String? = null): String {
         if (!override.isNullOrBlank()) return override
@@ -117,7 +118,10 @@ class AiGenerationService @Inject constructor(
 
     suspend fun modelSupportsImages(modelRef: String? = null): Boolean {
         val model = resolveModelRef(modelRef)
-        if (com.ihy2ln.weaverse.ai.pc.PcHarness.isPcRef(model)) return !model.startsWith(com.ihy2ln.weaverse.ai.pc.PcHarness.COMFY)
+        if (com.ihy2ln.weaverse.ai.pc.PcHarness.isPcRef(model)) {
+            return com.ihy2ln.weaverse.ai.pc.PcHarness.supportsImages(model, pcBridge.capabilities.value)
+        }
+        if (com.ihy2ln.weaverse.ai.fal.Fal.isFalRef(model)) return false
         if (!model.startsWith("openrouter/") && !model.contains("/")) return false
         return openRouterRepository.modelSupportsImages(model)
     }
@@ -126,8 +130,8 @@ class AiGenerationService @Inject constructor(
         openRouterRepository.synthesizeSpeech(text, modelId, outputFile)
 
     /**
-     * Cloud image generation through an OpenRouter image-output model
-     * (Nano Banana, Flux, GPT-Image…). Returns picture bytes + mime type.
+     * Image generation: an OpenRouter image-output model (Nano Banana, Flux, GPT-Image…),
+     * a fal.ai endpoint, or a ComfyUI workflow on the PC. Returns picture bytes + mime type.
      */
     suspend fun generateImage(
         prompt: String,
@@ -142,10 +146,13 @@ class AiGenerationService @Inject constructor(
                 ?: throw AIError.BadRequest("ComfyUI workflows here edit a picture; attach one.")
             return pcBridge.editImage(model.removePrefix(com.ihy2ln.weaverse.ai.pc.PcHarness.COMFY), prompt, source)
         }
+        if (model.startsWith(com.ihy2ln.weaverse.ai.fal.Fal.IMAGE)) {
+            return fal.generateImage(model.removePrefix(com.ihy2ln.weaverse.ai.fal.Fal.IMAGE), prompt, imageAttachments, aspectRatio)
+        }
         if (!model.startsWith("openrouter/")) {
             throw AIError.HttpFailure(
                 statusCode = 400,
-                message = "Image generation needs an OpenRouter image model (see Settings → Models → Image generation).",
+                message = "Image generation needs an image model (see Settings → Models → Image generation).",
             )
         }
         if (!hasApiKey(model)) {
@@ -162,6 +169,7 @@ class AiGenerationService @Inject constructor(
     /** Catalog tags of an OpenRouter image-editing model; empty when unknown. */
     suspend fun imageModelTags(modelRef: String?): List<String> {
         val model = resolveModelRef(modelRef)
+        if (model.startsWith(com.ihy2ln.weaverse.ai.fal.Fal.IMAGE)) return fal.ratioTags(model.removePrefix(com.ihy2ln.weaverse.ai.fal.Fal.IMAGE))
         if (!model.startsWith("openrouter/")) return emptyList()
         return runCatching { openRouterRepository.imageEditingModelTags(model.removePrefix("openrouter/")) }
             .getOrDefault(emptyList())
@@ -171,6 +179,7 @@ class AiGenerationService @Inject constructor(
         val ref = modelRef.orEmpty()
         return when {
             com.ihy2ln.weaverse.ai.pc.PcHarness.isPcRef(ref) -> pcBridge.isConfigured()
+            com.ihy2ln.weaverse.ai.fal.Fal.isFalRef(ref) -> fal.hasKey()
             ref.startsWith("openai/") -> !settings.apiKey(SecureKeyStore.OPENAI).isNullOrBlank()
             ref.startsWith("anthropic/") -> !settings.apiKey(SecureKeyStore.ANTHROPIC).isNullOrBlank()
             ref.startsWith("gemini/") -> !settings.apiKey(SecureKeyStore.GEMINI).isNullOrBlank()
@@ -180,6 +189,7 @@ class AiGenerationService @Inject constructor(
                 SecureKeyStore.OPENAI,
                 SecureKeyStore.ANTHROPIC,
                 SecureKeyStore.GEMINI,
+                SecureKeyStore.FAL,
             ).any { !settings.apiKey(it).isNullOrBlank() }
         }
     }

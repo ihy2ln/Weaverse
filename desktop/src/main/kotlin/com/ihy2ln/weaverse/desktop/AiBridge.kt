@@ -35,12 +35,18 @@ data class AiHarnessStatus(
     val available: Boolean,
     val detail: String,
     val models: List<String> = emptyList(),
+    /** Models among [models] that accept pictures (Ollama reports this per model). */
+    val vision: List<String> = emptyList(),
 )
 
 @Serializable
 data class AiBridgeCapabilities(val harnesses: List<AiHarnessStatus>)
 
-/** Text (+ optional images) for Claude Code or Codex. Images are base64 PNG/JPEG/WebP. */
+/** One turn of a conversation; Ollama takes the real turns, the CLIs a flattened prompt. */
+@Serializable
+data class AiMessage(val role: String, val content: String)
+
+/** Text (+ optional images) for Claude Code, Codex or Ollama. Images are base64 PNG/JPEG/WebP. */
 @Serializable
 data class AiCompleteRequest(
     val harness: String,
@@ -48,6 +54,11 @@ data class AiCompleteRequest(
     val system: String = "",
     val prompt: String,
     val images: List<String> = emptyList(),
+    /** Ollama only: the conversation, oldest first, ending with the user turn. */
+    val messages: List<AiMessage> = emptyList(),
+    val temperature: Double? = null,
+    val topP: Double? = null,
+    val maxTokens: Int? = null,
 )
 
 /** One reference image through a ComfyUI workflow. */
@@ -73,7 +84,7 @@ data class AiJobStatus(
 
 /**
  * Runs the PC's own AI tools for the phone: Claude Code and Codex (ChatGPT) in headless mode,
- * and ComfyUI workflows. Nothing here is a raw shell: each harness runs with fixed flags in an
+ * local models through Ollama, and ComfyUI workflows. Nothing here is a raw shell: each harness runs with fixed flags in an
  * empty scratch folder, may only read the images it was given, and ComfyUI stays on this PC.
  * Work runs as jobs the phone polls, so a 4-minute ComfyUI page never holds an HTTP request open.
  */
@@ -86,6 +97,8 @@ class AiBridge(
     private val jobs = ConcurrentHashMap<String, Job>()
     private val comfyLock = Mutex()
     private val cliSlots = Semaphore(2)
+    private val ollamaSlots = Semaphore(2)
+    private val ollamaStart = Any()
 
     private class Job(val started: Long = System.currentTimeMillis()) {
         @Volatile var state = "running"
@@ -101,10 +114,15 @@ class AiBridge(
             cliStatus(CLAUDE, config.claudePath, listOf("sonnet", "opus", "haiku")),
             cliStatus(CODEX, config.codexPath, listOf("default")),
             comfyStatus(),
+            ollamaStatus(),
         ),
     )
 
     fun submitComplete(request: AiCompleteRequest): String = submit { job ->
+        if (request.harness == OLLAMA) {
+            ollamaSlots.withPermit { runOllama(request, job) }
+            return@submit
+        }
         cliSlots.withPermit {
             job.text = when (request.harness) {
                 CLAUDE -> runClaude(request)
@@ -266,6 +284,7 @@ class AiBridge(
         val names = if (isWindows) listOf("$id.exe", "$id.cmd", "$id.bat") else listOf(id)
         val path = System.getenv("PATH").orEmpty().split(File.pathSeparatorChar).toMutableList()
         if (isWindows) {
+            System.getenv("LOCALAPPDATA")?.let { path += "$it\\Programs\\Ollama" }
             System.getenv("APPDATA")?.let { path += "$it\\npm" }
             System.getenv("USERPROFILE")?.let { path += listOf("$it\\.local\\bin", "$it\\AppData\\Roaming\\npm") }
         }
@@ -293,6 +312,145 @@ class AiBridge(
         }
         reader.join(5000)
         return output.toString()
+    }
+
+    // ---------------------------------------------------------------- Ollama
+
+    private fun ollamaStatus(): AiHarnessStatus {
+        if (!ollamaUp() && !startOllama()) {
+            return AiHarnessStatus(
+                OLLAMA,
+                false,
+                if (findExecutable(OLLAMA, config.ollamaPath) == null) "Ollama is not installed on this PC."
+                else "Ollama is installed but did not start at ${config.ollamaUrl}.",
+            )
+        }
+        val version = runCatching {
+            json.parseToJsonElement(ollamaGet("/api/version")).jsonObject["version"]?.jsonPrimitive?.contentOrNull
+        }.getOrNull().orEmpty()
+        val models = ollamaModels()
+        val vision = models.filter { "vision" in ollamaCapabilities(it) }
+        val detail = if (models.isEmpty()) "Ollama $version has no models yet — run `ollama pull <model>` on the PC."
+        else "Ollama $version · ${models.size} local model${if (models.size == 1) "" else "s"}"
+        return AiHarnessStatus(OLLAMA, models.isNotEmpty(), detail, models, vision)
+    }
+
+    private fun ollamaModels(): List<String> = runCatching {
+        json.parseToJsonElement(ollamaGet("/api/tags")).jsonObject["models"]!!.jsonArray
+            .mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull }
+            .map { it.removeSuffix(":latest") }
+            .sorted()
+    }.getOrDefault(emptyList())
+
+    private fun ollamaCapabilities(model: String): List<String> = runCatching {
+        val body = JsonObject(mapOf("model" to JsonPrimitive(model))).toString().toByteArray()
+        json.parseToJsonElement(ollamaHttp("/api/show", "POST", body).decodeToString()).jsonObject["capabilities"]!!
+            .jsonArray.map { it.jsonPrimitive.content }
+    }.getOrDefault(emptyList())
+
+    private fun runOllama(request: AiCompleteRequest, job: Job) {
+        if (!ollamaUp() && !startOllama()) error("Ollama is not running on the PC and could not be started.")
+        // Only names Ollama itself lists are passed on.
+        val model = request.model.trim().removeSuffix(":latest")
+        require(model in ollamaModels()) { "Ollama on the PC has no model named $model" }
+        val capabilities = ollamaCapabilities(model)
+        val turns = request.messages.ifEmpty { listOf(AiMessage("user", request.prompt)) }
+        val images = request.images.map { it.substringAfter("base64,") }
+        val messages = buildList {
+            if (request.system.isNotBlank()) add(ollamaMessage("system", request.system, emptyList()))
+            turns.forEachIndexed { index, turn ->
+                val role = turn.role.lowercase().takeIf { it in setOf("user", "assistant", "system") } ?: "user"
+                val pictures = if (index == turns.lastIndex && "vision" in capabilities) images else emptyList()
+                add(ollamaMessage(role, turn.content, pictures))
+            }
+        }
+        val options = buildMap<String, JsonElement> {
+            request.temperature?.let { put("temperature", JsonPrimitive(it)) }
+            request.topP?.let { put("top_p", JsonPrimitive(it)) }
+            request.maxTokens?.takeIf { it > 0 }?.let { put("num_predict", JsonPrimitive(it)) }
+        }
+        val body = buildMap<String, JsonElement> {
+            put("model", JsonPrimitive(model))
+            put("messages", JsonArray(messages))
+            put("stream", JsonPrimitive(true))
+            // Thinking models would otherwise reason for minutes before the first word of prose.
+            if ("thinking" in capabilities) put("think", JsonPrimitive(false))
+            if (options.isNotEmpty()) put("options", JsonObject(options))
+        }
+        val connection = URI(config.ollamaUrl.trimEnd('/') + "/api/chat").toURL().openConnection() as HttpURLConnection
+        connection.requestMethod = "POST"
+        connection.connectTimeout = 5000
+        connection.readTimeout = TimeUnit.MINUTES.toMillis(10).toInt()
+        connection.doOutput = true
+        connection.setRequestProperty("Content-Type", "application/json")
+        connection.outputStream.use { it.write(JsonObject(body).toString().toByteArray()) }
+        if (connection.responseCode !in 200..299) {
+            val detail = connection.errorStream?.use { it.readBytes().decodeToString() } ?: "HTTP ${connection.responseCode}"
+            error("Ollama: " + detail.take(600))
+        }
+        val text = StringBuilder()
+        connection.inputStream.bufferedReader().useLines { lines ->
+            for (line in lines) {
+                if (line.isBlank()) continue
+                val chunk = json.parseToJsonElement(line).jsonObject
+                chunk["error"]?.jsonPrimitive?.contentOrNull?.let { error("Ollama: $it") }
+                chunk["message"]?.jsonObject?.get("content")?.jsonPrimitive?.contentOrNull?.let {
+                    text.append(it)
+                    // The phone polls this and shows the answer as it grows.
+                    job.text = text.toString()
+                }
+                if (chunk["done"]?.jsonPrimitive?.booleanOrNull == true) break
+            }
+        }
+        if (text.isBlank()) error("Ollama ($model) returned an empty answer.")
+    }
+
+    private fun ollamaMessage(role: String, content: String, images: List<String>): JsonObject = JsonObject(
+        buildMap {
+            put("role", JsonPrimitive(role))
+            put("content", JsonPrimitive(content))
+            if (images.isNotEmpty()) put("images", JsonArray(images.map(::JsonPrimitive)))
+        },
+    )
+
+    private fun ollamaUp(): Boolean = runCatching { ollamaGet("/api/version"); true }.getOrDefault(false)
+
+    /** Starts `ollama serve` (Ollama's own models-folder setting applies) and waits for it to answer. */
+    private fun startOllama(): Boolean = synchronized(ollamaStart) {
+        run {
+            if (ollamaUp()) return@run true
+            val exe = findExecutable(OLLAMA, config.ollamaPath) ?: return@run false
+            runCatching {
+                ProcessBuilder(exe.absolutePath, "serve").directory(exe.parentFile)
+                    .redirectErrorStream(true)
+                    .redirectOutput(File(dataDir, "ollama-serve.log"))
+                    .start()
+            }.getOrElse { return@run false }
+            repeat(40) {
+                Thread.sleep(500)
+                if (ollamaUp()) return@run true
+            }
+            false
+        }
+    }
+
+    private fun ollamaGet(path: String): String = ollamaHttp(path, "GET", null).decodeToString()
+
+    private fun ollamaHttp(path: String, method: String, body: ByteArray?): ByteArray {
+        val connection = URI(config.ollamaUrl.trimEnd('/') + path).toURL().openConnection() as HttpURLConnection
+        connection.requestMethod = method
+        connection.connectTimeout = 2000
+        connection.readTimeout = 30_000
+        if (body != null) {
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.outputStream.use { it.write(body) }
+        }
+        val code = connection.responseCode
+        val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+        val bytes = stream?.use { it.readBytes() } ?: ByteArray(0)
+        if (code !in 200..299) error("HTTP $code ${bytes.decodeToString().take(400)}")
+        return bytes
     }
 
     // ---------------------------------------------------------------- ComfyUI
@@ -410,6 +568,7 @@ class AiBridge(
     private fun label(id: String) = when (id) {
         CLAUDE -> "Claude Code"
         CODEX -> "Codex (ChatGPT)"
+        OLLAMA -> "Ollama"
         else -> "ComfyUI"
     }
 
@@ -417,6 +576,7 @@ class AiBridge(
         const val CLAUDE = "claude"
         const val CODEX = "codex"
         const val COMFY = "comfyui"
+        const val OLLAMA = "ollama"
         const val DEFAULT_WORKFLOW = "qwen-image-edit"
         private const val CLI_TIMEOUT_S = 600L
         private val isWindows = System.getProperty("os.name").orEmpty().startsWith("Windows", ignoreCase = true)

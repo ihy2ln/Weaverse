@@ -25,8 +25,9 @@ internal fun PcHarnessBody(state: SettingsUiState, onCheck: () -> Unit) {
     Column {
         Text(
             "Use the AI tools on your PC from this phone: Claude Code and ChatGPT (Codex CLI) run on your own " +
-                "subscriptions, and ComfyUI colors and edits pictures on your PC's graphics card with no " +
-                "content filter. The phone talks to them through Weaverse Desktop.",
+                "subscriptions, Ollama runs local models on your PC for free, and ComfyUI colors and edits " +
+                "pictures on your PC's graphics card with no content filter. The phone talks to them through " +
+                "Weaverse Desktop.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -48,11 +49,14 @@ internal fun PcHarnessBody(state: SettingsUiState, onCheck: () -> Unit) {
                 "• Claude Code: run `claude` once in a terminal and sign in with /login.\n" +
                 "• ChatGPT: install the Codex CLI (`npm install -g @openai/codex`), then run `codex login` and " +
                 "sign in with your ChatGPT account.\n" +
+                "• Ollama: install it and pull models (`ollama pull <model>`); Weaverse Desktop starts it when " +
+                "needed and lists every installed model. Models that read pictures also appear under Vision.\n" +
                 "• ComfyUI: keep it running. Coloring uses the Qwen Image Edit 2.1 workflow; extra API-format " +
                 "workflows dropped into Weaverse/data/comfy-workflows appear as more models " +
                 "(placeholders __IMAGE__, __PROMPT__, __NEGATIVE__, __SEED__, __STEPS__).\n\n" +
                 "Then pick them in Models (Writing, Vision and Image generation tabs) or in Manga Studio → AI → AI settings. " +
-                "PC answers arrive whole rather than word by word, and ComfyUI takes a few minutes per page.",
+                "Ollama answers stream in as they are written; Claude Code and Codex answers arrive whole, " +
+                "and ComfyUI takes a few minutes per page.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = InkSpacing.sm),

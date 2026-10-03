@@ -126,6 +126,7 @@ fun SettingsScreen(
     var modelsExpanded by rememberSaveable { mutableStateOf(false) }
     var otherProvidersExpanded by rememberSaveable { mutableStateOf(false) }
     var pcHarnessExpanded by rememberSaveable { mutableStateOf(false) }
+    var falExpanded by rememberSaveable { mutableStateOf(false) }
     var backupExpanded by rememberSaveable { mutableStateOf(false) }
     var syncExpanded by rememberSaveable { mutableStateOf(true) }
     var peerHost by rememberSaveable { mutableStateOf("") }
@@ -1133,9 +1134,20 @@ fun SettingsScreen(
 
 
         ExpandableSection(
+            title = "fal.ai",
+            icon = Icons.Default.Key,
+            subtitle = "FLUX · Qwen Image · Seedream and more, pay as you go",
+            expanded = falExpanded,
+            onToggle = { falExpanded = !falExpanded },
+            modifier = Modifier.padding(top = InkSpacing.md),
+        ) {
+            FalSettingsBody(state = state, onKey = viewModel::onFalKey, onSave = viewModel::saveFalKey)
+        }
+
+        ExpandableSection(
             title = "PC harnesses",
             icon = Icons.Default.Computer,
-            subtitle = "Claude Code · ChatGPT · ComfyUI on your PC",
+            subtitle = "Claude Code · ChatGPT · Ollama · ComfyUI on your PC",
             expanded = pcHarnessExpanded,
             onToggle = { pcHarnessExpanded = !pcHarnessExpanded },
             modifier = Modifier.padding(top = InkSpacing.md),

@@ -14,6 +14,7 @@ class AIProviderRegistry @Inject constructor(
     private val anthropic: AnthropicProvider,
     private val gemini: GeminiProvider,
     private val pcHarness: com.ihy2ln.weaverse.ai.pc.PcHarnessProvider,
+    private val falChat: com.ihy2ln.weaverse.ai.fal.FalChatProvider,
 ) {
     fun resolve(modelRef: String): AIProvider {
         WeaverseAiLog.i("resolve modelRef=$modelRef")
@@ -26,6 +27,10 @@ class AIProviderRegistry @Inject constructor(
                 "$modelRef is a ComfyUI picture workflow; pick a text model for writing.",
             )
             com.ihy2ln.weaverse.ai.pc.PcHarness.isPcRef(modelRef) -> pcHarness
+            modelRef.startsWith(com.ihy2ln.weaverse.ai.fal.Fal.CHAT) -> falChat
+            modelRef.startsWith(com.ihy2ln.weaverse.ai.fal.Fal.IMAGE) -> throw AIError.NoProvider(
+                "$modelRef is a fal.ai picture model; pick a text model for writing.",
+            )
             modelRef.startsWith("openai/") -> openAi
             modelRef.startsWith("anthropic/") -> anthropic
             modelRef.startsWith("gemini/") -> gemini

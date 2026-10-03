@@ -7,6 +7,8 @@ object PromptModelSelection {
     fun modelRef(id: String): String {
         // PC harness models (claudecode/, codex/, comfy/) are already full refs.
         if (com.ihy2ln.weaverse.ai.pc.PcHarness.isPcRef(id.trim())) return id.trim()
+        // fal.ai refs (fal/, fal-llm/) are full refs too.
+        if (com.ihy2ln.weaverse.ai.fal.Fal.isFalRef(id.trim())) return id.trim()
         val trimmed = id.removePrefix("openrouter/").trim()
         return if (trimmed.isBlank()) "" else "openrouter/$trimmed"
     }

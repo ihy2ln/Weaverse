@@ -223,6 +223,7 @@ class RoleplayChatViewModel @Inject constructor(
     private val mangaAiRunner: MangaAiBackgroundRunner,
     private val pcBridge: com.ihy2ln.weaverse.ai.pc.PcBridgeClient,
     private val mangaCopySaver: com.ihy2ln.weaverse.core.media.MangaCopySaver,
+    private val fal: com.ihy2ln.weaverse.ai.fal.FalClient,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(RoleplayChatUiState())
     val uiState: StateFlow<RoleplayChatUiState> = _uiState.asStateFlow()
@@ -362,7 +363,10 @@ class RoleplayChatViewModel @Inject constructor(
             launch {
                 combine(
                     settings.preferences, modelCache.models, openRouterRepository.imageEditingModels, pcBridge.capabilities,
-                ) { prefs, dtos, images, caps ->
+                    fal.imageModels,
+                ) { prefs, dtos, openRouterImages, caps, falCatalog ->
+                    // fal.ai picture editors join once its key is saved.
+                    val images = (if (fal.hasKey()) falCatalog.filter { it.supportsImages } else emptyList()) + openRouterImages
                     // Claude Code / Codex / ComfyUI on the user's PC are offered first.
                     // Listed once a PC is set up, so "Auto" never lands on a PC nobody configured.
                     val pcSetUp = prefs.syncWebUrl.isNotBlank() && prefs.syncPassword.isNotBlank()
@@ -375,7 +379,7 @@ class RoleplayChatViewModel @Inject constructor(
                 }.collect { (prefs, models, extra) ->
                     val (openRouterImages, pcText, pcImages) = extra
                     val imageModels = pcImages + openRouterImages
-                    val visionModels = pcText + com.ihy2ln.weaverse.ai.MangaEditorModels.vision(models)
+                    val visionModels = pcText.filter { it.supportsImages } + com.ihy2ln.weaverse.ai.MangaEditorModels.vision(models)
                     val textModels = pcText + com.ihy2ln.weaverse.ai.MangaEditorModels.text(models)
                     val defaultModelRef = prefs.defaultModelRef
                     val preferredVision = prefs.mangaVisionModelRef.takeIf { ref ->
@@ -1991,7 +1995,8 @@ class RoleplayChatViewModel @Inject constructor(
     /** ☁️ AI: generate a picture with a cloud image model and attach it. */
     fun openImageGen() {
         viewModelScope.launch {
-            val infos = modelCache.toModelInfo(modelCache.models.first())
+            val falModels = if (fal.hasKey()) fal.imageModels.value else emptyList()
+            val infos = falModels + modelCache.toModelInfo(modelCache.models.first())
                 .filter { it.generatesImages && it.available }
             _uiState.update {
                 it.copy(
@@ -4715,8 +4720,9 @@ class RoleplayChatViewModel @Inject constructor(
         attempts += fallback.describe(primary, first)
         val refused = fallback.isRefusal(first)
         if (refused) {
+            val falEditors = if (fal.hasKey()) fal.imageModels.value.filter { it.supportsImages }.map { it.id } else emptyList()
             val others = runCatching {
-                openRouterRepository.fetchImageEditingModels().map { PromptModelSelection.modelRef(it.id) }
+                falEditors + openRouterRepository.fetchImageEditingModels().map { PromptModelSelection.modelRef(it.id) }
             }.getOrElse { listOf<String>().also { _ -> attempts += "could not list other image models: ${it.message?.take(100)}" } }
             val order = fallback.fallbacks(primary, others)
             if (order.isEmpty()) attempts += "no image model from another provider is available to retry with"
@@ -5775,8 +5781,9 @@ class RoleplayChatViewModel @Inject constructor(
             }.let { if (it < 0) knownGoodHints.size else it }
         }
         val chosen = _uiState.value.editorImageModelRef
-        // A ComfyUI workflow on the PC needs no OpenRouter key or catalog.
+        // A ComfyUI workflow on the PC or a fal.ai model needs no OpenRouter key or catalog.
         if (chosen.startsWith(com.ihy2ln.weaverse.ai.pc.PcHarness.COMFY) && pcBridge.isConfigured()) return chosen
+        if (com.ihy2ln.weaverse.ai.fal.Fal.isImageRef(chosen) && fal.hasKey()) return chosen
         val candidates = runCatching { openRouterRepository.fetchImageEditingModels() }.getOrElse { failure ->
             if (pcBridge.isConfigured()) return com.ihy2ln.weaverse.ai.pc.PcHarness.defaultImageModels.first().id
             throw failure

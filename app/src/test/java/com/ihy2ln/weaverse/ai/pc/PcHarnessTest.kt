@@ -31,4 +31,27 @@ class PcHarnessTest {
         assertEquals(listOf("comfy/qwen-image-edit", "comfy/my-flow"), images.map { it.id })
         assertTrue(images.all { it.generatesImages })
     }
+
+    @Test
+    fun ollamaModelsAreLocalTextModelsAndOnlyVisionOnesReadPictures() {
+        val caps = PcCapabilities(
+            listOf(
+                PcHarnessStatus(
+                    "ollama", true, "Ollama 0.35.1 · 2 local models",
+                    models = listOf("huihui_ai/qwen3-vl-abliterated", "artifish/llama3.2-uncensored"),
+                    vision = listOf("huihui_ai/qwen3-vl-abliterated"),
+                ),
+            ),
+        )
+        val (text, images) = PcHarness.modelsFrom(caps)
+        assertEquals(listOf("ollama/huihui_ai/qwen3-vl-abliterated", "ollama/artifish/llama3.2-uncensored"), text.map { it.id })
+        assertEquals(listOf(true, false), text.map { it.supportsImages })
+        assertTrue(text.all { "Local" in it.tags })
+        assertTrue(images.isEmpty())
+        assertTrue(PcHarness.isPcRef("ollama/qwen3.6"))
+        assertEquals("ollama/qwen3.6", PromptModelSelection.modelRef("ollama/qwen3.6"))
+        assertTrue(PcHarness.supportsImages("ollama/huihui_ai/qwen3-vl-abliterated", caps))
+        assertFalse(PcHarness.supportsImages("ollama/artifish/llama3.2-uncensored", caps))
+        assertFalse(PcHarness.supportsImages("ollama/qwen3.6", null))
+    }
 }

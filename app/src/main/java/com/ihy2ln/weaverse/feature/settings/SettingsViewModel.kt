@@ -68,6 +68,9 @@ data class SettingsUiState(
     /** One line per PC harness from the last "Check PC" (✓/✗ + detail). */
     val pcStatus: String = "",
     val pcChecking: Boolean = false,
+    val falKey: String = "",
+    val falStatus: String = "",
+    val falChecking: Boolean = false,
 )
 
 @HiltViewModel
@@ -81,6 +84,7 @@ class SettingsViewModel @Inject constructor(
     private val topicMediaLibrary: TopicMediaLibrary,
     private val syncCoordinator: SyncCoordinator,
     private val pcBridge: com.ihy2ln.weaverse.ai.pc.PcBridgeClient,
+    private val fal: com.ihy2ln.weaverse.ai.fal.FalClient,
 ) : ViewModel() {
     private var lastScannedTopicMediaRoot: String? = null
     val preferences: StateFlow<UserPreferences> = settings.preferences
@@ -96,6 +100,7 @@ class SettingsViewModel @Inject constructor(
                 anthropicKey = settings.apiKey(SecureKeyStore.ANTHROPIC).orEmpty(),
                 openAiKey = settings.apiKey(SecureKeyStore.OPENAI).orEmpty(),
                 geminiKey = settings.apiKey(SecureKeyStore.GEMINI).orEmpty(),
+                falKey = settings.apiKey(SecureKeyStore.FAL).orEmpty(),
                 otherProviderModels = OtherProviderSeeds.seeded(
                     openai = !settings.apiKey(SecureKeyStore.OPENAI).isNullOrBlank(),
                     anthropic = !settings.apiKey(SecureKeyStore.ANTHROPIC).isNullOrBlank(),
@@ -126,19 +131,24 @@ class SettingsViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
-            combine(modelCache.models, modelCache.cachedAt, pcBridge.capabilities) { models, cachedAt, caps ->
-                Triple(models, cachedAt, caps)
-            }.collect { (models, cachedAt, caps) ->
-                // PC harness models (Claude Code, Codex, ComfyUI) lead each list they belong to.
+            combine(modelCache.models, modelCache.cachedAt, pcBridge.capabilities, fal.imageModels) { models, cachedAt, caps, falImages ->
+                Triple(models, cachedAt, caps to falImages)
+            }.collect { (models, cachedAt, extra) ->
+                val (caps, falCatalog) = extra
+                // PC harness models (Claude Code, Codex, Ollama, ComfyUI) lead each list they belong to,
+                // then fal.ai once its key is saved.
                 val (pcText, pcImages) = caps?.let(com.ihy2ln.weaverse.ai.pc.PcHarness::modelsFrom)
                     ?: (com.ihy2ln.weaverse.ai.pc.PcHarness.defaultTextModels to com.ihy2ln.weaverse.ai.pc.PcHarness.defaultImageModels)
+                val falOn = fal.hasKey()
+                val falText = if (falOn) com.ihy2ln.weaverse.ai.fal.Fal.chatModels else emptyList()
+                val falImages = if (falOn) falCatalog else emptyList()
                 _uiState.update {
                     it.copy(
-                        models = pcText + pcImages + modelCache.toModelInfo(models),
-                        writingModels = pcText + modelCache.writingModels(models),
-                        visionModels = pcText + modelCache.visionModels(models),
+                        models = pcText + falText + pcImages + falImages + modelCache.toModelInfo(models),
+                        writingModels = pcText + falText + modelCache.writingModels(models),
+                        visionModels = pcText.filter { m -> m.supportsImages } + modelCache.visionModels(models),
                         ttsModels = modelCache.ttsModels(models),
-                        imageModels = pcImages + modelCache.imageModels(models),
+                        imageModels = pcImages + falImages + modelCache.imageModels(models),
                         modelsCachedAt = cachedAt,
                     )
                 }
@@ -251,6 +261,30 @@ class SettingsViewModel @Inject constructor(
     fun onAnthropicKey(value: String) = _uiState.update { it.copy(anthropicKey = value) }
     fun onOpenAiKey(value: String) = _uiState.update { it.copy(openAiKey = value) }
     fun onGeminiKey(value: String) = _uiState.update { it.copy(geminiKey = value) }
+    fun onFalKey(value: String) = _uiState.update { it.copy(falKey = value) }
+
+    /** Stores the fal.ai key and loads fal's picture catalog with it, which also checks the key. */
+    fun saveFalKey() {
+        val key = _uiState.value.falKey.trim()
+        if (key.isBlank()) {
+            settings.setApiKey(SecureKeyStore.FAL, "")
+            _uiState.update { it.copy(falStatus = "fal.ai key removed.") }
+            return
+        }
+        settings.setApiKey(SecureKeyStore.FAL, key)
+        viewModelScope.launch {
+            _uiState.update { it.copy(falChecking = true, falStatus = "Checking the key with fal.ai…") }
+            val status = runCatching { fal.refreshCatalog() }.fold(
+                { models ->
+                    val edits = models.count { it.supportsImages }
+                    "✓ Key works. $edits picture-editing and ${models.size - edits} text-to-image models from fal.ai, " +
+                        "plus ${com.ihy2ln.weaverse.ai.fal.Fal.chatModels.size} text models through fal's router."
+                },
+                { "✗ ${it.message ?: "fal.ai did not answer"}" },
+            )
+            _uiState.update { it.copy(falChecking = false, falStatus = status) }
+        }
+    }
     fun onModelSearch(value: String) = _uiState.update { it.copy(modelSearch = value) }
     fun onModelTab(tab: ModelListTab) = _uiState.update { it.copy(modelTab = tab) }
 
@@ -389,6 +423,7 @@ class SettingsViewModel @Inject constructor(
         if (!available) return
         val ref = when {
             modelId.startsWith("openrouter/") ||
+                com.ihy2ln.weaverse.ai.fal.Fal.isFalRef(modelId) ||
                 modelId.startsWith("openai/") ||
                 modelId.startsWith("anthropic/") ||
                 modelId.startsWith("gemini/") -> modelId
@@ -414,8 +449,8 @@ class SettingsViewModel @Inject constructor(
         if (!available) return
         val ref = com.ihy2ln.weaverse.feature.prompt.PromptModelSelection.modelRef(modelId)
         viewModelScope.launch {
-            // A ComfyUI workflow only edits pictures, whichever tab it was picked from.
-            if (ref.startsWith(com.ihy2ln.weaverse.ai.pc.PcHarness.COMFY)) {
+            // A ComfyUI workflow or fal.ai picture model only makes pictures, whichever tab it was picked from.
+            if (ref.startsWith(com.ihy2ln.weaverse.ai.pc.PcHarness.COMFY) || com.ihy2ln.weaverse.ai.fal.Fal.isImageRef(ref)) {
                 settings.setMangaImageModel(ref)
                 return@launch
             }

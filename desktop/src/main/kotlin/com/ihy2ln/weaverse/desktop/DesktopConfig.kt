@@ -24,6 +24,9 @@ data class DesktopConfig(
     /** Optional full paths when `claude` / `codex` are not on PATH. */
     val claudePath: String = "",
     val codexPath: String = "",
+    /** Ollama on this PC (local models); started on demand when it is installed but not running. */
+    val ollamaUrl: String = "http://127.0.0.1:11434",
+    val ollamaPath: String = "",
 )
 
 object DesktopConfigStore {
