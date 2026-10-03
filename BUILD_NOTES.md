@@ -34,7 +34,7 @@ state for picking this back up in a fresh session.
 - Tested on the Games AVD: backdrops on every mode (hero vs quiet), picker, rain video; read a
   MangaDex chapter online, Translate from page 2 opened the studio on 2/20 with Translate · Page
   selected; a manual edit saved its copy to the gallery. AI runs not exercised (no API key).
-  637 unit tests pass (2 new in `ModeBackdropsTest`).
+  637 unit tests pass (2 new in `ModeBackdropsTest`) before the fixes below.
 - Fixed: Translate / Colorize / Colorize + Translate force-closed the app whenever the job ended
   at once (no API key, no model). `MangaAiForegroundService.stop` called `stopService` before the
   service had reached `startForeground`, and Android 12+ kills the app for that
@@ -43,8 +43,13 @@ state for picking this back up in a fresh session.
 - The manga editor now reports runs that stop instantly: the busy flag flipped within one frame
   so no "Done" chip appeared and Run looked dead. Run sets a flag, the chip reads "Couldn't run —
   see why", and the Status sheet opens with the reason.
+- Colorize fallback (`MangaColorFallback`): Weaverse has no content filter of its own, but image
+  providers decline some pages (fan-service especially). A declined page is now retried on up to
+  two other providers' image-editing models (Flux Kontext first) before it is left black and
+  white; key, credit, rate-limit and network errors are not retried. Run summaries now say why
+  pages stayed uncolored. 639 unit tests pass (2 new in `MangaColorFallbackTest`).
 - APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.4.85.apk`, SHA-256
-  `a1244b8b7466d1443a601be3217768cbabd781950b7c84ef2532ff746f517ef0`.
+  `ed93e9a4afdd10ead4e78d717fa86060da01bde4111d73e187513aa95c98b0aa`.
 
 ## v1.4.84 - Servers: your own servers, Discord parity, codex as server knowledge
 

@@ -4685,6 +4685,35 @@ class RoleplayChatViewModel @Inject constructor(
 
     fun setMangaAiQuality(quality: MangaAiQuality) = _uiState.update { it.copy(mangaAiQuality = quality) }
 
+    /**
+     * Colors a page with [primary]; when that model's provider declines the page under its
+     * own content rules, the page is offered to image models from other providers.
+     */
+    private suspend fun colorizeMangaImageAnyModel(path: String, primary: String): Pair<ByteArray, String> {
+        try {
+            return colorizeMangaImage(path, primary)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (first: Exception) {
+            if (!com.ihy2ln.weaverse.core.media.MangaColorFallback.isRefusal(first)) throw first
+            val others = runCatching {
+                openRouterRepository.fetchImageEditingModels().map { PromptModelSelection.modelRef(it.id) }
+            }.getOrDefault(emptyList())
+            var last: Exception = first
+            for (ref in com.ihy2ln.weaverse.core.media.MangaColorFallback.fallbacks(primary, others)) {
+                android.util.Log.i("MangaColor", "${primary.removePrefix("openrouter/")} declined; trying ${ref.removePrefix("openrouter/")}")
+                try {
+                    return colorizeMangaImage(path, ref)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    last = failure
+                }
+            }
+            throw last
+        }
+    }
+
     private suspend fun colorizeMangaImage(path: String, modelRef: String): Pair<ByteArray, String> {
         val prefs = settings.preferences.first()
         val quality = _uiState.value.mangaAiQuality
@@ -5173,6 +5202,8 @@ class RoleplayChatViewModel @Inject constructor(
             var alreadyEnglish = 0
             var failedPages = 0
             var colorFailedPages = 0
+            var colorRefusedPages = 0
+            var colorOtherReason: String? = null
             try {
                 val selection = mangaEditTargets(pageIds)
                 val targets = selection.items
@@ -5257,12 +5288,14 @@ class RoleplayChatViewModel @Inject constructor(
                     val colorResult = if (combinedImageModel == null) null else {
                         stage("Colorizing before translation")
                         try {
-                            colorizeMangaImage(target.path, combinedImageModel)
+                            colorizeMangaImageAnyModel(target.path, combinedImageModel)
                         } catch (cancelled: CancellationException) {
                             throw cancelled
                         } catch (failure: Exception) {
                             // The page is still translated in black and white rather than dropped.
                             colorFailedPages++
+                            if (com.ihy2ln.weaverse.core.media.MangaColorFallback.isRefusal(failure)) colorRefusedPages++
+                            else if (colorOtherReason == null) colorOtherReason = failure.message?.take(160)
                             android.util.Log.w("MangaTranslation", "Colorizing page ${index + 1} failed; translating it uncolored", failure)
                             null
                         }
@@ -5416,7 +5449,8 @@ class RoleplayChatViewModel @Inject constructor(
                             rejectedPages = rejectedPages,
                             alreadyEnglish = alreadyEnglish,
                         ) + (if (failedPages > 0) " $failedPages page(s) failed; the rest of the chapter was processed." else "") +
-                            (if (colorFailedPages > 0) " $colorFailedPages page(s) could not be colorized and were translated in black and white." else "") +
+                            (if (colorFailedPages > 0) " $colorFailedPages page(s) could not be colorized and were translated in black and white." +
+                                com.ihy2ln.weaverse.core.media.MangaColorFallback.reasonNote(colorRefusedPages, colorOtherReason) else "") +
                             savedCopiesNote(savedCopies),
                     )
                 }
@@ -5523,6 +5557,8 @@ class RoleplayChatViewModel @Inject constructor(
             var completed = 0
             var colorized = 0
             var savedCopies = 0
+            var refusedPages = 0
+            var otherReason: String? = null
             var alreadyColor = 0
             var failedPages = 0
             try {
@@ -5554,6 +5590,8 @@ class RoleplayChatViewModel @Inject constructor(
                 }
                 runMangaChapterBatch(targets, onFailure = { index, failure ->
                     failedPages++
+                    if (com.ihy2ln.weaverse.core.media.MangaColorFallback.isRefusal(failure)) refusedPages++
+                    else if (otherReason == null) otherReason = failure.message?.take(160)
                     completed = index + 1
                     android.util.Log.e("MangaColorization", "Page ${index + 1}/${targets.size} failed; continuing", failure)
                     _uiState.update {
@@ -5578,7 +5616,7 @@ class RoleplayChatViewModel @Inject constructor(
                             // A full-page edit needs more than the 1100px used for a
                             // read-the-lettering vision call, or fine line art and small
                             // text turn to mush once the model repaints the page.
-                            val (bytes, mime) = colorizeMangaImage(target.path, imageModelRef)
+                            val (bytes, mime) = colorizeMangaImageAnyModel(target.path, imageModelRef)
                             val entity = mediaRepository.importFromBytes(
                                 bytes = bytes,
                                 fileName = "manga-ai-color-${UUID.randomUUID()}.${if (mime == "image/png") "png" else "jpg"}",
@@ -5611,7 +5649,9 @@ class RoleplayChatViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         storyboardStatus = "AI-colorized $colorized black-and-white picture(s); $alreadyColor already contained color. " +
-                            (if (failedPages > 0) "$failedPages page(s) failed; the rest of the chapter was processed. Original files remain unchanged."
+                            (if (failedPages > 0) "$failedPages page(s) failed; the rest of the chapter was processed." +
+                                com.ihy2ln.weaverse.core.media.MangaColorFallback.reasonNote(refusedPages, otherReason) +
+                                " Original files remain unchanged."
                             else "Original files remain unchanged.") + savedCopiesNote(savedCopies),
                     )
                 }
