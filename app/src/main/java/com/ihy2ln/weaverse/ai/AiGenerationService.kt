@@ -18,6 +18,7 @@ class AiGenerationService @Inject constructor(
     private val registry: AIProviderRegistry,
     private val openRouterRepository: OpenRouterRepository,
     private val settings: SettingsRepository,
+    private val pcBridge: com.ihy2ln.weaverse.ai.pc.PcBridgeClient,
 ) {
     suspend fun resolveModelRef(override: String? = null): String {
         if (!override.isNullOrBlank()) return override
@@ -116,6 +117,7 @@ class AiGenerationService @Inject constructor(
 
     suspend fun modelSupportsImages(modelRef: String? = null): Boolean {
         val model = resolveModelRef(modelRef)
+        if (com.ihy2ln.weaverse.ai.pc.PcHarness.isPcRef(model)) return !model.startsWith(com.ihy2ln.weaverse.ai.pc.PcHarness.COMFY)
         if (!model.startsWith("openrouter/") && !model.contains("/")) return false
         return openRouterRepository.modelSupportsImages(model)
     }
@@ -134,6 +136,12 @@ class AiGenerationService @Inject constructor(
         aspectRatio: String? = null,
     ): Pair<ByteArray, String> {
         val model = resolveModelRef(modelRef)
+        if (model.startsWith(com.ihy2ln.weaverse.ai.pc.PcHarness.COMFY)) {
+            // ComfyUI on the user's PC: the first attached picture is the one edited.
+            val source = imageAttachments.firstOrNull()
+                ?: throw AIError.BadRequest("ComfyUI workflows here edit a picture; attach one.")
+            return pcBridge.editImage(model.removePrefix(com.ihy2ln.weaverse.ai.pc.PcHarness.COMFY), prompt, source)
+        }
         if (!model.startsWith("openrouter/")) {
             throw AIError.HttpFailure(
                 statusCode = 400,
@@ -162,6 +170,7 @@ class AiGenerationService @Inject constructor(
     fun hasApiKey(modelRef: String? = null): Boolean {
         val ref = modelRef.orEmpty()
         return when {
+            com.ihy2ln.weaverse.ai.pc.PcHarness.isPcRef(ref) -> pcBridge.isConfigured()
             ref.startsWith("openai/") -> !settings.apiKey(SecureKeyStore.OPENAI).isNullOrBlank()
             ref.startsWith("anthropic/") -> !settings.apiKey(SecureKeyStore.ANTHROPIC).isNullOrBlank()
             ref.startsWith("gemini/") -> !settings.apiKey(SecureKeyStore.GEMINI).isNullOrBlank()

@@ -17,6 +17,13 @@ data class DesktopConfig(
     val openBrowser: Boolean = true,
     val allowRemote: Boolean = true,
     val tls: Boolean = false,
+    /** ComfyUI on this PC; the phone reaches it only through this companion. */
+    val comfyUrl: String = "http://127.0.0.1:8188",
+    /** Sampling steps for ComfyUI image edits (Qwen Image Edit: 20 is fast, 30 is finer). */
+    val comfySteps: Int = 20,
+    /** Optional full paths when `claude` / `codex` are not on PATH. */
+    val claudePath: String = "",
+    val codexPath: String = "",
 )
 
 object DesktopConfigStore {

@@ -3,6 +3,34 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.87 - PC harnesses: Claude Code, ChatGPT (Codex) and ComfyUI
+
+- Weaverse Desktop (`desktop/`) gains an AI bridge (`AiBridge.kt`), behind the sync password
+  (Bearer, same check as `/mcp`): `GET /api/ai/capabilities`, `POST /api/ai/complete`
+  (Claude Code `claude -p --output-format json`, Codex `codex exec --sandbox read-only`),
+  `POST /api/ai/image` (ComfyUI), polled through `GET /api/ai/jobs/{id}` and
+  `/api/ai/jobs/{id}/image`, so a several-minute ComfyUI page never holds a request open.
+  CLIs run with fixed flags in an empty scratch folder (Claude: Read only), prompts go through
+  stdin, images are written beside them. ComfyUI stays on the PC (`comfyUrl` in
+  sync-config.json, default 127.0.0.1:8188); one job at a time.
+- Built-in ComfyUI workflow `qwen-image-edit` (resources/comfy): the user's Qwen Image 2.1
+  int8 model + qwen3vl_8b text encoder, the page as reference, KSampler on the encoder's latent.
+  Tested on the RTX 5070 Ti: line art, lettering and panels kept, about 4 minutes per page
+  (30 steps; default 20 via `comfySteps`). Extra API-format workflows in data/comfy-workflows
+  with __IMAGE__/__PROMPT__/__NEGATIVE__/__SEED__/__STEPS__ become more models.
+- App: `ai/pc/PcHarness.kt` (`PcBridgeClient`, `PcHarnessProvider`). Model refs
+  `claudecode/<model>`, `codex/<model>`, `comfy/<workflow>`; the bridge uses the sync address and
+  password. Registry, `stripProviderPrefix`, `hasApiKey`, `generateImage` (comfy → bridge),
+  `PromptModelSelection.modelRef` (PC refs pass through) updated. Settings → new "PC harnesses"
+  section (Check PC, setup steps); Models tabs list the PC models first (Writing/Vision: Claude
+  Code + Codex; Image generation: ComfyUI); Manga Studio AI settings list them once a PC is set up,
+  and ComfyUI coloring works without an OpenRouter key.
+- The PC's Claude Code was signed out and Codex is not installed, so CLI answers were not
+  exercised end to end; the bridge reports both clearly. 641 unit tests pass (2 new in
+  `PcHarnessTest`). Weaverse Desktop installed to S:\AI\Novel\Weaverse.
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.4.87.apk`, SHA-256
+  `031ce425a993b980b2ec2ccb9230f37196182c63bcf45fe8cb12f3228796aa18`.
+
 ## v1.4.86 - Colorize failures explain themselves
 
 - Colorizing still failed on the user's phone after the 1.4.85 fallback, and the phone could not

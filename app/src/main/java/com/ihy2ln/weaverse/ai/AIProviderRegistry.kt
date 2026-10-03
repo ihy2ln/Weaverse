@@ -13,6 +13,7 @@ class AIProviderRegistry @Inject constructor(
     private val openAi: OpenAiProvider,
     private val anthropic: AnthropicProvider,
     private val gemini: GeminiProvider,
+    private val pcHarness: com.ihy2ln.weaverse.ai.pc.PcHarnessProvider,
 ) {
     fun resolve(modelRef: String): AIProvider {
         WeaverseAiLog.i("resolve modelRef=$modelRef")
@@ -21,6 +22,10 @@ class AIProviderRegistry @Inject constructor(
             modelRef.startsWith("mock/") -> throw AIError.NoProvider(
                 "Mock providers removed. Configure a provider and pick a live model.",
             )
+            modelRef.startsWith(com.ihy2ln.weaverse.ai.pc.PcHarness.COMFY) -> throw AIError.NoProvider(
+                "$modelRef is a ComfyUI picture workflow; pick a text model for writing.",
+            )
+            com.ihy2ln.weaverse.ai.pc.PcHarness.isPcRef(modelRef) -> pcHarness
             modelRef.startsWith("openai/") -> openAi
             modelRef.startsWith("anthropic/") -> anthropic
             modelRef.startsWith("gemini/") -> gemini
@@ -31,6 +36,8 @@ class AIProviderRegistry @Inject constructor(
     }
 
     fun stripProviderPrefix(modelRef: String): String = when {
+        // PC harness refs keep their prefix: it says which CLI runs them.
+        com.ihy2ln.weaverse.ai.pc.PcHarness.isPcRef(modelRef) -> modelRef
         modelRef.startsWith("openai/") -> modelRef.removePrefix("openai/")
         modelRef.startsWith("anthropic/") -> modelRef.removePrefix("anthropic/")
         modelRef.startsWith("gemini/") -> modelRef.removePrefix("gemini/")

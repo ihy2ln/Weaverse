@@ -16,6 +16,7 @@ import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -124,6 +125,7 @@ fun SettingsScreen(
     var openRouterExpanded by rememberSaveable { mutableStateOf(true) }
     var modelsExpanded by rememberSaveable { mutableStateOf(false) }
     var otherProvidersExpanded by rememberSaveable { mutableStateOf(false) }
+    var pcHarnessExpanded by rememberSaveable { mutableStateOf(false) }
     var backupExpanded by rememberSaveable { mutableStateOf(false) }
     var syncExpanded by rememberSaveable { mutableStateOf(true) }
     var peerHost by rememberSaveable { mutableStateOf("") }
@@ -1129,6 +1131,17 @@ fun SettingsScreen(
         }
 
 
+
+        ExpandableSection(
+            title = "PC harnesses",
+            icon = Icons.Default.Computer,
+            subtitle = "Claude Code · ChatGPT · ComfyUI on your PC",
+            expanded = pcHarnessExpanded,
+            onToggle = { pcHarnessExpanded = !pcHarnessExpanded },
+            modifier = Modifier.padding(top = InkSpacing.md),
+        ) {
+            PcHarnessBody(state = state, onCheck = viewModel::checkPc)
+        }
 
         ExpandableSection(
             title = "Sync through the web version",

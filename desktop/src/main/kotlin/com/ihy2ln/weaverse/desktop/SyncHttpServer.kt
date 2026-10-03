@@ -33,6 +33,7 @@ import io.ktor.server.plugins.origin
 import io.ktor.server.request.receive
 import io.ktor.server.request.receiveChannel
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondFile
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
@@ -68,6 +69,7 @@ class SyncHttpServer(
         encodeDefaults = true
     }
     private val mcpTools = DesktopMcpTools(dataDir, config.appVersion)
+    private val aiBridge = AiBridge(dataDir, config)
 
     fun start(): EmbeddedServer<*, *> {
         maybeAutoImport()
@@ -99,6 +101,11 @@ class SyncHttpServer(
         engine = server
         server.start(wait = false)
         return server
+    }
+
+    private fun aiAuthorized(call: io.ktor.server.application.ApplicationCall): Boolean {
+        val bearer = call.request.headers["Authorization"]?.removePrefix("Bearer ")?.trim().orEmpty()
+        return guard.checkSecret(call.request.origin.remoteHost, bearer, config.pairPin)
     }
 
     fun stop() {
@@ -178,6 +185,36 @@ class SyncHttpServer(
                     return@post
                 }
                 call.respond(mcpTools.handle(rpc))
+            }
+            // PC harnesses for the phone: Claude Code, Codex (ChatGPT) and ComfyUI. Same
+            // password as MCP; work runs as jobs the phone polls.
+            get("/api/ai/capabilities") {
+                if (!aiAuthorized(call)) return@get call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Wrong sync password"))
+                call.respond(aiBridge.capabilities())
+            }
+            post("/api/ai/complete") {
+                if (!aiAuthorized(call)) return@post call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Wrong sync password"))
+                val request = runCatching { call.receive<AiCompleteRequest>() }.getOrNull()
+                    ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Bad request"))
+                call.respond(mapOf("id" to aiBridge.submitComplete(request)))
+            }
+            post("/api/ai/image") {
+                if (!aiAuthorized(call)) return@post call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Wrong sync password"))
+                val request = runCatching { call.receive<AiImageRequest>() }.getOrNull()
+                    ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Bad request"))
+                call.respond(mapOf("id" to aiBridge.submitImage(request)))
+            }
+            get("/api/ai/jobs/{id}") {
+                if (!aiAuthorized(call)) return@get call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Wrong sync password"))
+                val status = aiBridge.status(call.parameters["id"].orEmpty())
+                    ?: return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "Unknown job"))
+                call.respond(status)
+            }
+            get("/api/ai/jobs/{id}/image") {
+                if (!aiAuthorized(call)) return@get call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Wrong sync password"))
+                val (bytes, mime) = aiBridge.takeImage(call.parameters["id"].orEmpty())
+                    ?: return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "No image for this job"))
+                call.respondBytes(bytes, ContentType.parse(mime))
             }
             get("/mcp") {
                 call.respondText(

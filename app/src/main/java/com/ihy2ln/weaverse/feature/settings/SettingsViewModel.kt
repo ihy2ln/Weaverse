@@ -65,6 +65,9 @@ data class SettingsUiState(
     val otherProviderModels: List<ModelInfo> = emptyList(),
     val crashLogText: String = "",
     val topicMediaStatus: String = "No media library selected",
+    /** One line per PC harness from the last "Check PC" (✓/✗ + detail). */
+    val pcStatus: String = "",
+    val pcChecking: Boolean = false,
 )
 
 @HiltViewModel
@@ -77,6 +80,7 @@ class SettingsViewModel @Inject constructor(
     private val mediaRepository: MediaRepository,
     private val topicMediaLibrary: TopicMediaLibrary,
     private val syncCoordinator: SyncCoordinator,
+    private val pcBridge: com.ihy2ln.weaverse.ai.pc.PcBridgeClient,
 ) : ViewModel() {
     private var lastScannedTopicMediaRoot: String? = null
     val preferences: StateFlow<UserPreferences> = settings.preferences
@@ -122,16 +126,19 @@ class SettingsViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
-            combine(modelCache.models, modelCache.cachedAt) { models, cachedAt ->
-                models to cachedAt
-            }.collect { (models, cachedAt) ->
+            combine(modelCache.models, modelCache.cachedAt, pcBridge.capabilities) { models, cachedAt, caps ->
+                Triple(models, cachedAt, caps)
+            }.collect { (models, cachedAt, caps) ->
+                // PC harness models (Claude Code, Codex, ComfyUI) lead each list they belong to.
+                val (pcText, pcImages) = caps?.let(com.ihy2ln.weaverse.ai.pc.PcHarness::modelsFrom)
+                    ?: (com.ihy2ln.weaverse.ai.pc.PcHarness.defaultTextModels to com.ihy2ln.weaverse.ai.pc.PcHarness.defaultImageModels)
                 _uiState.update {
                     it.copy(
-                        models = modelCache.toModelInfo(models),
-                        writingModels = modelCache.writingModels(models),
-                        visionModels = modelCache.visionModels(models),
+                        models = pcText + pcImages + modelCache.toModelInfo(models),
+                        writingModels = pcText + modelCache.writingModels(models),
+                        visionModels = pcText + modelCache.visionModels(models),
                         ttsModels = modelCache.ttsModels(models),
-                        imageModels = modelCache.imageModels(models),
+                        imageModels = pcImages + modelCache.imageModels(models),
                         modelsCachedAt = cachedAt,
                     )
                 }
@@ -392,10 +399,26 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /** Asks the PC companion which harnesses it can run right now. */
+    fun checkPc() {
+        if (_uiState.value.pcChecking) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(pcChecking = true, pcStatus = "Checking the PC…") }
+            val status = runCatching { pcBridge.refreshCapabilities() }
+                .fold({ pcBridge.status.value }, { it.message ?: "Could not reach the PC." })
+            _uiState.update { it.copy(pcChecking = false, pcStatus = status) }
+        }
+    }
+
     fun selectModelForCurrentTab(modelId: String, available: Boolean) {
         if (!available) return
-        val ref = if (modelId.startsWith("openrouter/")) modelId else "openrouter/$modelId"
+        val ref = com.ihy2ln.weaverse.feature.prompt.PromptModelSelection.modelRef(modelId)
         viewModelScope.launch {
+            // A ComfyUI workflow only edits pictures, whichever tab it was picked from.
+            if (ref.startsWith(com.ihy2ln.weaverse.ai.pc.PcHarness.COMFY)) {
+                settings.setMangaImageModel(ref)
+                return@launch
+            }
             when (_uiState.value.modelTab) {
                 ModelListTab.Vision -> settings.setMangaVisionModel(ref)
                 ModelListTab.ImageGeneration -> settings.setMangaImageModel(ref)

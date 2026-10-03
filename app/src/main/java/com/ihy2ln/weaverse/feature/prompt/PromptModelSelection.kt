@@ -5,6 +5,8 @@ import com.ihy2ln.weaverse.ai.ModelInfo
 /** Session model pick for the shared prompt box — does not write Settings. */
 object PromptModelSelection {
     fun modelRef(id: String): String {
+        // PC harness models (claudecode/, codex/, comfy/) are already full refs.
+        if (com.ihy2ln.weaverse.ai.pc.PcHarness.isPcRef(id.trim())) return id.trim()
         val trimmed = id.removePrefix("openrouter/").trim()
         return if (trimmed.isBlank()) "" else "openrouter/$trimmed"
     }
