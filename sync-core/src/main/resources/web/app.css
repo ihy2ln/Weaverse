@@ -188,13 +188,3 @@ button.ghost { border: 1px solid var(--line); border-radius: 12px; padding: 9px 
   .menu { left: 0; }
 }
 
-/* Live app */
-.live { display: grid; grid-template-columns: minmax(240px, 320px) minmax(0, 1fr); gap: 18px; align-items: start; }
-.liveScreen { position: relative; display: flex; justify-content: center; }
-.liveScreen canvas {
-  height: min(78vh, 1280px); aspect-ratio: 9 / 16; width: auto; max-width: 100%; border-radius: 26px;
-  background: #000; border: 10px solid #1b1925; box-shadow: 0 20px 60px rgba(0,0,0,.55); touch-action: none; outline: none; cursor: pointer;
-}
-.liveScreen canvas:focus { border-color: #2c2840; }
-.liveHint { position: absolute; top: 45%; left: 0; right: 0; text-align: center; color: var(--muted); pointer-events: none; }
-@media (max-width: 760px) { .live { grid-template-columns: 1fr; } }

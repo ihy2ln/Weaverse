@@ -24,12 +24,6 @@ data class DesktopConfig(
     /** Optional full paths when `claude` / `codex` are not on PATH. */
     val claudePath: String = "",
     val codexPath: String = "",
-    /** Live app in the browser: a dedicated headless emulator running the newest APK. */
-    val androidSdk: String = "",
-    val streamAvd: String = "WeaverseStream",
-    val streamEmulatorPort: Int = 5580,
-    val streamPackage: String = "com.ihy2ln.weaverse.textgame",
-    val streamApkDir: String = "S:/AI/Novel/Weaververse/Beta.Test.Build",
 )
 
 object DesktopConfigStore {
