@@ -1,14 +1,14 @@
 (() => {
   // The web version of Weaverse: the same modes as the phone, over the synced library.
   const MODES = [
+    { key: 'live', label: 'Weaverse app', eyebrow: 'The real app', desc: 'The current Weaverse APK, running on this PC and played from the browser.' },
     { key: 'home', label: 'Home' },
     { key: 'novel', label: 'Novel', eyebrow: 'Write & read', desc: 'Plan, write and read your books, with every scene and codex entry.' },
     { key: 'rpg', label: 'RPG', eyebrow: 'Adventure', desc: 'Your campaigns and roleplay chats, with party and story.' },
     { key: 'games', label: 'Games', eyebrow: 'Play', desc: 'Arcade and story games set in your worlds.' },
     { key: 'browser', label: 'WeaverBrowser', eyebrow: 'Browse & chat', desc: 'Servers and channels with your codex as knowledge.' },
     { key: 'manga', label: 'Manga Studio', eyebrow: 'Draw & read', desc: 'Read, translate and color manga and comics.' },
-    { key: 'notes', label: 'Brainstorm/Notes', eyebrow: 'Think', desc: 'Notes and brainstorming beside your codex.' },
-    { key: 'live', label: 'Live app', eyebrow: 'The real app', desc: 'The current Weaverse APK, running on this PC and played from the browser.' }
+    { key: 'notes', label: 'Brainstorm/Notes', eyebrow: 'Think', desc: 'Notes and brainstorming beside your codex.' }
   ];
   const state = {
     token: localStorage.getItem('weaverseToken') || '',
@@ -75,7 +75,8 @@
   }
   function parseHash() {
     const parts = location.hash.replace(/^#\/?/, '').split('/');
-    const key = MODES.some((m) => m.key === parts[0]) ? parts[0] : 'home';
+    // The browser opens on the real app; the other tabs are web views of the synced library.
+    const key = MODES.some((m) => m.key === parts[0]) ? parts[0] : 'live';
     state.route = { mode: key, kind: parts[1] || '', id: decodeURIComponent(parts[2] || '') };
   }
   window.addEventListener('hashchange', () => { parseHash(); render(); });
@@ -280,7 +281,7 @@
   }
   function liveView(stage) {
     stopLive();
-    stage.innerHTML = banner('live', 'Live app', 'The current APK, running on this PC') +
+    stage.innerHTML = banner('live', 'Weaverse app', 'The current APK, running on this PC — everything the phone has') +
       '<div class="live"><div class="liveSide pane">' +
       '<div id="liveState" class="lead">Checking…</div>' +
       '<div class="row"><button id="liveStart" class="solid" type="button">Start</button><button id="liveStop" class="ghost" type="button">Stop</button></div>' +
@@ -323,6 +324,10 @@
     if (s.width) { live.w = s.width; live.h = s.height; }
     el('liveHint').textContent = s.state === 'off' ? 'Press Start' : (s.detail || '');
     el('liveHint').hidden = s.state === 'ready';
+    if (s.state === 'off' && !live.autoStarted) {
+      live.autoStarted = true;
+      api('/api/stream/start', { method: 'POST' }).then(pollLive).catch(() => {});
+    }
     if (s.state === 'ready' && !live.streaming) startVideo();
   }
   async function startVideo() {

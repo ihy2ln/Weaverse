@@ -45,6 +45,7 @@ class AppStream(private val config: DesktopConfig) {
     private val lock = Any()
 
     private val serial get() = "emulator-${config.streamEmulatorPort}"
+    private val emulatorLog = File(System.getProperty("java.io.tmpdir"), "weaverse-stream-emulator.log")
 
     fun status(): AppStreamStatus = state
 
@@ -59,17 +60,21 @@ class AppStream(private val config: DesktopConfig) {
                 val sdk = sdkDir() ?: error("Android SDK not found. Set androidSdk in sync-config.json.")
                 if (!isBooted()) {
                     if (emulator?.isAlive != true) {
+                        clearStaleLocks()
                         val exe = File(sdk, "emulator/emulator" + if (isWindows) ".exe" else "")
                         require(exe.isFile) { "No emulator at ${exe.absolutePath}" }
                         emulator = ProcessBuilder(
                             exe.absolutePath, "-avd", config.streamAvd, "-port", config.streamEmulatorPort.toString(),
                             "-no-window", "-no-audio", "-no-boot-anim", "-no-snapshot-save", "-gpu", "host",
-                        ).redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start()
+                        ).redirectErrorStream(true).redirectOutput(emulatorLog).start()
                     }
                     val deadline = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(4)
                     while (!isBooted()) {
                         if (System.currentTimeMillis() > deadline) error("The emulator did not boot within 4 minutes")
-                        if (emulator?.isAlive == false) error("The emulator stopped while booting (is the ${config.streamAvd} AVD set up?)")
+                        if (emulator?.isAlive == false) {
+                            val why = emulatorLog.readLines().lastOrNull { it.contains("FATAL") || it.contains("ERROR") }
+                            error("The emulator stopped while booting: ${why ?: "see ${emulatorLog.absolutePath}"}")
+                        }
                         Thread.sleep(2000)
                     }
                 }
@@ -157,6 +162,18 @@ class AppStream(private val config: DesktopConfig) {
         val result = adb("install", "-r", "-d", newest.absolutePath)
         if (!result.contains("Success")) error("Could not install ${newest.name}: ${result.takeLast(300)}")
         installedApk = marker
+    }
+
+    /**
+     * An emulator that was killed leaves *.lock files in its AVD folder, and the next start then
+     * exits at once. Nothing is running for this AVD at this point, so they can go.
+     */
+    private fun clearStaleLocks() {
+        val ini = File(System.getProperty("user.home"), ".android/avd/${config.streamAvd}.ini")
+        val dir = ini.takeIf(File::isFile)?.readLines()?.firstOrNull { it.startsWith("path=") }
+            ?.removePrefix("path=")?.trim()?.let(::File)
+            ?: File(System.getProperty("user.home"), ".android/avd/${config.streamAvd}.avd")
+        dir.listFiles { f -> f.name.endsWith(".lock") }?.forEach { it.deleteRecursively() }
     }
 
     private fun isBooted(): Boolean = runCatching { adb("shell", "getprop", "sys.boot_completed").trim() == "1" }.getOrDefault(false)

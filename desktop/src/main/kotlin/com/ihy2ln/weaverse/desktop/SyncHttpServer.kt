@@ -118,13 +118,17 @@ class SyncHttpServer(
     private fun Application.configure() {
         install(ContentNegotiation) { json(json) }
         routing {
+            // no-cache: a browser must never keep showing an older web version.
             get("/") {
+                call.response.headers.append("Cache-Control", "no-cache")
                 call.respondText(webIndexHtml(), ContentType.Text.Html)
             }
             get("/app.js") {
+                call.response.headers.append("Cache-Control", "no-cache")
                 call.respondText(webAppJs(), ContentType.Text.JavaScript)
             }
             get("/app.css") {
+                call.response.headers.append("Cache-Control", "no-cache")
                 call.respondText(webAppCss(), ContentType.Text.CSS)
             }
             get("/art/{name}") {
