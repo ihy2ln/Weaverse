@@ -73,6 +73,8 @@ data class BackdropFile(val path: String, val video: Boolean)
 fun backdropSourceOf(entry: String, files: Map<String, BackdropFile>): BackdropSource? = when {
     entry == ModeBackdrops.WALLPAPER -> BackdropSource.Wallpaper
     entry.startsWith(ModeBackdrops.ART) -> BackdropSource.Art(ModeArt.splash(entry.removePrefix(ModeBackdrops.ART)), key = entry)
+    entry.startsWith(ModeBackdrops.ASSET) ->
+        BackdropSource.Art(ModeArt.home, "file:///android_asset/" + entry.removePrefix(ModeBackdrops.ASSET), entry)
     entry.startsWith(ModeBackdrops.VIDEO) -> BackdropSource.Video(AmbientVideos.uri(entry.removePrefix(ModeBackdrops.VIDEO)), entry)
     entry.startsWith(ModeBackdrops.MEDIA) -> files[entry.removePrefix(ModeBackdrops.MEDIA)]?.let { file ->
         if (file.video) BackdropSource.Video(file.path, entry) else BackdropSource.Art(ModeArt.home, File(file.path), entry)

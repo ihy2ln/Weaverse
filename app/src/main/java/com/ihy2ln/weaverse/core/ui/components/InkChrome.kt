@@ -163,6 +163,54 @@ fun InkMenuChip(
     }
 }
 
+/**
+ * The mode's banner (eyebrow, page title, Back) on its own, for when it sits under WeaverBrowser's
+ * address bar rather than under the mode tabs.
+ */
+@Composable
+fun WorkspaceBanner(
+    bookTitle: String,
+    workspaceOptions: List<SegmentedOption>,
+    workspaceId: String,
+    modeOptions: List<SegmentedOption>,
+    modeId: String,
+    canGoBack: Boolean,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(color = inkTokens().panel.copy(alpha = glassFillAlpha()), tonalElevation = 0.dp, modifier = modifier.fillMaxWidth()) {
+        WorkspaceBannerContent(bookTitle, workspaceOptions, workspaceId, modeOptions, modeId, canGoBack, onBack)
+    }
+}
+
+@Composable
+private fun WorkspaceBannerContent(
+    bookTitle: String,
+    workspaceOptions: List<SegmentedOption>,
+    workspaceId: String,
+    modeOptions: List<SegmentedOption>,
+    modeId: String,
+    canGoBack: Boolean,
+    onBack: () -> Unit,
+) {
+    val mode = com.ihy2ln.weaverse.feature.shell.AppMode.entries.firstOrNull { it.name == workspaceId }
+    val modeLabel = workspaceOptions.firstOrNull { it.id == workspaceId }?.label.orEmpty()
+    val sectionLabel = modeOptions.firstOrNull { it.id == modeId }?.label.orEmpty()
+    // A page that hands over its heading shares the banner: mode · section above, its title,
+    // line and buttons in the block.
+    val page = LocalModeHeaderHost.current?.info
+    ModeBanner(
+        brand = mode?.let(com.ihy2ln.weaverse.feature.shell.ModeArt::of) ?: com.ihy2ln.weaverse.feature.shell.ModeArt.home,
+        eyebrow = if (page != null && sectionLabel.isNotBlank() && !sectionLabel.equals(page.title, true)) "$modeLabel · $sectionLabel" else modeLabel,
+        title = page?.title ?: bookTitle.ifBlank { sectionLabel },
+        canGoBack = canGoBack,
+        onBack = onBack,
+        subtitle = page?.subtitle.orEmpty(),
+        actions = page?.actions,
+        detail = page?.detail,
+    )
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun WorkspaceChrome(
@@ -199,6 +247,14 @@ fun WorkspaceChrome(
     showTitleRow: Boolean = true,
     /** Home: no glass of its own, so the splash runs up behind the tabs. */
     overArt: Boolean = false,
+    /**
+     * The top row's tabs: Home and the modes (false = the current mode's own sections, for when
+     * WeaverBrowser's tabs already switch between modes).
+     */
+    showModeTabs: Boolean = true,
+    /** WeaverBrowser's bars (address and toolbar): shown, and the globe that toggles them (null = no globe). */
+    browserOpen: Boolean = false,
+    onBrowser: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val tokens = inkTokens()
@@ -216,8 +272,8 @@ fun WorkspaceChrome(
         Column(Modifier.fillMaxWidth()) {
             // Home, then the modes in the user's order, as a streaming site's top tabs.
             val homeId = "Home"
-            val tabs = listOf(SegmentedOption(homeId, "Home")) + workspaceOptions
-            val selectedTab = if (isHome) homeId else workspaceId
+            val tabs = if (showModeTabs) listOf(SegmentedOption(homeId, "Home")) + workspaceOptions else modeOptions
+            val selectedTab = if (!showModeTabs) modeId else if (isHome) homeId else workspaceId
             Row(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.Menu, "Open navigation", tint = tokens.primaryText) }
                 Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
@@ -225,7 +281,13 @@ fun WorkspaceChrome(
                         val selected = option.id == selectedTab
                         Column(
                             Modifier.clip(RoundedCornerShape(10.dp))
-                                .clickable { if (option.id == homeId) onHome() else onWorkspace(option.id) }
+                                .clickable {
+                                    when {
+                                        !showModeTabs -> onMode(option.id)
+                                        option.id == homeId -> onHome()
+                                        else -> onWorkspace(option.id)
+                                    }
+                                }
                                 .padding(horizontal = 11.dp, vertical = 6.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
@@ -249,17 +311,17 @@ fun WorkspaceChrome(
                     }
                 }
                 IconButton(onClick = onSearch) { Icon(Icons.Default.Search, "Search", tint = tokens.primaryText) }
+                if (onBrowser != null) IconButton(onClick = onBrowser) {
+                    Icon(
+                        Icons.Default.Public,
+                        if (browserOpen) "Hide the browser bar" else "Show the browser bar",
+                        tint = if (browserOpen) accent else tokens.primaryText,
+                    )
+                }
                 IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, "Settings", tint = tokens.primaryText) }
             }
             if (showTitleRow && !isHome) {
-                val mode = com.ihy2ln.weaverse.feature.shell.AppMode.entries.firstOrNull { it.name == workspaceId }
-                ModeBanner(
-                    brand = mode?.let(com.ihy2ln.weaverse.feature.shell.ModeArt::of) ?: com.ihy2ln.weaverse.feature.shell.ModeArt.home,
-                    eyebrow = workspaceOptions.firstOrNull { it.id == workspaceId }?.label.orEmpty(),
-                    title = bookTitle.ifBlank { modeOptions.firstOrNull { it.id == modeId }?.label.orEmpty() },
-                    canGoBack = canGoBack,
-                    onBack = onBack,
-                )
+                WorkspaceBannerContent(bookTitle, workspaceOptions, workspaceId, modeOptions, modeId, canGoBack, onBack)
             }
         }
     }
@@ -472,6 +534,9 @@ private fun ModeBanner(
     title: String,
     canGoBack: Boolean,
     onBack: () -> Unit,
+    subtitle: String = "",
+    actions: (@Composable RowScope.() -> Unit)? = null,
+    detail: (@Composable () -> Unit)? = null,
 ) {
     val tokens = inkTokens()
     val shape = RoundedCornerShape(inkRadiusMd())
@@ -498,6 +563,7 @@ private fun ModeBanner(
                 ),
             ),
         )
+        Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(vertical = 6.dp, horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             if (canGoBack) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = tokens.primaryText) }
             Column(Modifier.weight(1f).padding(horizontal = if (canGoBack) 4.dp else 12.dp)) {
@@ -514,16 +580,32 @@ private fun ModeBanner(
                     color = tokens.primaryText,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = if (subtitle.isNotBlank() || actions != null) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
+                if (subtitle.isNotBlank()) Text(
+                    subtitle,
+                    color = tokens.primaryText.copy(alpha = 0.78f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
-            Icon(
-                brand.icon,
-                null,
-                tint = tokens.primaryText.copy(alpha = 0.7f),
-                modifier = Modifier.padding(end = 14.dp).size(20.dp),
-            )
+            if (actions != null) {
+                Row(Modifier.padding(end = 6.dp), verticalAlignment = Alignment.CenterVertically, content = actions)
+            } else {
+                Icon(
+                    brand.icon,
+                    null,
+                    tint = tokens.primaryText.copy(alpha = 0.7f),
+                    modifier = Modifier.padding(end = 14.dp).size(20.dp),
+                )
+            }
+        }
+        if (detail != null) {
+            HorizontalDivider(color = tokens.hairline.copy(alpha = 0.5f), modifier = Modifier.padding(horizontal = 12.dp))
+            Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) { detail() }
+        }
         }
     }
 }

@@ -126,6 +126,8 @@ data class UserPreferences(
     val modeBackdrops: Map<String, List<String>> = emptyMap(),
     /** Cycle through a mode's backgrounds while its first page is open. */
     val backdropSlideshow: Boolean = true,
+    /** Seconds between backgrounds while the slideshow runs. */
+    val backdropIntervalSeconds: Int = ModeBackdrops.DEFAULT_INTERVAL_S,
     /** Media id of the RPG town backdrop; blank draws the built-in fallback. */
     val townBackgroundMediaId: String = "",
     val roleplayPresetId: String = "preset-balanced",
@@ -227,6 +229,7 @@ class SettingsRepository @Inject constructor(
             homeIntroEnabled = prefs[KEY_HOME_INTRO] ?: true,
             modeBackdrops = ModeBackdrops.decode(prefs[KEY_MODE_BACKDROPS]),
             backdropSlideshow = prefs[KEY_BACKDROP_SLIDESHOW] ?: true,
+            backdropIntervalSeconds = prefs[KEY_BACKDROP_INTERVAL] ?: ModeBackdrops.DEFAULT_INTERVAL_S,
             townBackgroundMediaId = prefs[KEY_TOWN_BACKGROUND_MEDIA] ?: "",
             roleplayPresetId = prefs[KEY_RP_PRESET] ?: "preset-balanced",
             layout = LayoutPreferences(
@@ -547,6 +550,10 @@ class SettingsRepository @Inject constructor(
             if (entries.isEmpty()) map.remove(modeKey) else map[modeKey] = entries
             prefs[KEY_MODE_BACKDROPS] = ModeBackdrops.encode(map)
         }
+    }
+
+    suspend fun setBackdropInterval(seconds: Int) {
+        context.dataStore.edit { it[KEY_BACKDROP_INTERVAL] = seconds.coerceIn(15, 3600) }
     }
 
     suspend fun setBackdropSlideshow(enabled: Boolean) {
@@ -893,6 +900,7 @@ class SettingsRepository @Inject constructor(
         private val KEY_HOME_INTRO = booleanPreferencesKey("home_intro_enabled")
         private val KEY_MODE_BACKDROPS = stringPreferencesKey("mode_backdrops")
         private val KEY_BACKDROP_SLIDESHOW = booleanPreferencesKey("backdrop_slideshow")
+        private val KEY_BACKDROP_INTERVAL = intPreferencesKey("backdrop_interval_s")
         private val KEY_TOWN_BACKGROUND_MEDIA = stringPreferencesKey("town_background_media_id")
         private val KEY_RP_PRESET = stringPreferencesKey("roleplay_preset_id")
         private val KEY_RAIL_WIDTH = floatPreferencesKey("rail_width_dp")

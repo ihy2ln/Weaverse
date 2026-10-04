@@ -66,6 +66,12 @@ import androidx.compose.material.icons.outlined.Tab
 import androidx.compose.material.icons.outlined.Bookmarks
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.outlined.Collections
+import androidx.compose.material.icons.outlined.Lightbulb
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.SportsEsports
+import androidx.compose.material.icons.outlined.Style
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -212,6 +218,7 @@ fun BrowserMenu(
     onShare: () -> Unit,
     onReload: () -> Unit,
     onAppSettings: () -> Unit,
+    onAppSearch: () -> Unit = {},
 ) {
     val web = !tab.isInternal
     Scrim(onDismiss, alpha = .15f) {
@@ -250,6 +257,11 @@ fun BrowserMenu(
                     item(Icons.Outlined.PushPin, "Add to favorites", action = onAddFavorite)
                 }
                 divider()
+                WeaverPages.MODES.keys.forEach { url ->
+                    item(modeIcon(url), WeaverPages.titleOf(url)) { onPage(url) }
+                }
+                item(Icons.Outlined.Search, "Search Weaverse", action = onAppSearch)
+                divider()
                 item(Icons.Outlined.Public, "WeaverSocial") { onPage(WeaverPages.SOCIAL) }
                 item(Icons.AutoMirrored.Outlined.Chat, "Chats") { onPage(WeaverPages.CHATS) }
                 item(Icons.Outlined.Contacts, "Contacts") { onPage(WeaverPages.CONTACTS) }
@@ -265,6 +277,14 @@ fun BrowserMenu(
             }
         }
     }
+}
+
+private fun modeIcon(url: String): ImageVector = when (url) {
+    "weaver://novel" -> Icons.AutoMirrored.Outlined.MenuBook
+    "weaver://rpg" -> Icons.Outlined.Style
+    "weaver://games" -> Icons.Outlined.SportsEsports
+    "weaver://manga" -> Icons.Outlined.Collections
+    else -> Icons.Outlined.Lightbulb
 }
 
 @Composable

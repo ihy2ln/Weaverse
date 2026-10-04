@@ -57,7 +57,7 @@ class NovelComposerWorkflowTest {
             coEvery { generation.prepareStream(any(), any(), any(), any(), any(), any(), any()) } coAnswers {
                 WriteGenerationPrep.Ready(WriteStreamPlan(firstArg(), AssembledPrompt(emptyList(), emptyList(), emptyList(), emptyList()), "Mock request", 200, emptyList()))
             }
-            fun newModel(): WriteViewModel = WriteViewModel(prompts, docs, generation, media, ai, mockk(), settings, codex, db, mockk(), PromptEntryBus(), WorkspaceHistory(), cache, SceneWriteStamps())
+            fun newModel(): WriteViewModel = WriteViewModel(prompts, docs, generation, media, ai, mockk(), settings, codex, db, mockk(), PromptEntryBus(), WorkspaceHistory(), cache, SceneWriteStamps(), mockk(relaxed = true))
             val vm = newModel(); store.put("first", vm)
             vm.loadScene("scene-a"); advanceUntilIdle()
             vm.onSelectionChange(0, TextRange(0, 8)); vm.startSelectionAi("continue", "Continue")

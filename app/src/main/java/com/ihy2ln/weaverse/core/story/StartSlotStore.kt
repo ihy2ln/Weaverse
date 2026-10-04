@@ -45,14 +45,19 @@ class StartSlotStore @Inject constructor(@ApplicationContext context: Context) {
         File(dir, fileName(key)).delete()
     }
 
-    /** Marks a just-created book or campaign to load the starting template when its start opens. */
-    suspend fun markPendingTemplate(workId: String) = write(pendingKey(workId), "1")
+    /**
+     * Marks a just-created book or campaign to load a start template when its start opens:
+     * [templateId] from the template library, or [BUILT_IN_TEMPLATE].
+     */
+    suspend fun markPendingTemplate(workId: String, templateId: String = BUILT_IN_TEMPLATE) =
+        write(pendingKey(workId), templateId.ifBlank { BUILT_IN_TEMPLATE })
 
-    /** True once, for a work created from the + menu's template entry. */
-    suspend fun consumePendingTemplate(workId: String): Boolean {
-        val pending = read(pendingKey(workId)) != null
-        if (pending) delete(pendingKey(workId))
-        return pending
+    /** The template chosen for a work made from the + menu's template entry, once; null otherwise. */
+    suspend fun consumePendingTemplate(workId: String): String? {
+        val pending = read(pendingKey(workId))?.trim()
+        if (pending != null) delete(pendingKey(workId))
+        // Works marked before 1.4.99 stored "1": the built-in start.
+        return pending?.let { if (it == "1") BUILT_IN_TEMPLATE else it }
     }
 
     private fun pendingKey(workId: String) = "pending-template-$workId"
@@ -62,6 +67,8 @@ class StartSlotStore @Inject constructor(@ApplicationContext context: Context) {
     companion object {
         const val NOVEL_TEMPLATE = "novel-template"
         const val RPG_TEMPLATE = "rpg-template"
+        /** The pending-template value for the start built into the app. */
+        const val BUILT_IN_TEMPLATE = "builtin"
         fun novelCyoaCheckpoint(bookId: String) = "novel-cyoa-$bookId"
         fun rpgCyoaCheckpoint(campaignId: String) = "rpg-cyoa-$campaignId"
 

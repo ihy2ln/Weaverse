@@ -27,6 +27,8 @@ import javax.inject.Singleton
 object WeaverPages {
     const val SCHEME = "weaver://"
     const val NEW_TAB = "weaver://newtab"
+    /** Another name for the New Tab Page, which is also Weaverse's Home. */
+    const val HOME = "weaver://home"
     const val SOCIAL = "weaver://social"
     const val CHATS = "weaver://chats"
     const val CONTACTS = "weaver://contacts"
@@ -36,7 +38,10 @@ object WeaverPages {
     const val SETTINGS = "weaver://settings"
     const val RECENT_TABS = "weaver://recent-tabs"
 
-    /** Pages that leave the browser for another Weaverse workspace, by the mode's enum name. */
+    /**
+     * Weaverse's modes as browser pages, by the mode's enum name: each opens as a tab of its own
+     * (one per mode) with the mode's screens inside it.
+     */
     val MODES = linkedMapOf(
         "weaver://novel" to "Novel",
         "weaver://rpg" to "Roleplay",
@@ -45,10 +50,28 @@ object WeaverPages {
         "weaver://notes" to "Notes",
     )
 
+    private val MODE_TITLES = mapOf(
+        "Novel" to "Novel", "Roleplay" to "RPG", "Games" to "Games", "Storyboard" to "Manga Studio", "Notes" to "Brainstorm",
+    )
+
+    /** WeaverSocial's pages, which belong to the Chatting mode. */
+    private val SOCIAL_PAGES = setOf(SOCIAL, CHATS, CONTACTS)
+
     fun isInternal(url: String): Boolean = url.startsWith(SCHEME)
 
+    /** The mode page [url] shows, as a mode's enum name (null for every other page). */
+    fun modeOf(url: String): String? = MODES[url.substringBefore('?').trimEnd('/')]
+
+    /** The Weaverse mode a page belongs to: a mode page, or "Chatting" for WeaverSocial's pages. */
+    fun shellModeOf(url: String): String? = modeOf(url) ?: if (url.substringBefore('?') in SOCIAL_PAGES) "Chatting" else null
+
+    /** The page a mode opens on. */
+    fun urlOfMode(mode: String): String = if (mode == "Chatting") SOCIAL else MODES.entries.firstOrNull { it.value == mode }?.key ?: NEW_TAB
+
+    fun isHome(url: String): Boolean = url.substringBefore('?').let { it == NEW_TAB || it == HOME }
+
     fun titleOf(url: String): String = when (url.substringBefore('?')) {
-        NEW_TAB -> "New tab"
+        NEW_TAB, HOME -> "New tab"
         SOCIAL -> "WeaverSocial"
         CHATS -> "Chats"
         CONTACTS -> "Contacts"
@@ -57,7 +80,7 @@ object WeaverPages {
         DOWNLOADS -> "Downloads"
         SETTINGS -> "Settings"
         RECENT_TABS -> "Recent tabs"
-        else -> url.removePrefix(SCHEME)
+        else -> modeOf(url)?.let { MODE_TITLES[it] } ?: url.removePrefix(SCHEME)
     }
 }
 

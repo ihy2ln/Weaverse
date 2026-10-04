@@ -606,7 +606,13 @@ class MangaDownloadRepository @Inject constructor(
                     chapter.canonicalUrl.takeIf { it.startsWith("http") }?.let { header("Referer", it) }
                 }
                 .build()
-            okHttpClient.newCall(request).execute().use { response ->
+            val call = try {
+                okHttpClient.newCall(request).execute()
+            } catch (io: java.io.IOException) {
+                val host = runCatching { java.net.URI(page.remoteUrl).host }.getOrNull() ?: "the image server"
+                error(unreachableMessage(host, io))
+            }
+            call.use { response ->
                 if (!response.isSuccessful) error("Page ${page.pageIndex + 1} returned HTTP ${response.code}")
                 val bytes = response.body?.bytes() ?: error("Page ${page.pageIndex + 1} was empty")
                 val contentType = response.header("Content-Type").orEmpty().lowercase()
@@ -648,7 +654,7 @@ class MangaDownloadRepository @Inject constructor(
     suspend fun markFailed(chapterId: String, message: String) {
         val chapter = db.mangaDao().getChapter(chapterId) ?: return
         db.mangaDao().upsertChapter(
-            chapter.copy(status = "failed", errorMessage = message.take(300), updatedAt = System.currentTimeMillis()),
+            chapter.copy(status = "failed", errorMessage = message.take(400), updatedAt = System.currentTimeMillis()),
         )
     }
 

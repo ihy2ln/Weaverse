@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
+import com.ihy2ln.weaverse.data.settings.BackdropPool
 import com.ihy2ln.weaverse.data.settings.ModeBackdrops
 import com.ihy2ln.weaverse.feature.shell.AmbientVideos
 import com.ihy2ln.weaverse.feature.shell.BackdropFile
@@ -55,37 +56,42 @@ private val backdropModes: List<ModeBrand>
     get() = listOf(ModeArt.home) + com.ihy2ln.weaverse.feature.shell.AppMode.entries.map(ModeArt::of)
 
 /**
- * Appearance → Mode backgrounds: several backgrounds per mode, taken in turn on each visit
- * and as a slow slideshow on the mode's first page.
+ * Appearance → Mode backgrounds: several backgrounds per mode, rotating every [intervalSeconds]
+ * on every page. A mode with nothing picked rotates through its bundled pool ([BackdropPool]).
  */
 @Composable
 fun ModeBackgroundsSection(
     backdrops: Map<String, List<String>>,
     slideshow: Boolean,
+    intervalSeconds: Int,
     files: Map<String, BackdropFile>,
     onSlideshow: (Boolean) -> Unit,
+    onInterval: (Int) -> Unit,
     onAdd: (modeKey: String) -> Unit,
     onRemove: (modeKey: String, entry: String) -> Unit,
+    onResetToPool: (modeKey: String) -> Unit,
 ) {
     val tokens = inkTokens()
     Column(verticalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
         backdropModes.forEach { brand ->
             val chosen = backdrops[brand.key].orEmpty()
-            Text(
-                brand.title.uppercase(),
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-                color = tokens.secondaryText,
-                modifier = Modifier.padding(top = InkSpacing.md),
-            )
+            val pool = BackdropPool.of(brand.key)
+            Row(Modifier.fillMaxWidth().padding(top = InkSpacing.md), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    brand.title.uppercase() + if (chosen.isEmpty()) "  ·  DEFAULT POOL, ${pool.size} PICTURES" else "  ·  ${chosen.size} PICKED",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = tokens.secondaryText,
+                    modifier = Modifier.weight(1f),
+                )
+                if (chosen.isNotEmpty()) TextButton(onClick = { onResetToPool(brand.key) }) { Text("Use default pool", fontSize = 12.sp) }
+            }
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm),
             ) {
                 if (chosen.isEmpty()) {
-                    BackdropTile(if (brand.key == ModeArt.home.key) "Splash setting" else "Its key art", selected = false) {
-                        ModeArtImage(brand, it, fade = 1f)
-                    }
+                    pool.forEach { entry -> BackdropTile(entryLabel(entry), selected = false) { EntryPreview(entry, files, it) } }
                 }
                 chosen.forEach { entry ->
                     BackdropTile(entryLabel(entry), selected = false, onRemove = { onRemove(brand.key, entry) }) {
@@ -99,15 +105,29 @@ fun ModeBackgroundsSection(
             Column(Modifier.weight(1f)) {
                 Text("Slideshow", style = MaterialTheme.typography.bodyMedium, color = tokens.primaryText)
                 Text(
-                    "With more than one background, a mode's first page moves to the next every 30 seconds. Each visit starts on the next one either way.",
+                    "Moves to the next background every ${intervalLabel(intervalSeconds)}, on every page (blurred behind your work deeper in). Each visit starts on the next one either way.",
                     style = MaterialTheme.typography.bodySmall,
                     color = tokens.secondaryText,
                 )
             }
             Switch(checked = slideshow, onCheckedChange = onSlideshow)
         }
+        if (slideshow) Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs),
+        ) {
+            ModeBackdrops.INTERVALS.forEach { seconds ->
+                androidx.compose.material3.FilterChip(
+                    selected = seconds == intervalSeconds,
+                    onClick = { onInterval(seconds) },
+                    label = { Text(intervalLabel(seconds)) },
+                )
+            }
+        }
     }
 }
+
+private fun intervalLabel(seconds: Int): String = if (seconds < 60) "$seconds s" else "${seconds / 60} min"
 
 /** The picker for one mode: key art, focus videos, the wallpaper, or the user's own files. */
 @Composable
@@ -135,6 +155,11 @@ fun ModeBackdropPicker(
                                 Icon(Icons.Filled.PlayCircle, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.align(Alignment.Center).size(26.dp))
                             }
                         }
+                    }
+                }
+                Group("Paintings") {
+                    BackdropPool.all.forEach { entry ->
+                        BackdropTile(entryLabel(entry), selected = entry in chosen, onClick = { onToggle(entry) }) { EntryPreview(entry, emptyMap(), it) }
                     }
                 }
                 Group("Weaverse art") {
@@ -175,6 +200,8 @@ private fun entryLabel(entry: String): String = when {
     entry == ModeBackdrops.WALLPAPER -> "Wallpaper"
     entry.startsWith(ModeBackdrops.VIDEO) -> AmbientVideos.title(entry.removePrefix(ModeBackdrops.VIDEO))
     entry.startsWith(ModeBackdrops.ART) -> ModeArt.splash(entry.removePrefix(ModeBackdrops.ART)).title
+    entry.startsWith(ModeBackdrops.ASSET) -> entry.substringAfterLast('/').substringBeforeLast('.')
+        .split('-', '_').joinToString(" ") { w -> w.replaceFirstChar(Char::uppercase) }
     else -> "Your file"
 }
 
@@ -187,6 +214,8 @@ private fun EntryPreview(entry: String, files: Map<String, BackdropFile>, modifi
             Icon(Icons.Filled.PlayCircle, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.align(Alignment.Center).size(24.dp))
         }
         entry.startsWith(ModeBackdrops.ART) -> ModeArtImage(ModeArt.splash(entry.removePrefix(ModeBackdrops.ART)), modifier, fade = 1f)
+        entry.startsWith(ModeBackdrops.ASSET) ->
+            AsyncImage("file:///android_asset/" + entry.removePrefix(ModeBackdrops.ASSET), null, contentScale = ContentScale.Crop, modifier = modifier)
         entry.startsWith(ModeBackdrops.MEDIA) -> {
             val file = files[entry.removePrefix(ModeBackdrops.MEDIA)]
             when {

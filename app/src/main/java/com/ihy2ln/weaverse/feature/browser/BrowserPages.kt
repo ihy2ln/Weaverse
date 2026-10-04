@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -44,6 +45,7 @@ import androidx.compose.material.icons.outlined.SportsEsports
 import androidx.compose.material.icons.outlined.Style
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.outlined.VerifiedUser
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
@@ -90,6 +92,10 @@ fun NewTabPage(
     onAddFavorite: (String, String) -> Unit,
     onRemoveFavorite: (String) -> Unit,
     onHideStats: () -> Unit,
+    /** Opens the address bar for typing. */
+    onSearch: () -> Unit = {},
+    /** Home's billboard, modes and rows around this page's search and favorites; see WeaverBrowserScreen. */
+    homePage: (@Composable (top: @Composable () -> Unit, bottom: @Composable () -> Unit) -> Unit)? = null,
 ) {
     var adding by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<BrowserFavorite?>(null) }
@@ -127,7 +133,8 @@ fun NewTabPage(
             }
             return@Box
         }
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 16.dp)) {
+        val cards: @Composable () -> Unit = {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp)) {
             if (data.settings.showPrivacyStats) {
                 Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(colors.cardScrim).padding(18.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -178,6 +185,14 @@ fun NewTabPage(
                     repeat((4 - (data.favorites.size + 1) % 4) % 4) { Spacer(Modifier.weight(1f)) }
                 }
             }
+            }
+        }
+        if (homePage != null) {
+            homePage({ SearchPill(colors, onSearch) }, cards)
+            return@Box
+        }
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 16.dp)) {
+            cards()
             Spacer(Modifier.height(120.dp))
         }
     }
@@ -193,6 +208,19 @@ fun NewTabPage(
             confirmButton = { TextButton(onClick = { onRemoveFavorite(fav.url); removing = null }) { Text("Remove") } },
             dismissButton = { TextButton(onClick = { removing = null }) { Text("Cancel") } },
         )
+    }
+}
+
+/** Brave's "Search or type URL" field on its New Tab Page; tapping it opens the address bar. */
+@Composable
+private fun SearchPill(colors: BrowserColors, onClick: () -> Unit) {
+    Row(
+        Modifier.padding(horizontal = 16.dp).fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(26.dp))
+            .background(colors.cardScrim).clickable(onClick = onClick).padding(horizontal = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Outlined.Search, null, tint = colors.muted, modifier = Modifier.size(22.dp))
+        Text("Search or type a web address", color = colors.muted, fontSize = 16.sp, modifier = Modifier.padding(start = 12.dp))
     }
 }
 

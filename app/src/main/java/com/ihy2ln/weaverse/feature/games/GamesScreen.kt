@@ -95,21 +95,35 @@ fun GamesScreen(viewModel: GamesViewModel = hiltViewModel()) {
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(InkSpacing.lg),
         verticalArrangement = Arrangement.spacedBy(InkSpacing.md),
     ) {
-        Box(Modifier.fillMaxWidth().height(230.dp).clip(RoundedCornerShape(com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd() * 1.5f))) {
-            AsyncImage(model = HERO_ART, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, tokens.background.copy(alpha = 0.92f)))))
-            Column(Modifier.align(Alignment.BottomStart).padding(InkSpacing.lg), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("ADAMS HAVEN", style = MaterialTheme.typography.labelMedium, color = tokens.activePill, letterSpacing = 1.5.sp)
-                Text("The Card Game", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, color = tokens.primaryText)
-                Text(
-                    "Lead JD's party through the Silverwood with your own cards. Characters from your novels join the roster.",
-                    style = MaterialTheme.typography.bodyMedium, color = tokens.primaryText.copy(alpha = 0.85f),
-                )
-                Spacer(Modifier.height(6.dp))
+        val playLabel = if (ready > 0) "Play  ·  $ready from your novels" else "Play"
+        // In its tab the Games banner becomes this billboard's heading and Play button.
+        com.ihy2ln.weaverse.core.ui.components.ModePageHeader(
+            title = "The Card Game",
+            subtitle = "Lead JD's party through the Silverwood with your own cards. Characters from your novels join the roster.",
+            actions = {
                 Button(onClick = ::play) {
                     Icon(Icons.Default.PlayArrow, contentDescription = null)
                     Spacer(Modifier.width(6.dp))
-                    Text(if (ready > 0) "Play  ·  $ready from your novels" else "Play")
+                    Text("Play")
+                }
+            },
+        ) {
+            Box(Modifier.fillMaxWidth().height(230.dp).clip(RoundedCornerShape(com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd() * 1.5f))) {
+                AsyncImage(model = HERO_ART, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, tokens.background.copy(alpha = 0.92f)))))
+                Column(Modifier.align(Alignment.BottomStart).padding(InkSpacing.lg), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("ADAMS HAVEN", style = MaterialTheme.typography.labelMedium, color = tokens.activePill, letterSpacing = 1.5.sp)
+                    Text("The Card Game", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, color = tokens.primaryText)
+                    Text(
+                        "Lead JD's party through the Silverwood with your own cards. Characters from your novels join the roster.",
+                        style = MaterialTheme.typography.bodyMedium, color = tokens.primaryText.copy(alpha = 0.85f),
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Button(onClick = ::play) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (ready > 0) "Play  ·  $ready from your novels" else "Play")
+                    }
                 }
             }
         }

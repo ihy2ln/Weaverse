@@ -229,15 +229,17 @@ class AppShellViewModel @Inject constructor(
      */
     fun createFromTemplate(
         vocabulary: CreateWorkVocabulary,
+        templateId: String,
+        templateName: String,
         onCreated: (bookId: String, chatId: String?) -> Unit,
     ) {
         createWork(
             vocabulary,
-            NewWorkDetails(title = com.ihy2ln.weaverse.core.story.StartSlotStore.templateWorkTitle(null)),
+            NewWorkDetails(title = com.ihy2ln.weaverse.core.story.StartSlotStore.templateWorkTitle(templateName)),
         ) { bookId, chatId ->
             viewModelScope.launch {
                 // A campaign's start is keyed by its session, a novel's by the book.
-                startSlots.markPendingTemplate(if (vocabulary == CreateWorkVocabulary.Campaign) chatId ?: bookId else bookId)
+                startSlots.markPendingTemplate(if (vocabulary == CreateWorkVocabulary.Campaign) chatId ?: bookId else bookId, templateId)
                 onCreated(bookId, chatId)
             }
         }

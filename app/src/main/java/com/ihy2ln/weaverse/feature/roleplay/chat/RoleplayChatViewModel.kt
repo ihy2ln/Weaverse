@@ -220,6 +220,8 @@ class RoleplayChatViewModel @Inject constructor(
     private val promptRepository: com.ihy2ln.weaverse.data.repo.PromptRepository,
     private val codexQuickAdd: com.ihy2ln.weaverse.feature.novel.codex.CodexQuickAdd,
     private val startSlots: com.ihy2ln.weaverse.core.story.StartSlotStore,
+    private val startTemplates: com.ihy2ln.weaverse.core.story.StartTemplateLibrary,
+    private val illustrator: com.ihy2ln.weaverse.core.media.GeneratedTextIllustrator,
     private val mangaAiRunner: MangaAiBackgroundRunner,
     private val pcBridge: com.ihy2ln.weaverse.ai.pc.PcBridgeClient,
     private val mangaCopySaver: com.ihy2ln.weaverse.core.media.MangaCopySaver,
@@ -306,6 +308,25 @@ class RoleplayChatViewModel @Inject constructor(
                         )
                     }
                 }
+            }
+            launch {
+                // Which pictures may be shown as scene art: never a random library picture.
+                combine(db.mediaDao().observeAll(), db.codexDao().observeAllEntries()) { media, entries ->
+                    val codexImages = entries.filter { !it.disabled }.mapNotNull { it.imageMediaId }.toSet()
+                    val eligible = media.filter { com.ihy2ln.weaverse.core.media.isSceneArtEligible(it, codexImages) }
+                    val byId = media.associateBy { it.id }
+                    val codexOptions = entries.filter { !it.disabled }.mapNotNull { entry ->
+                        val image = entry.imageMediaId?.let(byId::get)?.takeIf { it.type == "image" } ?: return@mapNotNull null
+                        com.ihy2ln.weaverse.core.media.SceneArtOption(mediaRepository.resolveFile(image).absolutePath, name = entry.name)
+                    }
+                    val sceneOptions = eligible.filter { it.id !in codexImages }.map { image ->
+                        com.ihy2ln.weaverse.core.media.SceneArtOption(
+                            mediaRepository.resolveFile(image).absolutePath,
+                            words = com.ihy2ln.weaverse.core.media.sceneArtWords(image),
+                        )
+                    }
+                    eligible.map { it.id }.toSet() to (codexOptions + sceneOptions)
+                }.collect { (ids, options) -> _uiState.update { it.copy(sceneArtMediaIds = ids, sceneArtOptions = options) } }
             }
             launch {
                 // Codex entries indexed for clickable mention links in adventure prose.
@@ -575,9 +596,21 @@ class RoleplayChatViewModel @Inject constructor(
             } else {
                 avatarColorHexFor(speaker, boundCharacter?.colorHex)
             }
+            val inlineArt = mutableListOf<RpInlineArt>()
+            var lastParagraph: String? = null
             doc.blocks.forEach { block ->
+                if (block is com.ihy2ln.weaverse.core.text.Paragraph) lastParagraph = block.spans.joinToString("") { it.text }
                 when (block) {
                     is MediaBlock -> {
+                        if (block.id.startsWith("illus-") && block.kind == MediaKind.Image) {
+                            mediaRepository.getById(block.mediaId)?.let { entity ->
+                                inlineArt += RpInlineArt(
+                                    path = mediaRepository.resolveFile(entity).absolutePath,
+                                    caption = block.caption.joinToString("") { it.text },
+                                    afterText = lastParagraph,
+                                )
+                            }
+                        }
                         if (block.mediaId == DM_TEXT_TILE_MEDIA_ID) {
                             run {
                                 panels += RpMediaRef(
@@ -705,6 +738,7 @@ class RoleplayChatViewModel @Inject constructor(
                 actionResult = actionResult,
                 rollResult = rollResult,
                 isAdventureSetup = isAdventureSetup,
+                inlineArt = inlineArt,
             )
         }
         // Choice and art markers are hidden from RpMessageUi text, so parse them from
@@ -2935,7 +2969,7 @@ class RoleplayChatViewModel @Inject constructor(
                 topicMediaReply.copy(visibleText = visibleReply),
                 topicMedia.topics,
             )
-            val topicDocument = documentWithTopicMedia(storedReply, topicMedia, mediaRequests)
+            val topicDocument = documentWithTopicMedia(storedReply, topicMedia, mediaRequests, userText)
             val artChoice = parseRpgSceneArtChoice(rawReply)
             val finalDocument = if (mode == "dungeonMaster") {
                 documentWithBestSceneMedia(
@@ -3505,12 +3539,12 @@ class RoleplayChatViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 rpgHasCyoaCheckpoint = startSlots.read(StartSlotStore.rpgCyoaCheckpoint(chat.id)) != null,
-                rpgHasSavedTemplate = startSlots.read(StartSlotStore.RPG_TEMPLATE) != null,
+                rpgHasSavedTemplate = startTemplates.list(com.ihy2ln.weaverse.core.story.StartTemplateKind.Rpg).isNotEmpty(),
                 rpgSlotMessage = "",
             )
         }
         // Made from the + menu's template entry: skip straight to verification.
-        if (startSlots.consumePendingTemplate(chat.id)) startRpgFromTemplate()
+        startSlots.consumePendingTemplate(chat.id)?.let { startRpgFromTemplate(it) }
     }
 
     // ------------------------------------------------- start save slots
@@ -3562,13 +3596,17 @@ class RoleplayChatViewModel @Inject constructor(
         }
     }
 
-    /** Saves this campaign's start as the starting template for new campaigns. */
-    fun saveRpgStartAsTemplate() {
+    /** Saves this campaign's start as a named template in the template library. */
+    fun saveRpgStartAsTemplate(name: String) {
         val startup = rpgCampaignState?.startup ?: return
         viewModelScope.launch {
             val template = startup.forSlot(startup.step).copy(sceneDraft = null)
-            startSlots.write(StartSlotStore.RPG_TEMPLATE, rpgSlotJson.encodeToString(RpgStartupState.serializer(), template))
-            _uiState.update { it.copy(rpgHasSavedTemplate = true, rpgSlotMessage = "Saved as the starting template.") }
+            val saved = startTemplates.save(
+                com.ihy2ln.weaverse.core.story.StartTemplateKind.Rpg,
+                name,
+                rpgSlotJson.encodeToString(RpgStartupState.serializer(), template),
+            )
+            _uiState.update { it.copy(rpgHasSavedTemplate = true, rpgSlotMessage = "Saved as the template \"${saved.name}\".") }
         }
     }
 
@@ -3577,10 +3615,11 @@ class RoleplayChatViewModel @Inject constructor(
      * been saved — and lands on verification, skipping the questions and the plan.
      * The campaign keeps its own setup.
      */
-    fun startRpgFromTemplate() {
+    fun startRpgFromTemplate(templateId: String = StartSlotStore.BUILT_IN_TEMPLATE) {
         if (rpgCampaignState == null || _uiState.value.isStreaming) return
         viewModelScope.launch {
-            val saved = startSlots.read(StartSlotStore.RPG_TEMPLATE)?.let { raw ->
+            val chosen = templateId.takeIf { it != StartSlotStore.BUILT_IN_TEMPLATE }?.let { startTemplates.get(it) }
+            val saved = chosen?.payload?.let { raw ->
                 runCatching { rpgSlotJson.decodeFromString(RpgStartupState.serializer(), raw) }.getOrNull()
             }
             updateRpgStartup { current ->
@@ -3590,7 +3629,7 @@ class RoleplayChatViewModel @Inject constructor(
                     .copy(setup = current.setup, sceneDraft = null)
             }
             _uiState.update {
-                it.copy(rpgSlotMessage = if (saved != null) "Started from your template." else "Started from the built-in template.")
+                it.copy(rpgSlotMessage = if (saved != null) "Started from \"${chosen.name}\"." else "Started from the built-in template.")
             }
         }
     }
@@ -6814,8 +6853,14 @@ class RoleplayChatViewModel @Inject constructor(
         text: String,
         snapshot: TopicMediaSnapshot,
         requests: List<com.ihy2ln.weaverse.core.media.TopicMediaRequest>,
+        prompt: String = "",
     ): Document {
-        val base = Document.fromPlainText(text)
+        // Codex characters and places the reply names, and buildings it summons, get their
+        // pictures beside the paragraph that mentions them.
+        val illustrated = runCatching {
+            illustrator.illustrate(text, prompt, _uiState.value.activePageId.takeIf(String::isNotBlank))
+        }.getOrNull()
+        val base = illustrated?.let { Document(blocks = it) } ?: Document.fromPlainText(text)
         val attachments = runCatching { topicMediaLibrary.importRequested(snapshot, requests) }
             .getOrDefault(emptyList())
         if (attachments.isEmpty()) return base
@@ -6839,8 +6884,19 @@ class RoleplayChatViewModel @Inject constructor(
         sceneText: String,
         sceneTags: String,
     ): Document {
-        if (document.blocks.any { block -> block is MediaBlock && block.kind == MediaKind.Image }) return document
+        @Suppress("NAME_SHADOWING") var document = document
         ensureBundledAdventureSceneMedia()
+        // Scene art is the story's own pictures (Codex images, Scene-filed art), never whatever
+        // else the library holds: an AI pick outside that set is dropped and replaced.
+        val codexEntries = db.codexDao().getAllEntries().filter { !it.disabled }
+        val codexImageIds = codexEntries.mapNotNull { it.imageMediaId }.toSet()
+        suspend fun eligible(mediaId: String): Boolean =
+            mediaRepository.getById(mediaId)?.let { com.ihy2ln.weaverse.core.media.isSceneArtEligible(it, codexImageIds) } == true
+        val kept = document.blocks.filter { block ->
+            block !is MediaBlock || block.kind != MediaKind.Image || eligible(block.mediaId)
+        }
+        if (kept.size != document.blocks.size) document = Document(blocks = kept)
+        if (document.blocks.any { block -> block is MediaBlock && block.kind == MediaKind.Image }) return document
         val tags = sceneTags.split(',').map(String::trim).filter(String::isNotBlank)
         val ranked = runCatching {
             sceneMediaLibrary.find(
@@ -6854,12 +6910,23 @@ class RoleplayChatViewModel @Inject constructor(
         }.getOrDefault(emptyList())
         val rankedMedia = ranked.firstNotNullOfOrNull { choice ->
             mediaRepository.getById(choice.id)?.takeIf { media ->
-                media.type == "image" && mediaRepository.resolveFile(media).let { it.isFile && it.length() > 0L }
+                com.ihy2ln.weaverse.core.media.isSceneArtEligible(media, codexImageIds) &&
+                    mediaRepository.resolveFile(media).let { it.isFile && it.length() > 0L }
             }
         }
-        val candidate = rankedMedia ?: db.mediaDao().observeAll().first()
+        // Next, the Codex picture of whoever or wherever the scene names first.
+        val lowerScene = sceneText.lowercase()
+        val codexPick = codexEntries
+            .filter { it.imageMediaId != null && it.name.length >= 2 && it.name.lowercase() in lowerScene }
+            .sortedBy { entry -> lowerScene.indexOf(entry.name.lowercase()) }
+            .firstNotNullOfOrNull { entry ->
+                mediaRepository.getById(entry.imageMediaId!!)?.takeIf { media ->
+                    media.type == "image" && mediaRepository.resolveFile(media).let { it.isFile && it.length() > 0L }
+                }
+            }
+        val candidate = rankedMedia ?: codexPick ?: db.mediaDao().observeAll().first()
             .asSequence()
-            .filter { it.type == "image" }
+            .filter { com.ihy2ln.weaverse.core.media.isSceneArtEligible(it, codexImageIds) }
             .filter { mediaRepository.resolveFile(it).let { file -> file.isFile && file.length() > 0L } }
             .sortedWith(
                 compareByDescending<MediaEntity> { media ->

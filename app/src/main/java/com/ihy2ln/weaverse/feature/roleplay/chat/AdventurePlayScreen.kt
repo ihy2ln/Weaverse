@@ -377,6 +377,53 @@ private fun GenerationPanel(
  * The campaign start's save slots: the "CYOA set up" checkpoint, and the starting
  * template that skips straight to verification.
  */
+/**
+ * A reply with pictures inside it: each paragraph, then any picture placed after it (a named
+ * character's Codex picture, a summoned building), so art sits above, between or below the prose.
+ */
+@Composable
+private fun IllustratedReply(
+    message: RpMessageUi,
+    targets: List<com.ihy2ln.weaverse.core.text.CodexMentionTarget>,
+    onOpenCodexEntry: (String) -> Unit,
+) {
+    val tokens = inkTokens()
+    val paragraphs = com.ihy2ln.weaverse.core.media.splitIntoParagraphs(message.text)
+    // Each picture goes after the first paragraph matching the one it followed when generated.
+    val placed = message.inlineArt.map { art ->
+        art to (art.afterText?.trim()?.let { after ->
+            paragraphs.indexOfFirst { p -> p.isNotBlank() && (after.contains(p.trim()) || p.contains(after.take(60))) }
+        }?.takeIf { it >= 0 } ?: if (art.afterText == null) -1 else paragraphs.lastIndex)
+    }
+    @Composable
+    fun picture(art: RpInlineArt) {
+        Column(Modifier.fillMaxWidth().padding(vertical = InkSpacing.xs), horizontalAlignment = Alignment.CenterHorizontally) {
+            AsyncImage(
+                model = File(art.path),
+                contentDescription = art.caption,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxWidth(0.7f).heightIn(max = 320.dp).clip(RoundedCornerShape(inkRadiusMd())),
+            )
+            if (art.caption.isNotBlank()) Text(art.caption, style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
+        }
+    }
+    Column(Modifier.fillMaxWidth()) {
+        placed.filter { it.second < 0 }.forEach { picture(it.first) }
+        paragraphs.forEachIndexed { i, p ->
+            CodexMentionText(
+                text = p,
+                targets = targets,
+                baseColor = tokens.primaryText,
+                linkColor = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.bodyLarge,
+                onTap = onOpenCodexEntry,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+            )
+            placed.filter { it.second == i }.forEach { picture(it.first) }
+        }
+    }
+}
+
 @Composable
 private fun RpgSaveSlotBar(
     state: RoleplayChatUiState,
@@ -384,11 +431,25 @@ private fun RpgSaveSlotBar(
     offerTemplate: Boolean,
     offerSave: Boolean,
 ) {
+    var picking by remember { mutableStateOf(false) }
+    var naming by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
-        if (offerTemplate) InkTextButton("Start from template", viewModel::startRpgFromTemplate)
+        if (offerTemplate) InkTextButton("Start from template", { picking = true })
         if (state.rpgHasCyoaCheckpoint) InkTextButton("Back to CYOA set up", viewModel::restoreRpgCyoaCheckpoint)
-        if (offerSave) InkTextButton("Save as template", viewModel::saveRpgStartAsTemplate)
+        if (offerSave) InkTextButton("Save as template", { naming = true })
     }
+    if (picking) com.ihy2ln.weaverse.feature.templates.StartTemplatePickerDialog(
+        kind = com.ihy2ln.weaverse.core.story.StartTemplateKind.Rpg,
+        onPick = { id, _ -> picking = false; viewModel.startRpgFromTemplate(id) },
+        onDismiss = { picking = false },
+    )
+    if (naming) com.ihy2ln.weaverse.feature.templates.TemplateNameDialog(
+        title = "Save as template",
+        initial = "RPG template",
+        confirm = "Save",
+        onConfirm = { naming = false; viewModel.saveRpgStartAsTemplate(it) },
+        onDismiss = { naming = false },
+    )
     if (state.rpgSlotMessage.isNotBlank()) {
         Text(state.rpgSlotMessage, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
     } else if (offerTemplate) {
@@ -680,7 +741,16 @@ fun AdventurePlayScreen(
         if (target > 0) runCatching { storyState.animateScrollToItem(target - 1) }
     }
 
-    val sceneArt = state.mediaPanels.lastOrNull { it.path.isNotBlank() && !it.isAudio }
+    // Only the story's own pictures (Codex images, Scene-filed art) are shown as the scene.
+    val sceneArt = state.mediaPanels.lastOrNull { panel ->
+        panel.path.isNotBlank() && !panel.isAudio &&
+            (panel.mediaId.isBlank() || state.sceneArtMediaIds?.contains(panel.mediaId) != false)
+    }
+    // No art of its own: the Codex picture of whoever or wherever the scene names first.
+    val fallbackSceneArt = if (sceneArt != null) null else remember(state.messages.lastOrNull()?.id, state.sceneArtOptions) {
+        val prose = state.messages.lastOrNull { it.role != "user" }?.text.orEmpty()
+        com.ihy2ln.weaverse.core.media.pickSceneArtFallback(prose, state.sceneArtOptions)
+    }
     val promptDockMaxHeight = run {
         val keyboard = with(LocalDensity.current) { WindowInsets.ime.getBottom(this).toDp() }
         (LocalConfiguration.current.screenHeightDp.dp - keyboard - 96.dp).coerceAtLeast(80.dp)
@@ -823,9 +893,10 @@ fun AdventurePlayScreen(
             contentAlignment = Alignment.Center,
         ) {
             if (sceneArtSize != 1) {
-            if (sceneArt != null) {
+            val shownArtPath = sceneArt?.path ?: fallbackSceneArt
+            if (shownArtPath != null) {
                 AsyncImage(
-                    model = File(sceneArt.path),
+                    model = File(shownArtPath),
                     contentDescription = "Current adventure scene",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
@@ -1077,15 +1148,19 @@ fun AdventurePlayScreen(
                                 // SelectionContainer enables native copy of any
                                 // span the user selects, not just whole messages.
                                 AddTextSelectionContainer(onSelectionReady = { selectionAddTextVisible = true }) {
-                                    CodexMentionText(
-                                        text = message.text,
-                                        targets = state.codexTargets,
-                                        baseColor = tokens.primaryText,
-                                        linkColor = MaterialTheme.colorScheme.primary,
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        onTap = onOpenCodexEntry,
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
+                                    if (message.inlineArt.isEmpty()) {
+                                        CodexMentionText(
+                                            text = message.text,
+                                            targets = state.codexTargets,
+                                            baseColor = tokens.primaryText,
+                                            linkColor = MaterialTheme.colorScheme.primary,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            onTap = onOpenCodexEntry,
+                                            modifier = Modifier.fillMaxWidth(),
+                                        )
+                                    } else {
+                                        IllustratedReply(message, state.codexTargets, onOpenCodexEntry)
+                                    }
                                 }
                             }
                             CaptureMenu(

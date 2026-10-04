@@ -95,6 +95,7 @@ class GlobalPromptViewModel @Inject constructor(
     private val workspaceHistory: WorkspaceHistory,
     private val writeStamps: com.ihy2ln.weaverse.data.repo.SceneWriteStamps,
     private val codexQuickAdd: CodexQuickAdd,
+    private val illustrator: com.ihy2ln.weaverse.core.media.GeneratedTextIllustrator,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(GlobalPromptUiState())
     val uiState: StateFlow<GlobalPromptUiState> = _uiState.asStateFlow()
@@ -492,7 +493,7 @@ class GlobalPromptViewModel @Inject constructor(
                     }
                     recordChatMessages(added)
                 } else if (context.mode == AppMode.Novel) {
-                    insertNovelAi(result)
+                    insertNovelAi(result, prompt = state.text)
                 } else {
                     insertText(result, asUserInRoleplay = false)
                 }
@@ -618,16 +619,26 @@ class GlobalPromptViewModel @Inject constructor(
         )
     }
 
-    private suspend fun insertNovelAi(generated: String) {
+    private suspend fun insertNovelAi(generated: String, prompt: String = "") {
         val sceneId = context.sceneId ?: error("Open a scene in Write first")
         val scene = db.manuscriptDao().getScene(sceneId) ?: error("Scene not found")
         val doc = documentFromJson(scene.docJson)
         val anchor = bus.insertAnchor.value
         val targeted = _uiState.value.insertAtCursor && anchor != null && anchor.sceneId == sceneId
-        val next = if (targeted) {
-            doc.insertProseAt(anchor.blockIndex, anchor.caret, generated)
-        } else {
-            doc.appendParagraphs(generated)
+        // Codex characters and places the passage names, and buildings it summons, get their
+        // pictures beside the paragraph that mentions them.
+        val illustrated = runCatching { illustrator.illustrate(generated, prompt) }.getOrNull()
+        val next = when {
+            targeted -> {
+                val withProse = doc.insertProseAt(anchor.blockIndex, anchor.caret, generated)
+                val pictures = illustrated.orEmpty().filterIsInstance<com.ihy2ln.weaverse.core.text.MediaBlock>()
+                if (pictures.isEmpty()) withProse
+                else withProse.copy(blocks = withProse.blocks.toMutableList().apply {
+                    addAll((anchor.blockIndex + 1).coerceIn(0, size), pictures)
+                })
+            }
+            illustrated != null -> doc.copy(blocks = doc.blocks + illustrated)
+            else -> doc.appendParagraphs(generated)
         }
         persistSceneWithHistory(scene, next)
     }

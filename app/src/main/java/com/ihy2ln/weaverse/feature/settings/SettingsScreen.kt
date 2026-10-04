@@ -332,10 +332,13 @@ fun SettingsScreen(
             ModeBackgroundsSection(
                 backdrops = state.prefs.modeBackdrops,
                 slideshow = state.prefs.backdropSlideshow,
+                intervalSeconds = state.prefs.backdropIntervalSeconds,
                 files = backdropFiles,
                 onSlideshow = viewModel::setBackdropSlideshow,
+                onInterval = viewModel::setBackdropInterval,
                 onAdd = { backdropPickerMode = it },
                 onRemove = viewModel::removeModeBackdrop,
+                onResetToPool = viewModel::resetModeBackdrops,
             )
 
             SettingHeading("Glass", "How much wallpaper shows through panels and pages.")

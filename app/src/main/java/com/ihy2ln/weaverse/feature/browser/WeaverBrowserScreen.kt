@@ -97,8 +97,21 @@ fun WeaverBrowserScreen(
     selectedRoomId: String?,
     onServerSelect: (String?) -> Unit,
     onRoomSelect: (String?) -> Unit,
-    onOpenMode: (String) -> Unit,
     onOpenAppSettings: () -> Unit,
+    /** Draws a Weaverse mode's screens inside its tab (the mode's enum name). */
+    modePage: @Composable (mode: String) -> Unit = {},
+    /**
+     * Home's billboard and rows for the New Tab Page; it gets the page's own top (search) and
+     * bottom (privacy stats, favorites) to place around them. Null keeps the plain page.
+     */
+    homePage: (@Composable (top: @Composable () -> Unit, bottom: @Composable () -> Unit) -> Unit)? = null,
+    /** The selected tab's address, whenever it changes. */
+    onTabChanged: (url: String) -> Unit = {},
+    /** The shell has its own Back to take first (an open overlay, or a page inside a mode). */
+    deferBack: Boolean = false,
+    /** The address bar and toolbar; hidden until the shell's globe shows them (typing shows them too). */
+    barsShown: Boolean = true,
+    onOpenAppSearch: () -> Unit = {},
     /** Opens a codex entry in the full Codex editor. */
     onOpenCodexEntry: ((String) -> Unit)? = null,
     appearance: AppearanceOverrides = AppearanceOverrides(),
@@ -129,7 +142,6 @@ fun WeaverBrowserScreen(
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
-                is BrowserEvent.OpenMode -> onOpenMode(event.mode)
                 is BrowserEvent.Notice -> notice = event.text
                 is BrowserEvent.LinkMenu -> linkMenu = event
                 is BrowserEvent.Share -> context.startActivity(
@@ -145,6 +157,10 @@ fun WeaverBrowserScreen(
     // Opening a conversation from Recents lands on the Chats tab.
     LaunchedEffect(selectedRoomId) { if (selectedRoomId != null) viewModel.openOrFocus(WeaverPages.CHATS) }
     LaunchedEffect(tab.id, tab.url) { collapse.expand() }
+    val latestOnTabChanged by androidx.compose.runtime.rememberUpdatedState(onTabChanged)
+    // Reads the tab now rather than at composition: the shell may have switched it meanwhile.
+    LaunchedEffect(tab.id, tab.url) { latestOnTabChanged(viewModel.selectedTab?.url ?: tab.url) }
+    val modeShown = WeaverPages.modeOf(tab.url)
 
     BackHandler(fullscreen != null) { viewModel.exitFullscreen() }
     BackHandler(editing || menuOpen || shieldsOpen || switcherOpen || leoOpen || findState != null) {
@@ -158,11 +174,13 @@ fun WeaverBrowserScreen(
         }
     }
     val canBack = tabLive.canGoBack || viewModel.canGoBack(tab.id)
-    BackHandler(canBack && !editing) { viewModel.back(tab.id) }
+    BackHandler(canBack && !editing && !deferBack) { viewModel.back(tab.id) }
 
     val imeOpen = WindowInsets.isImeVisible
-    val barsHidden = collapse.collapsed && !editing
-    Box(Modifier.fillMaxSize().background(if (tab.url == WeaverPages.NEW_TAB) Color.Transparent else colors.page)) {
+    val barsHidden = (collapse.collapsed || !barsShown) && !editing
+    // The New Tab Page and the modes sit on the shell's backdrop; other pages have their own.
+    val seeThrough = tab.url == WeaverPages.NEW_TAB || (modeShown != null && !viewModel.hasView(tab.id))
+    Box(Modifier.fillMaxSize().background(if (seeThrough) Color.Transparent else colors.page)) {
         Column(Modifier.fillMaxSize()) {
             AnimatedVisibility(!barsHidden, enter = expandVertically(), exit = shrinkVertically()) {
                 AddressBar(
@@ -207,7 +225,7 @@ fun WeaverBrowserScreen(
                     }
                 }
                 if (tab.isInternal) {
-                    Box(Modifier.fillMaxSize().background(if (tab.url == WeaverPages.NEW_TAB) Color.Transparent else colors.page)) {
+                    Box(Modifier.fillMaxSize().background(if (seeThrough) Color.Transparent else colors.page)) {
                         when (tab.url.substringBefore('?')) {
                             WeaverPages.NEW_TAB -> NewTabPage(
                                 data = data,
@@ -217,7 +235,10 @@ fun WeaverBrowserScreen(
                                 onAddFavorite = { url, title -> viewModel.addFavorite(url, title) },
                                 onRemoveFavorite = viewModel::removeFavorite,
                                 onHideStats = { viewModel.setSettings { s -> s.copy(showPrivacyStats = false) } },
+                                onSearch = { editing = true },
+                                homePage = homePage,
                             )
+                            in WeaverPages.MODES.keys -> modePage(modeShown!!)
                             WeaverPages.SOCIAL -> WeaverSocialScreen(
                                 selectedServerId = selectedServerId,
                                 selectedRoomId = null,
@@ -330,6 +351,7 @@ fun WeaverBrowserScreen(
                 onShare = { viewModel.share(tab.id) },
                 onReload = { viewModel.reload(tab.id) },
                 onAppSettings = onOpenAppSettings,
+                onAppSearch = onOpenAppSearch,
             )
         }
         if (switcherOpen) {

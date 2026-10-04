@@ -100,11 +100,15 @@ fun WeaverHomeScreen(
     onRecent: (HomeItem) -> Unit,
     onCreate: (AppMode) -> Unit,
     modifier: Modifier = Modifier,
+    /** Above the billboard: the New Tab Page's search field. */
+    top: (@Composable () -> Unit)? = null,
+    /** Under the rows: the New Tab Page's privacy stats and favorites. */
+    bottom: (@Composable () -> Unit)? = null,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val shelves by viewModel.shelves.collectAsState()
     val art by viewModel.art.collectAsState()
-    WeaverHomeContent(modes, shelves, art, onMode, onRecent, onCreate, viewModel::remove, viewModel::clear, modifier)
+    WeaverHomeContent(modes, shelves, art, onMode, onRecent, onCreate, viewModel::remove, viewModel::clear, modifier, top, bottom)
 }
 
 @Composable
@@ -118,6 +122,8 @@ fun WeaverHomeContent(
     onRemove: (HomeItem) -> Unit,
     onClear: (String) -> Unit,
     modifier: Modifier = Modifier,
+    top: (@Composable () -> Unit)? = null,
+    bottom: (@Composable () -> Unit)? = null,
 ) {
     val latest = shelves.values.flatten().maxByOrNull { it.accessedAt }
     val lastMode = latest?.let { item -> AppMode.entries.firstOrNull { it.name == item.mode } }
@@ -136,9 +142,10 @@ fun WeaverHomeContent(
         }
         LazyColumn(
             Modifier.fillMaxSize().testTag("weaver-home"),
-            contentPadding = PaddingValues(bottom = 40.dp),
+            contentPadding = PaddingValues(top = if (top != null) 12.dp else 0.dp, bottom = 40.dp),
             verticalArrangement = Arrangement.spacedBy(26.dp),
         ) {
+            if (top != null) item(key = "top") { top() }
             item(key = "hero") {
                 HomeHero(
                     latest = latest,
@@ -201,6 +208,7 @@ fun WeaverHomeContent(
                     }
                 }
             }
+            if (bottom != null) item(key = "bottom") { bottom() }
         }
     }
     clearMode?.let { mode ->

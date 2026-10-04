@@ -93,6 +93,46 @@ internal fun rankSceneMedia(
         .toList()
 }
 
+/**
+ * Whether a picture may be a story's scene art: a Codex entry's image ([codexImageIds]), art filed
+ * under a Scene category or tagged scene:…, or the bundled Adams Haven scenes. Everything else in the
+ * library (browser downloads, screenshots, saved posts) is never picked as a scene.
+ */
+fun isSceneArtEligible(media: MediaEntity, codexImageIds: Set<String>): Boolean =
+    media.type == "image" && (
+        media.id in codexImageIds ||
+            sceneTagsForCategory(media.category).isNotEmpty() ||
+            parseMediaTags(media.tags).any { it.startsWith("scene:") } ||
+            media.id.startsWith("adams-haven-")
+        )
+
+/** A picture the scene panel may fall back to: a Codex entry's image (by [name]) or Scene-filed art (by [words]). */
+data class SceneArtOption(val path: String, val name: String = "", val words: Set<String> = emptySet())
+
+/**
+ * The picture for a scene with no art of its own: the Codex picture of whoever or wherever
+ * [sceneText] names first, else the Scene-filed art sharing the most words with it.
+ */
+fun pickSceneArtFallback(sceneText: String, options: List<SceneArtOption>): String? {
+    val lower = sceneText.lowercase()
+    options.filter { it.name.length >= 2 && it.name.lowercase() in lower }
+        .minByOrNull { lower.indexOf(it.name.lowercase()) }
+        ?.let { return it.path }
+    val tokens = mediaSearchTokens(sceneText).toSet()
+    return options.filter { it.name.isBlank() }
+        .map { it to it.words.count { word -> word in tokens } }
+        .filter { it.second > 0 }
+        .maxByOrNull { it.second }
+        ?.first?.path
+}
+
+/** Search words for a Scene-filed picture: its scene tags, category and name. */
+fun sceneArtWords(media: MediaEntity): Set<String> =
+    (parseMediaTags(media.tags).map { it.removePrefix("scene:") }.flatMap(::mediaSearchTokens) +
+        mediaSearchTokens(media.category) + mediaSearchTokens(media.displayName))
+        .filter { it !in setOf("scene", "adams", "haven", "text", "game", "map") }
+        .toSet()
+
 internal fun sanitizeMediaCategory(value: String): String = value
     .trim()
     .split('/')

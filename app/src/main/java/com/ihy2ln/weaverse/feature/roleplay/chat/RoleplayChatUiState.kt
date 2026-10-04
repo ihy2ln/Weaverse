@@ -72,7 +72,12 @@ data class RpMessageUi(
     val rollResult: AdventureRoll? = null,
     /** Campaign-opening choice/interview content, before ordinary scene actions begin. */
     val isAdventureSetup: Boolean = false,
+    /** Pictures placed inside the reply (named Codex entries, summoned buildings), in reading order. */
+    val inlineArt: List<RpInlineArt> = emptyList(),
 )
+
+/** A picture inside a reply: after the paragraph that reads [afterText] (null = above the reply). */
+data class RpInlineArt(val path: String, val caption: String, val afterText: String?)
 
 /** One detected character/item awaiting the user's confirmation. */
 data class CaptureCandidate(
@@ -264,6 +269,10 @@ data class RoleplayChatUiState(
     val input: String = "",
     val messages: List<RpMessageUi> = emptyList(),
     val mediaPanels: List<RpMediaRef> = emptyList(),
+    /** Media allowed as Adventure scene art (Codex pictures, Scene-filed art); null until loaded. */
+    val sceneArtMediaIds: Set<String>? = null,
+    /** Codex pictures and Scene-filed art a scene without its own art falls back to. */
+    val sceneArtOptions: List<com.ihy2ln.weaverse.core.media.SceneArtOption> = emptyList(),
     /** Lightweight references for continuous imported-manga scrolling; bitmaps remain lazy. */
     val mangaPagePanels: List<RpMediaRef> = emptyList(),
     val displayMode: String = "messenger",

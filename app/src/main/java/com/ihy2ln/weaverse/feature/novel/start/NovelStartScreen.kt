@@ -121,7 +121,13 @@ fun NovelStartScreen(
                     if (state.hasCyoaCheckpoint) {
                         InkTextButton("Back to CYOA set up", viewModel::restoreCyoaCheckpoint)
                     }
-                    InkTextButton("Start from template", viewModel::startFromTemplate)
+                    var picking by remember { mutableStateOf(false) }
+                    InkTextButton("Start from template", { picking = true })
+                    if (picking) com.ihy2ln.weaverse.feature.templates.StartTemplatePickerDialog(
+                        kind = com.ihy2ln.weaverse.core.story.StartTemplateKind.Novel,
+                        onPick = { id, _ -> picking = false; viewModel.startFromTemplate(id) },
+                        onDismiss = { picking = false },
+                    )
                     InkTextButton("Start over", viewModel::startOver)
                     InkTextButton("Close", onClose)
                 }
@@ -869,11 +875,25 @@ private fun SaveSlotBar(
     offerSave: Boolean,
 ) {
     val tokens = inkTokens()
+    var picking by remember { mutableStateOf(false) }
+    var naming by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InkSpacing.xs)) {
-        if (offerTemplate) InkTextButton("Start from template", viewModel::startFromTemplate)
+        if (offerTemplate) InkTextButton("Start from template", { picking = true })
         if (state.hasCyoaCheckpoint) InkTextButton("Back to CYOA set up", viewModel::restoreCyoaCheckpoint)
-        if (offerSave) InkTextButton("Save as template", viewModel::saveAsTemplate)
+        if (offerSave) InkTextButton("Save as template", { naming = true })
     }
+    if (picking) com.ihy2ln.weaverse.feature.templates.StartTemplatePickerDialog(
+        kind = com.ihy2ln.weaverse.core.story.StartTemplateKind.Novel,
+        onPick = { id, _ -> picking = false; viewModel.startFromTemplate(id) },
+        onDismiss = { picking = false },
+    )
+    if (naming) com.ihy2ln.weaverse.feature.templates.TemplateNameDialog(
+        title = "Save as template",
+        initial = state.setup.title.ifBlank { "Novel template" },
+        confirm = "Save",
+        onConfirm = { naming = false; viewModel.saveAsTemplate(it) },
+        onDismiss = { naming = false },
+    )
     if (state.slotMessage.isNotBlank()) {
         Text(state.slotMessage, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
     } else if (offerTemplate) {

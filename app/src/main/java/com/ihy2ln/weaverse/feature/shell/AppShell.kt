@@ -143,8 +143,23 @@ fun AppShell(
     promptViewModel: GlobalPromptViewModel = hiltViewModel(),
 ) {
     var showHome by rememberSaveable { mutableStateOf(true) }
+    // WeaverBrowser's address bar and toolbar start folded away; the globe in the top bar opens them.
+    var browserBarsOpen by rememberSaveable { mutableStateOf(false) }
+    // A fresh start (a new process, even one restoring saved state) always opens on Home;
+    // rotating or coming back to a running app keeps the page.
+    remember {
+        if (!AppLaunch.homeShown) {
+            AppLaunch.homeShown = true
+            showHome = true
+            browserBarsOpen = false
+        }
+        Unit
+    }
     // The browser's open tab decides whether WeaverBrowser is on its first page (New Tab Page).
-    val browserData by hiltViewModel<com.ihy2ln.weaverse.feature.browser.BrowserViewModel>().data.collectAsState()
+    val browserViewModel = hiltViewModel<com.ihy2ln.weaverse.feature.browser.BrowserViewModel>()
+    val browserData by browserViewModel.data.collectAsState()
+    val selectedTabUrl = browserData.tabs.firstOrNull { it.id == browserData.selectedTabId }?.url
+        ?: browserData.tabs.lastOrNull()?.url.orEmpty()
     // Likewise Manga Studio's hub: an open title or chapter is past its first page.
     val mangaHub by hiltViewModel<com.ihy2ln.weaverse.feature.storyboard.MangaSourceViewModel>().uiState.collectAsState()
     // The launch splash plays once per start, not on rotation or when returning Home.
@@ -193,6 +208,8 @@ fun AppShell(
     var selectedThreadId by rememberSaveable { mutableStateOf("thread-1") }
     var rpChrome by remember { mutableStateOf<RoleplayChatChrome?>(null) }
     var rpModeBarCollapsed by rememberSaveable { mutableStateOf(false) }
+    /** The (mode, Home) pair the browser's selected tab last agreed with. */
+    var tabSynced by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
 
     val prefs by shellViewModel.preferences.collectAsState(
         initial = com.ihy2ln.weaverse.data.settings.UserPreferences(),
@@ -212,9 +229,11 @@ fun AppShell(
         shellViewModel.openPrompt(kind)
         return true
     }
-    /** The + menu's "From CYOA template": a new novel or campaign that opens at verification. */
-    fun createFromTemplate(vocabulary: CreateWorkVocabulary) {
-        shellViewModel.createFromTemplate(vocabulary) { bookId, chatId ->
+    /** The + menu's "From CYOA template": first which template, then a new novel or campaign at verification. */
+    var templatePickerFor by remember { mutableStateOf<CreateWorkVocabulary?>(null) }
+    fun createFromTemplate(vocabulary: CreateWorkVocabulary) { templatePickerFor = vocabulary }
+    fun createFromChosenTemplate(vocabulary: CreateWorkVocabulary, templateId: String, templateName: String) {
+        shellViewModel.createFromTemplate(vocabulary, templateId, templateName) { bookId, chatId ->
             showHome = false
             showLibrary = false
             if (vocabulary == CreateWorkVocabulary.Campaign) {
@@ -227,6 +246,14 @@ fun AppShell(
                 novelStartBookId = bookId
             }
         }
+    }
+    templatePickerFor?.let { vocabulary ->
+        com.ihy2ln.weaverse.feature.templates.StartTemplatePickerDialog(
+            kind = if (vocabulary == CreateWorkVocabulary.Campaign) com.ihy2ln.weaverse.core.story.StartTemplateKind.Rpg
+                else com.ihy2ln.weaverse.core.story.StartTemplateKind.Novel,
+            onPick = { id, name -> templatePickerFor = null; createFromChosenTemplate(vocabulary, id, name) },
+            onDismiss = { templatePickerFor = null },
+        )
     }
     creatingWork?.let { vocabulary ->
         CreateWorkDialog(
@@ -566,24 +593,29 @@ fun AppShell(
         }
         val backdropKey = if (showHome) ModeArt.home.key else ModeArt.of(shellMode).key
         val hasOwnBackground = userBackgroundImage != null || userBackgroundVideo != null
-        // Nothing chosen for a mode: Home keeps its splash setting, the modes their key art
-        // (or the user's own background picture, as before).
+        // Nothing chosen for a mode: its bundled pool (key art + paintings). Home's splash
+        // setting and the user's own background picture lead their pools.
         val splashKey = prefs.homeSplashArt
+        val pool = remember(backdropKey) { com.ihy2ln.weaverse.data.settings.BackdropPool.of(backdropKey) }
         val defaultBackdrops = when {
-            showHome && splashKey == ModeBackdrops.WALLPAPER -> listOf(ModeBackdrops.WALLPAPER)
-            showHome && splashKey.isNotBlank() -> listOf(ModeBackdrops.ART + ModeArt.splash(splashKey).key)
-            hasOwnBackground -> listOf(OWN_BACKGROUND)
-            else -> listOf(ModeBackdrops.ART + backdropKey)
+            showHome && splashKey == ModeBackdrops.WALLPAPER -> listOf(ModeBackdrops.WALLPAPER) + pool
+            showHome && splashKey.isNotBlank() -> (listOf(ModeBackdrops.ART + ModeArt.splash(splashKey).key) + pool).distinct()
+            hasOwnBackground -> listOf(OWN_BACKGROUND) + pool
+            else -> pool
         }
-        val backdropEntries = prefs.modeBackdrops[backdropKey].orEmpty().ifEmpty { defaultBackdrops }
-        // Several backgrounds per mode: the next one each visit, and a slow slideshow on the
-        // mode's first page.
+        // Shuffled once per session (the first stays first), so the same few don't always lead.
+        val backdropEntries = remember(prefs.modeBackdrops[backdropKey], defaultBackdrops) {
+            val list = prefs.modeBackdrops[backdropKey].orEmpty().ifEmpty { defaultBackdrops }
+            if (list.size > 2) listOf(list.first()) + list.drop(1).shuffled(java.util.Random(backdropSessionSeed)) else list
+        }
+        // Several backgrounds per mode: the next one each visit, and a slideshow on every page
+        // (blurred and dimmed deeper in).
         val backdropTurns = remember { androidx.compose.runtime.mutableStateMapOf<String, Int>() }
         LaunchedEffect(backdropKey) { backdropTurns[backdropKey] = (backdropTurns[backdropKey] ?: -1) + 1 }
-        LaunchedEffect(backdropKey, backdropLevel == BackdropLevel.Quiet, backdropEntries.size, prefs.backdropSlideshow) {
-            if (backdropLevel != BackdropLevel.Quiet && backdropEntries.size > 1 && prefs.backdropSlideshow) {
+        LaunchedEffect(backdropKey, backdropEntries.size, prefs.backdropSlideshow, prefs.backdropIntervalSeconds) {
+            if (backdropEntries.size > 1 && prefs.backdropSlideshow) {
                 while (true) {
-                    kotlinx.coroutines.delay(BACKDROP_SLIDE_MS)
+                    kotlinx.coroutines.delay(prefs.backdropIntervalSeconds.coerceAtLeast(15) * 1000L)
                     backdropTurns[backdropKey] = (backdropTurns[backdropKey] ?: 0) + 1
                 }
             }
@@ -686,6 +718,7 @@ fun AppShell(
                 else -> toolbarSubtitle
             }
             val canGoBack = !showHome || showSettings || showExport || showSearch || showLibrary
+            fun overlayOpenNow() = showSettings || showExport || showSearch || showLibrary
             fun goBackOneScreen() {
                 when {
                     isBookBrowsing && browseRoutes.size > 1 -> browseRoutes = browseRoutes.dropLast(1)
@@ -717,6 +750,23 @@ fun AppShell(
                 }
             }
             androidx.activity.compose.BackHandler(enabled = canGoBack) { goBackOneScreen() }
+            /** Whether Back has somewhere to go inside the shell before it falls through to Home. */
+            fun shellHasInnerBack(): Boolean =
+                (isBookBrowsing && browseRoutes.size > 1) || overlayOpenNow() ||
+                    selectedCodexEntryId != null || selectedCharacterId != null || selectedPersonaId != null ||
+                    selectedInventoryCarrierId != null || chromeTool != null || workspaceFocus != WorkspaceFocus.Story.name ||
+                    (currentMode == AppMode.Notes && (notesDetailOpen || notesDest != NotesDestination.Chat.name)) ||
+                    selectedRpChatId != null || storyboardChatId != null ||
+                    (currentMode == AppMode.Novel && novelDest != NovelDestination.Bookshelf.name) ||
+                    (currentMode == AppMode.Roleplay && rpDest != RoleplayDestination.Campaign.name) ||
+                    (currentMode == AppMode.Storyboard && storyboardDest != StoryboardDestination.Library.name)
+            // The shell's mode and Home follow the browser's tab (onTabChanged), and anything in
+            // the shell that opens a mode or Home brings that tab forward.
+            LaunchedEffect(mode, showHome) {
+                if (tabSynced == (mode to showHome)) return@LaunchedEffect
+                tabSynced = mode to showHome
+                if (showHome) browserViewModel.openHome() else browserViewModel.openMode(mode)
+            }
             val inNovelWorkspace = !showHome && mode == AppMode.Novel.name && novelDest != NovelDestination.Bookshelf.name &&
                 !showLibrary && !showSettings && !showSearch && !showExport && chromeTool == null &&
                 selectedCodexEntryId == null && workspaceFocus != WorkspaceFocus.Pictures.name
@@ -767,30 +817,30 @@ fun AppShell(
                 }
             }
             val wallpaperShown = showProfileArt || userBackgroundImage != null || userBackgroundVideo != null
-            val browserScreen: @Composable () -> Unit = {
-                com.ihy2ln.weaverse.feature.browser.WeaverBrowserScreen(
-                    selectedServerId = chatServerId,
-                    selectedRoomId = selectedRpChatId,
-                    onServerSelect = {
-                        chatServerId = it
-                        if (it != null) selectedRpChatId = null
-                    },
-                    onRoomSelect = { selectedRpChatId = it; if (it != null) shellViewModel.recordAccess("Chatting", "chat", it) },
-                    onOpenMode = { switchWorkspace(it) },
-                    onOpenAppSettings = { showSettings = true },
-                    onOpenCodexEntry = { selectedCodexEntryId = it },
-                    appearance = prefs.appearance,
-                    wallpaperVisible = wallpaperShown,
-                )
-            }
             val overlayOpen = showSettings || showSearch || showExport || showLibrary
-            val browserShown = !showHome && currentMode == AppMode.Chatting && !overlayOpen &&
-                chromeTool == null && workspaceFocus != WorkspaceFocus.Pictures.name
+            // WeaverBrowser is the shell: Home is its New Tab Page and each mode a tab. Overlays
+            // (Settings, Search, Library, Import/Export) and the codex/character/persona
+            // editors cover it.
+            val aboveBrowser = overlayOpen || selectedCodexEntryId != null || selectedCharacterId != null ||
+                selectedPersonaId != null
+            val onModeTab = com.ihy2ln.weaverse.feature.browser.WeaverPages.modeOf(selectedTabUrl) != null
+            // The mode tabs stay on top of everything, browser included: Home is the New Tab Page,
+            // WeaverBrowser the web and WeaverSocial tabs, and each mode its own tab.
+            val tabIsHome = com.ihy2ln.weaverse.feature.browser.WeaverPages.isHome(selectedTabUrl)
+            val chromeIsHome = homeShown && (aboveBrowser || tabIsHome)
+            val chromeWorkspace = if (aboveBrowser) mode
+                else com.ihy2ln.weaverse.feature.browser.WeaverPages.shellModeOf(selectedTabUrl)
+                    ?: if (tabIsHome) mode else AppMode.Chatting.name
             val shellChrome: @Composable () -> Unit = { WorkspaceChrome(
-                showTitleRow = !inNovelWorkspace && !browserShown,
-                isHome = homeShown,
-                overArt = homeShown,
+                // Over the browser the banner moves under the address bar (the mode page draws it);
+                // Settings and the other overlays keep it here.
+                showTitleRow = !inNovelWorkspace && aboveBrowser,
+                isHome = chromeIsHome,
+                overArt = chromeIsHome,
+                browserOpen = browserBarsOpen,
+                onBrowser = { browserBarsOpen = !browserBarsOpen },
                 onHome = {
+                    browserViewModel.openHome()
                     browseRoutes = listOf("home")
                     showHome = true; showSettings = false; showExport = false; showSearch = false; showLibrary = false
                     chromeTool = null; selectedCodexEntryId = null; selectedCharacterId = null; selectedPersonaId = null
@@ -801,7 +851,7 @@ fun AppShell(
                 bookTitle = chromeTitle,
                 seriesTitle = chromeSubtitle,
                 workspaceOptions = workspaceOptions,
-                workspaceId = mode,
+                workspaceId = chromeWorkspace,
                 modeOptions = modeOptions,
                 modeId = modeId,
                 focusOptions = emptyList(),
@@ -851,7 +901,11 @@ fun AppShell(
                         if (id != null) workspaceFocus = WorkspaceFocus.Story.name
                     }
                 },
-                onWorkspace = switchWorkspace,
+                onWorkspace = { next ->
+                    switchWorkspace(next)
+                    // The tab may already agree with the shell (a web tab while in that mode).
+                    browserViewModel.openMode(next)
+                },
                 onMode = { id ->
                     if (currentMode == AppMode.Novel && id == NovelDestination.Bookshelf.name) browseRoutes = listOf("books")
                     showHome = false
@@ -892,6 +946,7 @@ fun AppShell(
             ) {
                 if (isBookBrowsing) com.ihy2ln.weaverse.feature.library.BookBrowsingTheme { shellChrome() } else shellChrome()
             }
+            val shellBody: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit = {
             when {
                 showSettings -> SettingsScreen(modifier = Modifier.weight(1f).fillMaxSize())
                 showExport -> ExportImportScreen(modifier = Modifier.weight(1f).fillMaxSize())
@@ -962,21 +1017,6 @@ fun AppShell(
                     onOpenExport = { showExport = true },
                     modifier = Modifier.weight(1f).fillMaxSize(),
                 )
-                showHome -> Box(Modifier.weight(1f).fillMaxSize()) {
-                    WeaverHomeScreen(
-                        modes = workspaceOptions.mapNotNull { option -> AppMode.entries.firstOrNull { it.name == option.id } },
-                        onMode = { switchWorkspace(it.name) },
-                        onRecent = ::openRecentItem,
-                        onCreate = { target ->
-                            when (target) {
-                                AppMode.Novel -> creatingWork = CreateWorkVocabulary.Novel
-                                AppMode.Roleplay -> creatingWork = CreateWorkVocabulary.Campaign
-                                AppMode.Storyboard -> storyboardPlusMenu = true
-                                else -> switchWorkspace(target.name)
-                            }
-                        },
-                    )
-                }
                 isBookBrowsing -> homeStateHolder.SaveableStateProvider("browser") {
                     com.ihy2ln.weaverse.feature.library.BookBrowserScreen(
                         // Home is WeaverBrowser now, so the bookshelf starts at the books.
@@ -1092,9 +1132,6 @@ fun AppShell(
                 selectedPersonaId != null -> Box(Modifier.weight(1f).fillMaxSize()) {
                     PersonaDetailScreen(personaId = selectedPersonaId!!, onBack = { selectedPersonaId = null })
                 }
-                // WeaverBrowser takes the full width, like Home used to; its tools still open
-                // through the content area below.
-                browserShown -> Box(Modifier.weight(1f).fillMaxSize()) { browserScreen() }
                 else -> {
             if (inRpChat && rpChrome!!.showSwitcher) {
                 RoleplayDisplayModeBar(
@@ -1268,7 +1305,8 @@ fun AppShell(
                                     onOpenIdeas = { notesDest = NotesDestination.Ideas.name },
                                 )
                             }
-                            AppMode.Chatting.name -> browserScreen()
+                            // WeaverSocial is a browser page of its own, not a mode page.
+                            AppMode.Chatting.name -> Unit
                             AppMode.Storyboard.name -> {
                                 if (boardId == null) {
                                     StoryboardMangaHubScreen(
@@ -1400,7 +1438,80 @@ fun AppShell(
                 }
                 }
             }
-        }
+            }
+            }
+            val browserScreen: @Composable () -> Unit = {
+                com.ihy2ln.weaverse.feature.browser.WeaverBrowserScreen(
+                    selectedServerId = chatServerId,
+                    // The room is shared with RPG chats; only WeaverSocial's own opens its Chats tab.
+                    selectedRoomId = selectedRpChatId.takeIf { currentMode == AppMode.Chatting },
+                    onServerSelect = {
+                        chatServerId = it
+                        if (it != null) selectedRpChatId = null
+                    },
+                    onRoomSelect = { selectedRpChatId = it; if (it != null) shellViewModel.recordAccess("Chatting", "chat", it) },
+                    onOpenAppSettings = { showSettings = true },
+                    onOpenAppSearch = { showSearch = true },
+                    onOpenCodexEntry = { selectedCodexEntryId = it },
+                    appearance = prefs.appearance,
+                    wallpaperVisible = wallpaperShown,
+                    modePage = { pageMode ->
+                        val headerHost = remember(pageMode) { com.ihy2ln.weaverse.core.ui.components.ModeHeaderHost() }
+                        homeStateHolder.SaveableStateProvider("mode-$pageMode") {
+                            CompositionLocalProvider(com.ihy2ln.weaverse.core.ui.components.LocalModeHeaderHost provides headerHost) {
+                            Column(Modifier.fillMaxSize()) {
+                                // The mode's banner sits under the address bar, over its pages.
+                                if (!inNovelWorkspace) androidx.compose.animation.AnimatedVisibility(
+                                    visible = !chromeCollapse.collapsed,
+                                    enter = androidx.compose.animation.expandVertically(),
+                                    exit = androidx.compose.animation.shrinkVertically(),
+                                ) {
+                                    com.ihy2ln.weaverse.core.ui.components.WorkspaceBanner(
+                                        bookTitle = chromeTitle,
+                                        workspaceOptions = workspaceOptions,
+                                        workspaceId = mode,
+                                        modeOptions = modeOptions,
+                                        modeId = modeId,
+                                        canGoBack = if (isBookBrowsing) browseRoutes.size > 1 else canGoBack,
+                                        onBack = ::goBackOneScreen,
+                                    )
+                                }
+                                shellBody()
+                            }
+                            }
+                        }
+                    },
+                    homePage = { top, bottom ->
+                        WeaverHomeScreen(
+                            modes = workspaceOptions.mapNotNull { option -> AppMode.entries.firstOrNull { it.name == option.id } },
+                            onMode = { switchWorkspace(it.name) },
+                            onRecent = ::openRecentItem,
+                            onCreate = { target ->
+                                when (target) {
+                                    AppMode.Novel -> creatingWork = CreateWorkVocabulary.Novel
+                                    AppMode.Roleplay -> creatingWork = CreateWorkVocabulary.Campaign
+                                    AppMode.Storyboard -> storyboardPlusMenu = true
+                                    else -> switchWorkspace(target.name)
+                                }
+                            },
+                            top = top,
+                            bottom = bottom,
+                        )
+                    },
+                    onTabChanged = { url ->
+                        val tabMode = com.ihy2ln.weaverse.feature.browser.WeaverPages.shellModeOf(url)
+                        when {
+                            com.ihy2ln.weaverse.feature.browser.WeaverPages.isHome(url) -> showHome = true
+                            tabMode != null -> { showHome = false; mode = tabMode }
+                        }
+                        tabSynced = mode to showHome
+                    },
+                    // Inside a mode, the mode's own pages go back first; the tab's history after.
+                    deferBack = onModeTab && shellHasInnerBack(),
+                    barsShown = browserBarsOpen,
+                )
+            }
+            if (aboveBrowser) shellBody() else Box(Modifier.weight(1f).fillMaxSize()) { browserScreen() }
         }
         if (brightnessDim > 0.01f) {
             Box(
@@ -1587,4 +1698,10 @@ private fun RailPanel(
 private const val OWN_BACKGROUND = "own-background"
 
 /** How long each background shows in a mode's slideshow. */
-private const val BACKDROP_SLIDE_MS = 30_000L
+/** Process-wide launch state: whether this process has shown Home yet. */
+private object AppLaunch {
+    var homeShown = false
+}
+
+/** Seeds the per-session backdrop shuffle. */
+private val backdropSessionSeed = System.currentTimeMillis()

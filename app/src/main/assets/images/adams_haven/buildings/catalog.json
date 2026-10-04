@@ -1,0 +1,263 @@
+{
+ "buildings": [
+  {
+   "id": "gate",
+   "name": "Celestium Gate",
+   "category": "gate",
+   "words": [
+    "celestium gate",
+    "gate",
+    "gatehouse"
+   ],
+   "tiers": {
+    "F": "images/adams_haven/buildings/gate_F.webp",
+    "E": "images/adams_haven/buildings/gate_E.webp",
+    "D": "images/adams_haven/buildings/gate_D.webp"
+   }
+  },
+  {
+   "id": "heart",
+   "name": "Celestium Heart",
+   "category": "heart",
+   "words": [
+    "celestium heart"
+   ],
+   "tiers": {
+    "F": "images/adams_haven/buildings/heart_F.webp"
+   }
+  },
+  {
+   "id": "shack",
+   "name": "The Shack",
+   "category": "living",
+   "words": [
+    "cabin",
+    "hovel",
+    "hut",
+    "shack",
+    "shanty",
+    "shed"
+   ],
+   "tiers": {
+    "F": "images/adams_haven/buildings/shack_F.webp",
+    "B": "images/adams_haven/buildings/shack_B.webp",
+    "SSR": "images/adams_haven/buildings/shack_SSR.webp"
+   }
+  },
+  {
+   "id": "house",
+   "name": "House",
+   "category": "living",
+   "words": [
+    "dwelling",
+    "house"
+   ],
+   "tiers": {
+    "F": "images/adams_haven/buildings/house_F.webp",
+    "D": "images/adams_haven/buildings/house_D.webp",
+    "C": "images/adams_haven/buildings/house_C.webp"
+   }
+  },
+  {
+   "id": "terrace_row",
+   "name": "Terrace Row",
+   "category": "living",
+   "words": [
+    "row houses",
+    "rowhouse",
+    "terrace",
+    "terrace row"
+   ],
+   "tiers": {
+    "F": "images/adams_haven/buildings/terrace_row_F.webp",
+    "E": "images/adams_haven/buildings/terrace_row_E.webp",
+    "D": "images/adams_haven/buildings/terrace_row_D.webp"
+   }
+  },
+  {
+   "id": "manor",
+   "name": "Ashgrove Manor",
+   "category": "living",
+   "words": [
+    "ashgrove manor",
+    "estate",
+    "manor",
+    "mansion"
+   ],
+   "tiers": {
+    "F": "images/adams_haven/buildings/manor_F.webp",
+    "E": "images/adams_haven/buildings/manor_E.webp",
+    "D": "images/adams_haven/buildings/manor_D.webp"
+   }
+  },
+  {
+   "id": "kitchen",
+   "name": "Kitchen",
+   "category": "produce",
+   "words": [
+    "cookhouse",
+    "kitchen"
+   ],
+   "tiers": {
+    "F": "images/adams_haven/buildings/kitchen_F.webp",
+    "D": "images/adams_haven/buildings/kitchen_D.webp",
+    "B": "images/adams_haven/buildings/kitchen_B.webp"
+   }
+  },
+  {
+   "id": "farmstead",
+   "name": "Farmstead",
+   "category": "produce",
+   "words": [
+    "farm",
+    "farmhouse",
+    "farmstead"
+   ],
+   "tiers": {
+    "F": "images/adams_haven/buildings/farmstead_F.webp",
+    "D": "images/adams_haven/buildings/farmstead_D.webp",
+    "B": "images/adams_haven/buildings/farmstead_B.webp"
+   }
+  },
+  {
+   "id": "well",
+   "name": "Stone Well",
+   "category": "produce",
+   "words": [
+    "a well",
+    "stone well",
+    "the well",
+    "water well"
+   ],
+   "tiers": {
+    "F": "images/adams_haven/buildings/well_F.webp",
+    "E": "images/adams_haven/buildings/well_E.webp",
+    "D": "images/adams_haven/buildings/well_D.webp"
+   }
+  },
+  {
+   "id": "lumber_mill",
+   "name": "Lumber Mill",
+   "category": "produce",
+   "words": [
+    "lumber mill",
+    "lumberyard",
+    "mill",
+    "sawmill"
+   ],
+   "tiers": {
+    "F": "images/adams_haven/buildings/lumber_mill_F.webp",
+    "E": "images/adams_haven/buildings/lumber_mill_E.webp",
+    "D": "images/adams_haven/buildings/lumber_mill_D.webp"
+   }
+  },
+  {
+   "id": "barn",
+   "name": "Barn",
+   "category": "storage",
+   "words": [
+    "barn",
+    "stable"
+   ],
+   "tiers": {
+    "F": "images/adams_haven/buildings/barn_F.webp",
+    "B": "images/adams_haven/buildings/barn_B.webp",
+    "SSR": "images/adams_haven/buildings/barn_SSR.webp"
+   }
+  },
+  {
+   "id": "silo",
+   "name": "Grain Silo",
+   "category": "storage",
+   "words": [
+    "grain silo",
+    "granary",
+    "silo"
+   ],
+   "tiers": {
+    "F": "images/adams_haven/buildings/silo_F.webp",
+    "E": "images/adams_haven/buildings/silo_E.webp",
+    "D": "images/adams_haven/buildings/silo_D.webp"
+   }
+  },
+  {
+   "id": "warehouse",
+   "name": "Warehouse",
+   "category": "storage",
+   "words": [
+    "depot",
+    "storehouse",
+    "warehouse"
+   ],
+   "tiers": {
+    "F": "images/adams_haven/buildings/warehouse_F.webp",
+    "E": "images/adams_haven/buildings/warehouse_E.webp",
+    "D": "images/adams_haven/buildings/warehouse_D.webp"
+   }
+  },
+  {
+   "id": "frosted_mug",
+   "name": "The Frosted Mug",
+   "category": "medic",
+   "words": [
+    "alehouse",
+    "frosted mug",
+    "inn",
+    "pub",
+    "tavern"
+   ],
+   "tiers": {
+    "F": "images/adams_haven/buildings/frosted_mug_F.webp",
+    "E": "images/adams_haven/buildings/frosted_mug_E.webp",
+    "D": "images/adams_haven/buildings/frosted_mug_D.webp"
+   }
+  },
+  {
+   "id": "guild_hall",
+   "name": "Silverbrook Adventure Guild",
+   "category": "herald",
+   "words": [
+    "adventure guild",
+    "guild",
+    "guild hall",
+    "guildhall",
+    "silverbrook adventure guild"
+   ],
+   "tiers": {
+    "F": "images/adams_haven/buildings/guild_hall_F.webp",
+    "D": "images/adams_haven/buildings/guild_hall_D.webp",
+    "SSR": "images/adams_haven/buildings/guild_hall_SSR.webp"
+   }
+  },
+  {
+   "id": "forge",
+   "name": "The Forge",
+   "category": "train",
+   "words": [
+    "blacksmith",
+    "forge",
+    "smithy"
+   ],
+   "tiers": {
+    "F": "images/adams_haven/buildings/forge_F.webp",
+    "D": "images/adams_haven/buildings/forge_D.webp",
+    "C": "images/adams_haven/buildings/forge_C.webp"
+   }
+  },
+  {
+   "id": "deck_hall",
+   "name": "Deck Hall",
+   "category": "train",
+   "words": [
+    "deck hall",
+    "dojo",
+    "training hall"
+   ],
+   "tiers": {
+    "F": "images/adams_haven/buildings/deck_hall_F.webp",
+    "E": "images/adams_haven/buildings/deck_hall_E.webp",
+    "D": "images/adams_haven/buildings/deck_hall_D.webp"
+   }
+  }
+ ]
+}

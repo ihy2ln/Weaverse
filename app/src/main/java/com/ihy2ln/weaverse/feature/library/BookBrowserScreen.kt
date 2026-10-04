@@ -149,6 +149,40 @@ fun FeaturedBook(book: BrowseBook, onRead: () -> Unit, onDetails: (() -> Unit)? 
     }
 }
 
+/** Read, sized for a banner row. */
+@Composable
+private fun CompactRead(book: BrowseBook, onRead: () -> Unit) {
+    Button(
+        onClick = onRead,
+        shape = RoundedCornerShape(8.dp),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+        modifier = Modifier.heightIn(min = 36.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = inkTokens().primaryText, contentColor = BrowseBackground),
+    ) {
+        Icon(Icons.Default.MenuBook, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp))
+        Text(if (book.hasRead) "Continue" else "Read", fontWeight = FontWeight.Bold)
+    }
+}
+
+/** The featured book as one compact row for the mode banner: what it is, then Read and Details. */
+@Composable
+fun FeaturedStrip(book: BrowseBook, onRead: () -> Unit, onDetails: () -> Unit) {
+    Row(Modifier.fillMaxWidth().testTag("featured-strip"), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(end = 8.dp)) {
+            Text("FROM YOUR LIBRARY", fontSize = 9.sp, letterSpacing = 1.6.sp, color = BrowseAccent, fontWeight = FontWeight.Bold, maxLines = 1)
+            Text(book.book.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        CompactRead(book, onRead)
+        Spacer(Modifier.width(6.dp))
+        FilledTonalButton(
+            onClick = onDetails,
+            shape = RoundedCornerShape(8.dp),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+            modifier = Modifier.heightIn(min = 36.dp),
+        ) { Icon(Icons.Default.Info, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Details") }
+    }
+}
+
 @Composable
 fun BrowseImage(path: String, modifier: Modifier, scale: ContentScale = ContentScale.Fit,
     onLoaded: () -> Unit = {}, onFailed: () -> Unit = {}) {
@@ -259,7 +293,15 @@ private fun BookDetails(book: BrowseBook, viewModel: BookBrowserViewModel, onRea
     var backdrop by rememberSaveable { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let { viewModel.artwork(book.id, it, backdrop) } }
     LazyColumn(Modifier.fillMaxSize().testTag("book-details"), contentPadding = PaddingValues(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { FeaturedBook(book, onRead) }
+        item {
+            // In the Novel tab the book's title, line and Read button sit in the mode banner.
+            val subtitle = listOf(book.book.genre, book.series).filter { it.isNotBlank() && it != book.book.title }.joinToString("  ·  ")
+            com.ihy2ln.weaverse.core.ui.components.ModePageHeader(
+                title = book.book.title,
+                subtitle = subtitle,
+                actions = { CompactRead(book, onRead) },
+            ) { FeaturedBook(book, onRead) }
+        }
         item {
             Column(Modifier.padding(horizontal = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(info.position, color = BrowseMuted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("reading-position"))

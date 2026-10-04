@@ -3,6 +3,205 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.5.2 - Pictures inside generated Novel and RPG text
+
+- `tools/build_building_art.py` bundles the Adams Haven building art from
+  `Game Assets/buildings/Unity V1 Stuff` into `assets/images/adams_haven/buildings/`: 17 buildings, 3 tiers each
+  (lowest, middle, top), 2.1 MB. It writes `catalog.json` with each building's name and the words a writer might
+  use (shack/hut/cabin/shed, tavern/inn/pub = The Frosted Mug, smithy = The Forge, granary = Grain Silo, …).
+  Cottage, Market, Nursery and Quarry have no art yet.
+- `GeneratedTextIllustrator` (core/media) splits the AI's text into paragraphs and puts each picture right after
+  the first paragraph that names its subject. A subject only the prompt named goes above the passage. At most 3
+  pictures, people first.
+  - **Codex entries** with a picture match by name or alias.
+  - **Buildings** match by catalog word: grand/legendary/celestial words pick the top tier, small/rundown/humble
+    words the first tier, otherwise the middle tier. Buildings register as `adams-haven-building-*`, so they also
+    count as scene art.
+- **Hooked into:**
+  - RPG replies (`documentWithTopicMedia`, which also covers regenerate), with the player's action as the prompt.
+  - The Novel global prompt overlay (`insertNovelAi`; at the cursor the pictures go right after the insertion
+    point).
+  - The Write screen's AI accept (each picture after the manuscript paragraph that holds its text).
+- **Adventure display:** replies with pictures render paragraph by paragraph with the pictures in place
+  (`RpMessageUi.inlineArt`, `IllustratedReply`). Before this, only the "Current scene" banner showed pictures.
+- 672 unit tests pass. Installed on the phone; not yet tried with a live generation.
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.5.2.apk`, SHA-256
+  `93ac8699bc3861e60f68c02f27747e776f358e809d17b05c2afbdc5cb19a66d5`.
+
+## v1.5.1 - Codex galleries from the character art folders
+
+- The pack now carries galleries.
+  - **Tower roster:** up to 8 pictures each from `CharacterPrompts/Generated/{heroes,residents}/<code>_*`: card or
+    card-front, the newest portrait-bust-vN, casual, work-full, chibi, weapon or tool, ultimate cut-in, summon
+    reveal. The 24 residents now have art. The fullest folder wins over an early single-card test folder
+    (F-1 Pip).
+  - **Fighters:** the card-game portrait, then up to 16 pictures from `Game Assets/characters/<Name>`: renders,
+    battle and civilian T-poses, chibis, the Celestium weapon, and Kaela's Full card art. JD has no folder, so
+    only his portrait.
+- **Replacing pictures:** an updated entry's app-installed pictures (`adams-haven-*` card art, `codex-ah-*` from
+  earlier packs) give way to the new gallery. Pictures the writer added are kept after it (`isBundledPicture`).
+  Same-named entries are still updated in place, and new names become new entries.
+- Pack version `2026-10-04T0432.112` re-applies over 1.5.0's run. 614 pictures, 66.7 MB; the APK is now
+  285 MB. The generator caches converted pictures and uses webp method 4; a full first build is about 20 min,
+  later builds are quick.
+- 667 unit tests pass. Not installed: the phone disconnected from adb.
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.5.1.apk`, SHA-256
+  `69a8342cc8ed33009a0f993786b5b906398bf64927d0493fa60450908f7aec51`.
+
+## v1.5.0 - The Codex brought up to date from the Adams Haven games
+
+- `tools/build_adams_haven_codex.py` builds `assets/codex/adams_haven/pack.json` plus 142 phone-sized webp
+  pictures (16.6 MB) from the games' current data. The game folders are only read.
+  - **8 party fighters:** Card Game `BuiltinContent.cs` (title, role, element, stats, bio, cards, ultimates,
+    awakening, portrait). JD comes from AHCG `BattleCatalog.cs`.
+  - **60 Tower roster characters:** `tower_roster.json` plus `CharacterPrompts/*.md` (visual anchors, outfits);
+    card-front art for the 36 heroes. The 24 residents have no art yet.
+  - **31 bestiary families** in a new **Monsters** category: lore, element, role, ranks, material, and every
+    form with flavor, moves, drops and evolution. Up to 8 form cards each, from `Bestiary/Cards`, falling back to
+    `MonsterPrompts/<family>/<form>/playing_card.png` for forms still on shared art.
+  - **13 expedition regions** in Locations, each with its lair boss.
+- `AdamsHavenCodexPack` runs at startup after the sample book, once per pack version.
+  - It updates its own entries in place (`codex-packs/adams-haven.links.json`). An older entry for the same
+    character is updated rather than duplicated; `isSameCodexName` matches the full name, an alias, or all words
+    of the game name, so "Kaela" never grabs "Jasmine Kaela".
+  - The game text leads. The entry's earlier text is kept below "── Earlier notes ──", earlier pictures stay
+    after the new ones, and the old name becomes an alias.
+  - Character entries also update their roster sheet: class, species, size, appearance, body, backstory,
+    traits, actions, weapon, tools, HP, portrait.
+  - It reads the Codex and the roster once per run, not once per entry.
+- On the phone, the run had written 94 of 112 entries, with the 7 old novel entries for the fighters updated in
+  place. The phone was locked, and Android freezes a background app, so the run advances only while the app is
+  running. It resumes on the next launch and finishes in seconds with the app open.
+- 665 unit tests pass.
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.5.0.apk`, SHA-256
+  `b1373e092642d1b9253db42234084be0d4480d62cd5a71bd60fd3f51225d74f1`.
+
+## v1.4.99 - Start templates: pick, name, import/export, shared folder
+
+- New `StartTemplateLibrary` (core/story) replaces the one-template-per-mode slot with any number of named Novel
+  and RPG start templates. Each is one file (`StartTemplate`: format `weaverse-start-template`, kind, name,
+  savedAt, payload = the start's own JSON).
+  - Files live in `filesDir/start-templates/`, and also in a templates folder the writer picks (SAF tree,
+    persisted). Choosing the same folder in the release and the debug builds shares their templates. Files
+    found there are copied in on every listing.
+  - The old `novel-template` / `rpg-template` slots migrate once as "My Novel/RPG template".
+- `StartTemplatePickerDialog` (feature/templates) opens from "From a template…" in the Novel and RPG + menus,
+  and from "Start from template" inside both starts.
+  - It lists the built-in start plus the saved templates.
+  - Each saved template has Rename, Export file and Delete.
+  - It offers Import template file and Templates folder.
+- "Save as template" asks for a name. A work made from a template takes the template's name as its title.
+  The pending marker stores the chosen template id (legacy "1" = built-in).
+- Recovery note: the debug build had no saved template on the phone (start-slots empty). The production install
+  (`com.ihy2ln.weaverse` 1.4.80) is signed with the same key but isn't debuggable, so its template can't be
+  read from the PC. A build with `-PqaApplicationIdSuffix=` installed over it would keep its data and migrate
+  its template.
+- 662 unit tests pass. Installed on the phone; the dialogs have not yet been driven on a device.
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.4.99.apk`, SHA-256
+  `13bea01318ce911d319a1c51fdb6ce006c7eb9433e0542a22371ec65fb6da862`.
+
+## v1.4.98 - Adventure scene art comes only from the story's own pictures
+
+- The bug: a scene with no matching art fell back to *any* image in the media library, ordered by name. That
+  could be a saved news post (an EA article showed as "Current scene"). `documentWithBestSceneMedia` also kept
+  whatever image the AI attached.
+- The fix: new `isSceneArtEligible` (core/media/SceneMediaLibrary.kt). Allowed: Codex entries' images, art filed
+  under a Scene category or tagged `scene:…`, and the bundled Adams Haven scenes.
+  - AI-attached images outside that set are dropped.
+  - Ranked picks are filtered to that set.
+  - Next in line is the Codex picture of whoever or wherever the scene names first, then Scene-filed art.
+  - Library pictures outside the set are never used.
+- Display: the scene panel hides ineligible art already saved in older scenes (`sceneArtMediaIds`). A scene
+  without art falls back to `pickSceneArtFallback`: the Codex picture of the first entry the prose names, else
+  the Scene-filed art sharing the most words with it.
+- Confirmed on the phone that the news picture no longer shows. The Codex fallback is not yet seen on a device:
+  the phone went into use mid-check. 659 unit tests pass.
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.4.98.apk`, SHA-256
+  `cf2a99289ebe3703e3371a3a0c5a4f57e768a8605ddff20c968b2fd97bc31634`.
+
+## v1.4.97 - Heroes fold into the mode banner; tighter shelves
+
+- `ModeHeaderInfo.detail` adds a compact second row to the mode banner.
+  - **Novel's Books page:** the featured book is that row ("FROM YOUR LIBRARY · <title>" with Read and Details;
+    `FeaturedStrip`). The big cover hero is gone in the Novel tab.
+  - **A book's title page:** its title, genre/series and Read sit in the banner (`CompactRead`). The hero is gone.
+    A series name that repeats the title is dropped.
+- Shelf posters (RPG campaigns, manga projects) are compact inside a mode tab: `GridCells.Adaptive(110.dp)`,
+  three across on a phone, instead of 170.dp.
+- Outside mode tabs (old entry points), the pages still draw their own heroes.
+- Checked on the phone (Novel Books, a book page, RPG Campaigns). 657 unit tests pass.
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.4.97.apk`, SHA-256
+  `e8705609c1fdd450fb8373adfb3a111902f4f1db30a5a723962c92208bc2d749`.
+
+## v1.4.96 - Browser bars behind a globe; mode banner and page heading are one block
+
+- WeaverBrowser's address bar and bottom toolbar start hidden (`browserBarsOpen`, false on every fresh start).
+  A globe between Search and Settings in the top bar shows or hides them. Typing (e.g. Home's search field)
+  still brings the address bar up.
+- A new `ModePageHeader` / `ModeHeaderHost` (core/ui/components/ModeHeader.kt) merges the two headings. In a mode
+  tab, a page hands its heading to the mode banner instead of drawing its own. Examples: "RPG · CAMPAIGN /
+  Campaigns / Your worlds at a glance / + Campaign"; "NOVEL · BOOKSHELF / Books / All books +"; "GAMES · ADAMS
+  HAVEN / The Card Game / … / Play". Outside a mode tab the pages draw their headings as before. Manga Studio
+  and Brainstorm keep their own top bars for now.
+- Checked on the phone. 657 unit tests pass.
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.4.96.apk`, SHA-256
+  `b45f863526336c2c11ea508a51930d5fcf69a35a6a1f50eb2eeb724153244758`.
+
+## v1.4.95 - The address bar sits under the mode tabs, the mode banner under it
+
+- On a mode's tab, the order is now mode tabs → address bar → mode banner (eyebrow, page title, Back) → pages.
+  The banner is a new public `WorkspaceBanner` (InkChrome.kt), drawn by AppShell's `modePage`. It folds away
+  with the chrome on scroll. Settings and the other overlays keep the banner in `WorkspaceChrome`.
+- Checked on the phone. 657 unit tests pass.
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.4.95.apk`, SHA-256
+  `4cc29340a34f5b9721fabd855fccec0d1f628fd5f25c6442ecb34cb5bdd2a6fe`.
+
+## v1.4.94 - Mode tabs back on top; every fresh start opens on Home
+
+- The Home · Novel · RPG · Games · WeaverBrowser · Manga Studio · Notes tabs are drawn once above the browser
+  again (1.4.93 had replaced them with the mode's sections). Tapping one opens or selects that mode's browser tab
+  (`BrowserViewModel.openMode`); Home selects the New Tab Page (`openHome`). The highlighted tab follows the
+  browser: WeaverBrowser for web and WeaverSocial pages. The mode banner shows only on a mode's own pages.
+- A new process always starts on Home (`AppLaunch.homeShown`), even when Android restores saved state.
+  Rotating, or coming back to a running app, keeps the page.
+- Checked on the phone (S25+): a cold start lands on Home with the tabs on top; Novel opens `weaver://novel`
+  with its banner and Bookshelf. 657 unit tests pass.
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.4.94.apk`, SHA-256
+  `508bdbd5e98f65be2637a4910e065f81d945f82d142e696da7430a3d846ed14f`.
+
+## v1.4.93 (WV 10.4.0) - WeaverBrowser is the app shell; backgrounds rotate through bundled paintings
+
+- WeaverBrowser hosts every mode. `weaver://novel|rpg|games|manga|notes` are tab pages that draw the shell's
+  mode screens through `WeaverBrowserScreen(modePage = …)`. There is one tab per mode, because the shell keeps one
+  state per mode; `BrowserViewModel.openMode` selects an open tab, reuses a blank New Tab Page, or opens a new tab.
+  `BrowserEvent.OpenMode` is gone.
+- AppShell's `mode`/`showHome` follow the selected tab (`onTabChanged`). Anything in the shell that sets them
+  brings the matching tab forward (a `LaunchedEffect` guarded by `tabSynced`). Settings, Search, Library,
+  Import/Export and the codex, character and persona editors still cover the browser.
+- The New Tab Page = Brave home + the old Netflix Home. In order: search field, billboard, mode posters,
+  "Continue in…" rows, privacy stats and favorites (`NewTabPage(homePage = …)` around `WeaverHomeScreen`'s
+  top/bottom slots).
+- `WorkspaceChrome(showModeTabs = false)` puts the current mode's sections in the top row in place of
+  Home + mode tabs. The browser menu lists the modes plus "Search Weaverse".
+- Back: a mode's own pages first (`deferBack`), then the tab's history, then the New Tab Page.
+- Backgrounds: a new `asset:` entry type, and `BackdropPool` defaults (key art + Adams Haven location paintings
+  + focus-video stills). That is 6-9 per mode and 44 on Home. Rotation runs on every page, every
+  `backdrop_interval_s` (default 120 s; choices 30 s-10 min), in an order shuffled once per session. The Mode
+  backgrounds settings show each mode's pool, add a Paintings group to the picker, and offer "Use default pool".
+- 657 unit tests pass. Installed on the phone, which was locked, so not yet seen running.
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.4.93.apk`, SHA-256
+  `1d9c1899752a0330a57fa54cf1ad81bf9a790eb7cf0e57b911c9c855e3c28c4e`.
+
+## v1.4.92 - Downloads explain a dead image server too
+
+- 1.4.91's plain "image server isn't answering" message only covered online preparation of shuffled pages; the
+  download worker (`downloadChapter`) still showed OkHttp's raw "Failed to connect to img-cdn.stackpathcdn.app/
+  185.255.120.53:443". It now uses the same message. Failed-chapter errors keep 400 characters instead of 300.
+- Rechecked MangaRaw 2026-10-04: the API's `d` host is still img-cdn.stackpathcdn.app (timing out), its `a` field
+  decodes to 69.130.167.224, which also times out, and mangaraw.ac's own reader sits on "Loading". Still down.
+- 652 unit tests pass. APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.4.92.apk`, SHA-256
+  `1e1b46af2140c320beafe2467ec8b3a7be576ddb54a09bc05f7cfc2add19c4f0`.
+
 ## v1.4.91 - Manga download progress bars; a plain answer when a site's image server is down
 
 - MangaRaw (mangaraw.ac) chapters failed with "Could not reach img-cdn.stackpathcdn.app". Checked 2026-10-04: that

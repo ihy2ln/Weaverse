@@ -260,25 +260,13 @@ fun WorkShelfScreen(
         }
     }
     val tokens = inkTokens()
-    Column(modifier = modifier.fillMaxSize().padding(adaptiveContentPadding())) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(kind.heading, style = MaterialTheme.typography.headlineSmall)
-                Text(
-                    when (kind) {
-                        WorkShelfKind.Novel -> "Choose a novel or start a new story"
-                        WorkShelfKind.Storyboard -> "Your manga and comic library"
-                        WorkShelfKind.Campaign -> "Your worlds at a glance"
-                        WorkShelfKind.TextGame -> "Card-driven stories, battles, and haven simulations"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = tokens.secondaryText,
-                )
-            }
+    val shelfSubtitle = when (kind) {
+        WorkShelfKind.Novel -> "Choose a novel or start a new story"
+        WorkShelfKind.Storyboard -> "Your manga and comic library"
+        WorkShelfKind.Campaign -> "Your worlds at a glance"
+        WorkShelfKind.TextGame -> "Card-driven stories, battles, and haven simulations"
+    }
+    val createButton: @Composable () -> Unit = {
             var createMenu by remember { mutableStateOf(false) }
             Box {
                 InkOutlinedButton(
@@ -296,9 +284,28 @@ fun WorkShelfScreen(
                             text = { Text(if (kind == WorkShelfKind.Campaign) "Create campaign" else "Create novel") },
                             onClick = { createMenu = false; onCreate() },
                         )
-                        DropdownMenuItem(text = { Text("From CYOA template") }, onClick = { createMenu = false; fromTemplate() })
+                        DropdownMenuItem(text = { Text("From a template…") }, onClick = { createMenu = false; fromTemplate() })
                     }
                 }
+            }
+    }
+    Column(modifier = modifier.fillMaxSize().padding(adaptiveContentPadding())) {
+        // In a mode tab the mode banner carries this heading; elsewhere it is drawn here.
+        com.ihy2ln.weaverse.core.ui.components.ModePageHeader(
+            title = kind.heading,
+            subtitle = shelfSubtitle,
+            actions = { createButton() },
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(kind.heading, style = MaterialTheme.typography.headlineSmall)
+                    Text(shelfSubtitle, style = MaterialTheme.typography.bodySmall, color = tokens.secondaryText)
+                }
+                createButton()
             }
         }
         if (selectedIds.isNotEmpty()) {
@@ -328,7 +335,8 @@ fun WorkShelfScreen(
             }
         } else {
             LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 170.dp),
+                // Compact posters in a mode tab (three across on a phone); roomier elsewhere.
+                columns = GridCells.Adaptive(minSize = if (com.ihy2ln.weaverse.core.ui.components.isModeHeaderHosted()) 110.dp else 170.dp),
                 modifier = Modifier.fillMaxSize().padding(top = InkSpacing.md),
                 horizontalArrangement = Arrangement.spacedBy(InkSpacing.md),
                 verticalArrangement = Arrangement.spacedBy(InkSpacing.md),
@@ -547,21 +555,36 @@ internal fun NovelBooksShelf(books: List<BrowseBook>, onOpen: (BrowseBook) -> Un
     onShelf: (String) -> Unit, onCreate: () -> Unit, onCreateFromTemplate: () -> Unit, onImport: () -> Unit) {
     LazyColumn(Modifier.fillMaxSize().testTag("books-feed"), verticalArrangement = Arrangement.spacedBy(24.dp), contentPadding = PaddingValues(bottom = 28.dp)) {
         item {
-            Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Books", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            val bookActions: @Composable () -> Unit = {
                 TextButton(onClick = { onShelf("all") }) { Text("All books") }
                 var menu by remember { mutableStateOf(false) }
                 Box {
                     IconButton(onClick = { menu = true }) { Icon(Icons.Default.Add, "Library actions") }
                     DropdownMenu(menu, { menu = false }) {
                         DropdownMenuItem(text = { Text("Create book") }, onClick = { menu = false; onCreate() })
-                        DropdownMenuItem(text = { Text("From CYOA template") }, onClick = { menu = false; onCreateFromTemplate() })
+                        DropdownMenuItem(text = { Text("From a template…") }, onClick = { menu = false; onCreateFromTemplate() })
                         DropdownMenuItem(text = { Text("Import") }, onClick = { menu = false; onImport() })
                     }
                 }
             }
-            featuredBook(books)?.let { FeaturedBook(it, { onRead(it.id) }, { onOpen(it) }) }
-                ?: EmptyBrowse("Your next chapter starts here", "Create a book or import your library.")
+            val featured = featuredBook(books)
+            com.ihy2ln.weaverse.core.ui.components.ModePageHeader(
+                title = "Books",
+                actions = { bookActions() },
+                // In the Novel tab the featured book is a compact row in the banner, not a hero.
+                detail = featured?.let { book -> { FeaturedStrip(book, { onRead(book.id) }, { onOpen(book) }) } },
+            ) {
+                Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Books", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    bookActions()
+                }
+            }
+            if (!com.ihy2ln.weaverse.core.ui.components.isModeHeaderHosted()) {
+                featured?.let { FeaturedBook(it, { onRead(it.id) }, { onOpen(it) }) }
+                    ?: EmptyBrowse("Your next chapter starts here", "Create a book or import your library.")
+            } else if (featured == null) {
+                EmptyBrowse("Your next chapter starts here", "Create a book or import your library.")
+            }
         }
         items(listOf("reading", "writing", "list", "added") + books.map { it.book.genre }.filter { it.isNotBlank() }.distinct().sorted().map { "genre:$it" }, key = { it }) { id ->
             val entries = booksForShelf(books, id)

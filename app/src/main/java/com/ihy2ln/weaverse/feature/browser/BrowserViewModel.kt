@@ -61,8 +61,6 @@ data class LeoMessage(val fromLeo: Boolean, val text: String)
 data class FindState(val query: String = "", val active: Int = 0, val total: Int = 0)
 
 sealed interface BrowserEvent {
-    /** Leave the browser for another Weaverse workspace (an [com.ihy2ln.weaverse.feature.shell.AppMode] name). */
-    data class OpenMode(val mode: String) : BrowserEvent
     data class Notice(val text: String) : BrowserEvent
     data class LinkMenu(val tabId: String, val link: String?, val image: String?) : BrowserEvent
     data class Share(val url: String, val title: String) : BrowserEvent
@@ -116,11 +114,10 @@ class BrowserViewModel @Inject constructor(
 
     fun select(tabId: String) = store.update { it.copy(selectedTabId = tabId) }
 
-    fun newTab(url: String = WeaverPages.NEW_TAB, private: Boolean = false, select: Boolean = true): BrowserTab {
-        if (url in WeaverPages.MODES) {
-            _events.tryEmit(BrowserEvent.OpenMode(WeaverPages.MODES.getValue(url)))
-            return selectedTab ?: BrowserTab()
-        }
+    fun newTab(rawUrl: String = WeaverPages.NEW_TAB, private: Boolean = false, select: Boolean = true): BrowserTab {
+        val url = if (WeaverPages.isHome(rawUrl)) WeaverPages.NEW_TAB else rawUrl
+        // One tab per mode: the shell keeps one state per mode, so a second copy would mirror the first.
+        if (!private) modeTab(url)?.let { existing -> if (select) select(existing.id); return existing }
         val tab = BrowserTab(url = url, title = if (WeaverPages.isInternal(url)) WeaverPages.titleOf(url) else url, private = private)
         store.update { d ->
             val index = d.tabs.indexOfFirst { it.id == d.selectedTabId }
@@ -128,6 +125,34 @@ class BrowserViewModel @Inject constructor(
             d.copy(tabs = tabs, selectedTabId = if (select) tab.id else d.selectedTabId)
         }
         return tab
+    }
+
+    /** The open (non-private) tab showing mode page [url], if [url] is one. */
+    private fun modeTab(url: String): BrowserTab? {
+        val mode = WeaverPages.modeOf(url) ?: return null
+        return data.value.tabs.firstOrNull { !it.private && WeaverPages.modeOf(it.url) == mode }
+    }
+
+    /**
+     * Shows [mode] (an AppMode name): its tab if one is open, else the current tab when it is a
+     * blank New Tab Page (so Back returns there), else a new tab. "Chatting" is WeaverSocial.
+     */
+    fun openMode(mode: String) {
+        val url = WeaverPages.urlOfMode(mode)
+        if (mode == "Chatting") {
+            val social = data.value.tabs.firstOrNull { !it.private && WeaverPages.shellModeOf(it.url) == "Chatting" }
+            if (social != null) { select(social.id); return }
+        } else modeTab(url)?.let { select(it.id); return }
+        val current = selectedTab
+        if (current != null && !current.private && WeaverPages.isHome(current.url)) navigate(current.id, url) else newTab(url)
+    }
+
+    /** Shows the New Tab Page: the current tab if it is one, else an open one, else a new tab. */
+    fun openHome() {
+        val current = selectedTab
+        if (current != null && WeaverPages.isHome(current.url)) return
+        val existing = data.value.tabs.lastOrNull { !it.private && WeaverPages.isHome(it.url) }
+        if (existing != null) select(existing.id) else newTab()
     }
 
     /** Focus a tab already showing [url], or open one. */
@@ -188,12 +213,11 @@ class BrowserViewModel @Inject constructor(
     }
 
     fun navigate(tabId: String, rawUrl: String) {
-        if (rawUrl in WeaverPages.MODES) {
-            _events.tryEmit(BrowserEvent.OpenMode(WeaverPages.MODES.getValue(rawUrl)))
-            return
-        }
         val tab = data.value.tabs.firstOrNull { it.id == tabId } ?: return
-        val url = upgrade(rawUrl)
+        val normalized = if (WeaverPages.isHome(rawUrl)) WeaverPages.NEW_TAB else rawUrl
+        // A mode already open in another tab is shown there rather than copied.
+        if (!tab.private) modeTab(normalized)?.let { existing -> if (existing.id != tabId) { select(existing.id); return } }
+        val url = upgrade(normalized)
         if (WeaverPages.isInternal(url)) {
             if (url != tab.url) backStacks.getOrPut(tabId) { ArrayDeque() }.addLast(tab.url)
             updateTab(tabId) { it.copy(url = url, title = WeaverPages.titleOf(url)) }
@@ -562,7 +586,7 @@ class BrowserViewModel @Inject constructor(
                     return false
                 }
                 val opener = data.value.tabs.firstOrNull { it.id == tabId } ?: return false
-                val child = newTab(url = "about:blank", private = opener.private)
+                val child = newTab(rawUrl = "about:blank", private = opener.private)
                 val childView = createWebView(child, (view.context as? MutableContextWrapper)?.baseContext ?: view.context)
                 views[child.id] = childView
                 (resultMsg.obj as WebView.WebViewTransport).webView = childView

@@ -34,6 +34,7 @@ class WeaverseApp : Application(), Configuration.Provider {
     @Inject lateinit var seeder: DatabaseSeeder
     @Inject lateinit var syncCoordinator: SyncCoordinator
     @Inject lateinit var sampleBookImporter: SampleBookImporter
+    @Inject lateinit var adamsHavenCodexPack: com.ihy2ln.weaverse.data.seed.AdamsHavenCodexPack
     @Inject lateinit var dailyCharacterGenerator: DailyCharacterGenerator
     @Inject lateinit var crashLog: CrashLog
     @Inject lateinit var settings: SettingsRepository
@@ -89,6 +90,8 @@ class WeaverseApp : Application(), Configuration.Provider {
             // skip the rest — least of all backup scheduling — or crash the app at launch.
             startupStep("seed") { seeder.seedIfEmpty() }
             startupStep("sample book") { sampleBookImporter.importBundledIsekaiGachaIfMissing() }
+            // After the sample book, so its older entries are updated rather than duplicated.
+            startupStep("adams haven codex") { adamsHavenCodexPack.applyIfNew() }
             startupStep("sync url") { syncCoordinator.suggestedWebUrl() }
             startupStep("daily character") { dailyCharacterGenerator.generateIfDue() }
             startupStep("auto-backup") { backupManager.maybeAutoBackup() }

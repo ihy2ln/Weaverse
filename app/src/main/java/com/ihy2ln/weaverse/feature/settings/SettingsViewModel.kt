@@ -646,6 +646,15 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun setBackdropInterval(seconds: Int) {
+        viewModelScope.launch { settings.setBackdropInterval(seconds) }
+    }
+
+    /** Clears a mode's picks so it rotates through its bundled pool again. */
+    fun resetModeBackdrops(modeKey: String) {
+        viewModelScope.launch { settings.setModeBackdrops(modeKey, emptyList()) }
+    }
+
     fun setBackdropSlideshow(enabled: Boolean) {
         viewModelScope.launch { settings.setBackdropSlideshow(enabled) }
     }

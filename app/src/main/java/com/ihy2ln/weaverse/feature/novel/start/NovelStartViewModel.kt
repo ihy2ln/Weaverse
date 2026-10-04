@@ -97,6 +97,7 @@ class NovelStartViewModel @Inject constructor(
     private val aiGeneration: AiGenerationService,
     private val db: WeaverseDatabase,
     private val slots: StartSlotStore,
+    private val templates: com.ihy2ln.weaverse.core.story.StartTemplateLibrary,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NovelStartUiState())
@@ -129,11 +130,11 @@ class NovelStartViewModel @Inject constructor(
             val progress = decodeNovelStartProgress(saved?.startProgress.orEmpty())
             val withSlots = fresh.copy(
                 hasCyoaCheckpoint = slots.read(StartSlotStore.novelCyoaCheckpoint(bookId)) != null,
-                hasSavedTemplate = slots.read(StartSlotStore.NOVEL_TEMPLATE) != null,
+                hasSavedTemplate = templates.list(com.ihy2ln.weaverse.core.story.StartTemplateKind.Novel).isNotEmpty(),
             )
             _uiState.value = if (progress == null) withSlots else withSlots.copy(resumable = progress)
             // Made from the + menu's template entry: skip straight to verification.
-            if (slots.consumePendingTemplate(bookId)) startFromTemplate()
+            slots.consumePendingTemplate(bookId)?.let { startFromTemplate(it) }
         }
     }
 
@@ -187,12 +188,12 @@ class NovelStartViewModel @Inject constructor(
         }
     }
 
-    /** Saves the start as it stands as the starting template for new books. */
-    fun saveAsTemplate() {
+    /** Saves the start as it stands as a named template in the template library. */
+    fun saveAsTemplate(name: String) {
         val progress = currentProgress(_uiState.value)
         viewModelScope.launch {
-            slots.write(StartSlotStore.NOVEL_TEMPLATE, encodeNovelStartProgress(progress))
-            _uiState.update { it.copy(hasSavedTemplate = true, slotMessage = "Saved as the starting template.") }
+            val saved = templates.save(com.ihy2ln.weaverse.core.story.StartTemplateKind.Novel, name, encodeNovelStartProgress(progress))
+            _uiState.update { it.copy(hasSavedTemplate = true, slotMessage = "Saved as the template \"${saved.name}\".") }
         }
     }
 
@@ -201,11 +202,12 @@ class NovelStartViewModel @Inject constructor(
      * been saved — and lands on verification, skipping the questions and the plan.
      * The book keeps its own title.
      */
-    fun startFromTemplate() {
+    fun startFromTemplate(templateId: String = StartSlotStore.BUILT_IN_TEMPLATE) {
         val state = _uiState.value
         if (state.bookId.isBlank()) return
         viewModelScope.launch {
-            val saved = slots.read(StartSlotStore.NOVEL_TEMPLATE)?.let(::decodeNovelStartProgress)
+            val chosen = templateId.takeIf { it != StartSlotStore.BUILT_IN_TEMPLATE }?.let { templates.get(it) }
+            val saved = chosen?.payload?.let(::decodeNovelStartProgress)
             val template = saved ?: builtInNovelTemplate(state.setup)
             val step = when {
                 template.outline != null -> NovelStartStep.Verification
@@ -213,7 +215,7 @@ class NovelStartViewModel @Inject constructor(
             }
             applyProgress(
                 template.copy(stepId = step.name, setup = template.setup.copy(title = state.setup.title), openingProse = ""),
-                if (saved != null) "Started from your template." else "Started from the built-in template.",
+                if (saved != null) "Started from \"${chosen.name}\"." else "Started from the built-in template.",
             )
             saveProgressSoon()
         }

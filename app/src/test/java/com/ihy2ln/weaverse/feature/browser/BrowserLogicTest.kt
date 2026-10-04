@@ -48,4 +48,21 @@ class BrowserLogicTest {
         assertTrue(BrowserData.DEFAULT_FAVORITES.any { it.url == WeaverPages.SOCIAL })
         assertTrue(BrowserData.DEFAULT_FAVORITES.filter { it.url in WeaverPages.MODES }.size == WeaverPages.MODES.size)
     }
+
+    @Test
+    fun modesAreBrowserPages() {
+        assertEquals("Storyboard", WeaverPages.modeOf("weaver://manga"))
+        assertEquals("Novel", WeaverPages.modeOf("weaver://novel/"))
+        assertNull(WeaverPages.modeOf(WeaverPages.SOCIAL))
+        assertNull(WeaverPages.modeOf("https://example.com"))
+        assertEquals("Chatting", WeaverPages.shellModeOf(WeaverPages.CHATS))
+        assertEquals("Notes", WeaverPages.shellModeOf("weaver://notes"))
+        assertEquals("weaver://rpg", WeaverPages.urlOfMode("Roleplay"))
+        assertEquals(WeaverPages.SOCIAL, WeaverPages.urlOfMode("Chatting"))
+        assertEquals("Manga Studio", WeaverPages.titleOf("weaver://manga"))
+        assertEquals("RPG", WeaverPages.titleOf("weaver://rpg"))
+        assertTrue(WeaverPages.isHome(WeaverPages.HOME))
+        assertTrue(WeaverPages.isHome(WeaverPages.NEW_TAB))
+        assertFalse(WeaverPages.isHome("weaver://novel"))
+    }
 }

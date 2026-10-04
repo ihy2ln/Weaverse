@@ -82,6 +82,7 @@ class WriteViewModel @Inject constructor(
     private val workspaceHistory: WorkspaceHistory,
     private val modelCache: OpenRouterModelCache,
     private val writeStamps: com.ihy2ln.weaverse.data.repo.SceneWriteStamps,
+    private val illustrator: com.ihy2ln.weaverse.core.media.GeneratedTextIllustrator,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(WriteUiState())
     val uiState: StateFlow<WriteUiState> = _uiState.asStateFlow()
@@ -1176,6 +1177,31 @@ class WriteViewModel @Inject constructor(
         updateBlocksSync(recordHistory = true) { blocks ->
             blocks.clear()
             blocks.addAll(candidate)
+        }
+        val prompt = overlay.prompt
+        viewModelScope.launch {
+            // Codex characters and places the passage names, and buildings it summons, get their
+            // pictures right after the paragraph that first mentions them.
+            runCatching {
+                val illustrated = illustrator.illustrate(text, prompt) ?: return@runCatching
+                var paragraphBefore: String? = null
+                illustrated.forEach { block ->
+                    when (block) {
+                        is com.ihy2ln.weaverse.core.text.Paragraph -> paragraphBefore = block.spans.joinToString("") { it.text }
+                        is com.ihy2ln.weaverse.core.text.MediaBlock -> {
+                            val blocks = _uiState.value.blocks
+                            val after = paragraphBefore?.let { p ->
+                                blocks.indexOfLast { b ->
+                                    b is com.ihy2ln.weaverse.core.text.Paragraph &&
+                                        b.spans.joinToString("") { it.text }.let { t -> t.isNotBlank() && (p in t || t in p) }
+                                }
+                            } ?: -1
+                            insertMediaBlock(if (after >= 0) after else blocks.lastIndex, block.mediaId, block.kind)
+                        }
+                        else -> Unit
+                    }
+                }
+            }
         }
         if (extracted.second.isNotEmpty()) {
             viewModelScope.launch {
