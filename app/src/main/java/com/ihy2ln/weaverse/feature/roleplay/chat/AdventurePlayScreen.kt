@@ -410,7 +410,7 @@ private fun IllustratedReply(
         ) {
             here.forEach { art ->
                 Column(
-                    Modifier.weight(1f, fill = false).widthIn(max = if (here.size == 1) 320.dp else 200.dp),
+                    Modifier.weight(1f, fill = false).widthIn(max = if (here.size == 1) 220.dp else 160.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     AsyncImage(

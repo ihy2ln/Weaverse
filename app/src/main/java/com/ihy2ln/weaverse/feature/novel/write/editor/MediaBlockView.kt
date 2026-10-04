@@ -50,8 +50,6 @@ import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import java.io.File
 
-/** The tallest a picture in the manuscript is drawn. */
-private val MediaMaxHeight = 460.dp
 
 @OptIn(ExperimentalFoundationApi::class)
 @Suppress("UNUSED_PARAMETER")
@@ -102,6 +100,8 @@ fun MediaBlockView(
 
     // The frame hugs the picture: sized to its own shape (so a tall portrait isn't a thin strip in
     // a wide empty box), up to the chosen width and a generous height.
+    // Short enough to see a whole picture without scrolling: 40% of the screen, at most 340dp.
+    val MediaMaxHeight = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * 0.4f).dp.coerceAtMost(340.dp)
     val aspect = remember(mediaPath) {
         if (block.kind != MediaKind.Image || mediaPath == null) null
         else runCatching {

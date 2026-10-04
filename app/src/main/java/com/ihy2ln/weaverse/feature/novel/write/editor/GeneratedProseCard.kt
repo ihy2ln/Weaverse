@@ -205,7 +205,7 @@ private fun IllustratedDraft(
         ) {
             here.forEach { (index, picture) ->
                 Column(
-                    Modifier.weight(1f, fill = false).widthIn(max = if (here.size == 1) 320.dp else 200.dp),
+                    Modifier.weight(1f, fill = false).widthIn(max = if (here.size == 1) 220.dp else 160.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     androidx.compose.foundation.layout.Box {
