@@ -331,7 +331,12 @@ internal fun MihonMangaHome(
                         )
                     }
                 }
-                if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter))
+                val pageProgress = state.pageProgress
+                if (pageProgress != null) {
+                    MihonProgressBar(pageProgress, "Preparing pages", Modifier.fillMaxWidth().align(Alignment.TopCenter))
+                } else if (state.busy) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter))
+                }
             }
             }
         }
@@ -1608,6 +1613,7 @@ private fun MihonMangaDetail(state: MangaSourceUiState, viewModel: MangaSourceVi
                 Column(Modifier.weight(1f)) {
                     Text(mihonChapterLabel(chapter), maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text(chapter.language.uppercase(), color = MihonMuted, style = MaterialTheme.typography.bodySmall)
+                    if (existing != null) MihonDownloadStatus(existing)
                 }
                 when (existing?.status) {
                     "completed" -> {
@@ -2032,8 +2038,44 @@ private fun MihonChapterRow(
             Text(chapter.mangaTitle.ifBlank { chapter.title }, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
             Text(chapter.title, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MihonMuted, style = MaterialTheme.typography.bodySmall)
             Text(DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(chapter.downloadedAt ?: chapter.updatedAt)), color = MihonMuted, style = MaterialTheme.typography.labelSmall)
+            MihonDownloadStatus(chapter)
         }
         trailing()
+    }
+}
+
+/** Queued / downloading: a 0-100% bar with the percentage; failed: why. Nothing once downloaded. */
+@Composable
+private fun MihonDownloadStatus(chapter: MangaChapterEntity) {
+    when (chapter.status) {
+        "queued" -> MihonProgressBar(null, "Queued", Modifier.fillMaxWidth().padding(top = 6.dp))
+        "downloading" -> MihonProgressBar(chapter.progress / 100f, "Downloading", Modifier.fillMaxWidth().padding(top = 6.dp))
+        "failed" -> if (chapter.errorMessage.isNotBlank()) {
+            Text(chapter.errorMessage, color = MihonError, style = MaterialTheme.typography.labelSmall, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+/** A labelled 0-100% bar; [fraction] null means waiting to start. */
+@Composable
+private fun MihonProgressBar(fraction: Float?, label: String, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        if (fraction == null) {
+            LinearProgressIndicator(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)), color = MihonPrimary)
+        } else {
+            LinearProgressIndicator(
+                progress = { fraction.coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                color = MihonPrimary,
+                trackColor = MihonSurfaceHigh,
+            )
+        }
+        Text(
+            if (fraction == null) label else "$label · ${(fraction.coerceIn(0f, 1f) * 100).toInt()}%",
+            color = MihonMuted,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(top = 2.dp),
+        )
     }
 }
 

@@ -109,12 +109,18 @@ class MangaDownloadRepository @Inject constructor(
      * What the online reader shows for each page: its URL, or for a shuffled page (MangaRaw) a cached copy with the
      * tiles put back, since the image as served is a jumble.
      */
-    suspend fun readablePagePaths(chapter: MangaChapter, pages: List<MangaPage>): List<String> = withContext(Dispatchers.IO) {
+    suspend fun readablePagePaths(
+        chapter: MangaChapter,
+        pages: List<MangaPage>,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): List<String> = withContext(Dispatchers.IO) {
         if (pages.none { ScrambledPages.isScrambled(it.remoteUrl) }) return@withContext pages.map { it.remoteUrl }
         val dir = File(context.cacheDir, "manga-online/${sha256(chapter.remoteId.toByteArray()).take(16)}").apply { mkdirs() }
         val quick = okHttpClient.newBuilder().connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
             .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS).build()
         val gate = kotlinx.coroutines.sync.Semaphore(4)
+        val done = java.util.concurrent.atomic.AtomicInteger(0)
+        onProgress(0, pages.size)
         try {
             kotlinx.coroutines.coroutineScope {
                 pages.map { page ->
@@ -133,13 +139,14 @@ class MangaDownloadRepository @Inject constructor(
                             }
                             file.writeBytes(ScrambledPages.fix(page.remoteUrl, bytes))
                         }
+                        onProgress(done.incrementAndGet(), pages.size)
                         file.absolutePath
                     }
                 }.awaitAll()
             }
         } catch (io: java.io.IOException) {
             val host = runCatching { java.net.URI(pages.first().remoteUrl).host }.getOrNull() ?: "the image server"
-            error("Could not reach $host for this chapter's pages (${io.message}). The site's images may be blocked on this network.")
+            error(unreachableMessage(host, io))
         }
     }
 
@@ -746,6 +753,23 @@ class MangaDownloadRepository @Inject constructor(
             importedCount = media.size,
             pageIds = importedPageIds,
         )
+    }
+
+    /**
+     * A connect failure or timeout to a site's image server is nearly always that server being down rather than
+     * the user's network (MangaRaw's img-cdn.stackpathcdn.app was unreachable worldwide in Oct 2026, and the site's
+     * own reader showed no pages either), so say that and point at another source.
+     */
+    private fun unreachableMessage(host: String, io: java.io.IOException): String {
+        val down = io is java.net.ConnectException || io is java.net.SocketTimeoutException ||
+            io is java.net.NoRouteToHostException || io.message.orEmpty().contains("Failed to connect", ignoreCase = true)
+        return if (down) {
+            "The site's image server ($host) isn't answering, so these pages can't load. This is usually the site's own " +
+                "server being down for everyone, not your network. Try the same title from another source " +
+                "(Browse → search all sources), or come back later."
+        } else {
+            "Could not load this chapter's pages from $host (${io.message})."
+        }
     }
 
     private suspend fun updateProgress(

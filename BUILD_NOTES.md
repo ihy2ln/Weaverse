@@ -3,6 +3,24 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.91 - Manga download progress bars; a plain answer when a site's image server is down
+
+- MangaRaw (mangaraw.ac) chapters failed with "Could not reach img-cdn.stackpathcdn.app". Checked 2026-10-04: that
+  host (185.255.120.53, same answer from Cloudflare and Google DNS) timed out from Austria, Switzerland, Germany,
+  Iran, Moldova and the USA (check-host.net), and mangaraw.ac's own reader showed no pages either; its
+  `/api/v1/get/c` still names that host. Nothing in the app can fix a dead server, so the error now says the site's
+  image server isn't answering (usually down for everyone, not the user's network) and points at Browse → search
+  all sources. Rawkuma is unaffected: its reader now serves pages from kuma.kyut.dev.
+- Downloads show a 0-100% bar with the percentage under the chapter (title page chapter list, download queue and
+  library rows): "Queued" (indeterminate) → "Downloading · 42%"; a failed chapter shows its error.
+- Online reading of shuffled-tile chapters (MangaRaw) prepares every page before the reader opens; that now shows
+  a "Preparing pages · N%" bar instead of an indeterminate one (`MangaSourceUiState.pageProgress`,
+  `readablePagePaths(onProgress)`).
+- Built on claude/wv-cardgame (v1.4.90). 652 unit tests pass. Not seen on a device: the card game build is
+  arm64-only (no x86 emulator) and the phone was not connected.
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.4.91.apk`, SHA-256
+  `8b257e4f3c445d5d16bce2b715e8b84fa2887d375a1a88fb4e0f7123ad090882`.
+
 ## v1.4.90 - Adams Haven: The Card Game (Unity, embedded) replaces the Godot game
 
 - Games mode now hosts the Adams Haven Card Game, a new Unity 6000.6.3f1 project at

@@ -124,6 +124,8 @@ data class MangaSourceUiState(
     /** Ready to open in the studio: set once an online chapter's pages are on the phone. */
     val pendingEdit: MangaEditRequest? = null,
     val busy: Boolean = false,
+    /** 0..1 while an online chapter's pages are being prepared (fetched and un-shuffled); null otherwise. */
+    val pageProgress: Float? = null,
     /** Pull-to-refresh on the title's info page is reloading details and chapters. */
     val refreshingDetails: Boolean = false,
     val status: String = "",
@@ -750,13 +752,16 @@ class MangaSourceViewModel @Inject constructor(
         runCatching {
             val pages = repository.loadPages(chapter).sortedBy { it.pageIndex }
             val persisted = repository.addDiscoveredChapter(chapter)
-            Triple(pages, persisted, repository.readablePagePaths(chapter, pages))
+            Triple(pages, persisted, repository.readablePagePaths(chapter, pages) { done, total ->
+                local.value = local.value.copy(pageProgress = if (total > 0) done.toFloat() / total else null)
+            })
         }
             .onSuccess { (pages, persisted, paths) ->
                 if (pages.isNotEmpty()) repository.recordHomeAccess(persisted.sourceId, persisted.mangaId)
                 val readerChapter = persisted.copy(pageCount = pages.size, status = "online")
                 local.value = local.value.copy(
                     busy = false,
+                    pageProgress = null,
                     readerChapter = readerChapter.takeIf { pages.isNotEmpty() },
                     readerPagePaths = paths,
                     readerPageIndex = pageIndex.coerceIn(0, (pages.size - 1).coerceAtLeast(0)),
@@ -764,7 +769,7 @@ class MangaSourceViewModel @Inject constructor(
                     status = if (pages.isEmpty()) "This source returned no readable page images." else "",
                 )
             }
-            .onFailure { local.value = local.value.copy(busy = false, status = it.message ?: "Could not stream this chapter.") }
+            .onFailure { local.value = local.value.copy(busy = false, pageProgress = null, status = it.message ?: "Could not stream this chapter.") }
     }
 
     /**
