@@ -79,7 +79,8 @@ fun WriteScreen(
     val draftPictures by viewModel.draftPictures.collectAsState()
     // Once a draft has finished writing (or is edited), work out the pictures it will carry.
     val draft = state.aiOverlay
-    LaunchedEffect(draft?.streamingText, draft?.isStreaming) {
+    // Keyed on the draft finishing (not on its text), so the writer's own picture edits stay put.
+    LaunchedEffect(draft?.isStreaming, draft?.candidates?.size, draft?.targetSceneId) {
         if (draft != null && !draft.isStreaming && draft.streamingText.isNotBlank()) {
             kotlinx.coroutines.delay(400)
             viewModel.illustrateDraft(draft.streamingText, draft.prompt)
@@ -278,6 +279,8 @@ fun WriteScreen(
                 },
                 onChooseEarlierGenerated = viewModel::chooseCandidate,
                 onEditGenerated = viewModel::updateGeneratedDraft,
+                onRemoveDraftPicture = viewModel::removeDraftPicture,
+                onMoveDraftPicture = viewModel::moveDraftPicture,
                 caretRequest = state.caretRequest,
                 onPlaceCaret = { index -> viewModel.placeCaret(index) },
                 onPlaceCaretAtEnd = viewModel::placeCaretAtEnd,

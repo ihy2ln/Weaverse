@@ -3,6 +3,27 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.5.5-1.5.6 - Selection popups, cursor inserts, editable illustrated drafts
+
+- 1.5.5: selecting text no longer brings a popup back forever.
+  - **Write editor:** the custom TextToolbar reported Hidden, so Compose kept calling showMenu and reopened the
+    edit popup right after it was closed. It now reports Shown and opens once per selection.
+  - **Adventure:** showMenu auto-copied on every call, so Android's "Copied" popup repeated. It now copies once
+    per selection.
+- 1.5.6: an insert at the cursor was refused ("The insertion passage changed…") because the editor had trimmed
+  one trailing blank line from the paragraph after the draft was made. `resolveCursorOffset` now ignores trailing
+  whitespace; real edits are still refused. A cursor insert also splits the paragraph around the illustrated
+  draft, so pictures sit inside the prose there too.
+- The illustrated draft preview is editable:
+  - Every paragraph is a text field.
+  - Every picture has ↑ / ↓ (move a paragraph) and ✕ (remove).
+  - "Plain text" switches to the single text field.
+  - Insert builds the layout from the edited text and the pictures as arranged (`draftBlocks`).
+  - Pictures are worked out once when the draft finishes, so edits aren't undone.
+- 675 unit tests pass. Installed on the phone.
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.5.6.apk`, SHA-256
+  `6a5620ea3dc56c79c3f662b83845d4a536f5cf8b29fed8c27759886551b47588`.
+
 ## v1.5.3-1.5.4 - Pictures inside the draft and the inserted prose, side by side
 
 - 1.5.3: a finished Write-screen AI draft works out its pictures (`illustrateDraft`); before, they were only

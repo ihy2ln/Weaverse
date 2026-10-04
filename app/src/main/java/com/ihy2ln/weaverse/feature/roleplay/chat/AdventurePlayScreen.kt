@@ -244,8 +244,11 @@ private fun AddTextSelectionContainer(
                 onCutRequested: (() -> Unit)?,
                 onSelectAllRequested: (() -> Unit)?,
             ) {
-                onCopyRequested?.invoke()
+                // Compose asks for the menu again on every selection change and recomposition. Copy
+                // and offer "Add text" once per selection, or Android's "Copied" popup never stops.
+                if (status == TextToolbarStatus.Shown) return
                 status = TextToolbarStatus.Shown
+                onCopyRequested?.invoke()
                 latestOnSelectionReady()
             }
 

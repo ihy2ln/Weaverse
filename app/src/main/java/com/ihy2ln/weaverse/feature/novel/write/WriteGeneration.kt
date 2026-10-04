@@ -106,9 +106,20 @@ class WriteGeneration @Inject constructor(
         }
         if (overlay.cursorOffset != null && anchored != null) {
             val paragraph = blocks[anchored] as? Paragraph ?: error("The target is no longer a paragraph.")
-            check(paragraph.plainText() == overlay.sourceParagraphText) { "The insertion passage changed. Retarget at the current cursor; your candidate is kept." }
-            val offset = overlay.cursorOffset
-            check(offset in 0..paragraph.plainText().length) { "Invalid cursor target." }
+            val offset = resolveCursorOffset(paragraph.plainText(), overlay.sourceParagraphText, overlay.cursorOffset)
+            if (!illustrated.isNullOrEmpty()) {
+                // Pictures go inside the prose: the paragraph splits at the cursor around the
+                // illustrated draft (its paragraphs with pictures between them).
+                val length = paragraph.plainText().length
+                val before = paragraph.copy(spans = paragraph.spans.replaceRangeText(offset, length, ""))
+                val after = paragraph.copy(id = java.util.UUID.randomUUID().toString(), spans = paragraph.spans.replaceRangeText(0, offset, ""))
+                val pieces = buildList {
+                    if (before.plainText().isNotBlank()) add(before)
+                    addAll(illustrated)
+                    if (after.plainText().isNotBlank()) add(after)
+                }
+                return blocks.toMutableList().apply { removeAt(anchored); addAll(anchored, pieces) }
+            }
             return blocks.toMutableList().also { it[anchored] = paragraph.copy(spans = paragraph.spans.replaceRangeText(offset, offset, text)) }
         }
         if (!illustrated.isNullOrEmpty()) {
@@ -120,6 +131,17 @@ class WriteGeneration @Inject constructor(
             generatedText = text,
             beatPrompt = null,
         )
+    }
+
+    /**
+     * Where a cursor insert lands now. The passage must still read the same, but trailing blank lines
+     * don't count (the editor trims them when it saves); any real edit asks for a retarget.
+     */
+    internal fun resolveCursorOffset(current: String, original: String?, offset: Int): Int {
+        check(original == null || current.trimEnd() == original.trimEnd()) {
+            "The insertion passage changed. Retarget at the current cursor; your candidate is kept."
+        }
+        return offset.coerceIn(0, current.length)
     }
 
     suspend fun prepareStream(

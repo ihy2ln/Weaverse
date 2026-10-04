@@ -108,6 +108,8 @@ fun DocumentEditor(
     onCopyGenerated: () -> Unit = {},
     onChooseEarlierGenerated: (Int) -> Unit = {},
     onEditGenerated: (String) -> Unit = {},
+    onRemoveDraftPicture: (Int) -> Unit = {},
+    onMoveDraftPicture: (Int, Int) -> Unit = { _, _ -> },
     /** Rises whenever the caret should jump into a block after a tap off the text. */
     caretRequest: CaretRequest? = null,
     /** A tap that missed the text of a line; the block it landed on takes the caret. */
@@ -231,6 +233,8 @@ fun DocumentEditor(
                             onCopy = onCopyGenerated,
                             onChooseEarlier = onChooseEarlierGenerated,
                             onTextChange = onEditGenerated,
+                            onRemovePicture = onRemoveDraftPicture,
+                            onMovePicture = onMoveDraftPicture,
                         )
                     }
                 }
@@ -245,6 +249,8 @@ fun DocumentEditor(
                         onCopy = onCopyGenerated,
                         onChooseEarlier = onChooseEarlierGenerated,
                         onTextChange = onEditGenerated,
+                            onRemovePicture = onRemoveDraftPicture,
+                            onMovePicture = onMoveDraftPicture,
                     )
                 }
             }

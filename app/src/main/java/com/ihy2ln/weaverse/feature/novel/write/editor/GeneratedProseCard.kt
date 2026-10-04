@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
@@ -55,7 +56,7 @@ data class GeneratedProse(
 )
 
 /** A picture the draft will carry: its file, caption, and the paragraph it follows (-1 = above). */
-data class DraftPicture(val path: String, val caption: String, val afterParagraph: Int)
+data class DraftPicture(val path: String, val caption: String, val afterParagraph: Int, val mediaId: String = "")
 
 /**
  * Shows a generated draft inline in the story, in a contrasting panel so it can never
@@ -72,6 +73,10 @@ fun GeneratedProseCard(
     onChooseEarlier: (Int) -> Unit,
     /** Edits the draft in place, before it is inserted into the manuscript. */
     onTextChange: (String) -> Unit = {},
+    /** Removes a picture from the draft, by its place in [GeneratedProse.pictures]. */
+    onRemovePicture: (Int) -> Unit = {},
+    /** Moves a picture up or down a paragraph. */
+    onMovePicture: (index: Int, delta: Int) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
 ) {
     var showOriginal by remember(prose.afterBlockId) { mutableStateOf(false) }
@@ -124,7 +129,13 @@ fun GeneratedProseCard(
                 )
             }
         } else if (prose.pictures.isNotEmpty() && !editingText) {
-            IllustratedDraft(prose, Modifier.fillMaxWidth().heightIn(max = 520.dp).verticalScroll(rememberScrollState()))
+            IllustratedDraft(
+                prose = prose,
+                onTextChange = onTextChange,
+                onRemovePicture = onRemovePicture,
+                onMovePicture = onMovePicture,
+                modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
+            )
         } else {
             // The draft is editable here, so a near-miss can be fixed by hand instead
             // of being inserted and then corrected in the manuscript.
@@ -153,7 +164,7 @@ fun GeneratedProseCard(
             ) {
                 ProseAction(if (prose.replacing) "Replace" else "Insert", onAccept)
                 ProseAction("Retry", onRetry)
-                if (prose.pictures.isNotEmpty()) ProseAction(if (editingText) "Preview" else "Edit text") { editingText = !editingText }
+                if (prose.pictures.isNotEmpty()) ProseAction(if (editingText) "With pictures" else "Plain text") { editingText = !editingText }
                 if (prose.original.isNotBlank()) {
                     ProseAction(if (showOriginal) "Candidate" else "Compare") { showOriginal = !showOriginal }
                 }
@@ -167,30 +178,52 @@ fun GeneratedProseCard(
     }
 }
 
-/** The draft as it will land: its paragraphs, with pictures side by side where they're named. */
+/**
+ * The draft as it will land, and editable as such: each paragraph is a text field, and each picture
+ * (side by side where several share a spot) can be moved up or down a paragraph or removed.
+ */
 @Composable
-private fun IllustratedDraft(prose: GeneratedProse, modifier: Modifier) {
+private fun IllustratedDraft(
+    prose: GeneratedProse,
+    onTextChange: (String) -> Unit,
+    onRemovePicture: (Int) -> Unit,
+    onMovePicture: (Int, Int) -> Unit,
+    modifier: Modifier,
+) {
     val paragraphs = com.ihy2ln.weaverse.core.media.splitIntoParagraphs(prose.text)
     val color = MaterialTheme.colorScheme.onSecondaryContainer
+    val accent = MaterialTheme.colorScheme.primary
     @Composable
     fun pictures(at: Int) {
-        val here = prose.pictures.filter { it.afterParagraph == at }
+        val here = prose.pictures.withIndex().filter { (_, p) ->
+            p.afterParagraph.coerceAtMost(paragraphs.lastIndex) == at
+        }
         if (here.isEmpty()) return
         Row(
             Modifier.fillMaxWidth().padding(vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
         ) {
-            here.forEach { picture ->
+            here.forEach { (index, picture) ->
                 Column(
                     Modifier.weight(1f, fill = false).widthIn(max = if (here.size == 1) 220.dp else 180.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    coil3.compose.AsyncImage(
-                        model = java.io.File(picture.path),
-                        contentDescription = picture.caption,
-                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                        modifier = Modifier.fillMaxWidth().aspectRatio(0.75f).clip(RoundedCornerShape(10.dp)),
-                    )
+                    androidx.compose.foundation.layout.Box {
+                        coil3.compose.AsyncImage(
+                            model = java.io.File(picture.path),
+                            contentDescription = picture.caption,
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            modifier = Modifier.fillMaxWidth().aspectRatio(0.75f).clip(RoundedCornerShape(10.dp)),
+                        )
+                        Row(
+                            Modifier.align(Alignment.TopEnd).padding(4.dp)
+                                .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.55f), RoundedCornerShape(50)),
+                        ) {
+                            PictureControl("\u2191", "Move up") { onMovePicture(index, -1) }
+                            PictureControl("\u2193", "Move down") { onMovePicture(index, 1) }
+                            PictureControl("\u2715", "Remove picture") { onRemovePicture(index) }
+                        }
+                    }
                     Text(picture.caption, fontSize = 11.sp, maxLines = 1, color = color.copy(alpha = 0.8f))
                 }
             }
@@ -199,10 +232,28 @@ private fun IllustratedDraft(prose: GeneratedProse, modifier: Modifier) {
     Column(modifier.padding(vertical = 4.dp)) {
         pictures(-1)
         paragraphs.forEachIndexed { i, p ->
-            Text(p, style = MaterialTheme.typography.bodyLarge, color = color, modifier = Modifier.padding(bottom = 6.dp))
+            // Typing here edits the draft itself; the paragraphs are rejoined with blank lines.
+            BasicTextField(
+                value = p,
+                onValueChange = { next ->
+                    onTextChange(paragraphs.toMutableList().also { it[i] = next }.joinToString("\n\n"))
+                },
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = color),
+                cursorBrush = SolidColor(accent),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+            )
             pictures(i)
         }
     }
+}
+
+@Composable
+private fun PictureControl(symbol: String, description: String, onClick: () -> Unit) {
+    androidx.compose.foundation.layout.Box(
+        Modifier.size(28.dp).clip(RoundedCornerShape(50))
+            .clickable(onClickLabel = description, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Text(symbol, color = androidx.compose.ui.graphics.Color.White, fontSize = 13.sp) }
 }
 
 @Composable

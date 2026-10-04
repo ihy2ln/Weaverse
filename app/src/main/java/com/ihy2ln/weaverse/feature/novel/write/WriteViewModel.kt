@@ -102,19 +102,76 @@ class WriteViewModel @Inject constructor(
                     is com.ihy2ln.weaverse.core.text.Paragraph -> paragraph++
                     is com.ihy2ln.weaverse.core.text.MediaBlock -> mediaOps.resolvePaths(listOf(block.mediaId))[block.mediaId]?.let { path ->
                         pictures += com.ihy2ln.weaverse.feature.novel.write.editor.DraftPicture(
-                            path, block.caption.joinToString("") { it.text }, paragraph,
+                            path, block.caption.joinToString("") { it.text }, paragraph, block.mediaId,
                         )
+                    }
+                    is com.ihy2ln.weaverse.core.text.MediaGridBlock -> {
+                        val paths = mediaOps.resolvePaths(block.mediaIds)
+                        block.mediaIds.forEach { id ->
+                            paths[id]?.let { path ->
+                                val name = db.mediaDao().getById(id)?.displayName.orEmpty()
+                                pictures += com.ihy2ln.weaverse.feature.novel.write.editor.DraftPicture(path, name, paragraph, id)
+                            }
+                        }
                     }
                     else -> Unit
                 }
             }
             _draftPictures.value = pictures
-            draftIllustration = if (blocks.isEmpty()) null else text to blocks
         }
     }
 
-    /** The finished draft split into paragraphs with its pictures in place, for Insert. */
-    private var draftIllustration: Pair<String, List<com.ihy2ln.weaverse.core.text.Block>>? = null
+    /** Takes a picture out of the waiting draft. */
+    fun removeDraftPicture(index: Int) {
+        _draftPictures.update { it.filterIndexed { i, _ -> i != index } }
+    }
+
+    /** Moves a draft picture up or down a paragraph (above the first is the top of the draft). */
+    fun moveDraftPicture(index: Int, delta: Int) {
+        val paragraphs = com.ihy2ln.weaverse.core.media.splitIntoParagraphs(_uiState.value.aiOverlay?.streamingText.orEmpty())
+        _draftPictures.update { list ->
+            list.mapIndexed { i, p ->
+                if (i != index) p
+                else p.copy(afterParagraph = (p.afterParagraph.coerceAtMost(paragraphs.lastIndex) + delta).coerceIn(-1, paragraphs.lastIndex))
+            }
+        }
+    }
+
+    /**
+     * The draft as Insert lays it out: its paragraphs as they stand now (edits included) with the
+     * pictures the writer kept, side by side where several share a spot. Null without pictures.
+     */
+    private fun draftBlocks(text: String): List<com.ihy2ln.weaverse.core.text.Block>? {
+        val pictures = _draftPictures.value
+        if (pictures.isEmpty()) return null
+        val paragraphs = com.ihy2ln.weaverse.core.media.splitIntoParagraphs(text)
+        if (paragraphs.isEmpty()) return null
+        fun at(spot: Int): List<com.ihy2ln.weaverse.core.text.Block> {
+            val here = pictures.filter { it.afterParagraph.coerceAtMost(paragraphs.lastIndex) == spot && it.mediaId.isNotBlank() }
+            return when {
+                here.isEmpty() -> emptyList()
+                here.size == 1 -> listOf(
+                    com.ihy2ln.weaverse.core.text.MediaBlock(
+                        id = "illus-${java.util.UUID.randomUUID()}",
+                        mediaId = here[0].mediaId,
+                        kind = MediaKind.Image,
+                        widthPercent = 60f,
+                        caption = listOf(com.ihy2ln.weaverse.core.text.Span(here[0].caption)),
+                    ),
+                )
+                else -> listOf(
+                    com.ihy2ln.weaverse.core.text.MediaGridBlock(
+                        id = "illus-grid-${java.util.UUID.randomUUID()}",
+                        mediaIds = here.map { it.mediaId },
+                        template = "${here.size}-up",
+                    ),
+                )
+            }
+        }
+        return at(-1) + paragraphs.flatMapIndexed { i, p ->
+            listOf(com.ihy2ln.weaverse.core.text.Paragraph("p-${java.util.UUID.randomUUID()}", listOf(com.ihy2ln.weaverse.core.text.Span(p)))) + at(i)
+        }
+    }
     private val json = Json { ignoreUnknownKeys = true }
     private var bookId: String = "book-adams-haven-1"
 
@@ -1197,8 +1254,10 @@ class WriteViewModel @Inject constructor(
             return
         }
         // A plain insert carries the pictures inside the prose, each after the paragraph that names it.
-        val illustrated = draftIllustration?.takeIf { it.first.trim() == text.trim() }?.second
-        val inlinePictures = illustrated != null && overlay.replaceBlockIndex == null && overlay.cursorOffset == null
+        val illustrated = draftBlocks(text)
+        // A plain insert and a cursor insert both carry the pictures inside the prose; a replace keeps
+        // its text-only path.
+        val inlinePictures = illustrated != null && overlay.replaceBlockIndex == null
         val candidate = try {
             writeGeneration.acceptIntoBlocks(_uiState.value.blocks, overlay, text, illustrated.takeIf { inlinePictures })
         }
@@ -1213,7 +1272,6 @@ class WriteViewModel @Inject constructor(
             blocks.addAll(candidate)
         }
         val prompt = overlay.prompt
-        draftIllustration = null
         _draftPictures.value = emptyList()
         if (inlinePictures) viewModelScope.launch {
             // The editor needs file paths for the pictures that just came in with the prose.

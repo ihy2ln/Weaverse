@@ -111,10 +111,14 @@ fun BlockEditorField(
     }
 
     val latestOnShow by rememberUpdatedState(onShowEditPopupChange)
+    val currentSelection by rememberUpdatedState(value.selection)
     val toolbar = remember {
         object : TextToolbar {
             override var status: TextToolbarStatus = TextToolbarStatus.Hidden
                 private set
+
+            /** The selection the popup last opened for; Compose re-asks for the same one over and over. */
+            private var openedFor: TextRange? = null
 
             override fun showMenu(
                 rect: Rect,
@@ -123,12 +127,19 @@ fun BlockEditorField(
                 onCutRequested: (() -> Unit)?,
                 onSelectAllRequested: (() -> Unit)?,
             ) {
-                status = TextToolbarStatus.Hidden
+                // Reporting Shown stops Compose re-requesting the menu on every frame, and the popup
+                // opens once per selection: closing it doesn't bring it straight back.
+                status = TextToolbarStatus.Shown
+                val selection = currentSelection
+                if (selection == openedFor) return
+                openedFor = selection
                 latestOnShow(true)
             }
 
             override fun hide() {
                 status = TextToolbarStatus.Hidden
+                // A collapsed caret (no selection) lets the next selection open the popup again.
+                if (currentSelection.collapsed) openedFor = null
             }
         }
     }
