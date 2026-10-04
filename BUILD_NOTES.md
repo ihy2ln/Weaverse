@@ -3,6 +3,27 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.5.9 - No media added behind the writer's back; delete media anywhere
+
+- **New scenes start empty.** `ManuscriptRepository.createScene` used to search the library with the chapter
+  title and the previous scene's text and insert up to 2 pictures and 1 video into every new scene or chapter
+  (PlanViewModel, createChapter, Brainstorm promote). That is removed.
+- **Write AI Accept** adds only the pictures the writer kept in the draft preview.
+  - The second illustration pass is gone. It re-added pictures even after every suggested picture was removed,
+    and on replace.
+  - The prompt no longer invites `[MEDIA type=… query=…]` lines, which had auto-inserted library pictures and
+    videos at the end of the scene. Any such line is still stripped from the prose.
+- **Deleting:**
+  - Videos and audio always show their delete button; taps go to the player, so they couldn't be selected and
+    the button never appeared.
+  - Write menu: "Remove all media (this scene)" (undoable) and "Remove all media (whole book)…" (confirmed;
+    every scene of the book; files stay in the library).
+  - Adventure "Scene art" menu: "Remove this picture" and "Remove all pictures from this campaign".
+  - Helpers: `Block.isMedia()` and `Document.withoutMedia()`.
+- 675 unit tests pass. Not installed: the phone disconnected from adb.
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.5.9.apk`, SHA-256
+  `90f8d7416c9bf3eff59bb2da7e58d778c2ba2ad881c773e7e508d29502e48a03`.
+
 ## v1.5.8 - Pictures sized to fit on screen
 
 - Manuscript pictures are capped at 40% of the screen height (at most 340dp), so a whole picture is visible

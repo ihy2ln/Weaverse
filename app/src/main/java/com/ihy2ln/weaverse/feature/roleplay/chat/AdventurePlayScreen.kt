@@ -981,6 +981,20 @@ fun AdventurePlayScreen(
                             viewModel.requestMediaPick()
                         },
                     )
+                    if (sceneArt != null) DropdownMenuItem(
+                        text = { Text("Remove this picture") },
+                        onClick = {
+                            sceneArtMenuOpen = false
+                            viewModel.removeChatMediaBlock(sceneArt.messageId, sceneArt.blockId)
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Remove all pictures from this campaign") },
+                        onClick = {
+                            sceneArtMenuOpen = false
+                            viewModel.removeAllChatMedia()
+                        },
+                    )
                     DropdownMenuItem(
                         text = { Text(if (sceneArtSize == 1) "Expand" else "Collapse") },
                         onClick = {

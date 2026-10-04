@@ -49,6 +49,7 @@ import com.ihy2ln.weaverse.core.ui.components.WorkCharacterOption
 import com.ihy2ln.weaverse.ai.context.ContextBuilder
 import com.ihy2ln.weaverse.ai.context.ContextBuildRequest
 import com.ihy2ln.weaverse.core.text.Block
+import com.ihy2ln.weaverse.core.text.isMedia
 import com.ihy2ln.weaverse.core.text.CodexMentionTarget
 import com.ihy2ln.weaverse.core.text.Document
 import com.ihy2ln.weaverse.core.text.MediaBlock
@@ -1584,6 +1585,31 @@ class RoleplayChatViewModel @Inject constructor(
     override fun onCleared() {
         tts.stop()
         super.onCleared()
+    }
+
+    /** Takes every picture, video and audio out of this campaign's messages; the story text stays. */
+    fun removeAllChatMedia() {
+        val chatId = _uiState.value.chatId.ifBlank { return }
+        viewModelScope.launch {
+            val dao = db.roleplayDao()
+            dao.getMessages(chatId).forEach { m ->
+                val doc = documentFromJson(m.contentJson)
+                if (doc.blocks.any { it.isMedia() && (it as? MediaBlock)?.mediaId != DM_TEXT_TILE_MEDIA_ID }) {
+                    val kept = doc.copy(blocks = doc.blocks.filterNot { it.isMedia() && (it as? MediaBlock)?.mediaId != DM_TEXT_TILE_MEDIA_ID })
+                    dao.upsertMessage(m.copy(contentJson = kept.toJson()))
+                }
+            }
+        }
+    }
+
+    /** Takes one picture (by its block) out of the message that holds it. */
+    fun removeChatMediaBlock(messageId: String, blockId: String) {
+        viewModelScope.launch {
+            val dao = db.roleplayDao()
+            val m = dao.getMessages(_uiState.value.chatId).firstOrNull { it.id == messageId } ?: return@launch
+            val doc = documentFromJson(m.contentJson)
+            dao.upsertMessage(m.copy(contentJson = doc.copy(blocks = doc.blocks.filterNot { it.id == blockId }).toJson()))
+        }
     }
 
     fun requestMediaPick() {

@@ -1,5 +1,8 @@
 package com.ihy2ln.weaverse.feature.novel.write
 
+import com.ihy2ln.weaverse.core.text.isMedia
+import com.ihy2ln.weaverse.core.text.withoutMedia
+
 import android.net.Uri
 import androidx.compose.ui.text.TextRange
 import androidx.lifecycle.ViewModel
@@ -736,6 +739,44 @@ class WriteViewModel @Inject constructor(
         _uiState.update { it.copy(selectedMediaBlockIndex = index) }
     }
 
+    /** Takes every picture, video and audio out of the open scene (undoable). */
+    fun removeAllSceneMedia() {
+        if (_uiState.value.blocks.none { it.isMedia() }) {
+            _uiState.update { it.copy(statusMessage = "This scene has no media") }
+            return
+        }
+        updateBlocks(recordHistory = true) { blocks -> blocks.removeAll { it.isMedia() } }
+        _uiState.update { it.copy(statusMessage = "Removed all media from this scene") }
+    }
+
+    /** Takes every picture, video and audio out of every scene in the open scene's book. */
+    fun removeAllBookMedia() {
+        val scene = loadedScene ?: return
+        viewModelScope.launch {
+            val dao = db.manuscriptDao()
+            val bookId = dao.getChapter(scene.chapterId)?.actId?.let { dao.getAct(it)?.bookId } ?: return@launch
+            var changed = 0
+            dao.getActs(bookId).forEach { act ->
+                dao.getChapters(act.id).forEach { chapter ->
+                    dao.getScenes(chapter.id).forEach { s ->
+                        if (s.id == scene.id) return@forEach
+                        val doc = documentFromJson(s.docJson)
+                        if (doc.blocks.any { it.isMedia() }) {
+                            dao.upsertScene(s.copy(docJson = doc.withoutMedia().toJson(), updatedAt = System.currentTimeMillis()))
+                            changed++
+                        }
+                    }
+                }
+            }
+            // The open scene goes through the editor so it can be undone.
+            if (_uiState.value.blocks.any { it.isMedia() }) {
+                updateBlocks(recordHistory = true) { blocks -> blocks.removeAll { it.isMedia() } }
+                changed++
+            }
+            _uiState.update { it.copy(statusMessage = "Removed all media from $changed scene${if (changed == 1) "" else "s"}") }
+        }
+    }
+
     fun removeMediaBlock(index: Int) {
         val block = _uiState.value.blocks.getOrNull(index) ?: return
         val removedIds = WriteMediaOps.mediaIdsOf(block)
@@ -1271,7 +1312,6 @@ class WriteViewModel @Inject constructor(
             blocks.clear()
             blocks.addAll(candidate)
         }
-        val prompt = overlay.prompt
         _draftPictures.value = emptyList()
         if (inlinePictures) viewModelScope.launch {
             // The editor needs file paths for the pictures that just came in with the prose.
@@ -1279,53 +1319,8 @@ class WriteViewModel @Inject constructor(
             val paths = mediaOps.resolvePaths(ids)
             _uiState.update { it.copy(mediaPaths = it.mediaPaths + paths) }
         }
-        if (!inlinePictures) viewModelScope.launch {
-            // Codex characters and places the passage names, and buildings it summons, get their
-            // pictures right after the paragraph that first mentions them.
-            runCatching {
-                val illustrated = illustrator.illustrate(text, prompt) ?: return@runCatching
-                var paragraphBefore: String? = null
-                illustrated.forEach { block ->
-                    when (block) {
-                        is com.ihy2ln.weaverse.core.text.Paragraph -> paragraphBefore = block.spans.joinToString("") { it.text }
-                        is com.ihy2ln.weaverse.core.text.MediaGridBlock -> {
-                            val blocks = _uiState.value.blocks
-                            val after = paragraphBefore?.let { p ->
-                                blocks.indexOfLast { b ->
-                                    b is com.ihy2ln.weaverse.core.text.Paragraph &&
-                                        b.spans.joinToString("") { it.text }.let { t -> t.isNotBlank() && (p in t || t in p) }
-                                }
-                            } ?: -1
-                            updateBlocksSync(recordHistory = true) { list ->
-                                val next = WriteMediaOps.insertAfter(list, if (after >= 0) after else list.lastIndex, block)
-                                list.clear(); list.addAll(next)
-                            }
-                        }
-                        is com.ihy2ln.weaverse.core.text.MediaBlock -> {
-                            val blocks = _uiState.value.blocks
-                            val after = paragraphBefore?.let { p ->
-                                blocks.indexOfLast { b ->
-                                    b is com.ihy2ln.weaverse.core.text.Paragraph &&
-                                        b.spans.joinToString("") { it.text }.let { t -> t.isNotBlank() && (p in t || t in p) }
-                                }
-                            } ?: -1
-                            insertMediaBlock(if (after >= 0) after else blocks.lastIndex, block.mediaId, block.kind)
-                        }
-                        else -> Unit
-                    }
-                }
-            }
-        }
-        if (extracted.second.isNotEmpty()) {
-            viewModelScope.launch {
-                val resolver = AiMediaResolver { db.mediaDao().observeAll().first() }
-                extracted.second.mapNotNull { resolver.resolve(it) }.forEach { media ->
-                    val index = _uiState.value.blocks.lastIndex
-                    insertMediaBlock(index, media.id, MediaRepository.kindForType(media.type))
-                }
-                _uiState.update { it.copy(statusMessage = "Scene media requests resolved") }
-            }
-        }
+        // Only the pictures the writer kept in the draft go in (above). Nothing else is added
+        // behind their back: no second illustration pass, and the AI's [MEDIA] lines are only stripped.
         finishAiDraft()
     }
 

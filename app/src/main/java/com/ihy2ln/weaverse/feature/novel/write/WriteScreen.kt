@@ -77,6 +77,22 @@ fun WriteScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val draftPictures by viewModel.draftPictures.collectAsState()
+    var confirmRemoveBookMedia by remember { mutableStateOf(false) }
+    if (confirmRemoveBookMedia) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmRemoveBookMedia = false },
+            title = { androidx.compose.material3.Text("Remove all media from this book?") },
+            text = { androidx.compose.material3.Text("Every picture, video and audio in every scene of this book is taken out. The prose stays. The files stay in your media library.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { confirmRemoveBookMedia = false; viewModel.removeAllBookMedia() }) {
+                    androidx.compose.material3.Text("Remove all")
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { confirmRemoveBookMedia = false }) { androidx.compose.material3.Text("Cancel") }
+            },
+        )
+    }
     // Once a draft has finished writing (or is edited), work out the pictures it will carry.
     val draft = state.aiOverlay
     // Keyed on the draft finishing (not on its text), so the writer's own picture edits stay put.
@@ -342,6 +358,8 @@ fun WriteScreen(
                     "Insert" -> {
                         InkTextButton("Insert image / video", closeAction(viewModel::requestAddMedia))
                         InkTextButton("Insert audio", closeAction(viewModel::requestAddAudio))
+                        InkTextButton("Remove all media (this scene)", closeAction(viewModel::removeAllSceneMedia))
+                        InkTextButton("Remove all media (whole book)…", closeAction { confirmRemoveBookMedia = true })
                         InkTextButton("Story media & references", closeAction(onOpenMediaLibrary))
                     }
                     "AI" -> {

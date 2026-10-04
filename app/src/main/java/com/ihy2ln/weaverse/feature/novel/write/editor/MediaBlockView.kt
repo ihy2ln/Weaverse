@@ -210,7 +210,7 @@ fun MediaBlockView(
                     }
                 }
             }
-            if (selected) InkDeleteButton(
+            if (selected || block.kind != MediaKind.Image) InkDeleteButton(
                 itemName = "this media",
                 onConfirmedDelete = onRemove,
                 modifier = Modifier.align(Alignment.TopEnd),

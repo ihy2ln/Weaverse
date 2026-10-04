@@ -213,6 +213,12 @@ data class Document(
     }
 }
 
+/** Pictures, videos and audio in a document (single, stacked or side by side). */
+fun Block.isMedia(): Boolean = this is MediaBlock || this is MediaStackBlock || this is MediaGridBlock
+
+/** The document with every picture, video and audio taken out; the prose stays. */
+fun Document.withoutMedia(): Document = copy(blocks = blocks.filterNot { it.isMedia() })
+
 fun Document.plainText(): String = buildString {
     blocks.forEach { block ->
         when (block) {
