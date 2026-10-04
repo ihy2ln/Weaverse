@@ -73,7 +73,13 @@ class WriteGeneration @Inject constructor(
         )
     }
 
-    fun acceptIntoBlocks(blocks: List<Block>, overlay: AiOverlayState, text: String): List<Block> {
+    fun acceptIntoBlocks(
+        blocks: List<Block>,
+        overlay: AiOverlayState,
+        text: String,
+        /** The draft already split into paragraphs with its pictures in place; used for a plain insert. */
+        illustrated: List<Block>? = null,
+    ): List<Block> {
         // Blocks can shift while the generation streams; re-resolve the anchor by
         // block id so the prose still lands next to the beat/selection it came from.
         val anchored = overlay.anchorBlockId
@@ -104,6 +110,10 @@ class WriteGeneration @Inject constructor(
             val offset = overlay.cursorOffset
             check(offset in 0..paragraph.plainText().length) { "Invalid cursor target." }
             return blocks.toMutableList().also { it[anchored] = paragraph.copy(spans = paragraph.spans.replaceRangeText(offset, offset, text)) }
+        }
+        if (!illustrated.isNullOrEmpty()) {
+            val at = ((anchored ?: overlay.insertAfterIndex) + 1).coerceIn(0, blocks.size)
+            return blocks.toMutableList().apply { addAll(at, illustrated) }
         }
         return blocks.insertGeneratedProseAfter(
             insertAfterIndex = anchored ?: overlay.insertAfterIndex,

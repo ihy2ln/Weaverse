@@ -27,6 +27,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
@@ -46,7 +50,12 @@ data class GeneratedProse(
     /** Block the draft belongs under; null anchors it at the end of the scene. */
     val afterBlockId: String?,
     val earlierCount: Int,
+    /** Pictures of what the draft names (Codex entries, buildings); placed where mentioned on Insert. */
+    val pictures: List<DraftPicture> = emptyList(),
 )
+
+/** A picture the draft will carry: its file, caption, and the paragraph it follows (-1 = above). */
+data class DraftPicture(val path: String, val caption: String, val afterParagraph: Int)
 
 /**
  * Shows a generated draft inline in the story, in a contrasting panel so it can never
@@ -66,6 +75,8 @@ fun GeneratedProseCard(
     modifier: Modifier = Modifier,
 ) {
     var showOriginal by remember(prose.afterBlockId) { mutableStateOf(false) }
+    // With pictures the draft reads as it will be inserted; "Edit text" switches to the text field.
+    var editingText by remember(prose.afterBlockId) { mutableStateOf(false) }
     // Hoisted so the caret survives recomposition while the draft is being edited.
     var field by remember(prose.afterBlockId) {
         mutableStateOf(TextFieldValue(prose.text, TextRange(prose.text.length)))
@@ -112,6 +123,8 @@ fun GeneratedProseCard(
                         .padding(vertical = 4.dp),
                 )
             }
+        } else if (prose.pictures.isNotEmpty() && !editingText) {
+            IllustratedDraft(prose, Modifier.fillMaxWidth().heightIn(max = 520.dp).verticalScroll(rememberScrollState()))
         } else {
             // The draft is editable here, so a near-miss can be fixed by hand instead
             // of being inserted and then corrected in the manuscript.
@@ -140,6 +153,7 @@ fun GeneratedProseCard(
             ) {
                 ProseAction(if (prose.replacing) "Replace" else "Insert", onAccept)
                 ProseAction("Retry", onRetry)
+                if (prose.pictures.isNotEmpty()) ProseAction(if (editingText) "Preview" else "Edit text") { editingText = !editingText }
                 if (prose.original.isNotBlank()) {
                     ProseAction(if (showOriginal) "Candidate" else "Compare") { showOriginal = !showOriginal }
                 }
@@ -149,6 +163,44 @@ fun GeneratedProseCard(
                     ProseAction("Earlier ${index + 1}") { onChooseEarlier(index) }
                 }
             }
+        }
+    }
+}
+
+/** The draft as it will land: its paragraphs, with pictures side by side where they're named. */
+@Composable
+private fun IllustratedDraft(prose: GeneratedProse, modifier: Modifier) {
+    val paragraphs = com.ihy2ln.weaverse.core.media.splitIntoParagraphs(prose.text)
+    val color = MaterialTheme.colorScheme.onSecondaryContainer
+    @Composable
+    fun pictures(at: Int) {
+        val here = prose.pictures.filter { it.afterParagraph == at }
+        if (here.isEmpty()) return
+        Row(
+            Modifier.fillMaxWidth().padding(vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+        ) {
+            here.forEach { picture ->
+                Column(
+                    Modifier.weight(1f, fill = false).widthIn(max = if (here.size == 1) 220.dp else 180.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    coil3.compose.AsyncImage(
+                        model = java.io.File(picture.path),
+                        contentDescription = picture.caption,
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        modifier = Modifier.fillMaxWidth().aspectRatio(0.75f).clip(RoundedCornerShape(10.dp)),
+                    )
+                    Text(picture.caption, fontSize = 11.sp, maxLines = 1, color = color.copy(alpha = 0.8f))
+                }
+            }
+        }
+    }
+    Column(modifier.padding(vertical = 4.dp)) {
+        pictures(-1)
+        paragraphs.forEachIndexed { i, p ->
+            Text(p, style = MaterialTheme.typography.bodyLarge, color = color, modifier = Modifier.padding(bottom = 6.dp))
+            pictures(i)
         }
     }
 }

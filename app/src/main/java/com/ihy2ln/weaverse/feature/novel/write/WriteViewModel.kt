@@ -86,6 +86,35 @@ class WriteViewModel @Inject constructor(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(WriteUiState())
     val uiState: StateFlow<WriteUiState> = _uiState.asStateFlow()
+
+    private val _draftPictures = MutableStateFlow<List<com.ihy2ln.weaverse.feature.novel.write.editor.DraftPicture>>(emptyList())
+    /** Pictures for the finished AI draft: Codex entries and buildings it names. */
+    val draftPictures: StateFlow<List<com.ihy2ln.weaverse.feature.novel.write.editor.DraftPicture>> = _draftPictures.asStateFlow()
+
+    /** Works out the draft's pictures once it has finished writing (and after edits). */
+    fun illustrateDraft(text: String, prompt: String) {
+        viewModelScope.launch {
+            val blocks = runCatching { illustrator.illustrate(text, prompt) }.getOrNull().orEmpty()
+            var paragraph = -1
+            val pictures = mutableListOf<com.ihy2ln.weaverse.feature.novel.write.editor.DraftPicture>()
+            blocks.forEach { block ->
+                when (block) {
+                    is com.ihy2ln.weaverse.core.text.Paragraph -> paragraph++
+                    is com.ihy2ln.weaverse.core.text.MediaBlock -> mediaOps.resolvePaths(listOf(block.mediaId))[block.mediaId]?.let { path ->
+                        pictures += com.ihy2ln.weaverse.feature.novel.write.editor.DraftPicture(
+                            path, block.caption.joinToString("") { it.text }, paragraph,
+                        )
+                    }
+                    else -> Unit
+                }
+            }
+            _draftPictures.value = pictures
+            draftIllustration = if (blocks.isEmpty()) null else text to blocks
+        }
+    }
+
+    /** The finished draft split into paragraphs with its pictures in place, for Insert. */
+    private var draftIllustration: Pair<String, List<com.ihy2ln.weaverse.core.text.Block>>? = null
     private val json = Json { ignoreUnknownKeys = true }
     private var bookId: String = "book-adams-haven-1"
 
@@ -1167,7 +1196,12 @@ class WriteViewModel @Inject constructor(
             finishAiDraft()
             return
         }
-        val candidate = try { writeGeneration.acceptIntoBlocks(_uiState.value.blocks, overlay, text) }
+        // A plain insert carries the pictures inside the prose, each after the paragraph that names it.
+        val illustrated = draftIllustration?.takeIf { it.first.trim() == text.trim() }?.second
+        val inlinePictures = illustrated != null && overlay.replaceBlockIndex == null && overlay.cursorOffset == null
+        val candidate = try {
+            writeGeneration.acceptIntoBlocks(_uiState.value.blocks, overlay, text, illustrated.takeIf { inlinePictures })
+        }
         catch (failure: IllegalStateException) {
             _uiState.update { it.copy(aiOverlay = it.aiOverlay?.copy(errorMessage = failure.message.orEmpty())) }
             return
@@ -1179,7 +1213,15 @@ class WriteViewModel @Inject constructor(
             blocks.addAll(candidate)
         }
         val prompt = overlay.prompt
-        viewModelScope.launch {
+        draftIllustration = null
+        _draftPictures.value = emptyList()
+        if (inlinePictures) viewModelScope.launch {
+            // The editor needs file paths for the pictures that just came in with the prose.
+            val ids = illustrated.orEmpty().flatMap { WriteMediaOps.mediaIdsOf(it) }
+            val paths = mediaOps.resolvePaths(ids)
+            _uiState.update { it.copy(mediaPaths = it.mediaPaths + paths) }
+        }
+        if (!inlinePictures) viewModelScope.launch {
             // Codex characters and places the passage names, and buildings it summons, get their
             // pictures right after the paragraph that first mentions them.
             runCatching {
@@ -1188,6 +1230,19 @@ class WriteViewModel @Inject constructor(
                 illustrated.forEach { block ->
                     when (block) {
                         is com.ihy2ln.weaverse.core.text.Paragraph -> paragraphBefore = block.spans.joinToString("") { it.text }
+                        is com.ihy2ln.weaverse.core.text.MediaGridBlock -> {
+                            val blocks = _uiState.value.blocks
+                            val after = paragraphBefore?.let { p ->
+                                blocks.indexOfLast { b ->
+                                    b is com.ihy2ln.weaverse.core.text.Paragraph &&
+                                        b.spans.joinToString("") { it.text }.let { t -> t.isNotBlank() && (p in t || t in p) }
+                                }
+                            } ?: -1
+                            updateBlocksSync(recordHistory = true) { list ->
+                                val next = WriteMediaOps.insertAfter(list, if (after >= 0) after else list.lastIndex, block)
+                                list.clear(); list.addAll(next)
+                            }
+                        }
                         is com.ihy2ln.weaverse.core.text.MediaBlock -> {
                             val blocks = _uiState.value.blocks
                             val after = paragraphBefore?.let { p ->

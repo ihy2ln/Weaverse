@@ -51,4 +51,14 @@ class GeneratedTextIllustratorTest {
         val text = (1..6).joinToString("\n\n") { "A thing$it appears." }
         assertEquals(3, pickIllustrations(splitIntoParagraphs(text), "", many).size)
     }
+
+    @Test
+    fun picturesAtTheSameSpotShareARow() {
+        val text = "Kaela and JD stood by the shack.\n\nThey went in."
+        val picks = pickIllustrations(splitIntoParagraphs(text), "", listOf(kaela, shack))
+        val blocks = illustratedBlocks(text, picks)
+        val row = blocks[1] as com.ihy2ln.weaverse.core.text.MediaGridBlock
+        assertEquals(listOf("m-kaela", "m-shack"), row.mediaIds)
+        assertTrue(blocks[2] is Paragraph)
+    }
 }

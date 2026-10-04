@@ -76,6 +76,15 @@ fun WriteScreen(
     viewModel: WriteViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
+    val draftPictures by viewModel.draftPictures.collectAsState()
+    // Once a draft has finished writing (or is edited), work out the pictures it will carry.
+    val draft = state.aiOverlay
+    LaunchedEffect(draft?.streamingText, draft?.isStreaming) {
+        if (draft != null && !draft.isStreaming && draft.streamingText.isNotBlank()) {
+            kotlinx.coroutines.delay(400)
+            viewModel.illustrateDraft(draft.streamingText, draft.prompt)
+        }
+    }
     var toolSheet by rememberSaveable(sceneId) { mutableStateOf<String?>(null) }
     LaunchedEffect(pendingMediaId, state.sceneId) {
         if (pendingMediaId != null && state.sceneId == sceneId) {
@@ -257,6 +266,7 @@ fun WriteScreen(
                             replacing = overlay.replaceBlockIndex != null,
                             afterBlockId = overlay.anchorBlockId,
                             earlierCount = overlay.candidates.size,
+                            pictures = draftPictures,
                         )
                     },
                 onAcceptGenerated = viewModel::acceptAiResult,

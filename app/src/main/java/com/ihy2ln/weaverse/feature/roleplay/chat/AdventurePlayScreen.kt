@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -395,20 +397,32 @@ private fun IllustratedReply(
             paragraphs.indexOfFirst { p -> p.isNotBlank() && (after.contains(p.trim()) || p.contains(after.take(60))) }
         }?.takeIf { it >= 0 } ?: if (art.afterText == null) -1 else paragraphs.lastIndex)
     }
+    // Pictures at the same spot sit side by side.
     @Composable
-    fun picture(art: RpInlineArt) {
-        Column(Modifier.fillMaxWidth().padding(vertical = InkSpacing.xs), horizontalAlignment = Alignment.CenterHorizontally) {
-            AsyncImage(
-                model = File(art.path),
-                contentDescription = art.caption,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxWidth(0.7f).heightIn(max = 320.dp).clip(RoundedCornerShape(inkRadiusMd())),
-            )
-            if (art.caption.isNotBlank()) Text(art.caption, style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText)
+    fun pictures(here: List<RpInlineArt>) {
+        if (here.isEmpty()) return
+        Row(
+            Modifier.fillMaxWidth().padding(vertical = InkSpacing.xs),
+            horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+        ) {
+            here.forEach { art ->
+                Column(
+                    Modifier.weight(1f, fill = false).widthIn(max = if (here.size == 1) 240.dp else 180.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    AsyncImage(
+                        model = File(art.path),
+                        contentDescription = art.caption,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxWidth().aspectRatio(0.75f).clip(RoundedCornerShape(inkRadiusMd())),
+                    )
+                    if (art.caption.isNotBlank()) Text(art.caption, style = MaterialTheme.typography.labelSmall, color = tokens.secondaryText, maxLines = 1)
+                }
+            }
         }
     }
     Column(Modifier.fillMaxWidth()) {
-        placed.filter { it.second < 0 }.forEach { picture(it.first) }
+        pictures(placed.filter { it.second < 0 }.map { it.first })
         paragraphs.forEachIndexed { i, p ->
             CodexMentionText(
                 text = p,
@@ -419,7 +433,7 @@ private fun IllustratedReply(
                 onTap = onOpenCodexEntry,
                 modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
             )
-            placed.filter { it.second == i }.forEach { picture(it.first) }
+            pictures(placed.filter { it.second == i }.map { it.first })
         }
     }
 }

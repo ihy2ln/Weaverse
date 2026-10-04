@@ -325,14 +325,17 @@ private fun ReaderBlockView(
                 )
             }
         }
-        is MediaGridBlock -> Column(verticalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
+        // Pictures named in the same paragraph sit side by side.
+        is MediaGridBlock -> androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
             block.mediaIds.forEachIndexed { index, mediaId ->
-                ReaderMedia(
-                    path = mediaPaths[mediaId],
-                    kind = mediaKindFromPath(mediaPaths[mediaId]),
-                    label = "Panel ${index + 1}",
-                    palette = palette,
-                )
+                Box(Modifier.weight(1f)) {
+                    ReaderMedia(
+                        path = mediaPaths[mediaId],
+                        kind = mediaKindFromPath(mediaPaths[mediaId]),
+                        label = "Panel ${index + 1}",
+                        palette = palette,
+                    )
+                }
             }
         }
         is SceneBeatBlock -> Unit

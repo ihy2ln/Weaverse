@@ -46,6 +46,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
+import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.ui.text.font.FontStyle
@@ -180,6 +183,12 @@ fun DocumentEditor(
                             onMediaEditAction = { onMediaEditAction(index, it) },
                             modifier = Modifier.fillMaxWidth(),
                         )
+                        is com.ihy2ln.weaverse.core.text.MediaGridBlock -> MediaRowView(
+                            paths = block.mediaIds.map { mediaPaths[it] },
+                            selected = selectedMediaBlockIndex == index,
+                            onSelect = { onMediaSelect(index) },
+                            onRemove = { onMediaRemove(index) },
+                        )
                         is SceneBeatBlock -> {
                             if (showSceneBeatCard) {
                                 SceneBeatBlockView(
@@ -305,6 +314,40 @@ private fun ContinuationInput(
                 label = "Add",
                 contentDescription = "Add continuation",
             )
+        }
+    }
+}
+
+/** Pictures side by side in one row (several things named in the same paragraph). */
+@Composable
+fun MediaRowView(
+    paths: List<String?>,
+    selected: Boolean = false,
+    onSelect: () -> Unit = {},
+    onRemove: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd())
+    Box(modifier.fillMaxWidth().padding(vertical = InkSpacing.xs)) {
+        androidx.compose.foundation.layout.Row(
+            Modifier.fillMaxWidth()
+                .then(if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, shape) else Modifier)
+                .pointerInput(Unit) { detectTapGestures { onSelect() } },
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+        ) {
+            paths.forEach { path ->
+                coil3.compose.AsyncImage(
+                    model = path?.let { java.io.File(it) },
+                    contentDescription = null,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.weight(1f).aspectRatio(0.75f).clip(shape),
+                )
+            }
+        }
+        if (selected && onRemove != null) {
+            androidx.compose.material3.IconButton(onClick = onRemove, modifier = Modifier.align(Alignment.TopEnd)) {
+                androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Default.Close, "Remove pictures")
+            }
         }
     }
 }

@@ -96,6 +96,7 @@ class WriteMediaOps @Inject constructor(
         fun mediaIdsOf(block: Block): List<String> = when (block) {
             is MediaBlock -> listOf(block.mediaId)
             is MediaStackBlock -> block.mediaIds
+            is com.ihy2ln.weaverse.core.text.MediaGridBlock -> block.mediaIds
             else -> emptyList()
         }
 

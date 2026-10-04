@@ -74,25 +74,47 @@ fun pickIllustrations(
         .take(max)
 }
 
-/** The passage as blocks: its paragraphs with each picked picture in place. */
+/**
+ * The passage as blocks: its paragraphs with each picked picture in place. Pictures that land on the
+ * same spot sit side by side in one row ([MediaGridBlock]); a lone picture is a [MediaBlock].
+ */
 fun illustratedBlocks(text: String, picks: List<IllustrationPick>, pageId: String? = null): List<Block> {
     val paragraphs = splitIntoParagraphs(text)
-    fun media(pick: IllustrationPick) = MediaBlock(
-        id = "illus-${UUID.randomUUID()}",
-        mediaId = pick.subject.mediaId,
-        kind = MediaKind.Image,
-        widthPercent = 70f,
-        caption = listOf(Span(pick.subject.caption)),
-        pageId = pageId,
-    )
+    fun pictures(at: Int): List<Block> {
+        val here = picks.filter { it.afterParagraph == at }
+        return when {
+            here.isEmpty() -> emptyList()
+            here.size == 1 -> listOf(
+                MediaBlock(
+                    id = "illus-${UUID.randomUUID()}",
+                    mediaId = here[0].subject.mediaId,
+                    kind = MediaKind.Image,
+                    widthPercent = 60f,
+                    caption = listOf(Span(here[0].subject.caption)),
+                    pageId = pageId,
+                ),
+            )
+            else -> listOf(
+                com.ihy2ln.weaverse.core.text.MediaGridBlock(
+                    id = "illus-grid-${UUID.randomUUID()}",
+                    mediaIds = here.map { it.subject.mediaId },
+                    template = "${here.size}-up",
+                ),
+            )
+        }
+    }
     val blocks = mutableListOf<Block>()
-    picks.filter { it.afterParagraph < 0 }.forEach { blocks += media(it) }
+    blocks += pictures(-1)
     paragraphs.forEachIndexed { i, p ->
         blocks += Paragraph("p-${UUID.randomUUID()}", listOf(Span(p)))
-        picks.filter { it.afterParagraph == i }.forEach { blocks += media(it) }
+        blocks += pictures(i)
     }
     return blocks
 }
+
+/** Captions for a picture row, kept beside the ids (MediaGridBlock has no captions). */
+fun illustrationCaptions(picks: List<IllustrationPick>): Map<String, String> =
+    picks.associate { it.subject.mediaId to it.subject.caption }
 
 @Serializable
 private data class BuildingArtCatalog(val buildings: List<BuildingArt> = emptyList())
@@ -156,7 +178,7 @@ class GeneratedTextIllustrator @Inject constructor(
             val isCharacter = categories[entry.categoryId].orEmpty().contains("character")
             IllustrationSubject(
                 key = "codex:${entry.id}",
-                words = (listOf(entry.name) + aliases).filter { it.length >= 3 },
+                words = (listOf(entry.name) + aliases).filter { it.trim().length >= 2 },
                 mediaId = mediaId,
                 caption = entry.name,
                 priority = if (isCharacter) 2 else 1,

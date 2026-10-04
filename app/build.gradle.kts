@@ -38,8 +38,8 @@ android {
         applicationId = "com.ihy2ln.weaverse"
         minSdk = 26
         targetSdk = 34
-        versionCode = 234
-        versionName = "1.5.2"
+        versionCode = 236
+        versionName = "1.5.4"
         // The embedded Unity game (Games mode) ships arm64-v8a only: Unity 6.6 dropped x86_64 for Android. Keeping
         // every native library to that ABI lets x86_64 emulators run the whole app through ARM translation.
         ndk { abiFilters += "arm64-v8a" }

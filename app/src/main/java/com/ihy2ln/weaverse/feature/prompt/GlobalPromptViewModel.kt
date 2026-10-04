@@ -631,7 +631,9 @@ class GlobalPromptViewModel @Inject constructor(
         val next = when {
             targeted -> {
                 val withProse = doc.insertProseAt(anchor.blockIndex, anchor.caret, generated)
-                val pictures = illustrated.orEmpty().filterIsInstance<com.ihy2ln.weaverse.core.text.MediaBlock>()
+                val pictures = illustrated.orEmpty().filter {
+                    it is com.ihy2ln.weaverse.core.text.MediaBlock || it is com.ihy2ln.weaverse.core.text.MediaGridBlock
+                }
                 if (pictures.isEmpty()) withProse
                 else withProse.copy(blocks = withProse.blocks.toMutableList().apply {
                     addAll((anchor.blockIndex + 1).coerceIn(0, size), pictures)

@@ -600,6 +600,13 @@ class RoleplayChatViewModel @Inject constructor(
             var lastParagraph: String? = null
             doc.blocks.forEach { block ->
                 if (block is com.ihy2ln.weaverse.core.text.Paragraph) lastParagraph = block.spans.joinToString("") { it.text }
+                if (block is com.ihy2ln.weaverse.core.text.MediaGridBlock && block.id.startsWith("illus-")) {
+                    block.mediaIds.forEach { id ->
+                        mediaRepository.getById(id)?.let { entity ->
+                            inlineArt += RpInlineArt(mediaRepository.resolveFile(entity).absolutePath, entity.displayName, lastParagraph)
+                        }
+                    }
+                }
                 when (block) {
                     is MediaBlock -> {
                         if (block.id.startsWith("illus-") && block.kind == MediaKind.Image) {
