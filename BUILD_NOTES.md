@@ -3,6 +3,20 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.5.3-1.5.4 - Pictures inside the draft and the inserted prose, side by side
+
+- 1.5.3: a finished Write-screen AI draft works out its pictures (`illustrateDraft`); before, they were only
+  added on Insert, so a waiting draft showed none. Two-letter Codex names (JD) now match.
+- 1.5.4: the draft card reads as it will land: paragraphs with the pictures in place, plus an "Edit text" /
+  "Preview" toggle. Insert puts the draft in paragraph by paragraph with the pictures between them
+  (`acceptIntoBlocks(illustrated)`). Before, the whole draft became one paragraph, so its pictures could only
+  sit under it.
+- Pictures named in the same paragraph share one row (`MediaGridBlock`, "2-up"/"3-up"). The row is drawn side
+  by side in the Write editor (`MediaRowView`), the Reader and Adventure replies. A lone picture is 60% wide.
+- 673 unit tests pass. Installed on the phone.
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.5.4.apk`, SHA-256
+  `82510af9217348cccfe57035ff8357c63e95cbe57b6b7eb3152d14873ff399c9`.
+
 ## v1.5.2 - Pictures inside generated Novel and RPG text
 
 - `tools/build_building_art.py` bundles the Adams Haven building art from
