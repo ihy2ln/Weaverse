@@ -3,6 +3,15 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.5.8 - Pictures sized to fit on screen
+
+- Manuscript pictures are capped at 40% of the screen height (at most 340dp), so a whole picture is visible
+  without scrolling. The frame still hugs the picture's own shape. Single pictures in the draft card and
+  Adventure replies go up to 220dp wide (160dp each when side by side).
+- 675 unit tests pass. Installed on the phone.
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.5.8.apk`, SHA-256
+  `a81f554fb9b52ed878bfc4b1284ece774a83f8c235bafec1d991d4ec2da4978a`.
+
 ## v1.5.7 - Edit menu no longer traps the selection; pictures fill their frames
 
 - The Write editor's edit menu was a focusable DropdownMenu that reopened for every new selection. It took every
