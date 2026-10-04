@@ -249,30 +249,27 @@ object HelpContent {
         HelpSection(
             id = "games",
             title = "Games",
-            summary = "Adams Haven, the card game, played in full.",
+            summary = "Adams Haven: The Card Game, with your novel characters in it.",
             entries = listOf(
                 HelpEntry(
                     "What it is",
-                    "Games runs Adams Haven itself: the Godot card game with Battle Journey, " +
-                        "Tower Tycoon, Party & Deck and the animated character cards. It is the " +
-                        "same game as the standalone Adams Haven build, not a copy of it.",
+                    "A card roguelite built in Unity and played inside Weaverse. JD leads a party of three (with up to " +
+                        "three in reserve) through the Silverwood: two fights, an elite, a campfire and a lair boss. " +
+                        "Each fighter spends AP to act and EP for how hard; JD plays support cards and fires decrees with SP.",
                 ),
                 HelpEntry(
-                    "Installing the game",
-                    "The game's art and battle videos come as one game pack, about 1.3 GB, so " +
-                        "they are not part of the Weaverse download. In Games, tap Import game " +
-                        "pack and pick the adams-haven-v….zip file. It is copied in once.",
+                    "Your characters in the game",
+                    "Every character in your Codex's Characters category is listed in Games. Make their cards has the AI " +
+                        "read their Codex entry and write six cards and two ultimates in their own words; the numbers follow " +
+                        "the Adams Haven cast's curve so they are fair. Their Codex picture becomes their card art. Tap " +
+                        "Cards to rename a card, change what it does or how heavy it is, or switch how they fight.",
                 ),
                 HelpEntry(
                     "Playing",
-                    "Play opens the game full screen in landscape. Back, or Quit in the game, " +
-                        "returns to Weaverse. The game runs apart from your books, so a crash in " +
-                        "it never touches your writing.",
-                ),
-                HelpEntry(
-                    "Updating and removing",
-                    "Update game pack installs a newer pack over the old one. Remove game data " +
-                        "frees the space. Game saves are kept either way.",
+                    "Play opens the game full screen in landscape with your switched-on characters in the roster. " +
+                        "Pick the party, build the deck, then start a run. After each fight you can take one card for the " +
+                        "run; at the end, the draft lets each fighter keep one card for good (or level up one you own). " +
+                        "Back, or Leave the game, returns to Weaverse.",
                 ),
             ),
         ),

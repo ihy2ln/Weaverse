@@ -65,7 +65,7 @@ object ModeArt {
         )
         AppMode.Games -> ModeBrand(
             "games", mode.label, "PLAY",
-            "Adams Haven: a card roguelite and tower tycoon.",
+            "Adams Haven: a card roguelite starring your characters.",
             Icons.Default.SportsEsports,
         )
         AppMode.Chatting -> ModeBrand(

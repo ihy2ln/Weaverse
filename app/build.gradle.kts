@@ -38,8 +38,11 @@ android {
         applicationId = "com.ihy2ln.weaverse"
         minSdk = 26
         targetSdk = 34
-        versionCode = 221
-        versionName = "1.4.89"
+        versionCode = 222
+        versionName = "1.4.90"
+        // The embedded Unity game (Games mode) ships arm64-v8a only: Unity 6.6 dropped x86_64 for Android. Keeping
+        // every native library to that ABI lets x86_64 emulators run the whole app through ARM translation.
+        ndk { abiFilters += "arm64-v8a" }
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -103,8 +106,7 @@ android {
     }
 
     packaging {
-        // Compress native libraries in the APK. The Godot runtime for Games is ~145 MB
-        // uncompressed across its two ABIs and ~50 MB compressed; Android extracts it on install.
+        // Compress native libraries in the APK (the Unity runtime for Games is ~30 MB); Android extracts them on install.
         jniLibs {
             useLegacyPackaging = true
         }
@@ -133,10 +135,11 @@ dependencies {
     implementation(project(":sync-core"))
     implementation(project(":manga-core"))
 
-    // Games mode runs Adams Haven on the real Godot engine. This is Godot 4.7.1's
-    // template_release library cut down to arm64-v8a + x86_64 (tools/README-games.md);
-    // it must match the engine the game pack was exported with (GodotRuntime).
-    implementation(files("libs/godot-lib-4.7.1.stable.template_release.aar"))
+    // Games mode: the Adams Haven Card Game, built in Unity and embedded as a library (Unity as a Library). The AAR
+    // comes from S:\AI\Game\Adams Haven Card Game (Assets/Editor/AndroidLibraryExport.cs, then
+    // Tools/build_weaverse_aar.sh); the frame-pacing library is a dependency the AAR does not carry.
+    implementation(files("libs/adams-haven-cardgame.aar"))
+    implementation("androidx.games:games-frame-pacing:2.1.2")
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

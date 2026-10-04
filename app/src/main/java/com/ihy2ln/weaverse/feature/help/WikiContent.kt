@@ -374,34 +374,42 @@ object WikiContent {
         Page(
             id = "games",
             title = "Games",
-            summary = "Adams Haven, the Godot card game, inside Weaverse",
+            summary = "Adams Haven: The Card Game, with your novel characters in it",
             markdown = """
-                ## Adams Haven
-                Games runs **Adams Haven**, the card game, on the same Godot
-                engine as the standalone build. What you play is the game
-                itself, not a copy of it:
+                ## Adams Haven: The Card Game
+                A card roguelite built in Unity and played inside Weaverse, on the
+                rules of Adams Haven's Battle Mode:
 
-                - **Battle Journey** — a roguelite run through Briar Hollow.
-                  Start with one hero, recruit on the route, bring the haul home.
-                - **Tower Tycoon** — build Silverbrook's tower, staff it,
-                  farm it and keep it fed.
-                - **Party & Deck** — equip the moves each hero fights with.
-                - **Character Card Animations** — the animated character fronts.
+                - **The party** — three fighters on the field and up to three in
+                  reserve. A reserve steps in when someone falls, boosts their
+                  partner, and has a once-a-fight **assist**.
+                - **AP and EP** — AP is how many times a fighter acts each round,
+                  EP how hard. Both refill every round.
+                - **JD** — the Summoner stays off the field, plays support cards
+                  and, at 10 SP, fires a decree. Ultimates cost 3 SP once a
+                  fighter's gauge is full.
+                - **Enemies** show what they will do next and act early after
+                  enough of your cards (the number on their intent).
 
-                ## Installing the game pack
-                The art and battle videos are one **game pack** of about
-                1.3 GB, so they are not part of the Weaverse download.
+                ## A run
+                Two fights, an elite, a campfire (heal 40%) and a lair boss.
+                After each win, take one card for the rest of the run. At the
+                end the **draft** lets each fighter keep one card for good, or
+                level up one they own.
 
-                - Open **Games** and tap **Import game pack**.
-                - Pick the `adams-haven-v….zip` file. It is copied in once.
-                - **Update game pack** installs a newer one over it;
-                  **Remove game data** frees the space. Saves are kept.
+                ## Your novel characters
+                Every Codex character (Characters category) is listed in Games.
 
-                ## Playing
-                - **Play Adams Haven** opens the game full screen in landscape.
-                - **Back**, or **Quit** in the game, returns to Weaverse.
-                - The game runs apart from your books, so a crash in it
-                  never touches your writing.
+                - **Make their cards** — the AI reads their Codex entry and writes
+                  six cards and two ultimates in their own words. The numbers
+                  follow the Adams Haven cast's curve, so they are fair.
+                - Their Codex picture becomes their card art, inside the same
+                  frame as the Adams Haven cards.
+                - **Cards** — rename any card, change what it does or its weight,
+                  or switch how they fight (role, element, weapons or magic).
+                - The switch beside them decides whether they are in the game.
+                - No AI model set up? **Make a starter set without AI** gives
+                  them a set by role that you can then make their own.
             """.trimIndent(),
         ),
         Page(

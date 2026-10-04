@@ -70,7 +70,7 @@ class WeaverseApp : Application(), Configuration.Provider {
     override fun onCreate() {
         instance = this
         super.onCreate()
-        // The Games process only hosts the Godot runtime. Seeding, sync, backups and the
+        // The Games process only hosts the Unity card game. Seeding, sync, backups and the
         // extension host belong to the main process; running them twice would put two
         // processes on one database.
         if (isGameProcess()) return

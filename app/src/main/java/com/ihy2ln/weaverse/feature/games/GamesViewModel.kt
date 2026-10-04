@@ -1,148 +1,165 @@
 package com.ihy2ln.weaverse.feature.games
 
-import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ihy2ln.weaverse.ai.AiGenerationService
+import com.ihy2ln.weaverse.core.media.CodexMediaIds
+import com.ihy2ln.weaverse.core.text.documentFromJson
+import com.ihy2ln.weaverse.core.text.plainText
+import com.ihy2ln.weaverse.data.db.WeaverseDatabase
 import dagger.hilt.android.lifecycle.HiltViewModel
-import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+/** A Codex character, and their card set for the game if they have one. */
+data class NovelCharacterRow(
+    val entryId: String,
+    val name: String,
+    val mediaId: String?,
+    /** The Codex picture on disk, for the list. */
+    val picture: String?,
+    val novel: String,
+    val description: String,
+    val set: CardGameCharacter?,
+    val builtin: BuiltinCast.Member?,
+)
 
 data class GamesUiState(
     val loading: Boolean = true,
-    val installed: InstalledGamePack? = null,
-    /** 0..1 while a pack is being copied in, or -1 when the size is unknown; null when idle. */
-    val importProgress: Float? = null,
-    val importedBytes: Long = 0,
-    val checkingUpdates: Boolean = false,
-    val release: GameRelease? = null,
-    val updateAvailable: Boolean = false,
-    val updateProgress: Float? = null,
-    val updatedBytes: Long = 0,
-    val message: String? = null,
-    val packPath: String = "",
+    val characters: List<NovelCharacterRow> = emptyList(),
+    val building: Set<String> = emptySet(),
+    val errors: Map<String, String> = emptyMap(),
+    val editing: String? = null,
+    val message: String = "",
 )
 
+/**
+ * Games mode: the Adams Haven Card Game (Unity, embedded) and the bridge from the novels into it. Every Codex
+ * character can get a card set (written by the AI from their Codex entry, numbers from [CardSetBuilder]); the ones
+ * switched on are handed to the game each time it starts.
+ */
 @HiltViewModel
 class GamesViewModel @Inject constructor(
-    private val store: GamePackStore,
+    private val db: WeaverseDatabase,
+    private val store: CardGameStore,
+    private val ai: AiGenerationService,
 ) : ViewModel() {
-    private val _uiState = MutableStateFlow(GamesUiState(packPath = store.packFile().absolutePath))
+    private val _uiState = MutableStateFlow(GamesUiState())
     val uiState: StateFlow<GamesUiState> = _uiState.asStateFlow()
 
-    init {
-        refresh()
-    }
+    val dataDir: String get() = store.dir.absolutePath
 
-    /** Re-reads the pack; also picks up one pushed with adb while the app was open. */
+    init { refresh() }
+
     fun refresh() {
         viewModelScope.launch {
-            val pack = store.installed()
-            _uiState.update {
-                it.copy(
-                    loading = false,
-                    installed = pack,
-                    updateAvailable = it.release?.let { release ->
-                        GameReleaseChecker.isNewer(release.version, pack?.manifest?.version)
-                    } ?: false,
-                )
-            }
-        }
-    }
-
-    fun import(uri: Uri) {
-        if (_uiState.value.importProgress != null || _uiState.value.updateProgress != null) return
-        _uiState.update { it.copy(importProgress = 0f, importedBytes = 0, message = null) }
-        viewModelScope.launch {
-            val result = store.import(uri) { progress, copied ->
-                _uiState.update {
-                    it.copy(
-                        importProgress = progress,
-                        importedBytes = copied,
+            val categories = db.codexDao().getAllCategories().filter { it.name.equals("Characters", ignoreCase = true) }.map { it.id }.toSet()
+            val books = db.bookDao().getAll()
+            val sets = store.load().characters
+            val rows = db.codexDao().getAllEntries()
+                .filter { it.categoryId in categories && !it.disabled && it.name.isNotBlank() }
+                .map { entry ->
+                    val novel = books.firstOrNull { b -> entry.scopeId == b.id || entry.sheetJson.contains(b.id) }?.title.orEmpty()
+                    val text = documentFromJson(entry.docJson).plainText().ifBlank { entry.plainText }
+                    NovelCharacterRow(
+                        entryId = entry.id, name = entry.name.trim(), mediaId = CodexMediaIds.parse(entry.imageMediaId).firstOrNull(),
+                        picture = store.picturePath(CodexMediaIds.parse(entry.imageMediaId).firstOrNull()),
+                        novel = novel, description = text, set = sets.firstOrNull { it.codexId == entry.id },
+                        builtin = BuiltinCast.match(entry.name),
                     )
                 }
-            }
-            val pack = store.installed()
-            _uiState.update {
-                it.copy(
-                    importProgress = null,
-                    installed = pack,
-                    updateAvailable = _uiState.value.release?.let { release ->
-                        GameReleaseChecker.isNewer(release.version, pack?.manifest?.version)
-                    } ?: false,
-                    message = result.fold(
-                        onSuccess = { manifest -> "Installed ${manifest.title} ${manifest.version}".trim() },
-                        onFailure = { error -> error.message ?: "The import failed." },
-                    ),
-                )
-            }
+                .sortedWith(compareBy<NovelCharacterRow>({ it.builtin != null }, { it.set == null }, { it.name.lowercase() }))
+            _uiState.update { it.copy(loading = false, characters = rows) }
         }
     }
 
-    fun checkForUpdates() {
-        if (_uiState.value.checkingUpdates || _uiState.value.updateProgress != null) return
-        _uiState.update { it.copy(checkingUpdates = true, message = null) }
+    /** Has the AI write this character's card set (6 cards + 2 ultimates); replaces an older set. */
+    fun build(entryId: String) {
+        val row = _uiState.value.characters.firstOrNull { it.entryId == entryId } ?: return
+        if (entryId in _uiState.value.building) return
+        _uiState.update { it.copy(building = it.building + entryId, errors = it.errors - entryId, message = "") }
         viewModelScope.launch {
-            runCatching { GameReleaseChecker.latest() }.fold(
-                onSuccess = { release ->
-                    val newer = GameReleaseChecker.isNewer(release.version, _uiState.value.installed?.manifest?.version)
-                    _uiState.update {
-                        it.copy(
-                            checkingUpdates = false,
-                            release = release,
-                            updateAvailable = newer,
-                            message = if (newer) "Adams Haven ${release.version} is available on GitHub."
-                                else "Adams Haven is up to date (${release.version}).",
-                        )
-                    }
-                },
-                onFailure = { error ->
-                    _uiState.update {
-                        it.copy(checkingUpdates = false, message = "Could not check GitHub: ${error.message ?: "network error"}")
-                    }
-                },
-            )
+            try {
+                val id = row.set?.id ?: CardSetBuilder.characterId(row.name, entryId)
+                val portrait = store.copyPortrait(id, row.mediaId)
+                val answer = ai.complete(
+                    userMessage = CardSetBuilder.prompt(row.name, row.description, row.novel.ifBlank { "their novel" }),
+                    maxTokens = 1800,
+                    temperature = .8,
+                ).text
+                val set = CardSetBuilder.fromAiAnswer(answer, id, row.name, row.novel, entryId, portrait)
+                store.upsert(set.copy(inGame = row.set?.inGame ?: true))
+                _uiState.update { it.copy(message = "${row.name} is ready to play: 6 cards and 2 ultimates.") }
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (failure: Exception) {
+                _uiState.update { it.copy(errors = it.errors + (entryId to (failure.message ?: "The AI could not make the cards."))) }
+            } finally {
+                _uiState.update { it.copy(building = it.building - entryId) }
+                refresh()
+            }
         }
     }
 
-    fun updateFromGitHub() {
-        val release = _uiState.value.release ?: return
-        if (!_uiState.value.updateAvailable || _uiState.value.importProgress != null || _uiState.value.updateProgress != null) return
-        _uiState.update { it.copy(updateProgress = 0f, updatedBytes = 0, message = null) }
+    /** A plain set from the character's role alone, for when no AI model is set up. */
+    fun buildWithoutAi(entryId: String, role: String) {
+        val row = _uiState.value.characters.firstOrNull { it.entryId == entryId } ?: return
         viewModelScope.launch {
-            val result = store.update(release) { progress, bytes ->
-                _uiState.update { it.copy(updateProgress = progress, updatedBytes = bytes) }
-            }
-            val pack = store.installed()
-            _uiState.update {
-                it.copy(
-                    installed = pack,
-                    updateProgress = null,
-                    updateAvailable = GameReleaseChecker.isNewer(release.version, pack?.manifest?.version),
-                    message = result.fold(
-                        onSuccess = { manifest -> "Installed Adams Haven ${manifest.version}." },
-                        onFailure = { error -> error.message ?: "The update failed." },
-                    ),
-                )
-            }
+            val id = row.set?.id ?: CardSetBuilder.characterId(row.name, entryId)
+            val portrait = store.copyPortrait(id, row.mediaId)
+            val set = CardSetBuilder.build(id, row.name, "", role, "Neutral", 4, role == "Ranger" || role == "Support", "",
+                row.novel, entryId, portrait, emptyList(), emptyList())
+            store.upsert(set)
+            _uiState.update { it.copy(errors = it.errors - entryId, message = "${row.name} got a starter set; edit the cards to make them theirs.") }
+            refresh()
         }
     }
 
-    fun remove() {
+    fun setInGame(entryId: String, inGame: Boolean) = update(entryId) { it.copy(inGame = inGame) }
+
+    fun restyle(entryId: String, role: String, element: String, magic: Boolean) =
+        update(entryId) { CardSetBuilder.restyle(it, role, element, magic) }
+
+    fun editCard(entryId: String, cardId: String, name: String, text: String, effect: String, ep: Int, status: String) =
+        update(entryId) { set ->
+            val card = (set.cards + set.ultimates).firstOrNull { it.id == cardId } ?: return@update set
+            CardSetBuilder.edit(set, card, name.ifBlank { card.name }, text, effect, ep, status)
+        }
+
+    fun refreshPicture(entryId: String) {
+        val row = _uiState.value.characters.firstOrNull { it.entryId == entryId } ?: return
+        val set = row.set ?: return
         viewModelScope.launch {
-            val removed = store.remove()
-            _uiState.update {
-                it.copy(
-                    installed = if (removed) null else it.installed,
-                    updateAvailable = if (removed) it.release != null else it.updateAvailable,
-                    message = if (removed) "Game data removed. Your saves are kept." else "Could not remove the game data.",
-                )
-            }
+            val portrait = store.copyPortrait(set.id, row.mediaId)
+            store.upsert(set.copy(portrait = portrait))
+            refresh()
         }
     }
 
-    fun dismissMessage() = _uiState.update { it.copy(message = null) }
+    fun delete(entryId: String) {
+        val set = _uiState.value.characters.firstOrNull { it.entryId == entryId }?.set ?: return
+        viewModelScope.launch {
+            store.remove(set.id)
+            _uiState.update { it.copy(editing = null) }
+            refresh()
+        }
+    }
+
+    fun openEditor(entryId: String?) = _uiState.update { it.copy(editing = entryId) }
+
+    /** Writes the game's novel.json; returns how many novel characters will be in the roster. */
+    suspend fun prepareLaunch(): Int = store.exportForGame()
+
+    private fun update(entryId: String, change: (CardGameCharacter) -> CardGameCharacter) {
+        val set = _uiState.value.characters.firstOrNull { it.entryId == entryId }?.set ?: return
+        viewModelScope.launch {
+            store.upsert(change(set))
+            refresh()
+        }
+    }
 }

@@ -477,7 +477,7 @@ fun AppShell(
     val toolbarSubtitle = when {
         inRpChat -> roleplayModeSubtitle(rpChrome!!.displayMode)
         inNotes -> "Shared notes · every book & mode"
-        inGames -> "The Godot card game"
+        inGames -> "The card game"
         else -> "$seriesTitle · Codex & Prompts stay shared"
     }
 

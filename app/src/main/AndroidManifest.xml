@@ -63,24 +63,27 @@
                 <data android:scheme="weaverse" android:host="reddit-auth" />
             </intent-filter>
         </activity>
-        <!-- Read by the Godot runtime; the standalone Adams Haven export sets the same. -->
-        <meta-data android:name="org.godotengine.rendering.method" android:value="mobile" />
-        <meta-data android:name="org.godotengine.editor.version" android:value="4.7.1.stable" />
-        <!-- Games mode: the Adams Haven Godot game, in its own process (Godot starts once per
-             process and kills it on quit). Landscape and full screen, like the standalone build. -->
+        <!-- Games mode: the Adams Haven Card Game (Unity as a Library) in its own process. Unity starts once per
+             process and ends it when the player leaves, which lands them back in Weaverse. The library's own
+             launcher activity is dropped so Weaverse stays the only app icon. -->
         <activity
-            android:name=".feature.games.AdamsHavenGameActivity"
+            android:name="com.unity3d.player.UnityPlayerActivity"
+            tools:node="remove" />
+        <activity
+            android:name=".feature.games.CardGameActivity"
             android:process=":game"
             android:exported="false"
             android:label="Adams Haven"
-            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
+            android:theme="@style/UnityThemeSelector"
             android:launchMode="singleTask"
             android:taskAffinity="com.ihy2ln.weaverse.game"
-            android:excludeFromRecents="false"
-            android:screenOrientation="landscape"
+            android:screenOrientation="sensorLandscape"
             android:resizeableActivity="false"
-            android:windowSoftInputMode="adjustResize"
-            android:configChanges="layoutDirection|locale|orientation|keyboardHidden|screenSize|smallestScreenSize|density|keyboard|navigation|screenLayout|uiMode" />
+            android:hardwareAccelerated="false"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale|layoutDirection|density">
+            <meta-data android:name="unityplayer.UnityActivity" android:value="true" />
+            <meta-data android:name="notch_support" android:value="true" />
+        </activity>
         <service
             android:name=".feature.roleplay.chat.MangaAiForegroundService"
             android:exported="false"
@@ -91,7 +94,6 @@
             android:exported="false"
             android:grantUriPermissions="true"
             tools:replace="android:authorities">
-            <!-- godot-lib declares its own FileProvider on the same class; Weaverse keeps its one. -->
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/extension_file_paths"

@@ -3,6 +3,39 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.4.90 - Adams Haven: The Card Game (Unity, embedded) replaces the Godot game
+
+- Games mode now hosts the Adams Haven Card Game, a new Unity 6000.6.3f1 project at
+  `S:\AI\Game\Adams Haven Card Game` (own git repo; design notes in its CARD_GAME.md). It reuses Battle Mode's
+  engine-free rules from Unity AHCG (AP/EP, shared hand, CZN action counters, tenacity/BREAK, reserves and assists,
+  epiphany), the six-fighter cast's numbers, the bestiary, and the 56 finished card fronts from
+  `Game Assets\characters\character_cards\full-playing-cards-v3`. Runs: two fights, an elite, a campfire and a lair
+  boss; a card per win for the run; an end-of-run draft for the permanent collection.
+- Embedded as Unity as a Library: `app/libs/adams-haven-cardgame.aar` (45 MB, built by the game repo's
+  `Tools/build_weaverse_aar.sh`) + `androidx.games:games-frame-pacing`. `CardGameActivity` (a `UnityPlayerActivity`)
+  runs in the `:game` process; the library's own launcher activity is removed in the manifest. Leaving the game
+  (button or Back at its hub) ends that process and lands back in Weaverse.
+- The app now ships **arm64-v8a only** (`ndk.abiFilters`): Unity 6.6 removed x86_64 for Android, and with a single ABI
+  the x86_64 emulators run everything through ARM translation (checked on the Dev AVD: `primaryCpuAbi=arm64-v8a`).
+- Removed: the Godot engine AAR (49 MB), the boot project and game-pack import/update code, its test and
+  `tools/build_game_pack.py`. APK 218 MB (was 228 MB).
+- Novel characters (`feature/games`): every Codex entry in the Characters category is listed. **Make their cards**
+  sends the entry to the default AI model (`CardSetBuilder.prompt`): role, element, tier, magic, title, bio and six
+  moves + two ultimates, each from a fixed list of effects. `CardSetBuilder` works out every number on the cast's curve
+  (and the game clamps again on load). The Codex picture is copied to `cardgame/art/<id>.jpg` as card art. **Cards**
+  edits names, flavour, effect, EP and hex status, or the role/element/magic, re-deriving the numbers and keeping card
+  ids. Without an AI model, **Make a starter set without AI** gives a set by role. Built-in cast names are recognised
+  (`BuiltinCast`) and use their finished cards.
+- Shared folder: `getExternalFilesDir/cardgame` — `weaverse-cards.json` (all sets), `novel.json` (switched-on sets,
+  written just before launch), `art/`, and the game's `save.json`. Also passed as intent extra `cardgame_dir`.
+- Checked on the Dev AVD: Games list with Codex pictures; AI error message and the starter-set fallback; Play opens
+  the game with "1 character from your novels"; the novel character in Party with her picture in the ornate frame; a
+  battle with tap-to-target play (Frost Jab hit 33, action counters dropped); the save resumes the run; Back returns
+  to Weaverse. The AI prompt was tried on local qwen3.6 (clean JSON, all allowed effects). 649 unit tests pass.
+- Not yet: AI card art per move (cards use the character's picture); the web version doesn't show Games.
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.4.90.apk`, SHA-256
+  `a3a4c4b47743a7a9e43747792cceee751e2aef1c5d0862dd121d4750c5c4e72f`.
+
 ## v1.4.89 - fal.ai and local Ollama models (WV 10.3.0)
 
 - **fal.ai** (`ai/fal/`): one key (Settings → fal.ai → Save & check, stored as `SecureKeyStore.FAL`)
