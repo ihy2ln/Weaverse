@@ -89,7 +89,7 @@ fun illustratedBlocks(text: String, picks: List<IllustrationPick>, pageId: Strin
                     id = "illus-${UUID.randomUUID()}",
                     mediaId = here[0].subject.mediaId,
                     kind = MediaKind.Image,
-                    widthPercent = 60f,
+                    widthPercent = 100f,
                     caption = listOf(Span(here[0].subject.caption)),
                     pageId = pageId,
                 ),

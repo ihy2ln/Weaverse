@@ -6,6 +6,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -47,6 +49,9 @@ import com.ihy2ln.weaverse.core.ui.theme.inkRadiusSm
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import java.io.File
+
+/** The tallest a picture in the manuscript is drawn. */
+private val MediaMaxHeight = 460.dp
 
 @OptIn(ExperimentalFoundationApi::class)
 @Suppress("UNUSED_PARAMETER")
@@ -95,11 +100,29 @@ fun MediaBlockView(
         widthPercent = block.widthPercent
     }
 
+    // The frame hugs the picture: sized to its own shape (so a tall portrait isn't a thin strip in
+    // a wide empty box), up to the chosen width and a generous height.
+    val aspect = remember(mediaPath) {
+        if (block.kind != MediaKind.Image || mediaPath == null) null
+        else runCatching {
+            val opts = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeFile(mediaPath, opts)
+            if (opts.outWidth > 0 && opts.outHeight > 0) opts.outWidth.toFloat() / opts.outHeight else null
+        }.getOrNull()
+    }
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
     Box(
         modifier = modifier
             .fillMaxWidth(fraction)
-            .padding(vertical = InkSpacing.sm)
-            .border(if (selected) 2.dp else 1.dp, borderColor, RoundedCornerShape(inkRadiusSm()))
+            .then(
+                if (aspect != null && !block.collapsed) {
+                    Modifier.widthIn(max = MediaMaxHeight * aspect).aspectRatio(aspect)
+                } else {
+                    Modifier
+                },
+            )
+            .padding(vertical = InkSpacing.xs)
+            .border(if (selected) 2.dp else 0.dp, borderColor, RoundedCornerShape(inkRadiusSm()))
             .background(
                 if (selected) {
                     MaterialTheme.colorScheme.primary.copy(alpha = 0.06f)
@@ -166,7 +189,7 @@ fun MediaBlockView(
                         path = mediaPath!!,
                         isVideo = block.kind == MediaKind.Video,
                         contentDescription = "Scene media",
-                        maxHeight = 220.dp,
+                        maxHeight = if (aspect != null) MediaMaxHeight else 220.dp,
                         contentScale = ContentScale.Fit,
                         onLongPressAt = { openMenu(it) },
                     )
@@ -187,17 +210,13 @@ fun MediaBlockView(
                     }
                 }
             }
-            InkDeleteButton(
+            if (selected) InkDeleteButton(
                 itemName = "this media",
                 onConfirmedDelete = onRemove,
                 modifier = Modifier.align(Alignment.TopEnd),
             )
-            Text(
-                text = if (selected) {
-                    "Selected · hold for cut/paste/size"
-                } else {
-                    "${widthPercent.toInt()}% width"
-                },
+            if (selected) Text(
+                text = "Selected · hold for cut/paste/size · ${widthPercent.toInt()}% width",
                 modifier = Modifier.align(Alignment.BottomEnd).padding(InkSpacing.xs),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -222,5 +241,6 @@ fun MediaBlockView(
                 }
             },
         )
+    }
     }
 }

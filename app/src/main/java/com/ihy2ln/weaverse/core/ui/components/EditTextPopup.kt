@@ -65,6 +65,11 @@ fun EditTextPopup(
     onAction: (EditTextAction) -> Unit,
     config: EditTextPopupConfig = EditTextPopupConfig(),
     anchorOffset: Offset = Offset.Zero,
+    /**
+     * False floats the menu over the text without taking touches, like Android's own selection
+     * toolbar: the writer can still drag the handles or tap elsewhere to select something else.
+     */
+    focusable: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
@@ -79,6 +84,7 @@ fun EditTextPopup(
         onDismissRequest = onDismiss,
         offset = offset,
         modifier = modifier,
+        properties = androidx.compose.ui.window.PopupProperties(focusable = focusable),
     ) {
         MenuHeader("Edit", muted)
         Item("Copy", labelColor) { onAction(EditTextAction.Copy); onDismiss() }

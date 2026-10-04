@@ -111,14 +111,10 @@ fun BlockEditorField(
     }
 
     val latestOnShow by rememberUpdatedState(onShowEditPopupChange)
-    val currentSelection by rememberUpdatedState(value.selection)
     val toolbar = remember {
         object : TextToolbar {
             override var status: TextToolbarStatus = TextToolbarStatus.Hidden
-                private set
-
-            /** The selection the popup last opened for; Compose re-asks for the same one over and over. */
-            private var openedFor: TextRange? = null
+                set
 
             override fun showMenu(
                 rect: Rect,
@@ -127,19 +123,19 @@ fun BlockEditorField(
                 onCutRequested: (() -> Unit)?,
                 onSelectAllRequested: (() -> Unit)?,
             ) {
-                // Reporting Shown stops Compose re-requesting the menu on every frame, and the popup
-                // opens once per selection: closing it doesn't bring it straight back.
+                // Reporting Shown stops Compose re-requesting the menu on every frame. The menu
+                // floats without taking touches, so selecting other text always works.
+                if (status == TextToolbarStatus.Shown) return
                 status = TextToolbarStatus.Shown
-                val selection = currentSelection
-                if (selection == openedFor) return
-                openedFor = selection
                 latestOnShow(true)
             }
 
             override fun hide() {
+                // Compose hides the toolbar when the selection is cleared or a handle is dragged;
+                // the menu goes with it and comes back when the new selection settles.
+                if (status == TextToolbarStatus.Hidden) return
                 status = TextToolbarStatus.Hidden
-                // A collapsed caret (no selection) lets the next selection open the popup again.
-                if (currentSelection.collapsed) openedFor = null
+                latestOnShow(false)
             }
         }
     }
@@ -242,7 +238,8 @@ fun BlockEditorField(
         }
         EditTextPopup(
             expanded = showEditPopup,
-            onDismiss = { onShowEditPopupChange(false) },
+            // Closing the menu (or picking an action) lets the next selection open it again.
+            onDismiss = { toolbar.status = TextToolbarStatus.Hidden; onShowEditPopupChange(false) },
             onAction = { action ->
                 val nextValue = if (action == EditTextAction.SelectAll) {
                     value.copy(selection = TextRange(0, value.text.length)).also {
@@ -255,6 +252,7 @@ fun BlockEditorField(
                 onEditAction(action, nextValue)
             },
             config = popupConfig.copy(hasSelection = value.selection.min != value.selection.max),
+            focusable = false,
         )
     }
 }

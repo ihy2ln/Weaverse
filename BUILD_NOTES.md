@@ -3,6 +3,24 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.5.7 - Edit menu no longer traps the selection; pictures fill their frames
+
+- The Write editor's edit menu was a focusable DropdownMenu that reopened for every new selection. It took every
+  touch, so after Copy or Select all the writer could not select other text.
+  - It now floats without taking touches (`EditTextPopup(focusable = false)`), like Android's own selection
+    toolbar.
+  - It opens once when a selection settles, closes when the selection is cleared or a handle is dragged
+    (`TextToolbar.hide`), and closing it re-arms it.
+- Manuscript pictures: the frame was a share of the page width while the picture was capped at 220dp tall, so a
+  portrait card was a thin strip with empty frame on both sides. The frame now takes the picture's own aspect
+  ratio (read from the file's bounds), up to the chosen width and 460dp tall. The border, delete button and
+  width label only show when the picture is selected.
+- Illustration pictures are inserted at 100% width (the height cap keeps portraits sensible). Single pictures in
+  the draft card and Adventure replies go up to 320dp wide.
+- 675 unit tests pass. Installed on the phone.
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.5.7.apk`, SHA-256
+  `e7608aabadafba05507f6b89b7e1242c0fe47618dc97743bd47895e3f4c2e90b`.
+
 ## v1.5.5-1.5.6 - Selection popups, cursor inserts, editable illustrated drafts
 
 - 1.5.5: selecting text no longer brings a popup back forever.

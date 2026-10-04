@@ -155,7 +155,7 @@ class WriteViewModel @Inject constructor(
                         id = "illus-${java.util.UUID.randomUUID()}",
                         mediaId = here[0].mediaId,
                         kind = MediaKind.Image,
-                        widthPercent = 60f,
+                        widthPercent = 100f,
                         caption = listOf(com.ihy2ln.weaverse.core.text.Span(here[0].caption)),
                     ),
                 )
