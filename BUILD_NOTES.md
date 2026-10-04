@@ -32,6 +32,18 @@ state for picking this back up in a fresh session.
   the game with "1 character from your novels"; the novel character in Party with her picture in the ornate frame; a
   battle with tap-to-target play (Frost Jab hit 33, action counters dropped); the save resumes the run; Back returns
   to Weaverse. The AI prompt was tried on local qwen3.6 (clean JSON, all allowed effects). 649 unit tests pass.
+- **MangaRaw (mangaraw.ac)** added to Manga Studio as a built-in source (`manga-core/.../MangaRawSource.kt`), and
+  Browse now groups the Japanese raw sources (Rawkuma, MangaRaw) under **Raw**. Catalog: Popular = /ranking/,
+  Latest = home list (/page/N), search = /?s= (filtered client-side, the site returns its whole list on no match).
+  Series pages give title, og description/cover, ジャンル + タグ, and every chapter (第N話, dates). Chapter pages only carry
+  `window.MangaId`/`window.CNumber`; pages come from `POST /api/v1/get/c {"m","n"}`, whose strings are hex XOR 0x2C
+  (`d` image host, `e` paths; `b`+`c` = 4x4 tile shuffle order). Shuffled pages carry the order in the URL fragment
+  `#ahscramble=…`; `ScrambledPages` (app) rebuilds them on download and for online reading, picking whichever of the
+  two tile mappings has the smoother seams. MangaRaw's links contain raw Japanese, so its URLs are ASCII-encoded
+  (OkHttp rejects non-ASCII Referer headers).
+- MangaRaw is unverified past the page list: its image CDN `img-cdn.stackpathcdn.app` (185.255.120.53) does not accept
+  connections from this PC or the emulator (also blank in a desktop browser), so no real page image was downloaded and
+  the tile un-shuffling was not checked on a real scrambled page. The reader fails within ~10 s with a clear message.
 - Not yet: AI card art per move (cards use the character's picture); the web version doesn't show Games.
 - APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.4.90.apk`, SHA-256
   `a3a4c4b47743a7a9e43747792cceee751e2aef1c5d0862dd121d4750c5c4e72f`.

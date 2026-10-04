@@ -750,15 +750,15 @@ class MangaSourceViewModel @Inject constructor(
         runCatching {
             val pages = repository.loadPages(chapter).sortedBy { it.pageIndex }
             val persisted = repository.addDiscoveredChapter(chapter)
-            pages to persisted
+            Triple(pages, persisted, repository.readablePagePaths(chapter, pages))
         }
-            .onSuccess { (pages, persisted) ->
+            .onSuccess { (pages, persisted, paths) ->
                 if (pages.isNotEmpty()) repository.recordHomeAccess(persisted.sourceId, persisted.mangaId)
                 val readerChapter = persisted.copy(pageCount = pages.size, status = "online")
                 local.value = local.value.copy(
                     busy = false,
                     readerChapter = readerChapter.takeIf { pages.isNotEmpty() },
-                    readerPagePaths = pages.map { it.remoteUrl },
+                    readerPagePaths = paths,
                     readerPageIndex = pageIndex.coerceIn(0, (pages.size - 1).coerceAtLeast(0)),
                     readerOnline = pages.isNotEmpty(),
                     status = if (pages.isEmpty()) "This source returned no readable page images." else "",

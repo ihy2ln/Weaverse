@@ -657,7 +657,7 @@ object HelpContent {
                 HelpEntry(
                     "Manga hub and sources",
                     "Manga Studio opens Library, Browse, Downloads, Extensions, and Projects. " +
-                        "Browse selects MangaDex, Comix, Atsumaru, MangaFire, MangaDot, or Rawkuma, " +
+                        "Browse selects MangaDex, Comix, Atsumaru, MangaFire, MangaDot, Rawkuma, or MangaRaw, " +
                         "then loads Popular, Latest, Search, series metadata, and chapter links inside Weaverse. " +
                         "A source that requires a browser challenge reports the block instead of showing a fake empty library.",
                 ),

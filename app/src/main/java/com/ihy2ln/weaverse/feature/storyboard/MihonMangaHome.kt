@@ -814,8 +814,9 @@ private fun MihonBrowseScreen(
                         MihonSourceRow(source.name, source.description, state.sourceHealth[source.id], { onOpenCatalog(source.id, MangaBrowseMode.Popular) }, { onOpenCatalog(source.id, MangaBrowseMode.Latest) }, true) { viewModel.togglePinnedSource(source.id) }
                     }
                 }
-                state.sources.filterNot { it.id in state.pinnedSourceIds }.groupBy { it.language.ifBlank { "other" } }.toSortedMap().forEach { (languageCode, sources) ->
-                    item { MihonGroupHeader(languageCode.uppercase()) }
+                // Japanese raw sites (Rawkuma, MangaRaw) sit together under "Raw"; the rest by language.
+                state.sources.filterNot { it.id in state.pinnedSourceIds }.groupBy { if (it.language == "ja") "Raw" else it.language.ifBlank { "other" }.uppercase() }.toSortedMap().forEach { (group, sources) ->
+                    item { MihonGroupHeader(group) }
                     lazyItems(sources, key = { it.id }) { source ->
                         MihonSourceRow(source.name, source.description, state.sourceHealth[source.id], { onOpenCatalog(source.id, MangaBrowseMode.Popular) }, { onOpenCatalog(source.id, MangaBrowseMode.Latest) }, false) { viewModel.togglePinnedSource(source.id) }
                     }

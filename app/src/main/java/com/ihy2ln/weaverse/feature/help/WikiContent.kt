@@ -748,7 +748,7 @@ object WikiContent {
                 ## Browsable sources
 
                 Browse starts with source chips for **MangaDex, Comix,
-                Atsumaru, MangaFire, MangaDot, and Rawkuma**. Select one, then
+                Atsumaru, MangaFire, MangaDot, Rawkuma and MangaRaw**. Select one, then
                 use Popular, Latest, or Search. A cover opens series metadata
                 and the chapter list without leaving Weaverse. MangaDex uses
                 its API; the other built-in adapters read catalog and chapter

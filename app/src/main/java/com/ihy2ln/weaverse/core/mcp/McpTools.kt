@@ -272,7 +272,7 @@ class McpTools @Inject constructor(
                 ),
                 required = setOf("scene"),
             ),
-            tool("search_manga", "Search an installed manga source catalog", mapOf("query" to "Manga title", "sourceId" to "Optional source id such as mangadex, rawkuma, comix, atsumaru, mangafire, or mangadot; defaults to mangadex"), required = setOf("query")),
+            tool("search_manga", "Search an installed manga source catalog", mapOf("query" to "Manga title", "sourceId" to "Optional source id such as mangadex, rawkuma, mangaraw, comix, atsumaru, mangafire, or mangadot; defaults to mangadex"), required = setOf("query")),
             tool("list_manga_chapters", "List chapters for a manga returned by search_manga", mapOf("mangaId" to "Remote manga id", "title" to "Manga title", "sourceId" to "Optional source id; defaults to mangadex"), required = setOf("mangaId")),
             tool("queue_manga_download", "Queue a catalog chapter for local download; requires confirm=true", mapOf("chapterId" to "Remote chapter id", "mangaId" to "Remote manga id", "mangaTitle" to "Manga title", "title" to "Chapter title", "sourceId" to "Optional source id", "url" to "Optional public chapter URL", "confirm" to "Must be true after explicit user approval"), required = setOf("chapterId", "mangaId", "confirm")),
             tool("download_manga_web_link", "Queue a public chapter-reader URL the same way Browse → Download from web link does; requires confirm=true", mapOf("url" to "Public chapter URL", "title" to "Optional title override", "confirm" to "Must be true after explicit user approval"), required = setOf("url", "confirm")),

@@ -89,6 +89,7 @@ class PublicHtmlMangaSources @Inject constructor(
             client = client,
             webLinkImporter = webLinkImporter,
         ),
+        MangaRawSource(client),
     )
 }
 

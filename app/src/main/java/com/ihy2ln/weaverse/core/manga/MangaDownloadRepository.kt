@@ -27,6 +27,9 @@ import com.ihy2ln.weaverse.data.db.entities.decodePages
 import com.ihy2ln.weaverse.data.db.entities.encodePages
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -101,6 +104,44 @@ class MangaDownloadRepository @Inject constructor(
 
     suspend fun loadPages(chapter: MangaChapter): List<MangaPage> =
         registry.get(chapter.sourceId)?.pages(chapter).orEmpty()
+
+    /**
+     * What the online reader shows for each page: its URL, or for a shuffled page (MangaRaw) a cached copy with the
+     * tiles put back, since the image as served is a jumble.
+     */
+    suspend fun readablePagePaths(chapter: MangaChapter, pages: List<MangaPage>): List<String> = withContext(Dispatchers.IO) {
+        if (pages.none { ScrambledPages.isScrambled(it.remoteUrl) }) return@withContext pages.map { it.remoteUrl }
+        val dir = File(context.cacheDir, "manga-online/${sha256(chapter.remoteId.toByteArray()).take(16)}").apply { mkdirs() }
+        val quick = okHttpClient.newBuilder().connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS).build()
+        val gate = kotlinx.coroutines.sync.Semaphore(4)
+        try {
+            kotlinx.coroutines.coroutineScope {
+                pages.map { page ->
+                    async {
+                        if (!ScrambledPages.isScrambled(page.remoteUrl)) return@async page.remoteUrl
+                        val file = File(dir, "%03d.jpg".format(page.pageIndex + 1))
+                        if (!file.isFile || file.length() == 0L) gate.withPermit {
+                            val request = Request.Builder().url(page.remoteUrl)
+                                .header("User-Agent", "Weaverse/1.0")
+                                .header("Accept", "image/avif,image/webp,image/png,image/jpeg,image/*;q=0.9,*/*;q=0.5")
+                                .apply { chapter.canonicalUrl.takeIf { it.startsWith("http") }?.let { header("Referer", it) } }
+                                .build()
+                            val bytes = quick.newCall(request).execute().use { response ->
+                                if (!response.isSuccessful) error("Page ${page.pageIndex + 1} returned HTTP ${response.code}")
+                                response.body?.bytes() ?: error("Page ${page.pageIndex + 1} was empty")
+                            }
+                            file.writeBytes(ScrambledPages.fix(page.remoteUrl, bytes))
+                        }
+                        file.absolutePath
+                    }
+                }.awaitAll()
+            }
+        } catch (io: java.io.IOException) {
+            val host = runCatching { java.net.URI(pages.first().remoteUrl).host }.getOrNull() ?: "the image server"
+            error("Could not reach $host for this chapter's pages (${io.message}). The site's images may be blocked on this network.")
+        }
+    }
 
     suspend fun deleteDownloadedSeries(chapter: MangaChapterEntity) = withContext(Dispatchers.IO) {
         val dao = db.mangaDao()
@@ -565,7 +606,8 @@ class MangaDownloadRepository @Inject constructor(
                 if (!contentType.startsWith("image/") && !looksLikeImage(bytes)) {
                     error("Page ${page.pageIndex + 1} did not return an image")
                 }
-                temporary.writeBytes(bytes)
+                // Shuffled pages (MangaRaw) are saved with their tiles back in place.
+                temporary.writeBytes(ScrambledPages.fix(page.remoteUrl, bytes))
                 if (!temporary.renameTo(destination)) {
                     temporary.copyTo(destination, overwrite = true)
                     temporary.delete()
