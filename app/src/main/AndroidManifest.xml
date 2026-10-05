@@ -63,27 +63,6 @@
                 <data android:scheme="weaverse" android:host="reddit-auth" />
             </intent-filter>
         </activity>
-        <!-- Games mode: the Adams Haven Card Game (Unity as a Library) in its own process. Unity starts once per
-             process and ends it when the player leaves, which lands them back in Weaverse. The library's own
-             launcher activity is dropped so Weaverse stays the only app icon. -->
-        <activity
-            android:name="com.unity3d.player.UnityPlayerActivity"
-            tools:node="remove" />
-        <activity
-            android:name=".feature.games.CardGameActivity"
-            android:process=":game"
-            android:exported="false"
-            android:label="Adams Haven"
-            android:theme="@style/UnityThemeSelector"
-            android:launchMode="singleTask"
-            android:taskAffinity="com.ihy2ln.weaverse.game"
-            android:screenOrientation="sensorLandscape"
-            android:resizeableActivity="false"
-            android:hardwareAccelerated="false"
-            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale|layoutDirection|density">
-            <meta-data android:name="unityplayer.UnityActivity" android:value="true" />
-            <meta-data android:name="notch_support" android:value="true" />
-        </activity>
         <service
             android:name=".feature.roleplay.chat.MangaAiForegroundService"
             android:exported="false"

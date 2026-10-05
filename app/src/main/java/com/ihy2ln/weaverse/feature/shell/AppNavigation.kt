@@ -58,11 +58,12 @@ enum class RoleplayDestination(val label: String) {
 }
 
 /**
- * The Games workspace. Adams Haven is the hub (the full Unity card game, embedded, plus the novel card sets); Card
- * Battle is the same card game played natively in the app, using just the cards.
+ * The Games workspace. Adams Haven is the hub (the novel card sets); Adventure is a text adventure whose fights are card
+ * battles, with a barter screen; Card Battle is the card game itself, with runs, a party and drafts.
  */
 enum class GamesDestination(val label: String) {
     AdamsHaven("Adams Haven"),
+    Adventure("Adventure"),
     CardBattle("Card Battle"),
 }
 

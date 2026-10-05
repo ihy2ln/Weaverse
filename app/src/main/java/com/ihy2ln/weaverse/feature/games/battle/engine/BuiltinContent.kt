@@ -1,8 +1,8 @@
 package com.ihy2ln.weaverse.feature.games.battle.engine
 
 /**
- * The Adams Haven cast and their cards, ported from the Unity card game's BuiltinContent (numbers unchanged) so the
- * native battle plays exactly like the full game.
+ * The Adams Haven cast and their cards: seven fighters with six cards, two ultimates and an awakening each, plus JD's
+ * support kit and decrees.
  */
 object BuiltinContent {
     private fun c(

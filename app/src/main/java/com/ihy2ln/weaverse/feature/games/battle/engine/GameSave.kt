@@ -7,7 +7,7 @@ import kotlin.math.min
 /**
  * The player's progress (cardgame/native_save.json) and the run loop around battles: party + deck from the collection ->
  * a short run (fights, a rest, a lair boss) -> the end-of-run draft, which is the only way cards join the collection for
- * good. Cards picked up during a run are lost when it ends. Port of the Unity game's GameSave/GameLogic.
+ * good. Cards picked up during a run are lost when it ends.
  */
 @Serializable class CardLevel(var id: String = "", var level: Int = 1)
 @Serializable class UnitHp(var id: String = "", var hp: Int = 0)

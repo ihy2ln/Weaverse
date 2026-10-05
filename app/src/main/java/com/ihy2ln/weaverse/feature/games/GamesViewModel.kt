@@ -39,7 +39,7 @@ data class GamesUiState(
 )
 
 /**
- * Games mode: the Adams Haven Card Game (Unity, embedded) and the bridge from the novels into it. Every Codex
+ * Games mode: the bridge from the novels into the card game (Adventure and Card Battle). Every Codex
  * character can get a card set (written by the AI from their Codex entry, numbers from [CardSetBuilder]); the ones
  * switched on are handed to the game each time it starts.
  */
@@ -51,8 +51,6 @@ class GamesViewModel @Inject constructor(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(GamesUiState())
     val uiState: StateFlow<GamesUiState> = _uiState.asStateFlow()
-
-    val dataDir: String get() = store.dir.absolutePath
 
     init { refresh() }
 
@@ -151,9 +149,6 @@ class GamesViewModel @Inject constructor(
     }
 
     fun openEditor(entryId: String?) = _uiState.update { it.copy(editing = entryId) }
-
-    /** Writes the game's novel.json; returns how many novel characters will be in the roster. */
-    suspend fun prepareLaunch(): Int = store.exportForGame()
 
     private fun update(entryId: String, change: (CardGameCharacter) -> CardGameCharacter) {
         val set = _uiState.value.characters.firstOrNull { it.entryId == entryId }?.set ?: return

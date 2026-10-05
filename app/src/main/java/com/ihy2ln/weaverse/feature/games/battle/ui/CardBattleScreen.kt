@@ -61,7 +61,7 @@ import com.ihy2ln.weaverse.feature.games.battle.engine.GameLogic
 import java.io.File
 
 /**
- * Games → Card Battle: the Adams Haven card game played inside the app, using only the cards (no 3D, no Unity). Hub,
+ * Games → Card Battle: the Adams Haven card game played inside the app, using only the cards. Hub,
  * party and deck, the five-node run, the fight and the end-of-run draft.
  */
 @Composable

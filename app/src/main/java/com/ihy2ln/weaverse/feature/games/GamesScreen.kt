@@ -1,6 +1,5 @@
 package com.ihy2ln.weaverse.feature.games
 
-import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -47,7 +46,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -61,6 +59,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.ihy2ln.weaverse.core.ui.components.InkCard
 import com.ihy2ln.weaverse.core.ui.theme.InkSpacing
+import com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd
 import com.ihy2ln.weaverse.core.ui.theme.inkTokens
 import kotlinx.coroutines.launch
 import java.io.File
@@ -68,44 +67,30 @@ import java.io.File
 private const val HERO_ART = "file:///android_asset/images/adams_haven/battle/boss_arena/boss-arena-01-heartwood-throne.webp"
 
 /**
- * Games mode: the Adams Haven Card Game (Unity, embedded; it opens in its own screen; the native "Card Battle" next door
- * plays the same cards inside the app) and the bridge from the novels:
+ * Games mode: Adventure and Card Battle (the Adams Haven card game, played inside the app) and the bridge from the novels:
  * every Codex character can get a card set and join the game's roster.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun GamesScreen(onPlayInApp: () -> Unit = {}, viewModel: GamesViewModel = hiltViewModel()) {
+fun GamesScreen(onPlayInApp: () -> Unit = {}, onAdventure: () -> Unit = {}, viewModel: GamesViewModel = hiltViewModel()) {
     val ui by viewModel.uiState.collectAsStateWithLifecycle()
-    val context = LocalContext.current
     val tokens = inkTokens()
-    val scope = rememberCoroutineScope()
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.refresh() }
 
-    fun play() {
-        scope.launch {
-            viewModel.prepareLaunch()
-            context.startActivity(
-                Intent(context, CardGameActivity::class.java).putExtra(CardGameActivity.EXTRA_DATA_DIR, viewModel.dataDir),
-            )
-        }
-    }
-
     val novel = ui.characters.filter { it.builtin == null }
-    val ready = novel.count { it.set?.inGame == true }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(InkSpacing.lg),
         verticalArrangement = Arrangement.spacedBy(InkSpacing.md),
     ) {
-        val playLabel = if (ready > 0) "Play  ·  $ready from your novels" else "Play"
         // In its tab the Games banner becomes this billboard's heading and Play button.
         com.ihy2ln.weaverse.core.ui.components.ModePageHeader(
             title = "The Card Game",
             subtitle = "Lead JD's party through the Silverwood with your own cards. Characters from your novels join the roster.",
             actions = {
                 val tight = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                Button(onClick = onPlayInApp, contentPadding = tight) { Text("Battle") }
+                Button(onClick = onAdventure, contentPadding = tight) { Text("Adventure") }
                 Spacer(Modifier.width(4.dp))
-                OutlinedButton(onClick = ::play, contentPadding = tight) { Text("3D game") }
+                OutlinedButton(onClick = onPlayInApp, contentPadding = tight) { Text("Battle") }
             },
         ) {
             Box(Modifier.fillMaxWidth().height(230.dp).clip(RoundedCornerShape(com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd() * 1.5f))) {
@@ -125,13 +110,19 @@ fun GamesScreen(onPlayInApp: () -> Unit = {}, viewModel: GamesViewModel = hiltVi
                             Spacer(Modifier.width(6.dp))
                             Text("Card Battle")
                         }
-                        OutlinedButton(onClick = ::play) { Text(if (ready > 0) "Full game  ·  $ready from your novels" else "Full game (3D)") }
+                        OutlinedButton(onClick = onAdventure) { Text("Adventure") }
                     }
                 }
             }
         }
 
         if (ui.message.isNotBlank()) Text(ui.message, color = tokens.activePill, style = MaterialTheme.typography.bodyMedium)
+
+        Text("PLAY", style = MaterialTheme.typography.labelLarge, color = tokens.activePill, letterSpacing = 1.2.sp)
+        Row(horizontalArrangement = Arrangement.spacedBy(InkSpacing.sm)) {
+            PlayCard("Adventure", "A story told scene by scene, with card fights and barter.", onAdventure, Modifier.weight(1f))
+            PlayCard("Card Battle", "The card game, in the app: runs, party and drafts.", onPlayInApp, Modifier.weight(1f))
+        }
 
         Text("FROM YOUR NOVELS", style = MaterialTheme.typography.labelLarge, color = tokens.activePill, letterSpacing = 1.2.sp)
         Text(
@@ -423,4 +414,16 @@ fun rulesLine(c: CardGameCard): String {
     if (c.epGain > 0) parts += "+${c.epGain} EP to an ally"
     val keys = listOfNotNull("Opening card".takeIf { c.initiation }, "Retain".takeIf { c.retain }, "Exhaust".takeIf { c.exhaust })
     return (parts + keys).joinToString(" · ")
+}
+
+@Composable
+private fun PlayCard(title: String, text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val tokens = inkTokens()
+    Column(
+        modifier.clip(RoundedCornerShape(inkRadiusMd())).background(tokens.panel).clickable(onClick = onClick).padding(InkSpacing.md),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = tokens.primaryText)
+        Text(text, style = MaterialTheme.typography.bodySmall, color = tokens.secondaryText)
+    }
 }

@@ -377,8 +377,8 @@ object WikiContent {
             summary = "Adams Haven: The Card Game, with your novel characters in it",
             markdown = """
                 ## Adams Haven: The Card Game
-                A card roguelite built in Unity and played inside Weaverse, on the
-                rules of Adams Haven's Battle Mode:
+                A card roguelite played inside Weaverse, on the rules of Adams
+                Haven's Battle Mode:
 
                 - **The party** — three fighters on the field and up to three in
                   reserve. A reserve steps in when someone falls, boosts their
@@ -391,15 +391,18 @@ object WikiContent {
                 - **Enemies** show what they will do next and act early after
                   enough of your cards (the number on their intent).
 
-                ## Card Battle (in the app)
-                Games has two ways to play. **Card Battle** is the same card game
-                played natively inside Weaverse using only the cards: tap a card,
-                then its target (group cards play on a second tap); tap a fighter
-                for Basic, Guard, ultimates and swap; tap a reserve for the
-                assist. **Party & deck** picks the six fighters and which cards
-                go in the deck. It shares the characters and card sets with the
-                full game but keeps its own save (`native_save.json`). **Full
-                game** opens the embedded 3D version.
+                ## Card Battle and Adventure
+                Games has two ways to play. **Card Battle** is the card game with
+                runs, a party, a deck and the end-of-run draft: tap a card, then its
+                target (group cards play on a second tap); tap a fighter for Basic,
+                Guard, ultimates and swap; tap a reserve for the assist. **Party &
+                deck** picks the six fighters and which cards go in the deck.
+
+                **Adventure** is a text adventure told scene by scene: the AI writes
+                the story around your premise (or a built-in storyteller runs it with
+                no AI). Choices lead to card fights, a **barter** screen (buy items
+                and cards, haggle once per ware, sell items), camps and treasure.
+                Gold, your pack and bought cards carry through the adventure.
 
                 ## A run
                 Two fights, an elite, a campfire (heal 40%) and a lair boss.

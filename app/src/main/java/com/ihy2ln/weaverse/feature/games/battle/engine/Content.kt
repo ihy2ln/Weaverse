@@ -5,7 +5,7 @@ import kotlin.math.min
 
 private fun <T : Enum<T>> parseEnum(values: Array<T>, name: String?): T? = values.firstOrNull { it.name == name }
 
-/** A card as data (the Unity game's CardDef). Built-in cards are written in [BuiltinContent]; novel cards arrive from Weaverse. */
+/** A card as data. Built-in cards are written in [BuiltinContent]; novel cards arrive from Weaverse. */
 class CardDef(
     var id: String = "",
     var name: String = "",

@@ -6,7 +6,7 @@ import com.ihy2ln.weaverse.feature.games.battle.engine.Catalog
 import java.io.File
 
 /**
- * Picture lookup by key, like the Unity game's Art: "builtin:<id>" (bundled card or portrait), "bestiary:<art>" (monster
+ * Picture lookup by key: "builtin:<id>" (bundled card or portrait), "bestiary:<art>" (monster
  * card) or a path relative to the shared cardgame folder (a novel character's Codex picture).
  */
 object CardArt {

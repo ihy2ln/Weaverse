@@ -8,7 +8,7 @@ class DamagePreview(val amount: Int, val element: Float)
 
 /**
  * One battle: AP/EP fighters, a shared hand, JD the Summoner, enemy action counters, tenacity/BREAK, shields, reserve
- * partners and epiphany. Port of the Unity card game's BattleState.
+ * partners and epiphany.
  */
 class BattleState(
     seed: Int,

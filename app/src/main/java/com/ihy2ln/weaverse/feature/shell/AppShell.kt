@@ -115,6 +115,7 @@ import com.ihy2ln.weaverse.feature.roleplay.chat.RoleplayChatDetailScreen
 import com.ihy2ln.weaverse.feature.roleplay.chat.ImportedMangaEditorScreen
 import com.ihy2ln.weaverse.feature.roleplay.chat.roleplayModeSubtitle
 import com.ihy2ln.weaverse.feature.games.GamesScreen
+import com.ihy2ln.weaverse.feature.games.adventure.AdventureScreen
 import com.ihy2ln.weaverse.feature.games.battle.ui.CardBattleScreen
 import com.ihy2ln.weaverse.core.ui.components.collapseChromeOnScroll
 import com.ihy2ln.weaverse.feature.roleplay.lorebook.LorebookScreen
@@ -1380,7 +1381,11 @@ fun AppShell(
                                 }
                             }
                             AppMode.Games.name -> when (gamesDestinationOf(gamesDest)) {
-                                GamesDestination.AdamsHaven -> GamesScreen(onPlayInApp = { gamesDest = GamesDestination.CardBattle.name })
+                                GamesDestination.AdamsHaven -> GamesScreen(
+                                    onPlayInApp = { gamesDest = GamesDestination.CardBattle.name },
+                                    onAdventure = { gamesDest = GamesDestination.Adventure.name },
+                                )
+                                GamesDestination.Adventure -> AdventureScreen(onLeave = { gamesDest = GamesDestination.AdamsHaven.name })
                                 GamesDestination.CardBattle -> CardBattleScreen(onLeave = { gamesDest = GamesDestination.AdamsHaven.name })
                             }
                             else -> when (roleplayDestinationOf(rd)) {

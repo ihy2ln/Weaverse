@@ -6,7 +6,7 @@ import kotlin.math.sqrt
 
 /**
  * Everything the battle rules look up: the characters in play (built-in cast + novel characters), their cards, JD's
- * support cards, epiphany upgrades and the bestiary encounters. A process-wide registry, like the Unity original.
+ * support cards, epiphany upgrades and the bestiary encounters. A process-wide registry.
  */
 object Catalog {
     const val SUMMONER_ID = "jd"

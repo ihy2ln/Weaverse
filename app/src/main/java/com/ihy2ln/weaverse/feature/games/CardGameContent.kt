@@ -3,10 +3,9 @@ package com.ihy2ln.weaverse.feature.games
 import kotlinx.serialization.Serializable
 
 /**
- * The novel characters handed to the Adams Haven Card Game (Unity, embedded): `cardgame/novel.json` in the app's
- * external files folder, read by the game at launch. Field names match the game's CardDef / CharacterDef
- * (S:\AI\Game\Adams Haven Card Game\Assets\Scripts\Rules\CardContent.cs); extra fields here (codexId, effect…)
- * are ignored by the game and keep the set editable in Weaverse.
+ * The novel characters in the card game: `cardgame/weaverse-cards.json` in the app's external files folder. The
+ * engine reads them through `CardGameCharacter.toDef()`; the extra fields here (codexId, effect…) keep the set
+ * editable in Weaverse.
  */
 @Serializable
 data class CardGamePack(

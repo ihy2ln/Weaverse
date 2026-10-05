@@ -15,9 +15,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * The folder Weaverse and the Adams Haven Card Game share: `weaverse-cards.json` (every novel character's card set,
- * Weaverse's working copy), `novel.json` (the ones switched on for the game, written before each launch and read by
- * the game, see [CardGamePack]), `art/` (their Codex pictures at game size) and the game's own `save.json`.
+ * The card game's folder: `weaverse-cards.json` (every novel character's card set; the ones switched on join Card
+ * Battle and Adventure, see [CardGamePack]), `art/` (their Codex pictures at card size) and the native saves.
  */
 @Singleton
 class CardGameStore @Inject constructor(
@@ -53,16 +52,6 @@ class CardGameStore @Inject constructor(
             val pack = read()
             pack.characters.firstOrNull { it.id == id }?.portrait?.takeIf { it.startsWith("art/") }?.let { File(dir, it).delete() }
             write(pack.copy(characters = pack.characters.filterNot { it.id == id }))
-        }
-    }
-
-    /** What the game reads: only characters switched on for the game. Written right before launching it. */
-    suspend fun exportForGame(): Int = withContext(Dispatchers.IO) {
-        lock.withLock {
-            val pack = read()
-            val live = pack.characters.filter { it.inGame && it.cards.isNotEmpty() }
-            File(dir, "novel.json").writeText(json.encodeToString(CardGamePack.serializer(), pack.copy(characters = live)))
-            live.size
         }
     }
 

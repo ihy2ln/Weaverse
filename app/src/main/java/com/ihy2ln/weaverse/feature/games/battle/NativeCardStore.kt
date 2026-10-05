@@ -21,7 +21,7 @@ import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** A Weaverse card set as the engine's card/character definitions (same fields as the Unity game's CardDef). */
+/** A Weaverse card set as the engine's card/character definitions (same fields). */
 fun CardGameCard.toDef() = CardDef(
     id = id, name = name, owner = owner, kind = kind, target = target, ep = ep, ap = ap, draw = draw, epGain = epGain,
     apGain = apGain, duration = duration, power = power, heal = heal, magnitude = magnitude, status = status, magic = magic,
@@ -39,7 +39,7 @@ fun CardGameCharacter.toDef() = CharacterDef(
 /**
  * The native card battle's storage and content: loads the bundled bestiary, registers the built-in cast plus every novel
  * character switched on in Games (from [CardGameStore]'s `weaverse-cards.json`), and keeps the player's progress in its
- * own `native_save.json` beside the Unity game's files (the Unity game's `save.json` is never touched).
+ * own `native_save.json`.
  */
 @Singleton
 class NativeCardStore @Inject constructor(

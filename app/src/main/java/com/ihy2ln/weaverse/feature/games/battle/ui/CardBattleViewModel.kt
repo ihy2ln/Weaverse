@@ -56,6 +56,9 @@ class CardBattleViewModel @Inject constructor(
     val dir: File get() = store.dir
     private var popupId = 0
 
+    /** Set while the Adventure runs a fight through this screen: called with the finished battle. */
+    private var external: ((BattleState) -> Unit)? = null
+
     /** The reserve whose partner assist is waiting for a target ([assist] sets pending to its move). */
     private var assistFor: BattleUnit? = null
 
@@ -116,9 +119,23 @@ class CardBattleViewModel @Inject constructor(
         _ui.update { CardBattleUi(screen = CardScreen.Battle, tick = it.tick + 1, message = b.lastMessage) }
     }
 
+    /** Runs a fight the Adventure built, on the same battle screen; [onDone] gets the finished battle (win, loss or withdrawn). */
+    fun startExternal(state: BattleState, onDone: (BattleState) -> Unit) {
+        external = onDone
+        battle = state
+        _ui.update { CardBattleUi(screen = CardScreen.Battle, tick = it.tick + 1, message = state.lastMessage) }
+    }
+
     /** After the result banner: carry health and epiphanies over, then on to the next node or the draft. */
     fun finishFight() {
         val b = battle ?: return
+        external?.let { callback ->
+            external = null
+            battle = null
+            show(CardScreen.Hub)
+            callback(b)
+            return
+        }
         if (b.withdrawn) { leaveFight(); return }
         GameLogic.finishBattle(save, b, seed())
         battle = null
@@ -130,6 +147,7 @@ class CardBattleViewModel @Inject constructor(
 
     /** Leaves a fight without a result: the run is abandoned, like walking away from the table. */
     fun leaveFight() {
+        if (external != null) { battle?.forfeit(); finishFight(); return }
         battle = null
         GameLogic.abandon(save)
         persist()
