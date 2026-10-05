@@ -3,6 +3,23 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.7.0 - WV 10.5.0: Adventure (text adventure + card fights + barter); the 3D game is gone
+
+- **Games -> Adventure**: a text adventure told scene by scene. The AI writes each scene as JSON around an optional
+  premise; with no AI (or a bad answer) a built-in offline storyteller continues, so it always plays.
+  Choices lead to: card fights (Card Battle screen, same engine), a **barter** screen, camps, loot, and the lair boss
+  at scene 10. Free-text actions move the story on too. The engine owns every number; the AI only writes words.
+- **Barter**: buy items and up to 3 cards the party doesn't own (cards join the deck for the adventure), sell items
+  at half price, haggle once per ware (25% off on a win, +10% on a miss; Haggler's Charm raises the chance).
+- **Pack**: Healing Draught, Ember Tonic, Trail Ration, Haggler's Charm. Gold from fights/loot; fleeing a fight costs gold.
+- Health carries between fights; defeat ends the adventure. Save: `cardgame/adventure_save.json`.
+- **Removed the embedded Unity 3D game**: `CardGameActivity`, the `:game` process, `app/libs/adams-haven-cardgame.aar`,
+  frame-pacing dependency, the arm64-only ABI filter, the "Full game / 3D game" buttons, `novel.json` export, Help/Wiki text.
+  Games now has Adams Haven (novel card sets), Adventure and Card Battle.
+- 692 unit tests pass (9 new in `AdventureRulesTest`; the greedy test bot moved to `TestBot`).
+- Checked on the S25+: Games page, Adventure start, a fight, withdraw, AI-written next scene.
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.7.0.apk`, SHA-256 `f9fd7014b6579f086f9183689d17ae00cb18013ca60abe4472489690543c396e`.
+
 ## v1.6.0 - WV 10.5.0: Card Battle, the card game played inside the app
 
 - **Games -> Card Battle**: the Adams Haven card game running natively in Compose, using only the cards (no Unity,
