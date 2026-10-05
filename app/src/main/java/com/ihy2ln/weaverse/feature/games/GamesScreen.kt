@@ -68,12 +68,13 @@ import java.io.File
 private const val HERO_ART = "file:///android_asset/images/adams_haven/battle/boss_arena/boss-arena-01-heartwood-throne.webp"
 
 /**
- * Games mode: the Adams Haven Card Game (Unity, embedded; it opens in its own screen) and the bridge from the novels:
+ * Games mode: the Adams Haven Card Game (Unity, embedded; it opens in its own screen; the native "Card Battle" next door
+ * plays the same cards inside the app) and the bridge from the novels:
  * every Codex character can get a card set and join the game's roster.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun GamesScreen(viewModel: GamesViewModel = hiltViewModel()) {
+fun GamesScreen(onPlayInApp: () -> Unit = {}, viewModel: GamesViewModel = hiltViewModel()) {
     val ui by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val tokens = inkTokens()
@@ -101,11 +102,10 @@ fun GamesScreen(viewModel: GamesViewModel = hiltViewModel()) {
             title = "The Card Game",
             subtitle = "Lead JD's party through the Silverwood with your own cards. Characters from your novels join the roster.",
             actions = {
-                Button(onClick = ::play) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("Play")
-                }
+                val tight = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                Button(onClick = onPlayInApp, contentPadding = tight) { Text("Battle") }
+                Spacer(Modifier.width(4.dp))
+                OutlinedButton(onClick = ::play, contentPadding = tight) { Text("3D game") }
             },
         ) {
             Box(Modifier.fillMaxWidth().height(230.dp).clip(RoundedCornerShape(com.ihy2ln.weaverse.core.ui.theme.inkRadiusMd() * 1.5f))) {
@@ -119,10 +119,13 @@ fun GamesScreen(viewModel: GamesViewModel = hiltViewModel()) {
                         style = MaterialTheme.typography.bodyMedium, color = tokens.primaryText.copy(alpha = 0.85f),
                     )
                     Spacer(Modifier.height(6.dp))
-                    Button(onClick = ::play) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text(if (ready > 0) "Play  ·  $ready from your novels" else "Play")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = onPlayInApp) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null)
+                            Spacer(Modifier.width(6.dp))
+                            Text("Card Battle")
+                        }
+                        OutlinedButton(onClick = ::play) { Text(if (ready > 0) "Full game  ·  $ready from your novels" else "Full game (3D)") }
                     }
                 }
             }

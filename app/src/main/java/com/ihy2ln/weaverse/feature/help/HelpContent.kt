@@ -265,8 +265,17 @@ object HelpContent {
                         "Cards to rename a card, change what it does or how heavy it is, or switch how they fight.",
                 ),
                 HelpEntry(
-                    "Playing",
-                    "Play opens the game full screen in landscape with your switched-on characters in the roster. " +
+                    "Card Battle (in the app)",
+                    "Card Battle is the same card game played right inside Weaverse, with only the cards: no 3D and " +
+                        "nothing extra to load. Open Games, then Card Battle. Start a run, tap a card in your hand and " +
+                        "then its target (group cards play on a second tap). Tap a fighter for their Basic attack, Guard, " +
+                        "ultimates and swap; tap a reserve for the partner assist. Party & deck lets you pick the six " +
+                        "fighters and switch cards on and off. It uses the same characters, card sets and rules as the " +
+                        "full game, but keeps its own save.",
+                ),
+                HelpEntry(
+                    "Playing the full game",
+                    "Full game opens the Unity game full screen in landscape with your switched-on characters in the roster. " +
                         "Pick the party, build the deck, then start a run. After each fight you can take one card for the " +
                         "run; at the end, the draft lets each fighter keep one card for good (or level up one you own). " +
                         "Back, or Leave the game, returns to Weaverse.",

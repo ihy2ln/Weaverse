@@ -115,6 +115,7 @@ import com.ihy2ln.weaverse.feature.roleplay.chat.RoleplayChatDetailScreen
 import com.ihy2ln.weaverse.feature.roleplay.chat.ImportedMangaEditorScreen
 import com.ihy2ln.weaverse.feature.roleplay.chat.roleplayModeSubtitle
 import com.ihy2ln.weaverse.feature.games.GamesScreen
+import com.ihy2ln.weaverse.feature.games.battle.ui.CardBattleScreen
 import com.ihy2ln.weaverse.core.ui.components.collapseChromeOnScroll
 import com.ihy2ln.weaverse.feature.roleplay.lorebook.LorebookScreen
 import com.ihy2ln.weaverse.feature.roleplay.personas.PersonaDetailScreen
@@ -165,6 +166,7 @@ fun AppShell(
     // The launch splash plays once per start, not on rotation or when returning Home.
     var introPlayed by rememberSaveable { mutableStateOf(false) }
     var notesDest by rememberSaveable { mutableStateOf(NotesDestination.Chat.name) }
+    var gamesDest by rememberSaveable { mutableStateOf(GamesDestination.AdamsHaven.name) }
     var homeThreadId by rememberSaveable { mutableStateOf<String?>(null) }
     var homeMangaId by rememberSaveable { mutableStateOf<String?>(null) }
     var browseRoutes by rememberSaveable { mutableStateOf(listOf("home")) }
@@ -693,7 +695,7 @@ fun AppShell(
             val modeId = when (currentMode) {
                 AppMode.Novel -> novelDest
                 AppMode.Roleplay -> rpDest
-                AppMode.Games -> GamesDestination.AdamsHaven.name
+                AppMode.Games -> gamesDest
                 AppMode.Chatting -> chatDest
                 AppMode.Storyboard -> storyboardDest
                 AppMode.Notes -> notesDest
@@ -734,6 +736,7 @@ fun AppShell(
                     workspaceFocus != WorkspaceFocus.Story.name -> workspaceFocus = WorkspaceFocus.Story.name
                     currentMode == AppMode.Notes && notesDetailOpen -> notesDetailOpen = false
                     currentMode == AppMode.Notes && notesDest != NotesDestination.Chat.name -> notesDest = NotesDestination.Chat.name
+                    currentMode == AppMode.Games && gamesDest != GamesDestination.AdamsHaven.name -> gamesDest = GamesDestination.AdamsHaven.name
                     selectedRpChatId != null -> { selectedRpChatId = null; rpDest = RoleplayDestination.Chats.name }
                     storyboardChatId != null -> {
                         storyboardChatId = null
@@ -756,6 +759,7 @@ fun AppShell(
                     selectedCodexEntryId != null || selectedCharacterId != null || selectedPersonaId != null ||
                     selectedInventoryCarrierId != null || chromeTool != null || workspaceFocus != WorkspaceFocus.Story.name ||
                     (currentMode == AppMode.Notes && (notesDetailOpen || notesDest != NotesDestination.Chat.name)) ||
+                    (currentMode == AppMode.Games && gamesDest != GamesDestination.AdamsHaven.name) ||
                     selectedRpChatId != null || storyboardChatId != null ||
                     (currentMode == AppMode.Novel && novelDest != NovelDestination.Bookshelf.name) ||
                     (currentMode == AppMode.Roleplay && rpDest != RoleplayDestination.Campaign.name) ||
@@ -791,7 +795,7 @@ fun AppShell(
                 when (next) {
                     AppMode.Novel.name -> novelDest = NovelDestination.Bookshelf.name
                     AppMode.Roleplay.name -> rpDest = RoleplayDestination.Campaign.name
-                    AppMode.Games.name -> { /* single destination */ }
+                    AppMode.Games.name -> gamesDest = GamesDestination.AdamsHaven.name
                     AppMode.Chatting.name -> chatDest = ChattingDestination.Chats.name
                     AppMode.Storyboard.name -> storyboardDest = StoryboardDestination.Library.name
                     AppMode.Notes.name -> notesDest = NotesDestination.Chat.name
@@ -922,7 +926,7 @@ fun AppShell(
                             selectedRpChatId = null
                             rpChrome = null
                         }
-                        AppMode.Games -> { /* single destination */ }
+                        AppMode.Games -> gamesDest = id
                         AppMode.Chatting -> {
                             chatDest = id
                             selectedRpChatId = null
@@ -1375,7 +1379,10 @@ fun AppShell(
                                     }
                                 }
                             }
-                            AppMode.Games.name -> GamesScreen()
+                            AppMode.Games.name -> when (gamesDestinationOf(gamesDest)) {
+                                GamesDestination.AdamsHaven -> GamesScreen(onPlayInApp = { gamesDest = GamesDestination.CardBattle.name })
+                                GamesDestination.CardBattle -> CardBattleScreen(onLeave = { gamesDest = GamesDestination.AdamsHaven.name })
+                            }
                             else -> when (roleplayDestinationOf(rd)) {
                                 RoleplayDestination.Chats -> {
                                     if (chatId != null) {

@@ -391,6 +391,16 @@ object WikiContent {
                 - **Enemies** show what they will do next and act early after
                   enough of your cards (the number on their intent).
 
+                ## Card Battle (in the app)
+                Games has two ways to play. **Card Battle** is the same card game
+                played natively inside Weaverse using only the cards: tap a card,
+                then its target (group cards play on a second tap); tap a fighter
+                for Basic, Guard, ultimates and swap; tap a reserve for the
+                assist. **Party & deck** picks the six fighters and which cards
+                go in the deck. It shares the characters and card sets with the
+                full game but keeps its own save (`native_save.json`). **Full
+                game** opens the embedded 3D version.
+
                 ## A run
                 Two fights, an elite, a campfire (heal 40%) and a lair boss.
                 After each win, take one card for the rest of the run. At the

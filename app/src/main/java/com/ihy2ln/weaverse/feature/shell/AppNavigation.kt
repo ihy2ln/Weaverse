@@ -57,9 +57,13 @@ enum class RoleplayDestination(val label: String) {
     Presets("Presets"),
 }
 
-/** The Games workspace — text-driven card games in their own mode. */
+/**
+ * The Games workspace. Adams Haven is the hub (the full Unity card game, embedded, plus the novel card sets); Card
+ * Battle is the same card game played natively in the app, using just the cards.
+ */
 enum class GamesDestination(val label: String) {
     AdamsHaven("Adams Haven"),
+    CardBattle("Card Battle"),
 }
 
 /**

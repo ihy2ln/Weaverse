@@ -3,6 +3,26 @@
 Working log for Weaverse: decisions, deviations, known gaps, and a resume
 state for picking this back up in a fresh session.
 
+## v1.6.0 - WV 10.5.0: Card Battle, the card game played inside the app
+
+- **Games -> Card Battle**: the Adams Haven card game running natively in Compose, using only the cards (no Unity,
+  no 3D). The embedded Unity game stays as "Full game" on the Adams Haven page; both read the same card sets.
+- **Rules engine** (`feature/games/battle/engine/`): Kotlin port of the card game's engine-free C# rules - AP/EP/SP,
+  shared 5-card hand, JD's CP/SP and decrees, enemy intents + action counters, taunt wall, tenacity/BREAK, fury,
+  elite affixes, boss phases, stress/breakdown, reserve partners and assists, epiphany, element wheel, the 5-node
+  run (Forest Edge, Deeper Woods, Elite Hunt, Campfire, Lair), run rewards and the end-of-run draft.
+  Own seeded RNG (not bit-identical to Unity's). Novel characters join through `weaverse-cards.json` as before.
+- **Screens**: hub, party & deck (reorder party, switch cards on/off), run route + health, the fight (intents, CHAIN,
+  piles, floating damage, epiphany picker, result), draft.
+- **Save**: `cardgame/native_save.json` (`NativeCardStore`), separate from Unity's `save.json`. No DB migration.
+- **Assets**: `tools/import_cardgame_art.py` copied 56 card + 130 bestiary + portraits + battle background JPGs and
+  `bestiary.json` (~14 MB) into `app/src/main/assets`.
+- Help and wiki updated. Navigation: `GamesDestination.CardBattle`, `gamesDest` state in `AppShell`.
+- 683 unit tests pass (8 new in `BattleEngineTest`, incl. auto-played runs: 6 fighters beat 3, win rate in band).
+- Installed on the S25+ (R5GL13YL0KE). UI compiled and installed but not yet played by hand.
+- APK: `S:\AI\Novel\Weaververse\Beta.Test.Build\weaverse-v1.6.0.apk`, SHA-256
+  `4af7b22dd370b318b8311759b5f11792439961d14e18660be4ca5ca0cd609f2a`.
+
 ## v1.5.9 - No media added behind the writer's back; delete media anywhere
 
 - **New scenes start empty.** `ManuscriptRepository.createScene` used to search the library with the chapter
